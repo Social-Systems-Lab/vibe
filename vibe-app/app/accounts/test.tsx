@@ -1,3 +1,4 @@
+// test.tsx - Test screen for account creation, login, encryption, etc.
 import React, { useState } from "react";
 import { ScrollView, View, Text, TextInput, Button, ActivityIndicator, StyleSheet, TouchableOpacity } from "react-native";
 import { useAuth, AuthType } from "@/components/auth/auth-context";
