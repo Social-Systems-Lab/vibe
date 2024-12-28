@@ -1,4 +1,4 @@
-// index.tsx - Main app component
+// index.tsx - Main app component featuring a browser-like WebView and permission handling
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { View, Button, TextInput, TouchableOpacity, Image, StyleSheet, Modal, Text } from "react-native";

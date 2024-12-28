@@ -26,8 +26,7 @@ export default function Index() {
             // TODO main account flow will look something like this
             // if (accounts.length === 0) {
             //     // show account creation wizard
-            //     router.replace("/accounts/test");
-            //     //router.replace("/accounts/create-account-wizard");
+            //     router.replace("/accounts/create-account-wizard");
             // } else if (accounts.length === 1) {
             //     // log into the only account
             //     router.replace("/main");

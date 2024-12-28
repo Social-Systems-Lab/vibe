@@ -1,0 +1,9 @@
+{
+    "scripts": {
+        "install": "cd ./vibe-web && npm install && cd ../vibe-app && npm install && cd ../vibe-sdk && npm install",
+        "start-web": "concurrently \"npm run watch:esm --prefix ./vibe-sdk\" \"npm run dev --prefix ./vibe-web\""
+    },
+    "devDependencies": {
+        "concurrently": "^9.1.1"
+    }
+}
