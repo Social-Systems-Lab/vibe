@@ -10,6 +10,7 @@ const libreFranklin = Libre_Franklin({ subsets: ["latin"], weight: ["400", "600"
 export const metadata: Metadata = {
     title: "Vibe - Your Everything",
     description: "Vibe puts your digital life in your hands—move freely across an open ecosystem of apps and services.",
+    metadataBase: new URL("https://vibeapp.dev/"),
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -5,6 +5,7 @@ import { Metadata } from "next";
 export const metadata: Metadata = {
     title: "Developers | Vibe",
     description: "Join the Vibe revolution. Contribute to our open-source projects and help build the foundation of a new internet.",
+    metadataBase: new URL("https://vibeapp.dev/"),
 };
 
 export default function DevelopersPage() {

@@ -117,8 +117,8 @@ export default function HomePage() {
                         <div className="grid md:grid-cols-2 gap-8 items-center">
                             <div className="max-w-xl mx-auto text-center md:text-left order-2 md:order-1">
                                 <p className="text-gray-600">
-                                    The Federated Auth Network (FAN) is pioneering sovereign digital identity through their innovative core protocol. FAN shares
-                                    our vision of returning control of digital identities to individuals. Together, we&apos;re building a future where digital
+                                    The Federated Auth Network (FAN) is pioneering sovereign digital identity through their innovative protocol. FAN shares our
+                                    vision of returning control of digital identities to individuals. Together, we&apos;re building a future where digital
                                     autonomy and privacy are fundamental rights.
                                 </p>
                                 <Link
