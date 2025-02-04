@@ -1,5 +1,11 @@
 import Link from "next/link";
 import { ArrowRight, Github, Mail } from "lucide-react";
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+    title: "Developers | Vibe",
+    description: "Join the Vibe revolution. Contribute to our open-source projects and help build the foundation of a new internet.",
+};
 
 export default function DevelopersPage() {
     return (

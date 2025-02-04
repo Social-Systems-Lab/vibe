@@ -1,4 +1,10 @@
 import { ArrowRight, Mail } from "lucide-react";
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+    title: "Declaration of Independence (From Big Tech) | Vibe",
+    description: "Join the Vibe revolution. Read our declaration of independence from Big Tech and be part of the movement to build a better digital future.",
+};
 
 export default function ManifestoPage() {
     return (
