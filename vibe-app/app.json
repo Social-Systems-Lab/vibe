@@ -15,9 +15,9 @@
         "newArchEnabled": true,
         "ios": {
             "supportsTablet": true,
-            "bundleIdentifier": "com.<vibe-url>.app",
+            "bundleIdentifier": "dev.vibeapp.vibe",
             "configure": {
-                "associatedDomains": ["applinks:<vibe-url>.com", "applinks:www.<vibe-url>.com"]
+                "associatedDomains": ["applinks:vibeapp.dev", "applinks:www.vibeapp.dev"]
             }
         },
         "android": {
@@ -32,11 +32,11 @@
                         "data": [
                             {
                                 "scheme": "https",
-                                "host": "<vibe-url>.com"
+                                "host": "vibeapp.dev"
                             },
                             {
                                 "scheme": "https",
-                                "host": "www.<vibe-url>.com"
+                                "host": "www.vibeapp.dev"
                             }
                         ]
                     }

@@ -3,7 +3,7 @@ import React from "react";
 import { useAuth } from "@/components/auth/auth-context";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, Linking, View } from "react-native";
 
 export default function Index() {
     const router = useRouter();
@@ -15,7 +15,9 @@ export default function Index() {
             setIsReady(true);
         }, 0);
 
-        return () => clearTimeout(timer);
+        return () => {
+            clearTimeout(timer);
+        };
     }, []);
 
     useEffect(() => {

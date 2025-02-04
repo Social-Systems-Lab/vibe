@@ -1,8 +1,6 @@
 # Vibe
 
-A self-sovereign identity (SSI) framework empowering users to own, control, and securely manage their personal data.
-
----
+Vibe is more than just an app—it's a movement towards true digital freedom. We're building a future where users own their data, control their digital identity, and move seamlessly between apps and services without barriers.
 
 ## Repository Structure
 
@@ -14,13 +12,11 @@ Mobile application for managing self-sovereign identities. Secure storage of pri
 
 ### `vibe-web`
 
-Developer portal for the Vibe framework. Documentation and interactive examples. Demonstrates integration with the `vibe-sdk`. Built with **Next.js**.
+Website for the Vibe platform. Documentation and interactive examples. Demonstrates integration with the `vibe-sdk`. Built with **Next.js**.
 
 ### `vibe-sdk`
 
 JavaScript/TypeScript SDK for third-party websites to interact with the Vibe app. Provides authentication, permissions handling, and data sharing functionalities.
-
----
 
 ## Getting Started
 
@@ -32,21 +28,18 @@ Run the following command to install all dependencies for the repository and its
 npm install
 ```
 
-This script:
-
-Installs dependencies for the root project.
-Installs dependencies in vibe-web, vibe-app, and vibe-sdk.
-
 ### Development
 
-**Start the Developer Portal**
-To start the developer portal (vibe-web) and watch for changes in the vibe-sdk:
+**Start the Website**
+
+To start the website (vibe-web) and watch for changes in the vibe-sdk:
 
 ```bash
 npm run start-web
 ```
 
 **Start the Mobile App**
+
 Ensure that Android Studio or a compatible emulator is set up, then run:
 
 ```bash

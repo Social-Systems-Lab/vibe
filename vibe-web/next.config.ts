@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import { join } from "path";
 
 const nextConfig: NextConfig = {
-    /* config options here */
+    output: "standalone",
     outputFileTracingRoot: join(__dirname, ".."),
 };
 

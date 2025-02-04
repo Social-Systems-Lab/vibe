@@ -9,19 +9,19 @@ const VibeClientComponent = () => {
     useEffect(() => {
         const manifest: AppManifest = {
             id: "com.example.vibe-web",
-            name: "Vibe Web App",
+            name: "Movie Database",
             description: "A demo web app using the Vibe SDK",
             permissions: ["Read Name", "Read Ratings"],
+            onetapEnabled: true,
+            pictureUrl: "https://makecircles.org/images/demo/moviedblogo.jpg",
         };
 
-        // Initialize vibe SDK when the component mounts
         const unsubscribe = vibe.init(manifest, (state) => {
             console.log("Vibe state updated:", state);
-            setVibeState(state); // Update state on changes
+            setVibeState(state);
         });
 
         return () => {
-            // Cleanup when the component unmounts
             unsubscribe();
         };
     }, []);
@@ -35,13 +35,10 @@ const VibeClientComponent = () => {
         }
     };
 
-    if (!vibe.enabled()) {
-        return <div>Vibe is not enabled in this environment.</div>;
-    }
-
     return (
         <div>
             <h1>Vibe Client Component</h1>
+            <p>In vibe app: {vibe.inVibeApp.toString()}</p>
             <p>Account: {vibeState?.account?.name || "Not logged in"}</p>
             <p>Permissions: {JSON.stringify(vibeState?.permissions, null, 2)}</p>
             <button onClick={handleWriteData}>Write Data</button>
