@@ -86,8 +86,63 @@ export default function HomePage() {
                 </div>
             </div>
 
+            {/* Partners Section */}
+            <div className="bg-white py-16">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <h2 className="text-3xl font-bold text-center text-gray-900 mb-12">Our Network</h2>
+                    <div className="space-y-12">
+                        {/* Social Systems Lab */}
+                        <div className="grid md:grid-cols-2 gap-8 items-center">
+                            <div className="flex justify-center">
+                                <Image src="/ssllogo.png" alt="Social Systems Lab" width={300} height={100} className="h-16 w-auto" />
+                            </div>
+                            <div className="max-w-xl mx-auto text-center md:text-left">
+                                <p className="text-gray-600">
+                                    Social Systems Lab focuses on engineering the tools that propel us towards a better world. They support open-source teams
+                                    globally to build an ecosystem that provides for our needs without proprietary code, secret algorithms, or value-extracting
+                                    practices. As a key supporter of Vibe, they help transform ideas into reality through state-of-the-art engineering.
+                                </p>
+                                <Link
+                                    href="https://www.socialsystems.io"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center text-purple-600 hover:text-purple-700 mt-4"
+                                >
+                                    Learn more <ArrowRight className="ml-2 h-4 w-4" />
+                                </Link>
+                            </div>
+                        </div>
+
+                        {/* Federated Auth Network */}
+                        <div className="grid md:grid-cols-2 gap-8 items-center">
+                            <div className="max-w-xl mx-auto text-center md:text-left order-2 md:order-1">
+                                <p className="text-gray-600">
+                                    The Federated Auth Network (FAN) is pioneering sovereign digital identity through their innovative core protocol. FAN shares
+                                    our vision of returning control of digital identities to individuals. Together, we&apos;re building a future where digital
+                                    autonomy and privacy are fundamental rights.
+                                </p>
+                                <Link
+                                    href="https://opencollective.com/cta/projects/federated-auth-network"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center text-purple-600 hover:text-purple-700 mt-4"
+                                >
+                                    Learn more <ArrowRight className="ml-2 h-4 w-4" />
+                                </Link>
+                            </div>
+                            <div className="flex justify-center order-1 md:order-2">
+                                <div className="flex items-center space-x-4">
+                                    <Image src="/fanlogo.png" alt="Federated Auth Network" width={64} height={64} className="h-16 w-auto" />
+                                    <span className="text-[22px] font-semibold text-gray-900">Federated Auth Network</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             {/* Final CTA Section */}
-            <div className="bg-white py-12">
+            <div className="bg-gray-100 py-12">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
                     <h3 className="text-2xl font-bold text-gray-900 mb-4">Your digital freedom begins here</h3>
                     <p className="text-4xl font-bold text-blue-600 mb-6">1,234,567</p>

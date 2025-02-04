@@ -40,12 +40,14 @@ export default function DevelopersPage() {
                             <input
                                 type="text"
                                 name="name"
+                                required
                                 placeholder="Your Name"
                                 className="w-full px-4 py-2 rounded-full bg-gray-100 text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-white"
                             />
                             <input
                                 type="email"
                                 name="email"
+                                required
                                 placeholder="Your Email"
                                 className="w-full px-4 py-2 rounded-full bg-gray-100 text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-white"
                             />
