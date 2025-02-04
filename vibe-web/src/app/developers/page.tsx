@@ -10,11 +10,11 @@ export default function DevelopersPage() {
                 <section className="bg-white rounded-xl p-8 mb-12 shadow-lg">
                     <h2 className="text-2xl font-semibold text-gray-800 mb-4">Our Vision</h2>
                     <p className="text-gray-600 text-lg mb-6">
-                        Vibe is more than just an app—it's a movement towards true digital freedom. We're building a future where users own their data, control
-                        their digital identity, and move seamlessly between apps and services without barriers.
+                        Vibe is more than just an app—it&apos;s a movement towards true digital freedom. We&apos;re building a future where users own their
+                        data, control their digital identity, and move seamlessly between apps and services without barriers.
                     </p>
                     <p className="text-gray-600 text-lg">
-                        By joining Vibe, you're not just developing software; you're shaping the future of the internet. Help us create a more open,
+                        By joining Vibe, you&apos;re not just developing software; you&apos;re shaping the future of the internet. Help us create a more open,
                         interoperable, and user-centric digital world.
                     </p>
                 </section>
