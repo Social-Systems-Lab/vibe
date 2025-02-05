@@ -1,3 +1,4 @@
+// page.tsx - Landing page for Vibe website
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Database, ArrowRightLeft, Key } from "lucide-react";
@@ -14,7 +15,7 @@ export default function HomePage() {
                             <div className="text-white space-y-8">
                                 <div className="space-y-6 lg:space-y-8">
                                     <div className="space-y-2">
-                                        <h1 className="text-[5rem] font-normal leading-tight">Your everything.</h1>
+                                        <h1 className="text-[3rem] md:text-[5rem] font-normal leading-tight">Your everything.</h1>
                                         <p className="text-xl sm:text-2xl text-white/90 max-w-2xl">
                                             Vibe puts your digital life in your hands—move freely across an open ecosystem of apps and services, carrying your
                                             identity, content, and connections wherever you go.

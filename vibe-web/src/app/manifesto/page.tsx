@@ -1,3 +1,5 @@
+// manifesto/page.tsx - page showing the Declaration of Independence (From Big Tech) manifesto
+
 import { ArrowRight, Mail } from "lucide-react";
 import { Metadata } from "next";
 

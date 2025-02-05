@@ -1,3 +1,4 @@
+// developers/page.tsx - page for developers and contributors
 import Link from "next/link";
 import { ArrowRight, Github, Mail } from "lucide-react";
 import { Metadata } from "next";
