@@ -8,12 +8,12 @@ const VibeClientComponent = () => {
 
     useEffect(() => {
         const manifest: AppManifest = {
-            id: "com.example.vibe-web",
-            name: "Movie Database",
-            description: "A demo web app using the Vibe SDK",
+            id: "dev.vibeapp.vibe-web",
+            name: "Vibe Website",
+            description: "Official Vibe Website",
             permissions: ["Read Name", "Read Ratings"],
             onetapEnabled: true,
-            pictureUrl: "https://makecircles.org/images/demo/moviedblogo.jpg",
+            pictureUrl: "https://vibeapp.dev/favicon-96x96.png",
         };
 
         const unsubscribe = vibe.init(manifest, (state) => {
@@ -26,6 +26,15 @@ const VibeClientComponent = () => {
         };
     }, []);
 
+    const [isMounted, setIsMounted] = useState(false);
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
+
+    if (!isMounted) {
+        return null;
+    }
+
     const handleWriteData = async () => {
         try {
             const result = await vibe.writeData({ key: "exampleKey", value: "exampleValue" });
@@ -37,11 +46,11 @@ const VibeClientComponent = () => {
 
     return (
         <div>
-            <h1>Vibe Client Component</h1>
+            {/* <h1>Vibe Client Component</h1>
             <p>In vibe app: {vibe.inVibeApp.toString()}</p>
             <p>Account: {vibeState?.account?.name || "Not logged in"}</p>
             <p>Permissions: {JSON.stringify(vibeState?.permissions, null, 2)}</p>
-            <button onClick={handleWriteData}>Write Data</button>
+            <button onClick={handleWriteData}>Write Data</button> */}
         </div>
     );
 };

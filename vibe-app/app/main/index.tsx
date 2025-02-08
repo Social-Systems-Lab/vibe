@@ -9,13 +9,14 @@ import { useAuth } from "@/components/auth/auth-context";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { MessageType } from "@/sdk";
 
-//const defaultUrl = "http://192.168.10.204:3000/demo/moviedb"; // circles running locally
-const defaultUrl = "https://makecircles.org/demo/moviedb"; // circles prod server
+const defaultUrl = "http://192.168.10.204:3000"; // vibe-web running locally
+//const defaultUrl = "https://vibeapp.dev"; // circles prod server
 
 interface AppPermissions {
     appId: string;
     name: string;
     description: string;
+    pictureUrl: string;
     permissions: { [key: string]: "always" | "ask" | "never" };
 }
 
@@ -81,6 +82,15 @@ export default function MainApp() {
 
         if (existingApp) {
             // TODO here we should check if requested permissions differ from existing permissions and prompt user to re-accept if needed
+            setAcceptedApps((prev) => [
+                ...prev,
+                {
+                    ...existingApp,
+                    appId: activeManifest.id,
+                    name: activeManifest.name,
+                    description: activeManifest.description,
+                },
+            ]);
             sendNativeResponse({ requestId, result: { account: currentAccount, permissions: existingApp.permissions } });
             setPermissionsIndicator(false);
         } else {
@@ -140,6 +150,7 @@ export default function MainApp() {
                 appId: activeManifest.id,
                 name: activeManifest.name,
                 description: activeManifest.description,
+                pictureUrl: activeManifest.pictureUrl,
                 permissions,
             },
         ]);

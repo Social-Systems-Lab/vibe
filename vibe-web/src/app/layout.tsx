@@ -6,6 +6,7 @@ import Link from "next/link";
 import type React from "react";
 import "./globals.css";
 import { Info, Mail } from "lucide-react";
+import VibeClientComponent from "@/components/VibeClientComponent";
 
 const libreFranklin = Libre_Franklin({ subsets: ["latin"], weight: ["400", "600", "700"] });
 
@@ -61,6 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                         </div>
                     </nav>
                     {children}
+                    <VibeClientComponent />
                     <footer className="absolute bottom-4 right-4">
                         <details className="group inline-block">
                             <summary className="bg-[#616881] text-white rounded-full px-2 py-2 flex items-center space-x-3 shadow-md cursor-pointer list-none">
