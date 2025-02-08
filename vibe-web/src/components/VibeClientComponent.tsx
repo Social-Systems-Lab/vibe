@@ -44,15 +44,15 @@ const VibeClientComponent = () => {
         }
     };
 
-    return (
-        <div>
-            {/* <h1>Vibe Client Component</h1>
+    return vibe?.inVibeApp ? (
+        <div className="hidden">
+            <h1>Vibe Client Component</h1>
             <p>In vibe app: {vibe.inVibeApp.toString()}</p>
             <p>Account: {vibeState?.account?.name || "Not logged in"}</p>
             <p>Permissions: {JSON.stringify(vibeState?.permissions, null, 2)}</p>
-            <button onClick={handleWriteData}>Write Data</button> */}
+            <button onClick={handleWriteData}>Write Data</button>
         </div>
-    );
+    ) : null;
 };
 
 export default VibeClientComponent;
