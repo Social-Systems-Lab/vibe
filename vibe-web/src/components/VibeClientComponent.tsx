@@ -12,7 +12,7 @@ const VibeClientComponent = () => {
             name: "Vibe Website",
             description: "Official Vibe Website",
             permissions: ["Read Name", "Read Ratings"],
-            onetapEnabled: true,
+            onetapEnabled: false,
             pictureUrl: "https://vibeapp.dev/favicon-96x96.png",
         };
 
