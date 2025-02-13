@@ -45,11 +45,9 @@ const VibeClientComponent = () => {
     };
 
     return vibe?.inVibeApp ? (
-        <div className="hidden">
+        <div>
             <h1>Vibe Client Component</h1>
-            <p>In vibe app: {vibe.inVibeApp.toString()}</p>
-            <p>Account: {vibeState?.account?.name || "Not logged in"}</p>
-            <p>Permissions: {JSON.stringify(vibeState?.permissions, null, 2)}</p>
+            <pre style={{ whiteSpace: "pre-wrap", wordWrap: "break-word" }}>{JSON.stringify(vibeState, null, 2)}</pre>
             <button onClick={handleWriteData}>Write Data</button>
         </div>
     ) : null;

@@ -6,6 +6,7 @@ import { Account, useAuth } from "@/components/auth/auth-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useThemeColor } from "@/hooks/useThemeColor";
+import { SquircleMask } from "@/components/ui/squircle";
 
 const { width, height } = Dimensions.get("window");
 
@@ -95,18 +96,20 @@ export default function AccountSelect() {
                                 newAccountStyle,
                             ]}
                         >
-                            <Image
-                                source={
-                                    item.pictureUrl
-                                        ? {
-                                              uri: item.pictureUrl,
-                                          }
-                                        : index === 0
-                                        ? require("../../assets/images/picture2.jpg")
-                                        : require("../../assets/images/picture3.jpg")
-                                }
-                                style={styles.accountImage}
-                            />
+                            <SquircleMask size={120}>
+                                <Image
+                                    source={
+                                        item.pictureUrl
+                                            ? {
+                                                  uri: item.pictureUrl,
+                                              }
+                                            : index === 0
+                                            ? require("../../assets/images/picture2.jpg")
+                                            : require("../../assets/images/picture3.jpg")
+                                    }
+                                    style={styles.accountImage}
+                                />
+                            </SquircleMask>
                         </View>
                         <Text style={[styles.accountName, { color: textColor }, item.did === "new" ? styles.newAccountText : null]}>{item.name}</Text>
                     </TouchableOpacity>

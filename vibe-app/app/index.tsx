@@ -22,20 +22,19 @@ export default function Index() {
 
     useEffect(() => {
         if (isReady) {
-            // navigate to test screen for now
-            router.replace("/accounts/test");
+            // // navigate to test screen
+            // router.replace("/accounts/test");
 
-            // TODO main account flow will look something like this
-            // if (accounts.length === 0) {
-            //     // show account creation wizard
-            //     router.replace("/accounts/create-account-wizard");
-            // } else if (accounts.length === 1) {
-            //     // log into the only account
-            //     router.replace("/main");
-            // } else {
-            //     // show account selection screen
-            //     router.replace("/accounts/account-select");
-            // }
+            if (accounts.length === 0) {
+                // show account creation wizard
+                router.replace("/accounts/create-account-wizard");
+            } else if (accounts.length === 1) {
+                // log into the only account
+                router.replace("/main");
+            } else {
+                // show account selection screen
+                router.replace("/accounts/account-select");
+            }
         }
     }, [accounts, isReady]);
 

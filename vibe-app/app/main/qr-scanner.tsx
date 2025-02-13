@@ -1,12 +1,10 @@
 //qr-scanner.tsx
 import { useAuth } from "@/components/auth/auth-context";
 import { Overlay } from "@/components/ui/overlay";
-import { useWebView } from "@/components/ui/web-view-context";
 import { CameraView } from "expo-camera";
 import { useRouter } from "expo-router";
-import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet } from "react-native";
-import WebView from "react-native-webview";
+import React from "react";
+import { View, StyleSheet, Platform } from "react-native";
 
 export default function QRScanner() {
     const { accounts, currentAccount, createAccount, signChallenge, initialized } = useAuth();
@@ -24,7 +22,7 @@ export default function QRScanner() {
                         console.log("parsedData", parsedData);
 
                         if (parsedData.challenge) {
-                            await signChallenge(parsedData.challenge, [], true);
+                            await signChallenge(parsedData.challenge, []);
                             router.back();
                         }
                     } catch (error) {
@@ -32,7 +30,7 @@ export default function QRScanner() {
                     }
                 }}
             />
-            <Overlay />
+            {/* {Platform.OS !== "web" && <Overlay />} */}
         </View>
     );
 }
