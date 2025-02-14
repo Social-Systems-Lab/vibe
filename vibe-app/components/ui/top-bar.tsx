@@ -2,6 +2,7 @@
 import React from "react";
 import { View, TextInput, TouchableOpacity, Image, StyleSheet } from "react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { useAuth } from "../auth/auth-context";
 
 interface TopBarProps {
     urlInput: string;
@@ -12,6 +13,8 @@ interface TopBarProps {
 }
 
 export default function TopBar({ urlInput, onChangeUrl, onSubmitUrl, onScanQr, onProfilePress }: TopBarProps) {
+    const { currentAccount } = useAuth();
+
     return (
         <View style={styles.header}>
             <TextInput
@@ -30,7 +33,16 @@ export default function TopBar({ urlInput, onChangeUrl, onSubmitUrl, onScanQr, o
             </TouchableOpacity>
 
             <TouchableOpacity onPress={onProfilePress}>
-                <Image source={require("../../assets/images/picture3.jpg")} style={styles.profileIcon} />
+                <Image
+                    source={
+                        currentAccount
+                            ? {
+                                  uri: `${currentAccount?.pictureUrl}?v=${currentAccount?.updatedAt}`,
+                              }
+                            : require("@/assets/images/default-picture.png")
+                    }
+                    style={styles.profileIcon}
+                />
             </TouchableOpacity>
         </View>
     );

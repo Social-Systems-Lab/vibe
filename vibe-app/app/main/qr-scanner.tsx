@@ -30,7 +30,7 @@ export default function QRScanner() {
                     }
                 }}
             />
-            {/* {Platform.OS !== "web" && <Overlay />} */}
+            <Overlay />
         </View>
     );
 }

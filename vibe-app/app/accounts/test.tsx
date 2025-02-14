@@ -22,7 +22,7 @@ export default function TestScreen() {
     const handleCreateAccount = async () => {
         setIsLoading(true);
         try {
-            await createAccount(accountName, authType, authType === "PIN" ? pin : undefined);
+            await createAccount(accountName, authType, undefined, authType === "PIN" ? pin : undefined);
             console.log("Account created successfully.");
         } catch (error) {
             console.error("Error creating account:", error);

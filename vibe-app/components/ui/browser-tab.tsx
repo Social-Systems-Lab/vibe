@@ -86,6 +86,16 @@ export default function BrowserTab({ tab }: Props) {
 
         if (existingApp) {
             // TODO check if app manifest has changed and if so ask for permissions again (for new permissions)
+            const newApp = {
+                appId: manifest.id,
+                name: manifest.name,
+                description: manifest.description,
+                iconUrl: manifest.pictureUrl,
+                url: tab.url,
+                permissions: existingApp.permissions,
+            };
+            addOrUpdateApp(newApp);
+
             sendNativeResponse({ stateUpdate: { account: currentAccount, permissions: existingApp.permissions } });
             setPermissionsIndicator(false);
         } else {

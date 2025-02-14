@@ -8,7 +8,7 @@ import { SquircleIcon } from "./squircle";
 import { PanGestureHandler, State } from "react-native-gesture-handler";
 
 const { width, height } = Dimensions.get("window");
-const SWIPE_THRESHOLD = width / 4;
+const SWIPE_THRESHOLD = width / 5;
 
 export default function HomeScreen() {
     const { addTab } = useTabs();
@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
         height,
         alignItems: "flex-start", // Align items to the top-left
         justifyContent: "flex-start",
-        padding: 16,
+        padding: 0,
     },
     gridContent: {
         paddingHorizontal: 16,

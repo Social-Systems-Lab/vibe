@@ -10,6 +10,7 @@ import * as Crypto from "expo-crypto";
 import { View, StyleSheet } from "react-native";
 import WebView from "react-native-webview";
 import { Asset } from "expo-asset";
+import { APPS_KEY_PREFIX } from "../app/app-registry-context";
 
 // Polyfill Buffer for React Native if necessary
 if (typeof Buffer === "undefined") {
@@ -34,6 +35,7 @@ export type Account = {
     name: string;
     pictureUrl?: string;
     requireAuthentication: AuthType;
+    updatedAt?: number; // timestamp for cache busting
 };
 
 type AuthContextType = {
@@ -41,8 +43,9 @@ type AuthContextType = {
     generateRSAKeys: () => Promise<RsaKeys>;
     signChallenge: (privateKey: string, challenge: string) => Promise<string>;
     accounts: Account[];
-    currentAccount: AccountWithEncryptionKey | null;
-    createAccount: (accountName: string, authType: AuthType, pin?: string) => Promise<void>;
+    currentAccount: Account | null;
+    createAccount: (accountName: string, authType: AuthType, pictureUrl?: string, pin?: string) => Promise<void>;
+    updateAccount: (accountDid: string, newName?: string, newPictureUri?: string) => Promise<void>;
     encryptData: (data: string) => Promise<string>;
     decryptData: (encryptedData: string) => Promise<string>;
     login: (accountDid: string, pin?: string) => Promise<void>;
@@ -54,7 +57,7 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export type AccountWithEncryptionKey = Account & { encryptionKey: string };
+//export type AccountWithEncryptionKey = Account & { encryptionKey: string };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     // jsrsawebview
@@ -62,7 +65,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const jsrsasignHtmlUri = Asset.fromModule(require("@/assets/auth/jsrsasign.html")).uri;
     const pendingRequests = useRef<{ [key: string]: (value: any) => void }>({});
     const [accounts, setAccounts] = useState<Account[]>([]);
-    const [currentAccount, setCurrentAccount] = useState<AccountWithEncryptionKey | null>(null);
+    const [encryptionKey, setEncryptionKey] = useState<string>("");
+    const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
     const [loading, setLoading] = useState<boolean>(false);
     const [initialized, setInitialized] = useState<boolean>(false);
 
@@ -168,12 +172,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const encryptData = async (data: string): Promise<string> => {
         if (!currentAccount) throw new Error("No account selected");
-        return encryptDataWithEncryptionKey(data, currentAccount.encryptionKey);
+        return encryptDataWithEncryptionKey(data, encryptionKey);
     };
 
     const decryptData = async (encryptedData: string): Promise<string> => {
         if (!currentAccount) throw new Error("No account selected");
-        return decryptDataWithEncryptionKey(encryptedData, currentAccount.encryptionKey);
+        return decryptDataWithEncryptionKey(encryptedData, encryptionKey);
     };
 
     const generateDid = async (publicKey: string): Promise<string> => {
@@ -191,39 +195,111 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return `did:fan:${base64Url}`;
     };
 
-    const createAccount = async (accountName: string, authType: AuthType, pin?: string) => {
+    const createAccount = async (accountName: string, authType: AuthType, pictureUrl?: string, pin?: string) => {
         setLoading(true);
         const rsaKeys = await generateRSAKeys();
         const encryptionKey = await generateEncryptionKey();
         const encryptedPrivateKey = await encryptDataWithEncryptionKey(rsaKeys.privateKey, encryptionKey);
 
         const did = await generateDid(rsaKeys.publicKey);
+        const accountFolder = `${FileSystem.documentDirectory}${did}/`;
+        await FileSystem.makeDirectoryAsync(accountFolder, { intermediates: true });
+        await FileSystem.writeAsStringAsync(`${accountFolder}privateKey.pem.enc`, encryptedPrivateKey);
+
+        // store profile picture
+        let storedPicturePath: string | undefined = undefined;
+        let sourcePictureUri: string | undefined = pictureUrl;
+        if (!sourcePictureUri) {
+            const defaultAsset = Asset.fromModule(require("@/assets/images/default-picture.png"));
+            if (!defaultAsset.localUri) {
+                await defaultAsset.downloadAsync();
+            }
+            sourcePictureUri = defaultAsset.localUri ?? undefined;
+        }
+
+        if (sourcePictureUri) {
+            let extension = ".png";
+            const match = sourcePictureUri.match(/\.(\w+)(\?|$)/);
+            if (match && match[1]) {
+                extension = `.${match[1]}`;
+            }
+
+            const destination = `${accountFolder}picture${extension}`;
+            try {
+                await FileSystem.copyAsync({
+                    from: sourcePictureUri,
+                    to: destination,
+                });
+                storedPicturePath = destination;
+            } catch (err) {
+                console.error("Error copying profile picture:", err);
+            }
+        }
+
+        const now = Date.now();
         const newAccount: Account = {
             did,
             publicKey: rsaKeys.publicKey,
             name: accountName,
+            pictureUrl: storedPicturePath,
             requireAuthentication: authType,
+            updatedAt: now,
         };
 
-        const accountFolder = `${FileSystem.documentDirectory}${did}/`;
-        await FileSystem.makeDirectoryAsync(accountFolder, { intermediates: true });
-        await FileSystem.writeAsStringAsync(`${accountFolder}privateKey.pem.enc`, encryptedPrivateKey);
         await storeEncryptionKey(newAccount, encryptionKey, pin);
 
         const updatedAccounts = [...accounts, newAccount];
         setAccounts(updatedAccounts);
         await storeAccounts(updatedAccounts);
 
-        let accountWithPrivateKey: AccountWithEncryptionKey = { ...newAccount, encryptionKey };
-        setCurrentAccount(accountWithPrivateKey);
+        setCurrentAccount(newAccount);
+        setEncryptionKey(encryptionKey);
         setLoading(false);
     };
+
+    async function updateAccount(accountDid: string, newName?: string, newPictureUri?: string): Promise<void> {
+        const index = accounts.findIndex((acc) => acc.did === accountDid);
+        if (index < 0) throw new Error("Account not found");
+        const account = accounts[index];
+
+        // if a new picture was provided, copy it into the account folder
+        let storedPicturePath = account.pictureUrl;
+        if (newPictureUri) {
+            const accountFolder = `${FileSystem.documentDirectory}${accountDid}/`;
+            // derive extension, copy file, etc. (like in createAccount)
+            const extension = newPictureUri.match(/\.(\w+)(\?|$)/)?.[1] || "png";
+            const destination = `${accountFolder}picture.${extension}`;
+            await FileSystem.copyAsync({ from: newPictureUri, to: destination });
+            storedPicturePath = destination;
+        }
+
+        // update account object
+        const now = Date.now();
+        const updatedAccount = {
+            ...account,
+            name: newName || account.name,
+            pictureUrl: storedPicturePath || account.pictureUrl,
+            updatedAt: now,
+        };
+
+        // update the array of accounts in state and AsyncStorage
+        const newAccounts = [...accounts];
+        newAccounts[index] = updatedAccount;
+        setAccounts(newAccounts);
+        await storeAccounts(newAccounts);
+
+        // 5. If this is the current account, update it
+        if (currentAccount?.did === accountDid) {
+            setCurrentAccount(updatedAccount);
+        }
+    }
 
     const login = async (accountDid: string, pin?: string) => {
         const account = accounts.find((acc) => acc.did === accountDid);
         if (!account) throw new Error("Account not found");
         const encryptionKey = await retrieveEncryptionKey(account, pin);
-        setCurrentAccount({ ...account, encryptionKey });
+        setCurrentAccount(account);
+        setEncryptionKey(encryptionKey);
     };
 
     const logout = async () => {
@@ -232,9 +308,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const deleteAccount = async (accountDid: string) => {
         setLoading(true);
+
+        // delete the account folder (which holds the private key, profile picture, etc.)
+        const accountFolder = `${FileSystem.documentDirectory}${accountDid}/`;
+        try {
+            await FileSystem.deleteAsync(accountFolder, { idempotent: true });
+        } catch (err) {
+            console.error("Error deleting account folder:", err);
+        }
+
+        // remove account app registry data from AsyncStorage.
+        const appsKey = `${APPS_KEY_PREFIX}${accountDid}`;
+        try {
+            await AsyncStorage.removeItem(appsKey);
+        } catch (err) {
+            console.error("Error removing installed apps data:", err);
+        }
+
+        // remove the account from the global accounts list.
         const updatedAccounts = accounts.filter((account) => account.did !== accountDid);
         setAccounts(updatedAccounts);
         await storeAccounts(updatedAccounts);
+
+        // if the deleted account was currently active, log out.
         if (currentAccount?.did === accountDid) {
             setCurrentAccount(null);
         }
@@ -261,6 +357,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 accounts,
                 currentAccount,
                 createAccount,
+                updateAccount,
                 encryptData,
                 decryptData,
                 login,

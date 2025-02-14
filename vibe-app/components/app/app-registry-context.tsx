@@ -3,28 +3,30 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { InstalledApp } from "../../types/types";
+import { useAuth } from "../auth/auth-context";
 
 interface AppRegistryContextValue {
     installedApps: InstalledApp[];
     loadInstalledApps: () => Promise<void>;
-    addOrUpdateApp: (app: InstalledApp) => Promise<void>;
+    addOrUpdateApp: (app: Partial<InstalledApp>) => Promise<void>;
     removeApp: (appId: string) => Promise<void>;
     setAppPinned: (appId: string, pinned: boolean) => Promise<void>;
     setAppHidden: (appId: string, hidden: boolean) => Promise<void>;
-    // ... any other modifications, e.g. reorder apps
 }
+
+export const APPS_KEY_PREFIX = "installed_apps_";
 
 const AppRegistryContext = createContext<AppRegistryContextValue | undefined>(undefined);
 
-const APPS_KEY = "installed_apps"; // the key in AsyncStorage
-
 export function AppRegistryProvider({ children }: { children: React.ReactNode }) {
+    const { currentAccount } = useAuth();
     const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
+    const APPS_KEY = `${APPS_KEY_PREFIX}${currentAccount?.did}`;
 
     // On mount, load from AsyncStorage
     useEffect(() => {
         loadInstalledApps();
-    }, []);
+    }, [currentAccount?.did]);
 
     async function loadInstalledApps() {
         const data = await AsyncStorage.getItem(APPS_KEY);
@@ -41,16 +43,16 @@ export function AppRegistryProvider({ children }: { children: React.ReactNode })
     }
 
     // Add or update an app
-    async function addOrUpdateApp(app: InstalledApp) {
+    async function addOrUpdateApp(app: Partial<InstalledApp>) {
         let existingIndex = installedApps.findIndex((a) => a.appId === app.appId);
         let newList;
         if (existingIndex >= 0) {
             // update
             newList = [...installedApps];
-            newList[existingIndex] = { ...installedApps[existingIndex], ...app };
+            newList[existingIndex] = { ...installedApps[existingIndex], ...app } as InstalledApp;
         } else {
             // add
-            newList = [...installedApps, app];
+            newList = [...installedApps, app as InstalledApp];
         }
         await saveInstalledApps(newList);
     }

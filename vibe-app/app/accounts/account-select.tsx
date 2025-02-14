@@ -24,24 +24,17 @@ export default function AccountSelect() {
         setCurrentAccount(accountDid);
 
         try {
-            await logout();
+            // await logout(); // don't log out since login can be cancelled
             await login(accountDid);
             router.replace("/main");
         } catch (error) {
-            console.error("Error during account switch:", error);
+            console.log("Error (or cancel) during account switch:", error);
         }
     };
 
     const handleCreateNewAccount = () => {
         router.push("/accounts/create-account-wizard");
     };
-
-    const newAccountStyle = useMemo(() => {
-        const baseRadius = 38;
-        return {
-            borderRadius: baseRadius,
-        };
-    }, []);
 
     return (
         <View style={styles.container}>
@@ -78,7 +71,7 @@ export default function AccountSelect() {
 
             {/* Header */}
             <View style={styles.header}>
-                <Text style={[styles.title, { color: textColor }]}>Vibe</Text>
+                <Text style={[styles.title, { color: textColor }]}>Who is using Vibe?</Text>
             </View>
 
             {/* Account List */}
@@ -88,25 +81,12 @@ export default function AccountSelect() {
                 numColumns={2}
                 renderItem={({ item, index }) => (
                     <TouchableOpacity style={styles.accountButton} onPress={() => handleAccountSelect(item.did)}>
-                        <View
-                            style={[
-                                styles.accountImageContainer,
-                                styles.accountCard,
-                                item.did === currentAccount ? styles.selectedAccount : null,
-                                newAccountStyle,
-                            ]}
-                        >
+                        <View style={[styles.accountImageContainer]}>
                             <SquircleMask size={120}>
                                 <Image
-                                    source={
-                                        item.pictureUrl
-                                            ? {
-                                                  uri: item.pictureUrl,
-                                              }
-                                            : index === 0
-                                            ? require("../../assets/images/picture2.jpg")
-                                            : require("../../assets/images/picture3.jpg")
-                                    }
+                                    source={{
+                                        uri: `${item.pictureUrl}?v=${item.updatedAt}`,
+                                    }}
                                     style={styles.accountImage}
                                 />
                             </SquircleMask>
@@ -116,6 +96,12 @@ export default function AccountSelect() {
                 )}
                 contentContainerStyle={styles.accountsGrid}
             />
+
+            {/* Test screen */}
+            <TouchableOpacity style={styles.adminDashboardButton} onPress={() => router.push("/accounts/test")}>
+                <Ionicons name="cube-outline" size={24} color={textColor} />
+                <Text style={[styles.addAccountText, { color: textColor }]}>Admin Dashboard</Text>
+            </TouchableOpacity>
 
             {/* Add New Account Button */}
             <TouchableOpacity style={styles.addAccountButton} onPress={handleCreateNewAccount}>
@@ -138,8 +124,8 @@ const styles = StyleSheet.create({
         marginBottom: 46,
     },
     title: {
-        fontSize: 60,
-        fontWeight: "bold",
+        fontSize: 30,
+        // fontWeight: "bold",
     },
     themeToggle: {
         position: "absolute",
@@ -156,28 +142,16 @@ const styles = StyleSheet.create({
         width: (width - 84) / 2, // Adjusted for three items per row
     },
     accountImageContainer: {
-        // width: 72,
-        // height: 72,
         width: 120,
         height: 120,
         justifyContent: "center",
         alignItems: "center",
         marginBottom: 8,
-        borderRadius: 36,
-        // backgroundColor: "#1E293B",
     },
     accountImage: {
         width: "100%",
         height: "100%",
         resizeMode: "cover",
-        borderRadius: 30,
-    },
-    accountCard: {
-        backgroundColor: "#E2E8F0",
-    },
-    selectedAccount: {
-        borderWidth: 2,
-        borderColor: "#7C3AED",
     },
     newAccountContainer: {
         borderWidth: 2,
@@ -190,6 +164,18 @@ const styles = StyleSheet.create({
     accountName: {
         fontSize: 12,
         textAlign: "center",
+    },
+    adminDashboardButton: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        position: "absolute",
+        bottom: 96,
+        left: 20,
+        right: 20,
+        padding: 16,
+        backgroundColor: "rgba(58, 112, 237, 0.05)", // Subtle background
+        borderRadius: 12,
     },
     addAccountButton: {
         flexDirection: "row",

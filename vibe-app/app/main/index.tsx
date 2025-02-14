@@ -55,7 +55,7 @@ export default function MainApp() {
 
     // Profile icon press
     const handleProfilePress = () => {
-        router.push("/accounts/account-select");
+        router.push("/accounts/profile");
     };
 
     // Sync the address bar whenever the active tab changes
