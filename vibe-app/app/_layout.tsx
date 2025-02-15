@@ -1,4 +1,4 @@
-//_layout.tsx
+//_layout.tsx - The main layout of the app with the router and context providers
 import React, { useEffect } from "react";
 import { AuthProvider } from "@/components/auth/auth-context";
 import { Stack, useRouter } from "expo-router";

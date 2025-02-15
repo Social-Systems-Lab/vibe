@@ -1,11 +1,15 @@
-// TabBar.tsx
+// tab-bar.tsx - The bottom tab bar component.
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTabs } from "./tab-context";
 
-export default function TabBar() {
+type TabBarProps = {
+    captureActiveTabScreenshot: () => Promise<void>;
+};
+
+export default function TabBar({ captureActiveTabScreenshot }: TabBarProps) {
     const { tabs, addTab, closeTab, activeTabId, setActiveTabId } = useTabs();
     const router = useRouter();
 
@@ -21,18 +25,17 @@ export default function TabBar() {
         }
     };
 
+    const openTabSwitcher = async () => {
+        await captureActiveTabScreenshot();
+        router.push("/main/tab-select");
+    };
+
     return (
         <View style={styles.bar}>
             <TouchableOpacity onPress={goHome}>
                 <Ionicons name="home-outline" size={26} color="#333" />
             </TouchableOpacity>
-            <TouchableOpacity
-                style={styles.tabCount}
-                onPress={() => {
-                    // Go to the screen that shows all tabs in a grid
-                    router.push("/main/tab-select");
-                }}
-            >
+            <TouchableOpacity style={styles.tabCount} onPress={openTabSwitcher}>
                 <Text>{tabCount}</Text>
             </TouchableOpacity>
         </View>
@@ -50,7 +53,7 @@ const styles = StyleSheet.create({
     tabCount: {
         width: 36,
         height: 36,
-        borderRadius: 18,
+        borderRadius: 8,
         backgroundColor: "#ddd",
         justifyContent: "center",
         alignItems: "center",

@@ -1,12 +1,13 @@
 // browser-tab.tsx - Shows a WebView + permission handling for apps/pages
 
-import React, { useEffect, useRef, useState } from "react";
-import { View, StyleSheet, Modal, Text, TouchableOpacity, Image } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { View, StyleSheet, Modal, Text, TouchableOpacity, Image, InteractionManager } from "react-native";
 import WebView, { WebViewMessageEvent } from "react-native-webview";
 import { useAuth } from "@/components/auth/auth-context";
 import { MessageType } from "@/sdk";
-import { TabInfo } from "./tab-context";
+import { TabInfo, useTabs } from "./tab-context";
 import { useAppRegistry } from "../app/app-registry-context";
+import { captureRef, captureScreen } from "react-native-view-shot";
 
 interface AppPermissions {
     appId: string;
@@ -23,12 +24,11 @@ interface Props {
 export default function BrowserTab({ tab }: Props) {
     const { currentAccount, initialized } = useAuth();
     const { installedApps, addOrUpdateApp } = useAppRegistry();
+    const { updateTabScreenshot } = useTabs();
     const webViewRef = useRef<WebView>(null);
+    const wrapperRef = useRef<View>(null);
 
-    // Keep track of the WebView URL locally,
-    // or you could just use tab.url directly if you never change it here
     const [webViewUrl, setWebViewUrl] = useState<string>(tab.url);
-
     const [jsCode, setJsCode] = useState<string>();
 
     // Permission & manifest states
@@ -55,6 +55,16 @@ export default function BrowserTab({ tab }: Props) {
                   window.vibe.handleNativeResponse(event.data);
               }
           });
+
+          function checkReadyState() {
+              if (document.readyState === 'complete') {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'PageLoaded' }));
+              } else {
+                  setTimeout(checkReadyState, 500);
+              }
+          }
+
+          checkReadyState(); // Start checking immediately
       })();
     `;
         setJsCode(code);
@@ -66,13 +76,17 @@ export default function BrowserTab({ tab }: Props) {
             if (!event.nativeEvent.data) return;
             const data = JSON.parse(event.nativeEvent.data);
             const { type, requestId } = data;
-
+            console.log("========== ", type);
             if (type === MessageType.INIT_REQUEST) {
                 handleInitRequest(data, requestId);
             } else if (type === MessageType.WRITE_REQUEST) {
                 handleWriteRequest(data, requestId);
             } else if (type === MessageType.LOG_REQUEST) {
                 console.log("WebView Log:", data.message);
+            } else if (type === MessageType.PAGE_LOADED) {
+                InteractionManager.runAfterInteractions(() => {
+                    captureScreenshot();
+                });
             }
         } catch (error) {
             console.error("Error parsing WebView message:", error);
@@ -187,8 +201,21 @@ export default function BrowserTab({ tab }: Props) {
         setWriteModalVisible(false);
     };
 
+    const captureScreenshot = useCallback(async () => {
+        try {
+            console.log("Capturing screenshot for tab:", tab.id);
+            const uri = await captureScreen({
+                format: "png",
+                quality: 0.8,
+            });
+            updateTabScreenshot(tab.id, uri);
+        } catch (error) {
+            console.error("Screenshot failed:", error);
+        }
+    }, [tab.id, updateTabScreenshot]);
+
     return (
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1 }} ref={wrapperRef}>
             {/* If site is requesting permissions, show a banner. */}
             {permissionsIndicator && (
                 <TouchableOpacity style={styles.permissionsIndicator} onPress={() => setModalVisible(true)}>

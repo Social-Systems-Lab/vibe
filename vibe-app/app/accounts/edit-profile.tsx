@@ -4,6 +4,7 @@ import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/components/auth/auth-context";
+import { SquircleMask } from "@/components/ui/squircle";
 
 export default function EditProfileScreen() {
     const router = useRouter();
@@ -84,7 +85,9 @@ export default function EditProfileScreen() {
             {/* Profile Image with camera icon at bottom-right */}
             <View style={styles.imageContainer}>
                 <TouchableOpacity onPress={pickImage}>
-                    <Image source={pictureUri ? { uri: pictureUri } : require("@/assets/images/default-picture.png")} style={styles.profileImage} />
+                    <SquircleMask size={120}>
+                        <Image source={pictureUri ? { uri: pictureUri } : require("@/assets/images/default-picture.png")} style={styles.profileImage} />
+                    </SquircleMask>
                     <View style={styles.cameraIconContainer}>
                         <Ionicons name="camera-outline" size={20} color="#fff" />
                     </View>
@@ -138,7 +141,6 @@ const styles = StyleSheet.create({
     profileImage: {
         width: 120,
         height: 120,
-        borderRadius: 60,
     },
     cameraIconContainer: {
         position: "absolute",

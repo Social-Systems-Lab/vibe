@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/components/auth/auth-context";
 import Constants from "expo-constants";
+import { SquircleMask } from "@/components/ui/squircle";
 
 export default function ProfileScreen() {
     const router = useRouter();
@@ -33,14 +34,16 @@ export default function ProfileScreen() {
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 {/* Clickable Profile Header */}
                 <TouchableOpacity style={styles.profileInfoContainer} onPress={() => router.push("/accounts/edit-profile")}>
-                    <Image
-                        source={
-                            currentAccount.pictureUrl
-                                ? { uri: `${currentAccount.pictureUrl}?v=${currentAccount.updatedAt}` }
-                                : require("@/assets/images/default-picture.png")
-                        }
-                        style={styles.profileImage}
-                    />
+                    <SquircleMask size={70} style={{ marginRight: 16 }}>
+                        <Image
+                            source={
+                                currentAccount.pictureUrl
+                                    ? { uri: `${currentAccount.pictureUrl}?v=${currentAccount.updatedAt}` }
+                                    : require("@/assets/images/default-picture.png")
+                            }
+                            style={styles.profileImage}
+                        />
+                    </SquircleMask>
                     <View style={styles.profileTextContainer}>
                         <View style={styles.profileTextRow}>
                             <Text style={styles.profileName}>{currentAccount.name}</Text>
@@ -104,9 +107,7 @@ const styles = StyleSheet.create({
     profileImage: {
         width: 70,
         height: 70,
-        borderRadius: 35,
         backgroundColor: "#ccc",
-        marginRight: 16,
     },
     profileTextContainer: {
         flex: 1,

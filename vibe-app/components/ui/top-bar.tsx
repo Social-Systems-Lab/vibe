@@ -3,6 +3,7 @@ import React from "react";
 import { View, TextInput, TouchableOpacity, Image, StyleSheet } from "react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useAuth } from "../auth/auth-context";
+import { SquircleIcon, SquircleMask } from "./squircle";
 
 interface TopBarProps {
     urlInput: string;
@@ -33,16 +34,18 @@ export default function TopBar({ urlInput, onChangeUrl, onSubmitUrl, onScanQr, o
             </TouchableOpacity>
 
             <TouchableOpacity onPress={onProfilePress}>
-                <Image
-                    source={
-                        currentAccount
-                            ? {
-                                  uri: `${currentAccount?.pictureUrl}?v=${currentAccount?.updatedAt}`,
-                              }
-                            : require("@/assets/images/default-picture.png")
-                    }
-                    style={styles.profileIcon}
-                />
+                <SquircleMask size={36}>
+                    <Image
+                        source={
+                            currentAccount
+                                ? {
+                                      uri: `${currentAccount?.pictureUrl}?v=${currentAccount?.updatedAt}`,
+                                  }
+                                : require("@/assets/images/default-picture.png")
+                        }
+                        style={styles.profileIcon}
+                    />
+                </SquircleMask>
             </TouchableOpacity>
         </View>
     );
@@ -77,6 +80,5 @@ const styles = StyleSheet.create({
     profileIcon: {
         width: 36,
         height: 36,
-        borderRadius: 26,
     },
 });

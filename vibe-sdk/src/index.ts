@@ -33,6 +33,7 @@ type Callback = (state: VibeState) => void;
 type Unsubscribe = () => void;
 
 enum MessageType {
+    PAGE_LOADED = "PageLoaded",
     INIT_REQUEST = "InitRequest",
     WRITE_REQUEST = "WriteRequest",
     NATIVE_RESPONSE = "NativeResponse",

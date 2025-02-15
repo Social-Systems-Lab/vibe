@@ -1,20 +1,22 @@
 // main/index.tsx - The main app screen with tabs and browser functionality
-import React, { useState, useEffect } from "react";
-import { View, StyleSheet, Alert } from "react-native";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { View, StyleSheet, Alert, findNodeHandle } from "react-native";
 import { useTabs } from "../../components/ui/tab-context";
 import { useRouter } from "expo-router";
 import { useCameraPermissions } from "expo-camera";
+import { captureScreen } from "react-native-view-shot";
 
 import TopBar from "../../components/ui/top-bar";
 import TabBar from "../../components/ui/tab-bar";
 import HomeScreen from "../../components/ui/home-screen";
 import BrowserTab from "../../components/ui/browser-tab";
+import { Text } from "react-native";
 
 export default function MainApp() {
     const router = useRouter();
     const [permission, requestPermission] = useCameraPermissions();
 
-    const { tabs, setTabs, activeTabId, addTab } = useTabs();
+    const { tabs, setTabs, activeTabId, addTab, updateTabScreenshot } = useTabs();
     const activeTab = tabs.find((t) => t.id === activeTabId);
 
     // For the address bar input
@@ -67,6 +69,21 @@ export default function MainApp() {
         }
     }, [activeTab]);
 
+    const captureActiveTabScreenshot = useCallback(async () => {
+        if (!activeTab) return;
+
+        try {
+            // const uri = await captureScreen({
+            //     format: "png",
+            //     quality: 0.5,
+            // });
+            // store in tab context
+            //updateTabScreenshot(activeTab.id, uri);
+        } catch (error) {
+            console.error("Screenshot failed:", error);
+        }
+    }, [activeTab, updateTabScreenshot]);
+
     return (
         <View style={styles.container}>
             {/* Always-on top bar with address input & icons */}
@@ -91,7 +108,7 @@ export default function MainApp() {
             </View>
 
             {/* Bottom bar with tab switching, etc. */}
-            <TabBar />
+            <TabBar captureActiveTabScreenshot={captureActiveTabScreenshot} />
         </View>
     );
 }
@@ -99,5 +116,6 @@ export default function MainApp() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        backgroundColor: "white",
     },
 });
