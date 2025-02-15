@@ -1,4 +1,4 @@
-// AuthContext.tsx - RSA key generation and signing context
+// auth-context.tsx - RSA key generation and signing context
 // Uses a WebView to interact with the jsrsasign library
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
@@ -12,56 +12,34 @@ import WebView from "react-native-webview";
 import { Asset } from "expo-asset";
 import { useTabs } from "../ui/tab-context";
 import { APPS_KEY_PREFIX } from "@/constants/constants";
+import { Account, AuthType, RsaKeys } from "@/types/types";
+import { useDb } from "../db/db-context";
 
 // Polyfill Buffer for React Native if necessary
 if (typeof Buffer === "undefined") {
     global.Buffer = require("buffer").Buffer;
 }
 
-export type MessageType = {
-    action: string;
-    payload?: any;
-};
-
-export type RsaKeys = {
-    publicKey: string;
-    privateKey: string;
-};
-
-export type AuthType = "PIN" | "BIOMETRIC";
-
-export type Account = {
-    did: string;
-    publicKey: string;
-    name: string;
-    pictureUrl?: string;
-    requireAuthentication: AuthType;
-    updatedAt?: number; // timestamp for cache busting
-};
-
 type AuthContextType = {
     jsrsaWebViewRef: React.RefObject<WebView>;
-    generateRSAKeys: () => Promise<RsaKeys>;
-    signChallenge: (privateKey: string, challenge: string) => Promise<string>;
     accounts: Account[];
     currentAccount: Account | null;
+    loading: boolean;
+    initialized: boolean;
+    generateRSAKeys: () => Promise<RsaKeys>;
+    signChallenge: (privateKey: string, challenge: string) => Promise<string>;
     createAccount: (accountName: string, authType: AuthType, pictureUrl?: string, pin?: string) => Promise<void>;
     updateAccount: (accountDid: string, newName?: string, newPictureUri?: string) => Promise<void>;
+    deleteAccount: (accountDid: string) => Promise<void>;
     encryptData: (data: string) => Promise<string>;
     decryptData: (encryptedData: string) => Promise<string>;
     login: (accountDid: string, pin?: string) => Promise<void>;
     logout: () => Promise<void>;
-    loading: boolean;
-    initialized: boolean;
-    deleteAccount: (accountDid: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-//export type AccountWithEncryptionKey = Account & { encryptionKey: string };
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    // jsrsawebview
     const jsrsaWebViewRef = useRef<WebView>(null);
     const jsrsasignHtmlUri = Asset.fromModule(require("@/assets/auth/jsrsasign.html")).uri;
     const pendingRequests = useRef<{ [key: string]: (value: any) => void }>({});
@@ -122,7 +100,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const generateEncryptionKey = async (): Promise<string> => {
         let keyBytes = await Crypto.getRandomBytesAsync(32);
-        console.log("RAW key" + keyBytes);
         return Buffer.from(keyBytes).toString("base64");
     };
 
