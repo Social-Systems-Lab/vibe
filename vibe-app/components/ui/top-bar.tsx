@@ -1,5 +1,5 @@
 // top-bar.tsx - Shows address bar, profile icon, etc.
-import React from "react";
+import React, { useRef } from "react";
 import { View, TextInput, TouchableOpacity, Image, StyleSheet } from "react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useAuth } from "../auth/auth-context";
@@ -15,10 +15,12 @@ interface TopBarProps {
 
 export default function TopBar({ urlInput, onChangeUrl, onSubmitUrl, onScanQr, onProfilePress }: TopBarProps) {
     const { currentAccount } = useAuth();
+    const inputRef = useRef<TextInput>(null);
 
     return (
         <View style={styles.header}>
             <TextInput
+                ref={inputRef}
                 style={styles.urlInput}
                 value={urlInput}
                 onChangeText={onChangeUrl}
@@ -26,6 +28,7 @@ export default function TopBar({ urlInput, onChangeUrl, onSubmitUrl, onScanQr, o
                 placeholder="Enter URL"
                 keyboardType="url"
                 autoCapitalize="none"
+                onFocus={() => inputRef.current?.setSelection(0, urlInput.length)}
             />
             <TouchableOpacity onPress={onScanQr}>
                 <View style={styles.qrCodeIcon}>

@@ -7,15 +7,7 @@ import { useAuth } from "@/components/auth/auth-context";
 import { MessageType } from "@/sdk";
 import { TabInfo, useTabs } from "./tab-context";
 import { useAppRegistry } from "../app/app-registry-context";
-import { captureRef, captureScreen } from "react-native-view-shot";
-
-interface AppPermissions {
-    appId: string;
-    name: string;
-    description: string;
-    pictureUrl: string;
-    permissions: { [key: string]: "always" | "ask" | "never" };
-}
+import { captureScreen } from "react-native-view-shot";
 
 interface Props {
     tab: TabInfo; // { id: string, title: string, url: string, type: 'webview' }
@@ -76,7 +68,6 @@ export default function BrowserTab({ tab }: Props) {
             if (!event.nativeEvent.data) return;
             const data = JSON.parse(event.nativeEvent.data);
             const { type, requestId } = data;
-            console.log("========== ", type);
             if (type === MessageType.INIT_REQUEST) {
                 handleInitRequest(data, requestId);
             } else if (type === MessageType.WRITE_REQUEST) {
@@ -203,7 +194,6 @@ export default function BrowserTab({ tab }: Props) {
 
     const captureScreenshot = useCallback(async () => {
         try {
-            console.log("Capturing screenshot for tab:", tab.id);
             const uri = await captureScreen({
                 format: "png",
                 quality: 0.8,
@@ -213,6 +203,12 @@ export default function BrowserTab({ tab }: Props) {
             console.error("Screenshot failed:", error);
         }
     }, [tab.id, updateTabScreenshot]);
+
+    useEffect(() => {
+        if (tab.reload) {
+            webViewRef.current?.reload(); // Force refresh
+        }
+    }, [tab.reload]);
 
     return (
         <View style={{ flex: 1 }} ref={wrapperRef}>

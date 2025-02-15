@@ -5,11 +5,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTabs } from "./tab-context";
 
-type TabBarProps = {
-    captureActiveTabScreenshot: () => Promise<void>;
-};
+type TabBarProps = {};
 
-export default function TabBar({ captureActiveTabScreenshot }: TabBarProps) {
+export default function TabBar() {
     const { tabs, addTab, closeTab, activeTabId, setActiveTabId } = useTabs();
     const router = useRouter();
 
@@ -26,7 +24,6 @@ export default function TabBar({ captureActiveTabScreenshot }: TabBarProps) {
     };
 
     const openTabSwitcher = async () => {
-        await captureActiveTabScreenshot();
         router.push("/main/tab-select");
     };
 

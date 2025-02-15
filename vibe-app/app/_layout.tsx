@@ -46,9 +46,9 @@ export default function RootLayout() {
 
     return (
         <WebViewProvider>
-            <AuthProvider>
-                <AppRegistryProvider>
-                    <TabsProvider>
+            <TabsProvider>
+                <AuthProvider>
+                    <AppRegistryProvider>
                         <GestureHandlerRootView>
                             <StatusBar
                                 backgroundColor={colorScheme === "light" ? "#FFFFFF" : "#1E293B"}
@@ -59,9 +59,9 @@ export default function RootLayout() {
                                 <Stack.Screen name="index" />
                             </Stack>
                         </GestureHandlerRootView>
-                    </TabsProvider>
-                </AppRegistryProvider>
-            </AuthProvider>
+                    </AppRegistryProvider>
+                </AuthProvider>
+            </TabsProvider>
         </WebViewProvider>
     );
 }

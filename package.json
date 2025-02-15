@@ -1,8 +1,10 @@
 {
     "scripts": {
-        "install": "cd ./vibe-web && npm install && cd ../vibe-app && npm install && cd ../vibe-sdk && npm install",
-        "start-web": "concurrently \"npm run watch:esm --prefix ./vibe-sdk\" \"npm run dev --prefix ./vibe-web\"",
-        "start-app": "npm run android --prefix ./vibe-app"
+        "install": "cd ./vibe-web && npm install && cd ../vibe-app && npm install && cd ../vibe-sdk && npm install && cd ../app/contacts && npm install",
+        "start-vibe-app": "npm run android --prefix ./vibe-app",
+        "watch-vibe-sdk": "npm run watch:esm --prefix ./vibe-sdk",
+        "start-vibe-web": "npm run dev --prefix ./vibe-web",
+        "start-app-contacts": "npm run dev --prefix ./apps/contacts"
     },
     "devDependencies": {
         "concurrently": "^9.1.1"

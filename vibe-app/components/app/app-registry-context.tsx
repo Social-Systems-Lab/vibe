@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { InstalledApp } from "../../types/types";
 import { useAuth } from "../auth/auth-context";
+import { APPS_KEY_PREFIX } from "@/constants/constants";
 
 interface AppRegistryContextValue {
     installedApps: InstalledApp[];
@@ -13,8 +14,6 @@ interface AppRegistryContextValue {
     setAppPinned: (appId: string, pinned: boolean) => Promise<void>;
     setAppHidden: (appId: string, hidden: boolean) => Promise<void>;
 }
-
-export const APPS_KEY_PREFIX = "installed_apps_";
 
 const AppRegistryContext = createContext<AppRegistryContextValue | undefined>(undefined);
 

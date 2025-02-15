@@ -69,7 +69,11 @@ export default function TabSelect() {
                         </View>
                     ) : (
                         <View style={styles.noScreenshot}>
-                            <Text style={{ color: "#888" }}>No preview</Text>
+                            {item.url === "Home" ? (
+                                <Image source={require("@/assets/images/home-screen-preview.png")} width={400} height={300} resizeMode="center" />
+                            ) : (
+                                <Text style={{ color: "#888" }}>No preview</Text>
+                            )}
                         </View>
                     )}
                 </View>
@@ -141,6 +145,7 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: "center",
         alignItems: "center",
+        overflow: "hidden",
     },
     newTabButton: {
         position: "absolute",

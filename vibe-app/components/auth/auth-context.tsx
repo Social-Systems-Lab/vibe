@@ -10,7 +10,8 @@ import * as Crypto from "expo-crypto";
 import { View, StyleSheet } from "react-native";
 import WebView from "react-native-webview";
 import { Asset } from "expo-asset";
-import { APPS_KEY_PREFIX } from "../app/app-registry-context";
+import { useTabs } from "../ui/tab-context";
+import { APPS_KEY_PREFIX } from "@/constants/constants";
 
 // Polyfill Buffer for React Native if necessary
 if (typeof Buffer === "undefined") {
@@ -69,6 +70,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
     const [loading, setLoading] = useState<boolean>(false);
     const [initialized, setInitialized] = useState<boolean>(false);
+    const { resetTabs, clearTabs } = useTabs();
 
     const ACCOUNTS_KEY = "accounts";
 
@@ -300,10 +302,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const encryptionKey = await retrieveEncryptionKey(account, pin);
         setCurrentAccount(account);
         setEncryptionKey(encryptionKey);
+
+        // reset tabs when logging in
+        resetTabs();
     };
 
     const logout = async () => {
         setCurrentAccount(null);
+        clearTabs();
     };
 
     const deleteAccount = async (accountDid: string) => {

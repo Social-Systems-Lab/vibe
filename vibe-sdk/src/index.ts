@@ -47,8 +47,8 @@ const vibe = (() => {
 
     const generateRequestId = () => Date.now().toString();
     const isBrowser = typeof window !== "undefined";
-    const inVibeApp = isBrowser && !!window._VIBE_ENABLED;
     const isMobile = isBrowser && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isInVibeApp = () => typeof window !== "undefined" && !!window._VIBE_ENABLED;
 
     const init = (manifest: AppManifest, callback: Callback): Unsubscribe => {
         if (!isBrowser) {
@@ -57,7 +57,7 @@ const vibe = (() => {
         }
 
         const oneTapEnabled = manifest.onetapEnabled || false;
-        if (inVibeApp) {
+        if (isInVibeApp()) {
             sendToNativeApp({
                 type: MessageType.INIT_REQUEST,
                 manifest,
@@ -80,7 +80,7 @@ const vibe = (() => {
     };
 
     const writeData = (data: any): Promise<any> => {
-        if (!inVibeApp) {
+        if (!isInVibeApp()) {
             return Promise.reject(
                 new Error("writeData called when vibe is not enabled. Make sure to check vibe.enabled and call vibe.init to initialize the app")
             );
@@ -93,7 +93,7 @@ const vibe = (() => {
     };
 
     const sendToNativeApp = (message: any) => {
-        if (!inVibeApp) {
+        if (!isInVibeApp()) {
             //console.error("ReactNativeWebView not available 2");
             return;
         }
@@ -256,7 +256,7 @@ const vibe = (() => {
     };
 
     return {
-        inVibeApp,
+        isInVibeApp,
         init,
         writeData,
         _state,

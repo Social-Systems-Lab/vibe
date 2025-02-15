@@ -5,8 +5,9 @@ export interface TabInfo {
     id: string;
     title: string;
     type: "home" | "webview";
-    url: string; // for webview tabs
+    url: string;
     screenshotUri?: string;
+    reload?: number;
 }
 
 // The context will store the array of tabs, the active tab ID, and methods.
@@ -18,6 +19,8 @@ interface TabContextValue {
     addTab: (t: Omit<TabInfo, "id">) => void;
     closeTab: (id: string) => void;
     updateTabScreenshot: (tabId: string, uri: string) => void;
+    resetTabs: () => void;
+    clearTabs: () => void;
 }
 
 const TabContext = createContext<TabContextValue | undefined>(undefined);
@@ -57,6 +60,15 @@ export const TabsProvider = ({ children }: { children: React.ReactNode }) => {
         });
     }
 
+    function resetTabs() {
+        setTabsState([{ id: "home", title: "Home", type: "home", url: "Home" }]);
+        setActiveTabId("home");
+    }
+    function clearTabs() {
+        setTabsState([]);
+        setActiveTabId("");
+    }
+
     return (
         <TabContext.Provider
             value={{
@@ -67,6 +79,8 @@ export const TabsProvider = ({ children }: { children: React.ReactNode }) => {
                 addTab,
                 closeTab,
                 updateTabScreenshot,
+                resetTabs,
+                clearTabs,
             }}
         >
             {children}
