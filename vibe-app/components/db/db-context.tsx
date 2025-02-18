@@ -10,6 +10,11 @@ import { useAuth } from "../auth/auth-context";
 
 type DbContextType = {
     pouchdbWebViewRef: React.RefObject<WebView>;
+    open: (dbName: string) => Promise<any>;
+    close: () => Promise<any>;
+    put: (doc: any) => Promise<any>;
+    get: (docId: string) => Promise<any>;
+    destroy: () => Promise<any>;
 };
 
 const DbContext = createContext<DbContextType | undefined>(undefined);
@@ -49,37 +54,68 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     }, []);
 
     // New function to create (or open) a database
-    const openDb = useCallback(
+    const open = useCallback(
         (dbName: string) => {
             return callWebViewFunction({
-                action: "openDb",
+                action: "open",
                 payload: { dbName },
             });
         },
         [callWebViewFunction]
     );
 
-    const closeDb = useCallback(() => {
+    const close = useCallback(() => {
         return callWebViewFunction({
-            action: "closeDb",
+            action: "close",
         });
     }, [callWebViewFunction]);
+
+    const destroy = useCallback(() => {
+        return callWebViewFunction({
+            action: "destroy",
+        });
+    }, [callWebViewFunction]);
+
+    const get = useCallback(
+        (docId: string) => {
+            return callWebViewFunction({
+                action: "get",
+                payload: { docId },
+            });
+        },
+        [callWebViewFunction]
+    );
+
+    const put = useCallback(
+        (doc: any) => {
+            return callWebViewFunction({
+                action: "put",
+                payload: doc,
+            });
+        },
+        [callWebViewFunction]
+    );
 
     useEffect(() => {
         if (currentAccount) {
             const dbName = getDbName(currentAccount.did);
-            openDb(dbName)
+            open(dbName)
                 .then((response) => console.log("Database created/opened:", dbName, response))
                 .catch((err) => console.error("Error creating/opening database:", dbName, err));
         } else {
-            closeDb();
+            close();
         }
-    }, [currentAccount, openDb]);
+    }, [currentAccount, open]);
 
     return (
         <DbContext.Provider
             value={{
                 pouchdbWebViewRef: pouchdbWebViewRef,
+                open,
+                close,
+                destroy,
+                get,
+                put,
             }}
         >
             <View style={styles.hidden}>

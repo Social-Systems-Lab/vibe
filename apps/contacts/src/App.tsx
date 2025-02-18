@@ -1,3 +1,4 @@
+// App.tsx - Contacts app main entry point
 import "./App.css";
 import VibeClientComponent from "./components/vibe-client-component";
 

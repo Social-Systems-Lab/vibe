@@ -1,3 +1,4 @@
+// vibe-client-component.tsx
 "use client";
 
 import { useEffect, useState } from "react";

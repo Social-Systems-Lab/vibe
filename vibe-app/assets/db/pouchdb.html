@@ -16,35 +16,80 @@
     <body>
         <script>
             window.ReactNativeWebView.postMessage(JSON.stringify({ response: "Initializing pouchdb" }));
+            let db = null;
 
             // Open/create database
-            function openDb(dbName) {
-                const db = new PouchDB(dbName);
-                window.db = db;
+            async function open(dbName) {
+                if (db) {
+                    db.close();
+                    db = null;
+                }
+                db = new PouchDB(dbName);                
                 return "Database created/opened successfully";
             }
 
             // Close database
-            function closeDb() {
-                if (window.db) {
-                    window.db.close();
+            function close() {
+                if (db) {
+                    db.close();
+                    db = null;
                     return "Database closed successfully";
                 } else {
                     return "Database not found";
                 }
             }
 
+            async function destroy() {
+                if (db) {
+                    await db.destroy();
+                    db = null;
+                    return "Database destroyed successfully";
+                } else {
+                    return "Database not found";
+                }
+            }
+
+            async function put(doc) {
+                if (doc._id) {
+                    // get existing doc
+                    let existing = await db.get(doc._id).catch(() => null);
+                    if (existing && existing._rev) {
+                        doc._rev = existing._rev;
+                    }
+                }
+                return await db.put(doc);
+            }
+
+            async function get(docId) {
+                return await db.get(docId);
+            }
+
             // Listener for React Native messages
-            window.addEventListener("message", (event) => {
+            window.addEventListener("message", async (event) => {
                 const { action, payload, requestId } = event.data;
+                let response;
 
                 try {
-                    let response;
-                    if (action === "openDb") {
-                        const { dbName } = payload;
-                        response = openDb(dbName);
-                    } else if (action === "closeDb") {
-                        response = closeDb();
+                    switch (action) {
+                        case "open": 
+                            response = open(payload.dbName);
+                            break;
+
+                        case "close":
+                            response = close();
+                            break;
+
+                        case "destroy":
+                            response = await destroy();
+                            break;
+
+                        case "put":
+                            response = await put(payload);
+                            break;
+
+                        case "get":
+                            response = await get(payload.docId);
+                            break;
                     }
 
                     // Respond back to React Native

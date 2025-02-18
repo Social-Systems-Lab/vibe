@@ -1,12 +1,15 @@
 // test.tsx - Test screen for account creation, login, encryption, etc.
 import React, { useState } from "react";
 import { ScrollView, View, Text, TextInput, Button, ActivityIndicator, StyleSheet, TouchableOpacity } from "react-native";
-import { useAuth, AuthType } from "@/components/auth/auth-context";
+import { useAuth } from "@/components/auth/auth-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { AuthType } from "@/types/types";
+import { useDb } from "@/components/db/db-context";
 
 export default function TestScreen() {
     const { createAccount, login, logout, accounts, currentAccount, encryptData, decryptData, deleteAccount } = useAuth();
+    const { put, get } = useDb();
     const router = useRouter();
 
     const [accountName, setAccountName] = useState<string>("");
@@ -16,6 +19,9 @@ export default function TestScreen() {
     const [dataToEncrypt, setDataToEncrypt] = useState<string>("");
     const [encryptedData, setEncryptedData] = useState<string | null>(null);
     const [decryptedData, setDecryptedData] = useState<string | null>(null);
+
+    const [dataToWrite, setDataToWrite] = useState<string>("");
+    const [readData, setReadData] = useState<any>(null);
 
     const [isLoading, setIsLoading] = useState<boolean>(false);
 
@@ -67,6 +73,36 @@ export default function TestScreen() {
             setDecryptedData(decrypted);
         } catch (error) {
             console.error("Error decrypting data:", error);
+        }
+        setIsLoading(false);
+    };
+
+    const handleWriteData = async () => {
+        setIsLoading(true);
+        try {
+            if (!currentAccount) {
+                console.error("No account selected");
+                return;
+            }
+            await put({ _id: currentAccount.did, testData: dataToWrite });
+            setDataToWrite("");
+        } catch (error) {
+            console.error("Error writing data:", error);
+        }
+        setIsLoading(false);
+    };
+
+    const handleReadData = async () => {
+        setIsLoading(true);
+        try {
+            if (!currentAccount) {
+                console.error("No account selected");
+                return;
+            }
+            const result = await get(currentAccount.did);
+            setReadData(result);
+        } catch (error) {
+            console.error("Error reading data:", error);
         }
         setIsLoading(false);
     };
@@ -145,6 +181,15 @@ export default function TestScreen() {
                 <Text>Encrypted Data: {encryptedData ? encryptedData.slice(0, 20) + "..." : "N/A"}</Text>
                 <Button title="Decrypt Data" onPress={handleDecryptData} />
                 <Text>Decrypted Data: {decryptedData ? decryptedData : "N/A"}</Text>
+                {currentAccount && (
+                    <>
+                        <TextInput placeholder="Data to Write" value={dataToWrite} onChangeText={setDataToWrite} style={styles.input} />
+                        <Button title="Write Data" onPress={handleWriteData} />
+                        <Text>Data: {currentAccount.did}</Text>
+                        <Button title="Read Data" onPress={handleReadData} />
+                        <Text>Read Data: {readData ? JSON.stringify(readData) : "N/A"}</Text>
+                    </>
+                )}
             </View>
 
             <View style={styles.section}>

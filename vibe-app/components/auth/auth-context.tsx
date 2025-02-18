@@ -1,4 +1,4 @@
-// auth-context.tsx - RSA key generation and signing context
+// auth-context.tsx - User account and auth management. RSA key generation and signing context
 // Uses a WebView to interact with the jsrsasign library
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
