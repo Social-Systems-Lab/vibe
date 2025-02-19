@@ -1,4 +1,4 @@
-// index.ts - Vibe SSI app framework SDK
+// index.ts - Vibe SDK
 declare global {
     interface Window {
         _VIBE_ENABLED?: boolean;
@@ -16,7 +16,7 @@ type Account = {
 };
 
 type VibeState = {
-    account: Account | null;
+    account: Account | undefined;
     permissions: Record<string, "always" | "ask" | "never">;
 };
 
@@ -35,13 +35,14 @@ type Unsubscribe = () => void;
 enum MessageType {
     PAGE_LOADED = "PageLoaded",
     INIT_REQUEST = "InitRequest",
+    READ_ONCE_REQUEST = "ReadOnceRequest",
     WRITE_REQUEST = "WriteRequest",
     NATIVE_RESPONSE = "NativeResponse",
     LOG_REQUEST = "LogRequest",
 }
 
 const vibe = (() => {
-    let _state: VibeState = { account: null, permissions: {} }; // Initial state
+    let _state: VibeState = { account: undefined, permissions: {} }; // Initial state
     let _listeners: Callback[] = []; // State listeners
     const pendingRequests: Record<string, (value: any) => void> = {}; // Tracks requests
 
@@ -79,15 +80,28 @@ const vibe = (() => {
         };
     };
 
-    const writeData = (data: any): Promise<any> => {
+    const readOnce = (collection: string, filter?: any): Promise<any> => {
         if (!isInVibeApp()) {
             return Promise.reject(
-                new Error("writeData called when vibe is not enabled. Make sure to check vibe.enabled and call vibe.init to initialize the app")
+                new Error("readOnce called when vibe is not enabled. Make sure to check vibe.enabled and call vibe.init to initialize the app")
             );
         }
 
         return sendAsyncToNativeApp({
+            type: MessageType.READ_ONCE_REQUEST,
+            collection,
+            filter,
+        });
+    };
+
+    const write = (collection: string, data: any): Promise<any> => {
+        if (!isInVibeApp()) {
+            return Promise.reject(new Error("write called when vibe is not enabled. Make sure to check vibe.enabled and call vibe.init to initialize the app"));
+        }
+
+        return sendAsyncToNativeApp({
             type: MessageType.WRITE_REQUEST,
+            collection,
             data,
         });
     };
@@ -258,7 +272,8 @@ const vibe = (() => {
     return {
         isInVibeApp,
         init,
-        writeData,
+        readOnce,
+        write,
         _state,
         _listeners,
         handleNativeResponse,

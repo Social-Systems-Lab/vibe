@@ -1,12 +1,14 @@
+export type Operation = "read" | "write";
+export type PermissionSetting = "always" | "ask" | "never";
+
 export interface InstalledApp {
     appId: string;
     name: string;
     description: string;
     iconUrl: string;
     url: string;
-    permissions: Record<string, "always" | "ask" | "never">;
-    hidden: boolean; // not shown on home screen
-    // Possibly layout info for multi-page home screens
+    permissions: Record<string, PermissionSetting>;
+    hidden: boolean;
     homeScreenPage?: number;
     homeScreenPosition?: number;
 }
@@ -30,4 +32,9 @@ export type Account = {
     pictureUrl?: string;
     requireAuthentication: AuthType;
     updatedAt?: number; // timestamp for cache busting
+};
+
+export type ReadResult = {
+    doc: any;
+    docs: any[];
 };

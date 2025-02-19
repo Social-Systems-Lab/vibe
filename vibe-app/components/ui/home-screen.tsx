@@ -2,7 +2,7 @@ import React, { useState, useRef } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, Dimensions, Animated } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTabs } from "./tab-context";
-import { useAppRegistry } from "../app/app-registry-context";
+import { useAppService } from "../app/app-service-context";
 import { InstalledApp } from "@/types/types";
 import { SquircleIcon } from "./squircle";
 import { PanGestureHandler, State } from "react-native-gesture-handler";
@@ -12,7 +12,7 @@ const SWIPE_THRESHOLD = width / 5;
 
 export default function HomeScreen() {
     const { addTab } = useTabs();
-    const { installedApps } = useAppRegistry();
+    const { installedApps } = useAppService();
     const [currentPage, setCurrentPage] = useState(0);
     const translateX = useRef(new Animated.Value(0)).current;
     const lastOffset = useRef(0);

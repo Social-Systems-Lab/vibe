@@ -1,14 +1,24 @@
-// App.tsx - Contacts app main entry point
-import "./App.css";
-import VibeClientComponent from "./components/vibe-client-component";
+// App.tsx
+import React from "react";
+import { AppManifest } from "vibe-sdk";
+import { VibeProvider } from "./components/vibe-context";
+import Contacts from "./components/contacts";
+
+const manifest: AppManifest = {
+    id: "dev.vibeapp.contacts",
+    name: "Contacts",
+    description: "Official Contacts App",
+    permissions: ["read.contacts", "write.contacts"],
+    pictureUrl: "http://192.168.10.204:5201/icon.png",
+};
 
 function App() {
     return (
-        <div className="flex flex-col items-center w-full">
-            <div className="font-bold text-3xl">Contacts</div>
-            <p className="read-the-docs">Click on the Vite and React logos to learn more</p>
-            <VibeClientComponent />
-        </div>
+        <VibeProvider manifest={manifest} autoInit>
+            <div>
+                <Contacts />
+            </div>
+        </VibeProvider>
     );
 }
 

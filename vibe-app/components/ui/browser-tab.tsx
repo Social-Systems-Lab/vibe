@@ -6,8 +6,9 @@ import WebView, { WebViewMessageEvent } from "react-native-webview";
 import { useAuth } from "@/components/auth/auth-context";
 import { MessageType } from "@/sdk";
 import { TabInfo, useTabs } from "./tab-context";
-import { useAppRegistry } from "../app/app-registry-context";
+import { useAppService } from "../app/app-service-context";
 import { captureScreen } from "react-native-view-shot";
+import { InstalledApp, PermissionSetting, ReadResult } from "@/types/types";
 
 interface Props {
     tab: TabInfo; // { id: string, title: string, url: string, type: 'webview' }
@@ -15,13 +16,14 @@ interface Props {
 
 export default function BrowserTab({ tab }: Props) {
     const { currentAccount, initialized } = useAuth();
-    const { installedApps, addOrUpdateApp } = useAppRegistry();
+    const { installedApps, addOrUpdateApp, checkPermission, readOnce } = useAppService();
     const { updateTabScreenshot } = useTabs();
     const webViewRef = useRef<WebView>(null);
     const wrapperRef = useRef<View>(null);
 
     const [webViewUrl, setWebViewUrl] = useState<string>(tab.url);
     const [jsCode, setJsCode] = useState<string>();
+    const [currentApp, setCurrentApp] = useState<InstalledApp | undefined>(undefined);
 
     // Permission & manifest states
     const [activeManifest, setActiveManifest] = useState<any>();
@@ -30,6 +32,13 @@ export default function BrowserTab({ tab }: Props) {
     const [permissionsIndicator, setPermissionsIndicator] = useState(false);
     const [writeRequest, setWriteRequest] = useState<any>(null);
     const [showJson, setShowJson] = useState<boolean>(false);
+    const [readModalVisible, setReadModalVisible] = useState(false);
+    const [readPromptData, setReadPromptData] = useState<{
+        requestId: string;
+        collection: string;
+        filter: any;
+        results: ReadResult;
+    } | null>(null);
 
     useEffect(() => {
         // Whenever parent changes tab.url, update our local webViewUrl
@@ -70,6 +79,8 @@ export default function BrowserTab({ tab }: Props) {
             const { type, requestId } = data;
             if (type === MessageType.INIT_REQUEST) {
                 handleInitRequest(data, requestId);
+            } else if (type === MessageType.READ_ONCE_REQUEST) {
+                handleReadOnceRequest(data, requestId);
             } else if (type === MessageType.WRITE_REQUEST) {
                 handleWriteRequest(data, requestId);
             } else if (type === MessageType.LOG_REQUEST) {
@@ -84,30 +95,121 @@ export default function BrowserTab({ tab }: Props) {
         }
     };
 
+    function buildNewPermissions(newPermsArray: string[], oldPermsObj: Record<string, PermissionSetting>) {
+        const newPermsObj: Record<string, PermissionSetting> = {};
+
+        for (const perm of newPermsArray) {
+            // If old perms had it, keep the old setting:
+            if (oldPermsObj.hasOwnProperty(perm)) {
+                newPermsObj[perm] = oldPermsObj[perm];
+            } else {
+                // brand-new permission => set a default
+                const isRead = perm.toLowerCase().startsWith("read");
+                newPermsObj[perm] = isRead ? "always" : "ask";
+            }
+        }
+
+        return newPermsObj;
+    }
+
+    function permissionsChanged(oldPerms: Record<string, PermissionSetting>, newPerms: Record<string, PermissionSetting>): boolean {
+        const oldKeys = Object.keys(oldPerms).sort();
+        const newKeys = Object.keys(newPerms).sort();
+        if (oldKeys.length !== newKeys.length) return true;
+
+        for (let i = 0; i < oldKeys.length; i++) {
+            if (oldKeys[i] !== newKeys[i]) {
+                return true;
+            }
+            const key = oldKeys[i];
+            if (oldPerms[key] !== newPerms[key]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // Init (permission) requests from the page
     const handleInitRequest = (data: any, requestId: string) => {
         const { manifest } = data;
         const existingApp = installedApps.find((app) => app.appId === manifest.id);
 
-        if (existingApp) {
-            // TODO check if app manifest has changed and if so ask for permissions again (for new permissions)
-            const newApp = {
-                appId: manifest.id,
-                name: manifest.name,
-                description: manifest.description,
-                iconUrl: manifest.pictureUrl,
-                url: tab.url,
-                permissions: existingApp.permissions,
-            };
-            addOrUpdateApp(newApp);
+        console.log("Init request", existingApp);
 
-            sendNativeResponse({ stateUpdate: { account: currentAccount, permissions: existingApp.permissions } });
-            setPermissionsIndicator(false);
+        if (existingApp) {
+            const updatedPerms = buildNewPermissions(manifest.permissions, existingApp.permissions);
+            const hasChanges = permissionsChanged(existingApp.permissions, updatedPerms);
+
+            if (hasChanges) {
+                // We have new or changed permissions => re-ask user
+                setActiveManifest({
+                    ...manifest,
+                    permissionsState: updatedPerms,
+                });
+                setPermissionsIndicator(true);
+            } else {
+                const newApp: Partial<InstalledApp> = {
+                    appId: manifest.id,
+                    name: manifest.name,
+                    description: manifest.description,
+                    iconUrl: manifest.pictureUrl,
+                    url: tab.url,
+                    permissions: existingApp.permissions,
+                };
+                addOrUpdateApp(newApp);
+                setCurrentApp(existingApp);
+
+                sendNativeResponse({ stateUpdate: { account: currentAccount, permissions: existingApp.permissions } });
+                setPermissionsIndicator(false);
+            }
         } else {
             // If new app, build a default permission state
-            const permissionsState = Object.fromEntries(manifest.permissions.map((perm: string) => [perm, perm.startsWith("Read") ? "always" : "ask"]));
+            const permissionsState = Object.fromEntries(manifest.permissions.map((perm: string) => [perm, perm.startsWith("read") ? "always" : "ask"]));
             setActiveManifest({ ...manifest, permissionsState });
             setPermissionsIndicator(true);
+        }
+    };
+
+    const handleReadOnceRequest = async (data: any, requestId: string) => {
+        if (!currentApp) {
+            sendNativeResponse({ requestId, error: "No app active. Make sure you call init before doing any operations" });
+            return;
+        }
+
+        const { collection, filter } = data;
+
+        // check permission
+        console.log("checking permission for", currentApp.appId, "read", collection);
+        const permission = await checkPermission(currentApp.appId, "read", collection);
+        console.log("permission = ", permission);
+        if (permission === "never") {
+            sendNativeResponse({ requestId, error: "Permission denied" });
+            return;
+        }
+
+        // do the read
+        try {
+            console.log("calling readOnce with params ", collection, filter);
+            const results = await readOnce(collection, filter);
+
+            if (!results.doc) {
+                // if the result is empty we simply return the result
+                sendNativeResponse({ requestId, result: results });
+            } else if (permission === "always") {
+                // pass on the results to the web app
+                sendNativeResponse({ requestId, result: results });
+            } else if (permission === "ask") {
+                // prompt the user to allow or reject the read
+                setReadPromptData({
+                    requestId,
+                    collection,
+                    filter,
+                    results,
+                });
+                setReadModalVisible(true);
+            }
+        } catch (error: any) {
+            sendNativeResponse({ requestId, error: error.message });
         }
     };
 
@@ -138,20 +240,23 @@ export default function BrowserTab({ tab }: Props) {
     };
 
     // Accept or reject the entire permission set
-    const handleAccept = (permissions: { [key: string]: "always" | "ask" | "never" }) => {
+    const handleAccept = (permissions: { [key: string]: PermissionSetting }) => {
         if (!activeManifest) return;
 
-        const newApp = {
+        const newApp: InstalledApp = {
             appId: activeManifest.id,
             name: activeManifest.name,
             description: activeManifest.description,
             iconUrl: activeManifest.pictureUrl,
             url: tab.url,
             permissions,
-            pinned: true,
             hidden: false,
         };
+
+        console.log("Add or update app", newApp);
+
         addOrUpdateApp(newApp);
+        setCurrentApp(newApp);
 
         setModalVisible(false);
         setPermissionsIndicator(false);
@@ -176,6 +281,33 @@ export default function BrowserTab({ tab }: Props) {
             return { ...prev, permissionsState: updatedPermissionsState };
         });
     };
+
+    function handleReadReject() {
+        if (!readPromptData) return;
+        const { requestId, collection } = readPromptData;
+
+        // Optionally update permission to "never"
+        // e.g. appService.updatePermission(currentApp.appId, "read", collection, "never");
+
+        sendNativeResponse({ requestId, error: "Permission denied" });
+        setReadPromptData(null);
+        setReadModalVisible(false);
+    }
+
+    async function handleReadAllow() {
+        if (!readPromptData || !currentApp) return;
+        const { requestId, collection, results } = readPromptData;
+
+        // If user wants "Don't ask again," you might do:
+        // await updatePermission(currentApp.appId, "read", collection, "always");
+        // Then next time we won't prompt.
+
+        // Now respond with the data we already read from the DB
+        sendNativeResponse({ requestId, result: results });
+
+        setReadPromptData(null);
+        setReadModalVisible(false);
+    }
 
     // Accept or reject “write” requests
     const handleWriteAccept = () => {
@@ -272,11 +404,39 @@ export default function BrowserTab({ tab }: Props) {
                             <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={handleReject}>
                                 <Text style={styles.actionButtonText}>Cancel</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.actionButton, styles.allowButton]}
-                                onPress={() => handleAccept(Object.fromEntries(activeManifest.permissions.map((p: string) => [p, "always"])))}
-                            >
+                            <TouchableOpacity style={[styles.actionButton, styles.allowButton]} onPress={() => handleAccept(activeManifest.permissionsState)}>
                                 <Text style={styles.actionButtonText}>Allow Access</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Modal for read requests */}
+            <Modal visible={readModalVisible} transparent animationType="fade">
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalCard}>
+                        <View style={styles.modalHeader}>
+                            {activeManifest?.pictureUrl && <Image source={{ uri: activeManifest.pictureUrl }} style={styles.appIcon} />}
+                            <Text style={styles.appName}>{activeManifest?.name}</Text>
+                        </View>
+
+                        <Text style={styles.appDescription}>This website wants to read {readPromptData?.results.docs.length ?? 0} documents.</Text>
+
+                        <TouchableOpacity onPress={() => setShowJson(!showJson)}>
+                            <Text style={styles.viewJsonButton}>{showJson ? "Hide JSON Object" : "View JSON Object"}</Text>
+                        </TouchableOpacity>
+                        {showJson && <Text style={styles.jsonText}>{JSON.stringify(readPromptData?.results, null, 2)}</Text>}
+
+                        {/* Possibly let the user see some partial data or a count only. */}
+                        {/* Also consider a checkbox for "Don't ask again" => set to "always" or "never" */}
+
+                        <View style={styles.actionButtons}>
+                            <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={handleReadReject}>
+                                <Text style={styles.actionButtonText}>Deny</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[styles.actionButton, styles.allowButton]} onPress={handleReadAllow}>
+                                <Text style={styles.actionButtonText}>Allow</Text>
                             </TouchableOpacity>
                         </View>
                     </View>

@@ -185,7 +185,6 @@ export default function TestScreen() {
                     <>
                         <TextInput placeholder="Data to Write" value={dataToWrite} onChangeText={setDataToWrite} style={styles.input} />
                         <Button title="Write Data" onPress={handleWriteData} />
-                        <Text>Data: {currentAccount.did}</Text>
                         <Button title="Read Data" onPress={handleReadData} />
                         <Text>Read Data: {readData ? JSON.stringify(readData) : "N/A"}</Text>
                     </>

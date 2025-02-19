@@ -5,7 +5,7 @@ import { Stack, useRouter } from "expo-router";
 import { WebViewProvider } from "@/components/ui/web-view-context";
 import { Linking, StatusBar, useColorScheme } from "react-native";
 import { TabsProvider } from "@/components/ui/tab-context";
-import { AppRegistryProvider } from "@/components/app/app-registry-context";
+import { AppServiceProvider } from "@/components/app/app-service-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { DbProvider } from "@/components/db/db-context";
 
@@ -50,7 +50,7 @@ export default function RootLayout() {
             <TabsProvider>
                 <AuthProvider>
                     <DbProvider>
-                        <AppRegistryProvider>
+                        <AppServiceProvider>
                             <GestureHandlerRootView>
                                 <StatusBar
                                     backgroundColor={colorScheme === "light" ? "#FFFFFF" : "#1E293B"}
@@ -61,7 +61,7 @@ export default function RootLayout() {
                                     <Stack.Screen name="index" />
                                 </Stack>
                             </GestureHandlerRootView>
-                        </AppRegistryProvider>
+                        </AppServiceProvider>
                     </DbProvider>
                 </AuthProvider>
             </TabsProvider>

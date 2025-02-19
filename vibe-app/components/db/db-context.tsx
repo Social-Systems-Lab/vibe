@@ -1,4 +1,4 @@
-// db-context.tsx - Database management for storing user's personal data
+// db-context.tsx - Low-level interface for storing user/app data in PouchDB.
 // Uses a WebView to interact with the pouchdb library
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
@@ -12,9 +12,10 @@ type DbContextType = {
     pouchdbWebViewRef: React.RefObject<WebView>;
     open: (dbName: string) => Promise<any>;
     close: () => Promise<any>;
+    destroy: () => Promise<any>;
     put: (doc: any) => Promise<any>;
     get: (docId: string) => Promise<any>;
-    destroy: () => Promise<any>;
+    find: (query: any) => Promise<any>;
 };
 
 const DbContext = createContext<DbContextType | undefined>(undefined);
@@ -96,6 +97,16 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         [callWebViewFunction]
     );
 
+    const find = useCallback(
+        (query: any) => {
+            return callWebViewFunction({
+                action: "find",
+                payload: { query },
+            });
+        },
+        [callWebViewFunction]
+    );
+
     useEffect(() => {
         if (currentAccount) {
             const dbName = getDbName(currentAccount.did);
@@ -116,6 +127,7 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                 destroy,
                 get,
                 put,
+                find,
             }}
         >
             <View style={styles.hidden}>

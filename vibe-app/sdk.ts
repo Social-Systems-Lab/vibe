@@ -34,6 +34,7 @@ export type Unsubscribe = () => void;
 export enum MessageType {
     PAGE_LOADED = "PageLoaded",
     INIT_REQUEST = "InitRequest",
+    READ_ONCE_REQUEST = "ReadOnceRequest",
     WRITE_REQUEST = "WriteRequest",
     NATIVE_RESPONSE = "NativeResponse",
     LOG_REQUEST = "LogRequest",
