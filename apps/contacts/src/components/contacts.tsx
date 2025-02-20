@@ -40,7 +40,7 @@ export default function Contacts() {
             const result = await write("contacts", newContact);
             console.log("Write result", result);
             // Optionally reload contacts
-            await handleLoadContacts();
+            //await handleLoadContacts();
         } catch (err) {
             console.error("Error writing contact:", err);
         }

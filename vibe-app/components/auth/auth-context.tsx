@@ -71,7 +71,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     delete pendingRequests.current[requestId];
                     reject(new Error("WebView function timed out"));
                 }
-            }, 60000); // 60 seconds timeout
+            }, 5 * 60000); // 5*60 seconds timeout
         });
     }, []);
 

@@ -111,7 +111,7 @@ export function AppServiceProvider({ children }: { children: React.ReactNode }) 
         const query = {
             selector: {
                 ...filter,
-                _collection: collection,
+                $collection: collection,
             },
         };
 
@@ -129,12 +129,15 @@ export function AppServiceProvider({ children }: { children: React.ReactNode }) 
         if (!doc) return undefined; // TODO return error message
         if (!doc._id) {
             // create random ID for the document
-            doc._id = `${collection}/`;
+            // TODO generate uuid
+            doc._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
         } else if (!doc._id.startsWith(`${collection}/`)) {
             // TODO return error message
             return undefined;
         }
+        doc.$collection = collection;
 
+        console.log("writing doc", doc);
         const result = await put(doc);
         return result;
     }

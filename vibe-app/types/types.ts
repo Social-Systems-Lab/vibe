@@ -5,7 +5,7 @@ export interface InstalledApp {
     appId: string;
     name: string;
     description: string;
-    iconUrl: string;
+    pictureUrl: string;
     url: string;
     permissions: Record<string, PermissionSetting>;
     hidden: boolean;

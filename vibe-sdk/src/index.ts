@@ -94,7 +94,7 @@ const vibe = (() => {
         });
     };
 
-    const write = (collection: string, data: any): Promise<any> => {
+    const write = (collection: string, doc: any): Promise<any> => {
         if (!isInVibeApp()) {
             return Promise.reject(new Error("write called when vibe is not enabled. Make sure to check vibe.enabled and call vibe.init to initialize the app"));
         }
@@ -102,7 +102,7 @@ const vibe = (() => {
         return sendAsyncToNativeApp({
             type: MessageType.WRITE_REQUEST,
             collection,
-            data,
+            doc,
         });
     };
 
@@ -127,7 +127,7 @@ const vibe = (() => {
                     delete pendingRequests[requestId];
                     reject(new Error("Request timed out"));
                 }
-            }, 60000); // 60 seconds
+            }, 10 * 60000); // 10*60 seconds
         });
     };
 

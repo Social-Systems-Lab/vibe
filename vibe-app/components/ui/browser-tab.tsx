@@ -16,7 +16,7 @@ interface Props {
 
 export default function BrowserTab({ tab }: Props) {
     const { currentAccount, initialized } = useAuth();
-    const { installedApps, addOrUpdateApp, checkPermission, readOnce } = useAppService();
+    const { installedApps, addOrUpdateApp, checkPermission, readOnce, write } = useAppService();
     const { updateTabScreenshot } = useTabs();
     const webViewRef = useRef<WebView>(null);
     const wrapperRef = useRef<View>(null);
@@ -28,9 +28,7 @@ export default function BrowserTab({ tab }: Props) {
     // Permission & manifest states
     const [activeManifest, setActiveManifest] = useState<any>();
     const [modalVisible, setModalVisible] = useState(false);
-    const [writeModalVisible, setWriteModalVisible] = useState(false);
     const [permissionsIndicator, setPermissionsIndicator] = useState(false);
-    const [writeRequest, setWriteRequest] = useState<any>(null);
     const [showJson, setShowJson] = useState<boolean>(false);
     const [readModalVisible, setReadModalVisible] = useState(false);
     const [readPromptData, setReadPromptData] = useState<{
@@ -38,6 +36,12 @@ export default function BrowserTab({ tab }: Props) {
         collection: string;
         filter: any;
         results: ReadResult;
+    } | null>(null);
+    const [writeModalVisible, setWriteModalVisible] = useState(false);
+    const [writePromptData, setWritePromptData] = useState<{
+        requestId: string;
+        collection: string;
+        doc: any;
     } | null>(null);
 
     useEffect(() => {
@@ -72,7 +76,7 @@ export default function BrowserTab({ tab }: Props) {
     }, [initialized]);
 
     // Handle messages coming from the WebView
-    const handleWebViewMessage = (event: WebViewMessageEvent) => {
+    const handleWebViewMessage = async (event: WebViewMessageEvent) => {
         try {
             if (!event.nativeEvent.data) return;
             const data = JSON.parse(event.nativeEvent.data);
@@ -80,9 +84,9 @@ export default function BrowserTab({ tab }: Props) {
             if (type === MessageType.INIT_REQUEST) {
                 handleInitRequest(data, requestId);
             } else if (type === MessageType.READ_ONCE_REQUEST) {
-                handleReadOnceRequest(data, requestId);
+                await handleReadOnceRequest(data, requestId);
             } else if (type === MessageType.WRITE_REQUEST) {
-                handleWriteRequest(data, requestId);
+                await handleWriteRequest(data, requestId);
             } else if (type === MessageType.LOG_REQUEST) {
                 console.log("WebView Log:", data.message);
             } else if (type === MessageType.PAGE_LOADED) {
@@ -140,7 +144,8 @@ export default function BrowserTab({ tab }: Props) {
             const updatedPerms = buildNewPermissions(manifest.permissions, existingApp.permissions);
             const hasChanges = permissionsChanged(existingApp.permissions, updatedPerms);
 
-            if (hasChanges) {
+            if (true || hasChanges) {
+                // TODO disable always asking
                 // We have new or changed permissions => re-ask user
                 setActiveManifest({
                     ...manifest,
@@ -152,7 +157,7 @@ export default function BrowserTab({ tab }: Props) {
                     appId: manifest.id,
                     name: manifest.name,
                     description: manifest.description,
-                    iconUrl: manifest.pictureUrl,
+                    pictureUrl: manifest.pictureUrl,
                     url: tab.url,
                     permissions: existingApp.permissions,
                 };
@@ -172,7 +177,7 @@ export default function BrowserTab({ tab }: Props) {
 
     const handleReadOnceRequest = async (data: any, requestId: string) => {
         if (!currentApp) {
-            sendNativeResponse({ requestId, error: "No app active. Make sure you call init before doing any operations" });
+            sendNativeResponse({ requestId, error: "readOnce failed, no app active. Make sure you call init before doing any operations" });
             return;
         }
 
@@ -214,17 +219,45 @@ export default function BrowserTab({ tab }: Props) {
     };
 
     // Write requests (e.g. “please write data to user’s profile”)
-    const handleWriteRequest = (data: any, requestId: string) => {
-        const { object } = data.data;
-        const writePermission = activeManifest?.permissionsState[object.type];
-        if (writePermission === "always") {
-            console.log("Writing data automatically:", object);
-            sendNativeResponse({ requestId, result: "Data written successfully" });
-        } else if (writePermission === "ask") {
-            setWriteRequest({ ...data, requestId });
-            setWriteModalVisible(true);
-        } else {
+    const handleWriteRequest = async (data: any, requestId: string) => {
+        if (!currentApp) {
+            sendNativeResponse({ requestId, error: "write failed, no app active. Make sure you call init before doing any operations" });
+            return;
+        }
+
+        const { collection, doc } = data;
+
+        // check permission
+        console.log("checking permission for", currentApp.appId, "write", collection);
+        const permission = await checkPermission(currentApp.appId, "write", collection);
+        console.log("permission = ", permission);
+        if (permission === "never") {
             sendNativeResponse({ requestId, error: "Permission denied" });
+            return;
+        }
+
+        // do the write
+        try {
+            // TODO here we can check for existing document that is going to be changed, and highlight the diff
+            // for the user in the modal
+
+            if (permission === "always") {
+                console.log("calling write with params ", collection, doc);
+                const results = await write(collection, doc);
+
+                // pass on the results to the web app
+                sendNativeResponse({ requestId, result: results });
+            } else if (permission === "ask") {
+                // prompt the user to allow or reject the write
+                setWritePromptData({
+                    requestId,
+                    collection,
+                    doc,
+                });
+                setWriteModalVisible(true);
+            }
+        } catch (error: any) {
+            sendNativeResponse({ requestId, error: error.message });
         }
     };
 
@@ -247,7 +280,7 @@ export default function BrowserTab({ tab }: Props) {
             appId: activeManifest.id,
             name: activeManifest.name,
             description: activeManifest.description,
-            iconUrl: activeManifest.pictureUrl,
+            pictureUrl: activeManifest.pictureUrl,
             url: tab.url,
             permissions,
             hidden: false,
@@ -286,7 +319,7 @@ export default function BrowserTab({ tab }: Props) {
         if (!readPromptData) return;
         const { requestId, collection } = readPromptData;
 
-        // Optionally update permission to "never"
+        // TODO  update permission to "never" if "Don't ask again" is checked
         // e.g. appService.updatePermission(currentApp.appId, "read", collection, "never");
 
         sendNativeResponse({ requestId, error: "Permission denied" });
@@ -298,7 +331,7 @@ export default function BrowserTab({ tab }: Props) {
         if (!readPromptData || !currentApp) return;
         const { requestId, collection, results } = readPromptData;
 
-        // If user wants "Don't ask again," you might do:
+        // TODO If user wants "Don't ask again," you might do:
         // await updatePermission(currentApp.appId, "read", collection, "always");
         // Then next time we won't prompt.
 
@@ -309,20 +342,35 @@ export default function BrowserTab({ tab }: Props) {
         setReadModalVisible(false);
     }
 
-    // Accept or reject “write” requests
-    const handleWriteAccept = () => {
-        if (!writeRequest) return;
-        const { requestId } = writeRequest;
-        sendNativeResponse({ requestId, result: "Data written successfully" });
-        setWriteModalVisible(false);
-    };
+    function handleWriteReject() {
+        if (!writePromptData) return;
+        const { requestId } = writePromptData;
 
-    const handleWriteReject = () => {
-        if (!writeRequest) return;
-        const { requestId } = writeRequest;
+        // TODO update permission to "never" if Don't ask again is checked
+        // e.g. appService.updatePermission(currentApp.appId, "write", collection, "never");
+
         sendNativeResponse({ requestId, error: "Permission denied" });
+        setWritePromptData(null);
         setWriteModalVisible(false);
-    };
+    }
+
+    async function handleWriteAllow() {
+        if (!writePromptData || !currentApp) return;
+        const { requestId, collection, doc } = writePromptData;
+
+        // TPDP If user wants "Don't ask again," you might do:
+        // await updatePermission(currentApp.appId, "read", collection, "always");
+        // Then next time we won't prompt.
+
+        // do the write
+        const results = await write(collection, doc);
+
+        // Now respond with the data we already read from the DB
+        sendNativeResponse({ requestId, result: results });
+
+        setWritePromptData(null);
+        setWriteModalVisible(false);
+    }
 
     const captureScreenshot = useCallback(async () => {
         try {
@@ -417,16 +465,21 @@ export default function BrowserTab({ tab }: Props) {
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalCard}>
                         <View style={styles.modalHeader}>
-                            {activeManifest?.pictureUrl && <Image source={{ uri: activeManifest.pictureUrl }} style={styles.appIcon} />}
-                            <Text style={styles.appName}>{activeManifest?.name}</Text>
+                            {activeManifest?.pictureUrl && <Image source={{ uri: currentApp?.pictureUrl }} style={styles.appIcon} />}
+                            <Text style={styles.appName}>{currentApp?.name}</Text>
                         </View>
 
-                        <Text style={styles.appDescription}>This website wants to read {readPromptData?.results.docs.length ?? 0} documents.</Text>
+                        <Text style={styles.appDescription}>
+                            This app wants to read {readPromptData?.results.docs.length ?? 0} documents from your {readPromptData?.collection} collection.
+                        </Text>
 
                         <TouchableOpacity onPress={() => setShowJson(!showJson)}>
-                            <Text style={styles.viewJsonButton}>{showJson ? "Hide JSON Object" : "View JSON Object"}</Text>
+                            <Text style={styles.viewJsonButton}>
+                                {showJson ? "Hide Document" : "View Document"}
+                                {readPromptData?.results?.docs && readPromptData.results.docs.length > 1 ? "s" : ""}
+                            </Text>
                         </TouchableOpacity>
-                        {showJson && <Text style={styles.jsonText}>{JSON.stringify(readPromptData?.results, null, 2)}</Text>}
+                        {showJson && <Text style={styles.jsonText}>{JSON.stringify(readPromptData?.results?.docs, null, 2)}</Text>}
 
                         {/* Possibly let the user see some partial data or a count only. */}
                         {/* Also consider a checkbox for "Don't ask again" => set to "always" or "never" */}
@@ -443,28 +496,31 @@ export default function BrowserTab({ tab }: Props) {
                 </View>
             </Modal>
 
-            {/* Modal for “ask” write requests */}
+            {/* Modal for write requests */}
             <Modal visible={writeModalVisible} transparent animationType="fade">
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalCard}>
                         <View style={styles.modalHeader}>
-                            {activeManifest?.pictureUrl && <Image source={{ uri: activeManifest.pictureUrl }} style={styles.appIcon} />}
-                            <Text style={styles.appName}>{activeManifest?.name}</Text>
+                            {activeManifest?.pictureUrl && <Image source={{ uri: currentApp?.pictureUrl }} style={styles.appIcon} />}
+                            <Text style={styles.appName}>{currentApp?.name}</Text>
                         </View>
 
-                        <Text style={styles.appDescription}>This website wants to {writeRequest?.action?.toLowerCase()} the following data:</Text>
+                        <Text style={styles.appDescription}>This app wants to write a document to your {writePromptData?.collection} collection.</Text>
 
                         <TouchableOpacity onPress={() => setShowJson(!showJson)}>
-                            <Text style={styles.viewJsonButton}>{showJson ? "Hide JSON Object" : "View JSON Object"}</Text>
+                            <Text style={styles.viewJsonButton}>{showJson ? "Hide Document" : "View Document"}</Text>
                         </TouchableOpacity>
-                        {showJson && <Text style={styles.jsonText}>{JSON.stringify(writeRequest?.object, null, 2)}</Text>}
+                        {showJson && <Text style={styles.jsonText}>{JSON.stringify(writePromptData?.doc, null, 2)}</Text>}
+
+                        {/* Possibly let the user see some partial data or a count only. */}
+                        {/* Also consider a checkbox for "Don't ask again" => set to "always" or "never" */}
 
                         <View style={styles.actionButtons}>
                             <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={handleWriteReject}>
-                                <Text style={styles.actionButtonText}>Reject</Text>
+                                <Text style={styles.actionButtonText}>Deny</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={[styles.actionButton, styles.allowButton]} onPress={handleWriteAccept}>
-                                <Text style={styles.actionButtonText}>Accept</Text>
+                            <TouchableOpacity style={[styles.actionButton, styles.allowButton]} onPress={handleWriteAllow}>
+                                <Text style={styles.actionButtonText}>Allow</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -547,7 +603,7 @@ const styles = StyleSheet.create({
     appDescription: {
         fontSize: 14,
         color: "#666",
-        marginBottom: 20,
+        marginBottom: 10,
     },
 
     permissionsList: {

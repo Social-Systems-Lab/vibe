@@ -107,7 +107,7 @@ const vibe = (() => {
                     delete pendingRequests[requestId];
                     reject(new Error("Request timed out"));
                 }
-            }, 60000); // 60 seconds
+            }, 10 * 60000); // 10*60 seconds
         });
     };
 

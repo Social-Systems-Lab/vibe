@@ -71,7 +71,7 @@ export default function HomeScreen() {
                                 data={apps}
                                 renderItem={({ item }) => (
                                     <TouchableOpacity style={styles.appTile} onPress={() => openApp(item.url, item.name)}>
-                                        <SquircleIcon uri={item.iconUrl} size={56} />
+                                        <SquircleIcon uri={item.pictureUrl} size={56} />
                                         <Text style={styles.label} numberOfLines={1}>
                                             {item.name}
                                         </Text>

@@ -66,7 +66,7 @@
                 }
 
                 if (doc._id) {
-                    // get existing doc
+                    // get existing doc if it exist
                     let existing = await db.get(doc._id).catch(() => null);
                     if (existing && existing._rev) {
                         doc._rev = existing._rev;
@@ -88,7 +88,7 @@
                 }
 
                 // make sure default collection index is created
-                await db.createIndex({ index: { fields: ["_collection"]}});
+                await db.createIndex({ index: { fields: ["$collection"]}});
                 const result = await db.find(query);
                 return result;
             }
@@ -113,7 +113,7 @@
                             break;
 
                         case "put":
-                            response = await put(payload);
+                            response = await put(payload.doc);
                             break;
 
                         case "get":

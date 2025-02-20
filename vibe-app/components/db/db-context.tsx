@@ -50,7 +50,7 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                     delete pendingRequests.current[requestId];
                     reject(new Error("WebView function timed out"));
                 }
-            }, 60000); // 60 seconds timeout
+            }, 10 * 60000); // 10*60 seconds timeout
         });
     }, []);
 
@@ -91,7 +91,7 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         (doc: any) => {
             return callWebViewFunction({
                 action: "put",
-                payload: doc,
+                payload: { doc },
             });
         },
         [callWebViewFunction]
