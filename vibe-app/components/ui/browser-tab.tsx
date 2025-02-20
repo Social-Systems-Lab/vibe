@@ -14,6 +14,8 @@ import { TabInfo, useTabs } from "./tab-context";
 import { useAppService } from "../app/app-service-context";
 import { InstalledApp, PermissionSetting, ReadResult } from "@/types/types";
 
+const FORCE_ALWAYS_ASK_PERMISSIONS = __DEV__;
+
 interface Props {
     tab: TabInfo;
 }
@@ -66,6 +68,9 @@ export default function BrowserTab({ tab }: Props) {
     const [showWriteRawJson, setShowWriteRawJson] = useState(false);
     // Toggle whether the single doc is displayed at all in the Write modal
     const [writeDocVisible, setWriteDocVisible] = useState(false);
+
+    const [dontAskAgain, setDontAskAgain] = useState(false);
+    const [showMultipleDocs, setShowMultipleDocs] = useState(false);
 
     useEffect(() => {
         setWebViewUrl(tab.url);
@@ -159,7 +164,7 @@ export default function BrowserTab({ tab }: Props) {
             const updatedPerms = buildNewPermissions(manifest.permissions, existingApp.permissions);
             const hasChanges = permissionsChanged(existingApp.permissions, updatedPerms);
 
-            if (hasChanges) {
+            if (FORCE_ALWAYS_ASK_PERMISSIONS || hasChanges) {
                 setActiveManifest({
                     ...manifest,
                     permissionsState: updatedPerms,
@@ -307,36 +312,78 @@ export default function BrowserTab({ tab }: Props) {
     /** Read modal decisions */
     function handleReadReject() {
         if (!readPromptData) return;
+        if (dontAskAgain && currentApp) {
+            const permKey = `read.${readPromptData.collection}`;
+            const updatedPermissions = {
+                ...currentApp.permissions,
+                [permKey]: "never" as PermissionSetting,
+            };
+            addOrUpdateApp({ ...currentApp, permissions: updatedPermissions });
+        }
+
         const { requestId } = readPromptData;
         sendNativeResponse({ requestId, error: "Permission denied" });
         setReadPromptData(null);
         setReadModalVisible(false);
+        setDontAskAgain(false);
     }
 
     async function handleReadAllow() {
         if (!readPromptData) return;
+        if (dontAskAgain && currentApp) {
+            const permKey = `read.${readPromptData.collection}`;
+            const updatedPermissions = {
+                ...currentApp.permissions,
+                [permKey]: "always" as PermissionSetting,
+            };
+            addOrUpdateApp({ ...currentApp, permissions: updatedPermissions });
+        }
+
         const { requestId, results } = readPromptData;
         sendNativeResponse({ requestId, result: results });
+
         setReadPromptData(null);
         setReadModalVisible(false);
+        setDontAskAgain(false);
+        setDontAskAgain(false);
     }
 
     /** Write modal decisions */
     function handleWriteReject() {
         if (!writePromptData) return;
+        if (dontAskAgain && currentApp) {
+            const permKey = `write.${writePromptData.collection}`;
+            const updatedPermissions = {
+                ...currentApp.permissions,
+                [permKey]: "never" as PermissionSetting,
+            };
+            addOrUpdateApp({ ...currentApp, permissions: updatedPermissions });
+        }
+
         const { requestId } = writePromptData;
         sendNativeResponse({ requestId, error: "Permission denied" });
         setWritePromptData(null);
         setWriteModalVisible(false);
+        setDontAskAgain(false);
     }
 
     async function handleWriteAllow() {
         if (!writePromptData) return;
+        if (dontAskAgain && currentApp) {
+            const permKey = `write.${writePromptData.collection}`;
+            const updatedPermissions = {
+                ...currentApp.permissions,
+                [permKey]: "always" as PermissionSetting,
+            };
+            addOrUpdateApp({ ...currentApp, permissions: updatedPermissions });
+        }
+
         const { requestId, collection, doc } = writePromptData;
         const results = await write(collection, doc);
         sendNativeResponse({ requestId, result: results });
         setWritePromptData(null);
         setWriteModalVisible(false);
+        setDontAskAgain(false);
     }
 
     /** Collapsible doc toggles */
@@ -491,51 +538,89 @@ export default function BrowserTab({ tab }: Props) {
                                 {multipleReadDocs ? (
                                     <>
                                         <View style={styles.docListHeader}>
-                                            {/* Expand/Collapse All */}
-                                            <TouchableOpacity onPress={toggleAllDocs} style={styles.iconButton}>
-                                                <MaterialCommunityIcons
-                                                    name={allExpanded ? "collapse-all-outline" : "expand-all-outline"}
-                                                    size={20}
-                                                    color="#007bff"
-                                                />
+                                            <TouchableOpacity
+                                                onPress={() => {
+                                                    const newShow = !showMultipleDocs;
+                                                    setShowMultipleDocs(newShow);
+                                                    if (newShow && readPromptData?.results?.docs) {
+                                                        // When showing, expand all rows by default.
+                                                        setExpandedDocs(Array(readPromptData.results.docs.length).fill(true));
+                                                        setAllExpanded(true);
+                                                    }
+                                                }}
+                                                style={styles.iconButton}
+                                            >
+                                                <Text style={styles.iconButtonText}>{showMultipleDocs ? "Hide Documents" : "Show Documents"}</Text>
                                             </TouchableOpacity>
+                                            {showMultipleDocs && (
+                                                <>
+                                                    {/* Expand/Collapse All */}
+                                                    <TouchableOpacity onPress={toggleAllDocs} style={styles.iconButton}>
+                                                        <MaterialCommunityIcons
+                                                            name={allExpanded ? "collapse-all-outline" : "expand-all-outline"}
+                                                            size={20}
+                                                            color="#007bff"
+                                                        />
+                                                    </TouchableOpacity>
 
-                                            {/* Toggle raw vs structured */}
-                                            <TouchableOpacity onPress={() => setShowRawJson(!showRawJson)} style={styles.iconButton}>
-                                                {showRawJson ? (
-                                                    <MaterialCommunityIcons name="file-document-outline" size={20} color="#007bff" />
-                                                ) : (
-                                                    <MaterialCommunityIcons name="code-json" size={20} color="#007bff" />
-                                                )}
-                                            </TouchableOpacity>
+                                                    {/* Toggle raw vs structured */}
+                                                    <TouchableOpacity onPress={() => setShowRawJson(!showRawJson)} style={styles.iconButton}>
+                                                        {showRawJson ? (
+                                                            <MaterialCommunityIcons name="file-document-outline" size={20} color="#007bff" />
+                                                        ) : (
+                                                            <MaterialCommunityIcons name="code-json" size={20} color="#007bff" />
+                                                        )}
+                                                    </TouchableOpacity>
+                                                </>
+                                            )}
                                         </View>
 
-                                        <View style={styles.scrollArea}>
-                                            <ScrollView>
-                                                {readPromptData?.results.docs.map((doc, idx) => {
-                                                    const isExpanded = expandedDocs[idx];
-                                                    return (
-                                                        <View key={idx} style={{ marginBottom: 10 }}>
-                                                            <CollapsedDocRow doc={doc} index={idx} isExpanded={isExpanded} onPress={() => toggleDoc(idx)} />
-                                                            {isExpanded && (
-                                                                <View style={styles.expandedContent}>
-                                                                    {showRawJson ? (
-                                                                        <Text style={styles.jsonText}>{JSON.stringify(doc, null, 2)}</Text>
-                                                                    ) : (
-                                                                        renderStructuredFields(doc)
+                                        {showMultipleDocs && (
+                                            <>
+                                                <View style={styles.scrollArea}>
+                                                    <ScrollView>
+                                                        {readPromptData?.results.docs.map((doc, idx) => {
+                                                            const isExpanded = expandedDocs[idx];
+                                                            return (
+                                                                <View key={idx} style={{ marginBottom: 10 }}>
+                                                                    <CollapsedDocRow
+                                                                        doc={doc}
+                                                                        index={idx}
+                                                                        isExpanded={isExpanded}
+                                                                        onPress={() => toggleDoc(idx)}
+                                                                    />
+                                                                    {isExpanded && (
+                                                                        <View style={styles.expandedContent}>
+                                                                            {showRawJson ? (
+                                                                                <Text style={styles.jsonText}>{JSON.stringify(doc, null, 2)}</Text>
+                                                                            ) : (
+                                                                                renderStructuredFields(doc)
+                                                                            )}
+                                                                        </View>
                                                                     )}
                                                                 </View>
-                                                            )}
-                                                        </View>
-                                                    );
-                                                })}
-                                            </ScrollView>
-                                        </View>
+                                                            );
+                                                        })}
+                                                    </ScrollView>
+                                                </View>
+                                            </>
+                                        )}
                                     </>
                                 ) : (
                                     // Single doc
                                     <SingleDocView doc={readPromptData?.results.docs[0]} />
                                 )}
+
+                                <View style={styles.checkboxContainer}>
+                                    <TouchableOpacity onPress={() => setDontAskAgain(!dontAskAgain)} style={styles.checkbox}>
+                                        <MaterialCommunityIcons
+                                            name={dontAskAgain ? "checkbox-marked" : "checkbox-blank-outline"}
+                                            size={24}
+                                            color={dontAskAgain ? "#28a745" : "#ccc"}
+                                        />
+                                    </TouchableOpacity>
+                                    <Text style={styles.checkboxLabel}>Don't ask me again</Text>
+                                </View>
 
                                 <View style={styles.actionButtons}>
                                     <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={handleReadReject}>
@@ -595,6 +680,17 @@ export default function BrowserTab({ tab }: Props) {
                                         </ScrollView>
                                     </View>
                                 )}
+
+                                <View style={styles.checkboxContainer}>
+                                    <TouchableOpacity onPress={() => setDontAskAgain(!dontAskAgain)} style={styles.checkbox}>
+                                        <MaterialCommunityIcons
+                                            name={dontAskAgain ? "checkbox-marked" : "checkbox-blank-outline"}
+                                            size={24}
+                                            color={dontAskAgain ? "#28a745" : "#ccc"}
+                                        />
+                                    </TouchableOpacity>
+                                    <Text style={styles.checkboxLabel}>Don't ask me again</Text>
+                                </View>
 
                                 <View style={styles.actionButtons}>
                                     <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={handleWriteReject}>
@@ -875,5 +971,18 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: "#fff",
         fontWeight: "bold",
+    },
+
+    checkboxContainer: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginBottom: 10,
+    },
+    checkbox: {
+        marginRight: 8,
+    },
+    checkboxLabel: {
+        fontSize: 14,
+        color: "#333",
     },
 });

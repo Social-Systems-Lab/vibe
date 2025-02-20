@@ -43,6 +43,7 @@ export default function Contacts() {
             //await handleLoadContacts();
         } catch (err) {
             console.error("Error writing contact:", err);
+            setError(err instanceof Error ? err.message : "Failed to write contact");
         }
     }
 
