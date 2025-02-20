@@ -1,35 +1,44 @@
 // browser-tab.tsx - Shows a WebView + permission handling for apps/pages
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, StyleSheet, Modal, Text, TouchableOpacity, Image, InteractionManager } from "react-native";
+import { View, StyleSheet, Modal, Text, TouchableOpacity, Image, InteractionManager, ScrollView } from "react-native";
 import WebView, { WebViewMessageEvent } from "react-native-webview";
+import { captureScreen } from "react-native-view-shot";
+
+// Import icons from Expo Vector Icons
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+
 import { useAuth } from "@/components/auth/auth-context";
 import { MessageType } from "@/sdk";
 import { TabInfo, useTabs } from "./tab-context";
 import { useAppService } from "../app/app-service-context";
-import { captureScreen } from "react-native-view-shot";
 import { InstalledApp, PermissionSetting, ReadResult } from "@/types/types";
 
 interface Props {
-    tab: TabInfo; // { id: string, title: string, url: string, type: 'webview' }
+    tab: TabInfo;
 }
+
+// Fields to exclude from "structured" view
+const EXCLUDED_FIELDS = ["_id", "_rev", "$collection"];
 
 export default function BrowserTab({ tab }: Props) {
     const { currentAccount, initialized } = useAuth();
     const { installedApps, addOrUpdateApp, checkPermission, readOnce, write } = useAppService();
     const { updateTabScreenshot } = useTabs();
+
     const webViewRef = useRef<WebView>(null);
     const wrapperRef = useRef<View>(null);
 
     const [webViewUrl, setWebViewUrl] = useState<string>(tab.url);
     const [jsCode, setJsCode] = useState<string>();
-    const [currentApp, setCurrentApp] = useState<InstalledApp | undefined>(undefined);
+    const [currentApp, setCurrentApp] = useState<InstalledApp | undefined>();
 
-    // Permission & manifest states
+    // Manifest & permission states
     const [activeManifest, setActiveManifest] = useState<any>();
     const [modalVisible, setModalVisible] = useState(false);
     const [permissionsIndicator, setPermissionsIndicator] = useState(false);
-    const [showJson, setShowJson] = useState<boolean>(false);
+
+    // Read request states
     const [readModalVisible, setReadModalVisible] = useState(false);
     const [readPromptData, setReadPromptData] = useState<{
         requestId: string;
@@ -37,6 +46,8 @@ export default function BrowserTab({ tab }: Props) {
         filter: any;
         results: ReadResult;
     } | null>(null);
+
+    // Write request states
     const [writeModalVisible, setWriteModalVisible] = useState(false);
     const [writePromptData, setWritePromptData] = useState<{
         requestId: string;
@@ -44,8 +55,19 @@ export default function BrowserTab({ tab }: Props) {
         doc: any;
     } | null>(null);
 
+    // For collapsible docs in Read modal
+    const [expandedDocs, setExpandedDocs] = useState<boolean[]>([]);
+    const [allExpanded, setAllExpanded] = useState(false);
+
+    // Toggle raw JSON vs. structured for the Read modal
+    const [showRawJson, setShowRawJson] = useState(false);
+
+    // Toggle raw JSON vs. structured for the Write modal’s single doc
+    const [showWriteRawJson, setShowWriteRawJson] = useState(false);
+    // Toggle whether the single doc is displayed at all in the Write modal
+    const [writeDocVisible, setWriteDocVisible] = useState(false);
+
     useEffect(() => {
-        // Whenever parent changes tab.url, update our local webViewUrl
         setWebViewUrl(tab.url);
     }, [tab.url]);
 
@@ -54,33 +76,34 @@ export default function BrowserTab({ tab }: Props) {
 
         const code = `
       (function() {
-          window._VIBE_ENABLED = true;
-          window.addEventListener('message', (event) => {
-              if (window.vibe) {
-                  window.vibe.handleNativeResponse(event.data);
-              }
-          });
-
-          function checkReadyState() {
-              if (document.readyState === 'complete') {
-                  window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'PageLoaded' }));
-              } else {
-                  setTimeout(checkReadyState, 500);
-              }
+        window._VIBE_ENABLED = true;
+        window.addEventListener('message', (event) => {
+          if (window.vibe) {
+            window.vibe.handleNativeResponse(event.data);
           }
+        });
 
-          checkReadyState(); // Start checking immediately
+        function checkReadyState() {
+          if (document.readyState === 'complete') {
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'PageLoaded' }));
+          } else {
+            setTimeout(checkReadyState, 500);
+          }
+        }
+
+        checkReadyState();
       })();
     `;
         setJsCode(code);
     }, [initialized]);
 
-    // Handle messages coming from the WebView
+    // Handle messages from WebView
     const handleWebViewMessage = async (event: WebViewMessageEvent) => {
         try {
             if (!event.nativeEvent.data) return;
             const data = JSON.parse(event.nativeEvent.data);
             const { type, requestId } = data;
+
             if (type === MessageType.INIT_REQUEST) {
                 handleInitRequest(data, requestId);
             } else if (type === MessageType.READ_ONCE_REQUEST) {
@@ -99,20 +122,18 @@ export default function BrowserTab({ tab }: Props) {
         }
     };
 
+    /** Permission helpers */
     function buildNewPermissions(newPermsArray: string[], oldPermsObj: Record<string, PermissionSetting>) {
         const newPermsObj: Record<string, PermissionSetting> = {};
-
         for (const perm of newPermsArray) {
-            // If old perms had it, keep the old setting:
             if (oldPermsObj.hasOwnProperty(perm)) {
                 newPermsObj[perm] = oldPermsObj[perm];
             } else {
-                // brand-new permission => set a default
+                // brand new => default
                 const isRead = perm.toLowerCase().startsWith("read");
                 newPermsObj[perm] = isRead ? "always" : "ask";
             }
         }
-
         return newPermsObj;
     }
 
@@ -122,37 +143,30 @@ export default function BrowserTab({ tab }: Props) {
         if (oldKeys.length !== newKeys.length) return true;
 
         for (let i = 0; i < oldKeys.length; i++) {
-            if (oldKeys[i] !== newKeys[i]) {
-                return true;
-            }
+            if (oldKeys[i] !== newKeys[i]) return true;
             const key = oldKeys[i];
-            if (oldPerms[key] !== newPerms[key]) {
-                return true;
-            }
+            if (oldPerms[key] !== newPerms[key]) return true;
         }
         return false;
     }
 
-    // Init (permission) requests from the page
+    /** Init request handler */
     const handleInitRequest = (data: any, requestId: string) => {
         const { manifest } = data;
         const existingApp = installedApps.find((app) => app.appId === manifest.id);
-
-        console.log("Init request", existingApp);
 
         if (existingApp) {
             const updatedPerms = buildNewPermissions(manifest.permissions, existingApp.permissions);
             const hasChanges = permissionsChanged(existingApp.permissions, updatedPerms);
 
-            if (true || hasChanges) {
-                // TODO disable always asking
-                // We have new or changed permissions => re-ask user
+            if (hasChanges) {
                 setActiveManifest({
                     ...manifest,
                     permissionsState: updatedPerms,
                 });
                 setPermissionsIndicator(true);
             } else {
+                // No changes => no re-prompt
                 const newApp: Partial<InstalledApp> = {
                     appId: manifest.id,
                     name: manifest.name,
@@ -164,53 +178,49 @@ export default function BrowserTab({ tab }: Props) {
                 addOrUpdateApp(newApp);
                 setCurrentApp(existingApp);
 
-                sendNativeResponse({ stateUpdate: { account: currentAccount, permissions: existingApp.permissions } });
+                sendNativeResponse({
+                    stateUpdate: { account: currentAccount, permissions: existingApp.permissions },
+                });
                 setPermissionsIndicator(false);
             }
         } else {
-            // If new app, build a default permission state
+            // If new app, build a default state
             const permissionsState = Object.fromEntries(manifest.permissions.map((perm: string) => [perm, perm.startsWith("read") ? "always" : "ask"]));
             setActiveManifest({ ...manifest, permissionsState });
             setPermissionsIndicator(true);
         }
     };
 
+    /** Read request handler */
     const handleReadOnceRequest = async (data: any, requestId: string) => {
         if (!currentApp) {
-            sendNativeResponse({ requestId, error: "readOnce failed, no app active. Make sure you call init before doing any operations" });
+            sendNativeResponse({
+                requestId,
+                error: "readOnce failed, no active app.",
+            });
             return;
         }
 
         const { collection, filter } = data;
-
-        // check permission
-        console.log("checking permission for", currentApp.appId, "read", collection);
         const permission = await checkPermission(currentApp.appId, "read", collection);
-        console.log("permission = ", permission);
         if (permission === "never") {
             sendNativeResponse({ requestId, error: "Permission denied" });
             return;
         }
 
-        // do the read
         try {
-            console.log("calling readOnce with params ", collection, filter);
             const results = await readOnce(collection, filter);
-
             if (!results.doc) {
-                // if the result is empty we simply return the result
+                // empty => just return
                 sendNativeResponse({ requestId, result: results });
             } else if (permission === "always") {
-                // pass on the results to the web app
                 sendNativeResponse({ requestId, result: results });
             } else if (permission === "ask") {
-                // prompt the user to allow or reject the read
-                setReadPromptData({
-                    requestId,
-                    collection,
-                    filter,
-                    results,
-                });
+                setReadPromptData({ requestId, collection, filter, results });
+                if (results.docs && results.docs.length > 1) {
+                    setExpandedDocs(Array(results.docs.length).fill(false));
+                    setAllExpanded(false);
+                }
                 setReadModalVisible(true);
             }
         } catch (error: any) {
@@ -218,42 +228,29 @@ export default function BrowserTab({ tab }: Props) {
         }
     };
 
-    // Write requests (e.g. “please write data to user’s profile”)
+    /** Write request handler */
     const handleWriteRequest = async (data: any, requestId: string) => {
         if (!currentApp) {
-            sendNativeResponse({ requestId, error: "write failed, no app active. Make sure you call init before doing any operations" });
+            sendNativeResponse({ requestId, error: "write failed, no active app." });
             return;
         }
 
         const { collection, doc } = data;
-
-        // check permission
-        console.log("checking permission for", currentApp.appId, "write", collection);
         const permission = await checkPermission(currentApp.appId, "write", collection);
-        console.log("permission = ", permission);
         if (permission === "never") {
             sendNativeResponse({ requestId, error: "Permission denied" });
             return;
         }
 
-        // do the write
         try {
-            // TODO here we can check for existing document that is going to be changed, and highlight the diff
-            // for the user in the modal
-
             if (permission === "always") {
-                console.log("calling write with params ", collection, doc);
                 const results = await write(collection, doc);
-
-                // pass on the results to the web app
                 sendNativeResponse({ requestId, result: results });
             } else if (permission === "ask") {
-                // prompt the user to allow or reject the write
-                setWritePromptData({
-                    requestId,
-                    collection,
-                    doc,
-                });
+                setWritePromptData({ requestId, collection, doc });
+                // Reset single doc UI
+                setShowWriteRawJson(false);
+                setWriteDocVisible(false);
                 setWriteModalVisible(true);
             }
         } catch (error: any) {
@@ -261,7 +258,7 @@ export default function BrowserTab({ tab }: Props) {
         }
     };
 
-    // Helper to send responses back into the WebView
+    /** Send message back to WebView */
     const sendNativeResponse = (response: any) => {
         if (webViewRef.current) {
             webViewRef.current.injectJavaScript(`
@@ -272,10 +269,9 @@ export default function BrowserTab({ tab }: Props) {
         }
     };
 
-    // Accept or reject the entire permission set
+    /** Accept or reject the permission set */
     const handleAccept = (permissions: { [key: string]: PermissionSetting }) => {
         if (!activeManifest) return;
-
         const newApp: InstalledApp = {
             appId: activeManifest.id,
             name: activeManifest.name,
@@ -285,9 +281,6 @@ export default function BrowserTab({ tab }: Props) {
             permissions,
             hidden: false,
         };
-
-        console.log("Add or update app", newApp);
-
         addOrUpdateApp(newApp);
         setCurrentApp(newApp);
 
@@ -303,75 +296,65 @@ export default function BrowserTab({ tab }: Props) {
         sendNativeResponse({ error: "Manifest request denied" });
     };
 
-    // Changing individual permission levels
     const handlePermissionChange = (permissionKey: string, level: "always" | "ask" | "never") => {
         setActiveManifest((prev: any) => {
             if (!prev) return prev;
-            const updatedPermissionsState = {
-                ...prev.permissionsState,
-                [permissionKey]: level,
-            };
-            return { ...prev, permissionsState: updatedPermissionsState };
+            const updated = { ...prev.permissionsState, [permissionKey]: level };
+            return { ...prev, permissionsState: updated };
         });
     };
 
+    /** Read modal decisions */
     function handleReadReject() {
         if (!readPromptData) return;
-        const { requestId, collection } = readPromptData;
-
-        // TODO  update permission to "never" if "Don't ask again" is checked
-        // e.g. appService.updatePermission(currentApp.appId, "read", collection, "never");
-
+        const { requestId } = readPromptData;
         sendNativeResponse({ requestId, error: "Permission denied" });
         setReadPromptData(null);
         setReadModalVisible(false);
     }
 
     async function handleReadAllow() {
-        if (!readPromptData || !currentApp) return;
-        const { requestId, collection, results } = readPromptData;
-
-        // TODO If user wants "Don't ask again," you might do:
-        // await updatePermission(currentApp.appId, "read", collection, "always");
-        // Then next time we won't prompt.
-
-        // Now respond with the data we already read from the DB
+        if (!readPromptData) return;
+        const { requestId, results } = readPromptData;
         sendNativeResponse({ requestId, result: results });
-
         setReadPromptData(null);
         setReadModalVisible(false);
     }
 
+    /** Write modal decisions */
     function handleWriteReject() {
         if (!writePromptData) return;
         const { requestId } = writePromptData;
-
-        // TODO update permission to "never" if Don't ask again is checked
-        // e.g. appService.updatePermission(currentApp.appId, "write", collection, "never");
-
         sendNativeResponse({ requestId, error: "Permission denied" });
         setWritePromptData(null);
         setWriteModalVisible(false);
     }
 
     async function handleWriteAllow() {
-        if (!writePromptData || !currentApp) return;
+        if (!writePromptData) return;
         const { requestId, collection, doc } = writePromptData;
-
-        // TPDP If user wants "Don't ask again," you might do:
-        // await updatePermission(currentApp.appId, "read", collection, "always");
-        // Then next time we won't prompt.
-
-        // do the write
         const results = await write(collection, doc);
-
-        // Now respond with the data we already read from the DB
         sendNativeResponse({ requestId, result: results });
-
         setWritePromptData(null);
         setWriteModalVisible(false);
     }
 
+    /** Collapsible doc toggles */
+    function toggleDoc(index: number) {
+        setExpandedDocs((prev) => {
+            const newState = [...prev];
+            newState[index] = !newState[index];
+            return newState;
+        });
+    }
+
+    function toggleAllDocs() {
+        const shouldExpandAll = expandedDocs.some((isExpanded) => !isExpanded);
+        setExpandedDocs(expandedDocs.map(() => shouldExpandAll));
+        setAllExpanded(shouldExpandAll);
+    }
+
+    /** Screenshot for tab preview */
     const captureScreenshot = useCallback(async () => {
         try {
             const uri = await captureScreen({
@@ -386,16 +369,44 @@ export default function BrowserTab({ tab }: Props) {
 
     useEffect(() => {
         if (tab.reload) {
-            webViewRef.current?.reload(); // Force refresh
+            webViewRef.current?.reload();
         }
     }, [tab.reload]);
 
+    /** Helpers */
+    const multipleReadDocs = readPromptData?.results?.docs && readPromptData.results.docs.length > 1;
+
+    function renderStructuredFields(doc: any) {
+        return Object.entries(doc)
+            .filter(([k]) => !EXCLUDED_FIELDS.includes(k))
+            .map(([key, value]) => {
+                const displayValue = typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
+                return (
+                    <View style={styles.fieldRow} key={key}>
+                        <Text style={styles.fieldLabel}>{key}</Text>
+                        <Text style={styles.fieldValue}>{displayValue}</Text>
+                    </View>
+                );
+            });
+    }
+
+    function CollapsedDocRow({ doc, index, isExpanded, onPress }: { doc: any; index: number; isExpanded: boolean; onPress: () => void }) {
+        const title = doc.name ? doc.name : doc.title ? doc.title : `Document #${index + 1}`;
+
+        return (
+            <TouchableOpacity onPress={onPress} style={styles.collapsedDocRow}>
+                <Text style={styles.collapsedDocTitle}>{title}</Text>
+                <MaterialCommunityIcons name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#666" />
+            </TouchableOpacity>
+        );
+    }
+
     return (
         <View style={{ flex: 1 }} ref={wrapperRef}>
-            {/* If site is requesting permissions, show a banner. */}
+            {/* Banner if site is requesting permissions */}
             {permissionsIndicator && (
                 <TouchableOpacity style={styles.permissionsIndicator} onPress={() => setModalVisible(true)}>
-                    <Image source={{ uri: activeManifest?.pictureUrl }} style={styles.permissionsIndicatorIcon} />
+                    {activeManifest?.pictureUrl && <Image source={{ uri: activeManifest.pictureUrl }} style={styles.permissionsIndicatorIcon} />}
                     <View style={{ flex: 1, flexDirection: "column" }}>
                         <Text style={styles.permissionsIndicatorHeader}>{activeManifest?.name}</Text>
                         <Text style={styles.permissionsIndicatorText}>wants access to your data</Text>
@@ -403,7 +414,7 @@ export default function BrowserTab({ tab }: Props) {
                 </TouchableOpacity>
             )}
 
-            {/* The main WebView */}
+            {/* Main WebView */}
             {jsCode && (
                 <WebView
                     ref={webViewRef}
@@ -415,7 +426,7 @@ export default function BrowserTab({ tab }: Props) {
                 />
             )}
 
-            {/* Modal for initial permission request */}
+            {/* Modal: initial permission request */}
             <Modal visible={modalVisible} transparent animationType="fade">
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalCard}>
@@ -423,7 +434,6 @@ export default function BrowserTab({ tab }: Props) {
                             {activeManifest?.pictureUrl && <Image source={{ uri: activeManifest.pictureUrl }} style={styles.appIcon} />}
                             <Text style={styles.appName}>{activeManifest?.name}</Text>
                         </View>
-
                         <Text style={styles.appDescription}>{activeManifest?.description}</Text>
 
                         <View style={styles.permissionsList}>
@@ -460,69 +470,142 @@ export default function BrowserTab({ tab }: Props) {
                 </View>
             </Modal>
 
-            {/* Modal for read requests */}
+            {/* Modal: Read requests */}
             <Modal visible={readModalVisible} transparent animationType="fade">
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalCard}>
-                        <View style={styles.modalHeader}>
-                            {activeManifest?.pictureUrl && <Image source={{ uri: currentApp?.pictureUrl }} style={styles.appIcon} />}
-                            <Text style={styles.appName}>{currentApp?.name}</Text>
-                        </View>
+                        {readPromptData && (
+                            <>
+                                <View style={styles.modalHeader}>
+                                    {currentApp?.pictureUrl && <Image source={{ uri: currentApp.pictureUrl }} style={styles.appIcon} />}
+                                    <Text style={styles.appName}>{currentApp?.name}</Text>
+                                </View>
 
-                        <Text style={styles.appDescription}>
-                            This app wants to read {readPromptData?.results.docs.length ?? 0} documents from your {readPromptData?.collection} collection.
-                        </Text>
+                                <Text style={styles.appDescription}>
+                                    This app wants to read {readPromptData?.results.docs.length ?? 0} document
+                                    {readPromptData?.results.docs.length !== 1 ? "s" : ""} from your{" "}
+                                    <Text style={{ fontWeight: "600" }}>{readPromptData?.collection}</Text> collection.
+                                </Text>
 
-                        <TouchableOpacity onPress={() => setShowJson(!showJson)}>
-                            <Text style={styles.viewJsonButton}>
-                                {showJson ? "Hide Document" : "View Document"}
-                                {readPromptData?.results?.docs && readPromptData.results.docs.length > 1 ? "s" : ""}
-                            </Text>
-                        </TouchableOpacity>
-                        {showJson && <Text style={styles.jsonText}>{JSON.stringify(readPromptData?.results?.docs, null, 2)}</Text>}
+                                {/* If multiple docs */}
+                                {multipleReadDocs ? (
+                                    <>
+                                        <View style={styles.docListHeader}>
+                                            {/* Expand/Collapse All */}
+                                            <TouchableOpacity onPress={toggleAllDocs} style={styles.iconButton}>
+                                                <MaterialCommunityIcons
+                                                    name={allExpanded ? "collapse-all-outline" : "expand-all-outline"}
+                                                    size={20}
+                                                    color="#007bff"
+                                                />
+                                            </TouchableOpacity>
 
-                        {/* Possibly let the user see some partial data or a count only. */}
-                        {/* Also consider a checkbox for "Don't ask again" => set to "always" or "never" */}
+                                            {/* Toggle raw vs structured */}
+                                            <TouchableOpacity onPress={() => setShowRawJson(!showRawJson)} style={styles.iconButton}>
+                                                {showRawJson ? (
+                                                    <MaterialCommunityIcons name="file-document-outline" size={20} color="#007bff" />
+                                                ) : (
+                                                    <MaterialCommunityIcons name="code-json" size={20} color="#007bff" />
+                                                )}
+                                            </TouchableOpacity>
+                                        </View>
 
-                        <View style={styles.actionButtons}>
-                            <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={handleReadReject}>
-                                <Text style={styles.actionButtonText}>Deny</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={[styles.actionButton, styles.allowButton]} onPress={handleReadAllow}>
-                                <Text style={styles.actionButtonText}>Allow</Text>
-                            </TouchableOpacity>
-                        </View>
+                                        <View style={styles.scrollArea}>
+                                            <ScrollView>
+                                                {readPromptData?.results.docs.map((doc, idx) => {
+                                                    const isExpanded = expandedDocs[idx];
+                                                    return (
+                                                        <View key={idx} style={{ marginBottom: 10 }}>
+                                                            <CollapsedDocRow doc={doc} index={idx} isExpanded={isExpanded} onPress={() => toggleDoc(idx)} />
+                                                            {isExpanded && (
+                                                                <View style={styles.expandedContent}>
+                                                                    {showRawJson ? (
+                                                                        <Text style={styles.jsonText}>{JSON.stringify(doc, null, 2)}</Text>
+                                                                    ) : (
+                                                                        renderStructuredFields(doc)
+                                                                    )}
+                                                                </View>
+                                                            )}
+                                                        </View>
+                                                    );
+                                                })}
+                                            </ScrollView>
+                                        </View>
+                                    </>
+                                ) : (
+                                    // Single doc
+                                    <SingleDocView doc={readPromptData?.results.docs[0]} />
+                                )}
+
+                                <View style={styles.actionButtons}>
+                                    <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={handleReadReject}>
+                                        <Text style={styles.actionButtonText}>Deny</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={[styles.actionButton, styles.allowButton]} onPress={handleReadAllow}>
+                                        <Text style={styles.actionButtonText}>Allow</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </>
+                        )}
                     </View>
                 </View>
             </Modal>
 
-            {/* Modal for write requests */}
+            {/* Modal: Write requests */}
             <Modal visible={writeModalVisible} transparent animationType="fade">
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalCard}>
-                        <View style={styles.modalHeader}>
-                            {activeManifest?.pictureUrl && <Image source={{ uri: currentApp?.pictureUrl }} style={styles.appIcon} />}
-                            <Text style={styles.appName}>{currentApp?.name}</Text>
-                        </View>
+                        {writePromptData && (
+                            <>
+                                <View style={styles.modalHeader}>
+                                    {currentApp?.pictureUrl && <Image source={{ uri: currentApp.pictureUrl }} style={styles.appIcon} />}
+                                    <Text style={styles.appName}>{currentApp?.name}</Text>
+                                </View>
 
-                        <Text style={styles.appDescription}>This app wants to write a document to your {writePromptData?.collection} collection.</Text>
+                                <Text style={styles.appDescription}>
+                                    This app wants to write a document to your <Text style={{ fontWeight: "600" }}>{writePromptData?.collection}</Text>{" "}
+                                    collection.
+                                </Text>
 
-                        <TouchableOpacity onPress={() => setShowJson(!showJson)}>
-                            <Text style={styles.viewJsonButton}>{showJson ? "Hide Document" : "View Document"}</Text>
-                        </TouchableOpacity>
-                        {showJson && <Text style={styles.jsonText}>{JSON.stringify(writePromptData?.doc, null, 2)}</Text>}
+                                <View style={styles.docListHeader}>
+                                    {/* Show/hide doc button */}
+                                    <TouchableOpacity onPress={() => setWriteDocVisible(!writeDocVisible)} style={styles.iconButton}>
+                                        <Text style={styles.iconButtonText}>{writeDocVisible ? "Hide Document" : "View Document"}</Text>
+                                    </TouchableOpacity>
 
-                        {/* Possibly let the user see some partial data or a count only. */}
-                        {/* Also consider a checkbox for "Don't ask again" => set to "always" or "never" */}
+                                    {writeDocVisible && (
+                                        <TouchableOpacity onPress={() => setShowWriteRawJson(!showWriteRawJson)} style={styles.iconButton}>
+                                            {showWriteRawJson ? (
+                                                <MaterialCommunityIcons name="file-document-outline" size={20} color="#007bff" />
+                                            ) : (
+                                                <MaterialCommunityIcons name="code-json" size={20} color="#007bff" />
+                                            )}
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
 
-                        <View style={styles.actionButtons}>
-                            <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={handleWriteReject}>
-                                <Text style={styles.actionButtonText}>Deny</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={[styles.actionButton, styles.allowButton]} onPress={handleWriteAllow}>
-                                <Text style={styles.actionButtonText}>Allow</Text>
-                            </TouchableOpacity>
-                        </View>
+                                {writeDocVisible && (
+                                    <View style={styles.scrollArea}>
+                                        <ScrollView>
+                                            {showWriteRawJson ? (
+                                                <Text style={styles.jsonText}>{JSON.stringify(writePromptData?.doc, null, 2)}</Text>
+                                            ) : (
+                                                renderStructuredFields(writePromptData?.doc)
+                                            )}
+                                        </ScrollView>
+                                    </View>
+                                )}
+
+                                <View style={styles.actionButtons}>
+                                    <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={handleWriteReject}>
+                                        <Text style={styles.actionButtonText}>Deny</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={[styles.actionButton, styles.allowButton]} onPress={handleWriteAllow}>
+                                        <Text style={styles.actionButtonText}>Allow</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </>
+                        )}
                     </View>
                 </View>
             </Modal>
@@ -530,9 +613,62 @@ export default function BrowserTab({ tab }: Props) {
     );
 }
 
-const styles = StyleSheet.create({
-    // We no longer have a top bar here, so remove the old address bar styles.
+/**
+ * SingleDocView:
+ * Used only for the Read modal when there's exactly one doc.
+ * Toggles doc visibility and raw/structured display.
+ */
+function SingleDocView({ doc }: { doc: any }) {
+    const [visible, setVisible] = useState(false);
+    const [showRaw, setShowRaw] = useState(false);
 
+    if (!doc) return null;
+
+    return (
+        <>
+            <View style={styles.docListHeader}>
+                <TouchableOpacity onPress={() => setVisible(!visible)} style={styles.iconButton}>
+                    <Text style={styles.iconButtonText}>{visible ? "Hide Document" : "View Document"}</Text>
+                </TouchableOpacity>
+
+                {visible && (
+                    <TouchableOpacity onPress={() => setShowRaw(!showRaw)} style={styles.iconButton}>
+                        {showRaw ? (
+                            <MaterialCommunityIcons name="file-document-outline" size={20} color="#007bff" />
+                        ) : (
+                            <MaterialCommunityIcons name="code-json" size={20} color="#007bff" />
+                        )}
+                    </TouchableOpacity>
+                )}
+            </View>
+
+            {visible && (
+                <View style={styles.scrollArea}>
+                    <ScrollView>
+                        {showRaw ? (
+                            <Text style={styles.jsonText}>{JSON.stringify(doc, null, 2)}</Text>
+                        ) : (
+                            Object.entries(doc)
+                                .filter(([k]) => !EXCLUDED_FIELDS.includes(k))
+                                .map(([k, v]) => {
+                                    const val = typeof v === "object" ? JSON.stringify(v, null, 2) : String(v);
+                                    return (
+                                        <View style={styles.fieldRow} key={k}>
+                                            <Text style={styles.fieldLabel}>{k}</Text>
+                                            <Text style={styles.fieldValue}>{val}</Text>
+                                        </View>
+                                    );
+                                })
+                        )}
+                    </ScrollView>
+                </View>
+            )}
+        </>
+    );
+}
+
+const styles = StyleSheet.create({
+    // Banner if site is requesting permissions
     permissionsIndicator: {
         position: "absolute",
         top: 10,
@@ -587,7 +723,7 @@ const styles = StyleSheet.create({
     modalHeader: {
         flexDirection: "row",
         alignItems: "center",
-        marginBottom: 20,
+        marginBottom: 15,
     },
     appIcon: {
         width: 50,
@@ -626,7 +762,6 @@ const styles = StyleSheet.create({
     },
     permissionOptions: {
         flexDirection: "row",
-        gap: 10,
     },
     permissionButton: {
         backgroundColor: "#f0f0f0",
@@ -635,6 +770,7 @@ const styles = StyleSheet.create({
         borderRadius: 5,
         borderWidth: 1,
         borderColor: "#ccc",
+        marginLeft: 5,
     },
     permissionButtonSelected: {
         backgroundColor: "#007bff",
@@ -649,17 +785,77 @@ const styles = StyleSheet.create({
         color: "#fff",
         fontWeight: "bold",
     },
-    viewJsonButton: {
+
+    // Doc list header for toggles
+    docListHeader: {
+        flexDirection: "row",
+        marginBottom: 8, // slightly less spacing
+    },
+    iconButton: {
+        flexDirection: "row",
+        paddingHorizontal: 8,
+        paddingVertical: 5,
+        backgroundColor: "#eee",
+        borderRadius: 5,
+        marginRight: 8,
+        alignItems: "center",
+    },
+    iconButtonText: {
         color: "#007bff",
+        fontWeight: "600",
+    },
+
+    // Collapsed doc row, more compact
+    collapsedDocRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        backgroundColor: "#f2f2f2",
+        borderRadius: 6,
+        paddingVertical: 8,
+        paddingHorizontal: 10,
+    },
+    collapsedDocTitle: {
+        fontSize: 14,
+        fontWeight: "500",
+        color: "#333",
+    },
+
+    expandedContent: {
+        padding: 8,
+        backgroundColor: "#fafafa",
+        borderRadius: 6,
+        marginTop: 5,
+    },
+
+    // Structured field display
+    fieldRow: {
         marginBottom: 10,
     },
+    fieldLabel: {
+        color: "#555",
+        fontSize: 12,
+        fontWeight: "600",
+        marginBottom: 2,
+    },
+    fieldValue: {
+        fontSize: 14,
+        color: "#333",
+    },
+
+    // JSON block
     jsonText: {
         fontFamily: "monospace",
         backgroundColor: "#f8f9fa",
         padding: 10,
         borderRadius: 5,
+        marginBottom: 5,
+    },
+    scrollArea: {
+        maxHeight: 250,
         marginBottom: 10,
     },
+
     actionButtons: {
         flexDirection: "row",
         justifyContent: "space-between",
