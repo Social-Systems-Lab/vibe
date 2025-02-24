@@ -1,8 +1,10 @@
 // vibe-context.tsx
+"use client";
 
 import React, { createContext, useState, useEffect, useContext, useCallback, ReactNode } from "react";
 import { vibe, VibeState, AppManifest, Account } from "vibe-sdk";
 
+/* eslint-disable  @typescript-eslint/no-explicit-any */
 interface VibeContextValue {
     account: Account | undefined;
     init: () => void; // manually call vibe.init if needed

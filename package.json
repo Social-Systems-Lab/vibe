@@ -1,6 +1,6 @@
 {
     "scripts": {
-        "install": "cd ./vibe-web && npm install && cd ../vibe-app && npm install && cd ../vibe-sdk && npm install && cd ../app/contacts && npm install",
+        "install": "cd ./vibe-web && npm install && cd ../vibe-app && npm install && cd ../vibe-sdk && npm install && cd ../apps/contacts && npm install",
         "start-vibe-app": "npm run android --prefix ./vibe-app",
         "watch-vibe-sdk": "npm run watch:esm --prefix ./vibe-sdk",
         "start-vibe-web": "npm run dev --prefix ./vibe-web",
