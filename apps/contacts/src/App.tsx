@@ -1,5 +1,4 @@
 // App.tsx
-import React from "react";
 import { AppManifest } from "vibe-sdk";
 import { VibeProvider } from "./components/vibe-context";
 import Contacts from "./components/contacts";

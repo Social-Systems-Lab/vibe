@@ -1,7 +1,7 @@
 // vibe-context.tsx
 "use client";
 
-import React, { createContext, useState, useEffect, useContext, useCallback, ReactNode } from "react";
+import { createContext, useState, useEffect, useContext, useCallback, ReactNode } from "react";
 import { vibe, VibeState, AppManifest, Account } from "vibe-sdk";
 
 /* eslint-disable  @typescript-eslint/no-explicit-any */
