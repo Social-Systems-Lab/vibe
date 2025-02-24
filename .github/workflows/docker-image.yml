@@ -32,7 +32,7 @@ jobs:
               uses: docker/build-push-action@v5
               with:
                   context: .
-                  file: ./Dockerfile
+                  file: ./vibe-web/Dockerfile
                   push: true
                   tags: |
                       ${{ secrets.DOCKER_HUB_USERNAME }}/vibe-web:latest
