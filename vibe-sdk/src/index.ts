@@ -1,4 +1,6 @@
 // index.ts - Vibe SDK
+
+const SDK_VERSION = "1.0.0";
 declare global {
     interface Window {
         _VIBE_ENABLED?: boolean;
@@ -52,6 +54,8 @@ const vibe = (() => {
     const isInVibeApp = () => typeof window !== "undefined" && !!window._VIBE_ENABLED;
 
     const init = (manifest: AppManifest, callback: Callback): Unsubscribe => {
+        console.log("%c🔵 Vibe SDK v" + SDK_VERSION + " 🔵", "background: #4A90E2; color: white; padding: 2px 4px; border-radius: 3px;");
+
         if (!isBrowser) {
             console.warn("Vibe SDK init should only run in a browser environment.");
             return () => {};
@@ -68,7 +72,7 @@ const vibe = (() => {
             if (oneTapEnabled) {
                 showOneTapPrompt(manifest);
             }
-            console.log(`Running Vibe SDK init in ${isMobile ? "mobile" : "desktop"} browser.`);
+            //console.log(`Running Vibe SDK init in ${isMobile ? "mobile" : "desktop"} browser.`);
         }
 
         //console.log("Initializing vibe with manifest", manifest);
@@ -82,9 +86,7 @@ const vibe = (() => {
 
     const readOnce = (collection: string, filter?: any): Promise<any> => {
         if (!isInVibeApp()) {
-            return Promise.reject(
-                new Error("readOnce called when vibe is not enabled. Make sure to check vibe.enabled and call vibe.init to initialize the app")
-            );
+            return Promise.reject(new Error("readOnce called when vibe is not enabled. Make sure to check vibe.enabled and call vibe.init to initialize the app"));
         }
 
         return sendAsyncToNativeApp({

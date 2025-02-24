@@ -2,6 +2,8 @@
 import { AppManifest } from "vibe-sdk";
 import { VibeProvider } from "./components/vibe-context";
 import Contacts from "./components/contacts";
+import packageJson from "../package.json";
+import { useEffect } from "react";
 
 const manifest: AppManifest = {
     id: "dev.vibeapp.contacts",
@@ -12,6 +14,10 @@ const manifest: AppManifest = {
 };
 
 function App() {
+    useEffect(() => {
+        console.log("%c🔵 Contacts v" + packageJson.version + " 🔵", "background: #4A90E2; color: white; padding: 2px 4px; border-radius: 3px;");
+    }, []);
+
     return (
         <VibeProvider manifest={manifest} autoInit>
             <div>
