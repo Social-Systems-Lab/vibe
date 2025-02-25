@@ -1,4 +1,6 @@
-// ShareButton.tsx
+// share-button.tsx
+"use client";
+
 import React, { useState, useEffect } from "react";
 import { useVibe } from "./vibe-context";
 import { IoMdShare } from "react-icons/io";
