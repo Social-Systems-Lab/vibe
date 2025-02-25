@@ -107,7 +107,7 @@ export default function ShareButton() {
                     <div className="bg-white rounded-lg w-full max-w-md mx-4 overflow-hidden shadow-xl transform transition-all">
                         {/* Modal Header */}
                         <div className="px-4 py-3 border-b border-gray-200">
-                            <div className="text-lg font-semibold">Share with Contacts</div>
+                            <p className="text-lg text-gray-500 font-semibold">Share with Contacts</p>
                             <p className="text-sm text-gray-500">Select contacts to share this page with</p>
                         </div>
 
@@ -156,7 +156,7 @@ export default function ShareButton() {
 
                                                 {/* Contact Info */}
                                                 <div className="flex-1">
-                                                    <div className="text-sm font-medium">{contact.name}</div>
+                                                    <div className="text-sm text-gray-500 font-medium">{contact.name}</div>
                                                     <p className="text-xs text-gray-500 truncate">{contact.email || contact.phone || "No contact info"}</p>
                                                 </div>
                                             </li>
