@@ -6,8 +6,8 @@ import packageJson from "../package.json";
 import { useEffect } from "react";
 
 const manifest: AppManifest = {
-    id: "dev.vibeapp.contacts",
-    name: "Contacts",
+    id: "dev.vibeapp.contacts-local",
+    name: "Contacts Local",
     description: "Official Contacts App",
     permissions: ["read.contacts", "write.contacts"],
     pictureUrl: "http://192.168.10.204:5201/icon.png",

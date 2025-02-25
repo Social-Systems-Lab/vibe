@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Database, ArrowRightLeft, Key } from "lucide-react";
 import PaymentPlans from "../components/PaymentPlans";
+import ShareButton from "@/components/share-button";
 
 export default function HomePage() {
     return (
@@ -17,12 +18,12 @@ export default function HomePage() {
                                     <div className="space-y-2">
                                         <h1 className="text-[3rem] md:text-[5rem] font-normal leading-tight">Your everything.</h1>
                                         <p className="text-xl sm:text-2xl text-white/90 max-w-2xl">
-                                            Vibe puts your digital life in your hands—move freely across an open ecosystem of apps and services, carrying your
-                                            identity, content, and connections wherever you go.
+                                            Vibe puts your digital life in your hands—move freely across an open ecosystem of apps and services, carrying your identity, content, and connections
+                                            wherever you go.
                                         </p>
                                     </div>
                                 </div>
-                                <div className="flex flex-wrap gap-4">
+                                <div className="flex flex-row flex-wrap gap-2">
                                     <Link
                                         href="/developers"
                                         className="inline-flex items-center bg-[#c17dff] text-white px-8 py-3 rounded-full font-semibold text-lg hover:bg-opacity-90 transition duration-300 shadow-lg"
@@ -31,6 +32,7 @@ export default function HomePage() {
                                         Get Involved
                                         <ArrowRight className="ml-2 h-5 w-5" />
                                     </Link>
+                                    <ShareButton />
                                 </div>
                             </div>
                             <div className="relative z-10 hidden sm:block">
@@ -60,21 +62,13 @@ export default function HomePage() {
             <div className="bg-white pt-20 pb-16">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="grid md:grid-cols-3 gap-8 lg:gap-12">
-                        <FeatureCard
-                            icon={<Database className="w-8 h-8 text-purple-500" />}
-                            title="Your Data"
-                            description="Your identity, relationships and content is in your control"
-                        />
+                        <FeatureCard icon={<Database className="w-8 h-8 text-purple-500" />} title="Your Data" description="Your identity, relationships and content is in your control" />
                         <FeatureCard
                             icon={<ArrowRightLeft className="w-8 h-8 text-purple-500" />}
                             title="Your Journey"
                             description="Move freely between apps and services carrying your data with you"
                         />
-                        <FeatureCard
-                            icon={<Key className="w-8 h-8 text-purple-500" />}
-                            title="Your Freedom"
-                            description="You hold the key. No middlemen. No clouds. No corporate gatekeepers."
-                        />
+                        <FeatureCard icon={<Key className="w-8 h-8 text-purple-500" />} title="Your Freedom" description="You hold the key. No middlemen. No clouds. No corporate gatekeepers." />
                     </div>
                 </div>
             </div>
@@ -99,16 +93,11 @@ export default function HomePage() {
                             </div>
                             <div className="max-w-xl mx-auto text-center md:text-left">
                                 <p className="text-gray-600">
-                                    Social Systems Lab focuses on engineering the tools that propel us towards a better world. They support open-source teams
-                                    globally to build an ecosystem that provides for our needs without proprietary code, secret algorithms, or value-extracting
-                                    practices. As a key supporter of Vibe, they help transform ideas into reality through state-of-the-art engineering.
+                                    Social Systems Lab focuses on engineering the tools that propel us towards a better world. They support open-source teams globally to build an ecosystem that
+                                    provides for our needs without proprietary code, secret algorithms, or value-extracting practices. As a key supporter of Vibe, they help transform ideas into
+                                    reality through state-of-the-art engineering.
                                 </p>
-                                <Link
-                                    href="https://www.socialsystems.io"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center text-purple-600 hover:text-purple-700 mt-4"
-                                >
+                                <Link href="https://www.socialsystems.io" target="_blank" rel="noopener noreferrer" className="inline-flex items-center text-purple-600 hover:text-purple-700 mt-4">
                                     Learn more <ArrowRight className="ml-2 h-4 w-4" />
                                 </Link>
                             </div>
@@ -118,9 +107,8 @@ export default function HomePage() {
                         <div className="grid md:grid-cols-2 gap-8 items-center">
                             <div className="max-w-xl mx-auto text-center md:text-left order-2 md:order-1">
                                 <p className="text-gray-600">
-                                    The Federated Auth Network (FAN) is pioneering sovereign digital identity through their innovative protocol. FAN shares our
-                                    vision of returning control of digital identities to individuals. Together, we&apos;re building a future where digital
-                                    autonomy and privacy are fundamental rights.
+                                    The Federated Auth Network (FAN) is pioneering sovereign digital identity through their innovative protocol. FAN shares our vision of returning control of digital
+                                    identities to individuals. Together, we&apos;re building a future where digital autonomy and privacy are fundamental rights.
                                 </p>
                                 <Link
                                     href="https://opencollective.com/cta/projects/federated-auth-network"

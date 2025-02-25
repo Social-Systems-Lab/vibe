@@ -1,6 +1,6 @@
 // index.ts - Vibe SDK
 
-const SDK_VERSION = "1.0.0";
+const SDK_VERSION = "1.0.1";
 declare global {
     interface Window {
         _VIBE_ENABLED?: boolean;
@@ -38,6 +38,8 @@ enum MessageType {
     PAGE_LOADED = "PageLoaded",
     INIT_REQUEST = "InitRequest",
     READ_ONCE_REQUEST = "ReadOnceRequest",
+    READ_REQUEST = "ReadRequest",
+    UNSUBSCRIBE_REQUEST = "UnsubscribeRequest",
     WRITE_REQUEST = "WriteRequest",
     NATIVE_RESPONSE = "NativeResponse",
     LOG_REQUEST = "LogRequest",
@@ -96,6 +98,43 @@ const vibe = (() => {
         });
     };
 
+    const read = (collection: string, filter?: any, callback?: (result: any) => void): Unsubscribe => {
+        if (!isInVibeApp()) {
+            throw new Error("read called when vibe is not enabled. Make sure to check vibe.enabled and call vibe.init to initialize the app");
+        }
+
+        const requestId = generateRequestId();
+        let active = true;
+
+        // Set up the callback in pendingRequests, but we won't remove it after first response
+        if (callback) {
+            pendingRequests[requestId] = (result) => {
+                if (active) callback(result);
+            };
+            // make sure the pending request isn't removed after response
+            (pendingRequests[requestId] as any).isSubscription = true;
+        }
+
+        // Send the subscription request
+        sendToNativeApp({
+            type: MessageType.READ_REQUEST,
+            collection,
+            filter,
+            requestId,
+            subscribe: true,
+        });
+
+        // Return an unsubscribe function
+        return () => {
+            active = false;
+            delete pendingRequests[requestId];
+            sendToNativeApp({
+                type: MessageType.UNSUBSCRIBE_REQUEST,
+                requestId,
+            });
+        };
+    };
+
     const write = (collection: string, doc: any): Promise<any> => {
         if (!isInVibeApp()) {
             return Promise.reject(new Error("write called when vibe is not enabled. Make sure to check vibe.enabled and call vibe.init to initialize the app"));
@@ -149,7 +188,9 @@ const vibe = (() => {
             } else {
                 pendingRequests[requestId](result);
             }
-            delete pendingRequests[requestId];
+            if (!(pendingRequests[requestId] as any).isSubscription) {
+                delete pendingRequests[requestId];
+            }
         }
     };
 
@@ -275,6 +316,7 @@ const vibe = (() => {
         isInVibeApp,
         init,
         readOnce,
+        read,
         write,
         _state,
         _listeners,

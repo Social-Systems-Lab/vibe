@@ -7,7 +7,7 @@ import { ActivityIndicator, Linking, View } from "react-native";
 
 export default function Index() {
     const router = useRouter();
-    const { accounts } = useAuth();
+    const { accounts, login } = useAuth();
     const [isReady, setIsReady] = useState(false);
 
     useEffect(() => {
@@ -21,21 +21,23 @@ export default function Index() {
     }, []);
 
     useEffect(() => {
-        if (isReady) {
-            // // navigate to test screen
-            // router.replace("/accounts/test");
+        if (!isReady) return;
 
+        const handleNavigation = async () => {
+            console.log("accounts", JSON.stringify(accounts, null, 2));
             if (accounts.length === 0) {
-                // show account creation wizard
                 router.replace("/accounts/create-account-wizard");
             } else if (accounts.length === 1) {
-                // log into the only account
+                // First await the login
+                await login(accounts[0].did);
+                // Then navigate
                 router.replace("/main");
             } else {
-                // show account selection screen
                 router.replace("/accounts/account-select");
             }
-        }
+        };
+
+        handleNavigation();
     }, [accounts, isReady]);
 
     if (!isReady) {

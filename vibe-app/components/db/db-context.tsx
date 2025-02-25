@@ -3,10 +3,11 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
 import { View, StyleSheet } from "react-native";
-import WebView from "react-native-webview";
+import WebView, { WebViewMessageEvent } from "react-native-webview";
 import { Asset } from "expo-asset";
-import { useTabs } from "../ui/tab-context";
 import { useAuth } from "../auth/auth-context";
+
+type SubscriptionCallback = (results: any) => void;
 
 type DbContextType = {
     pouchdbWebViewRef: React.RefObject<WebView>;
@@ -16,6 +17,7 @@ type DbContextType = {
     put: (doc: any) => Promise<any>;
     get: (docId: string) => Promise<any>;
     find: (query: any) => Promise<any>;
+    subscribe: (query: any, callback: SubscriptionCallback) => Promise<() => void>;
 };
 
 const DbContext = createContext<DbContextType | undefined>(undefined);
@@ -24,12 +26,42 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     const pouchdbWebViewRef = useRef<WebView>(null);
     const pouchdbHtmlUri = Asset.fromModule(require("@/assets/db/pouchdb.html")).uri;
     const pendingRequests = useRef<{ [key: string]: (value: any) => void }>({});
+    const subscriptions = useRef<{ [key: string]: SubscriptionCallback }>({});
     const { currentAccount } = useAuth();
 
     // Helper to derive a valid database name from a DID
     const getDbName = (did: string): string => {
         return did.toLowerCase().replace(/[^a-z0-9_$()+/-]/g, "");
     };
+
+    const handleWebViewMessage = useCallback((event: WebViewMessageEvent) => {
+        console.log("onMessage", event.nativeEvent.data);
+        try {
+            const data = JSON.parse(event.nativeEvent.data);
+
+            // Handle subscription updates
+            if (data.type === "subscription" && data.subscriptionId) {
+                const callback = subscriptions.current[data.subscriptionId];
+                if (callback) {
+                    callback(data.results);
+                }
+                return;
+            }
+
+            // Handle regular request responses
+            const { requestId, response, error } = data;
+            if (requestId && pendingRequests.current[requestId]) {
+                if (error) {
+                    pendingRequests.current[requestId](Promise.reject(new Error(error)));
+                } else {
+                    pendingRequests.current[requestId](response);
+                }
+                delete pendingRequests.current[requestId];
+            }
+        } catch (error) {
+            console.error("Error parsing WebView message:", error);
+        }
+    }, []);
 
     const callWebViewFunction = useCallback((message: { action: string; payload?: any }) => {
         return new Promise<any>((resolve, reject) => {
@@ -107,6 +139,37 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         [callWebViewFunction]
     );
 
+    // Subscribe to changes
+    const subscribe = useCallback(
+        async (query: any, callback: SubscriptionCallback) => {
+            const subscriptionId = `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+            // Store the callback
+            subscriptions.current[subscriptionId] = callback;
+
+            // Start the subscription in the WebView
+            await callWebViewFunction({
+                action: "subscribe",
+                payload: {
+                    subscriptionId,
+                    query,
+                },
+            });
+
+            // Return an unsubscribe function
+            return () => {
+                delete subscriptions.current[subscriptionId];
+                callWebViewFunction({
+                    action: "unsubscribe",
+                    payload: { subscriptionId },
+                }).catch((error) => {
+                    console.error("Error unsubscribing:", error);
+                });
+            };
+        },
+        [callWebViewFunction]
+    );
+
     useEffect(() => {
         if (currentAccount) {
             const dbName = getDbName(currentAccount.did);
@@ -128,24 +191,11 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                 get,
                 put,
                 find,
+                subscribe,
             }}
         >
             <View style={styles.hidden}>
-                <WebView
-                    ref={pouchdbWebViewRef}
-                    source={{ uri: pouchdbHtmlUri }}
-                    javaScriptEnabled
-                    onMessage={(event) => {
-                        console.log("onMessage", event.nativeEvent.data);
-                        const { requestId, response } = JSON.parse(event.nativeEvent.data);
-
-                        // resolve the corresponding Promise
-                        if (requestId && pendingRequests.current[requestId]) {
-                            pendingRequests.current[requestId](response);
-                            delete pendingRequests.current[requestId];
-                        }
-                    }}
-                />
+                <WebView ref={pouchdbWebViewRef} source={{ uri: pouchdbHtmlUri }} javaScriptEnabled onMessage={handleWebViewMessage} />
             </View>
             {children}
         </DbContext.Provider>

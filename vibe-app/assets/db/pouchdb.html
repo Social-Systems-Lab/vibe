@@ -29,6 +29,9 @@
             window.ReactNativeWebView.postMessage(JSON.stringify({ response: "Initializing pouchdb" }));
             let db = null;
 
+            // Track active change listeners by subscriptionId
+            let changeListeners = {};
+
             // Open/create database
             async function open(dbName) {
                 if (db) {
@@ -37,17 +40,6 @@
                 }
                 db = new PouchDB(dbName);                
                 return "Database created/opened successfully";
-            }
-
-            // Close database
-            function close() {
-                if (db) {
-                    db.close();
-                    db = null;
-                    return "Database closed successfully";
-                } else {
-                    return "Database not open";
-                }
             }
 
             async function destroy() {
@@ -93,6 +85,105 @@
                 return result;
             }
 
+            async function subscribe(subscriptionId, query) {
+                if (!db) {
+                    throw new Error("Database not open");
+                }
+
+                // Set up collection index if needed
+                if (query && query.selector && query.selector.$collection) {
+                    await db.createIndex({ index: { fields: ["$collection"] } });
+                }
+
+                // Fetch and return initial results
+                try {
+                    const initialResults = await find(query);
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                        type: 'subscription',
+                        subscriptionId: subscriptionId,
+                        results: initialResults
+                    }));
+                } catch (error) {
+                    console.error('Error getting initial results:', error);
+                }                
+
+                // Set up changes feed
+                const changes = db.changes({
+                    since: 'now',
+                    live: true,
+                    include_docs: true
+                });
+
+                // Store the change listener reference
+                changeListeners[subscriptionId] = changes;
+
+                // Set up change handler
+                changes.on('change', async (change) => {
+                    try {
+                        // If query has a selector, we need to check if the changed doc matches
+                        // TODO below field matching doesn't seem to work but the idea is to not requery unless changes happen that impacts our query
+                        // if (query && query.selector) {
+                        //     let matchesFilter = true;
+                        //     const doc = change.doc;
+
+                        //     // Basic field matching (can be expanded for more complex queries)
+                        //     for (const field in query.selector) {
+                        //         if (doc[field] !== query.selector[field]) {
+                        //             matchesFilter = false;
+                        //             break;
+                        //         }
+                        //     }
+
+                        //     if (!matchesFilter) return;
+                        // }
+
+                        // Do a fresh query to get updated results
+                        const results = await find(query);
+                        
+                        // Send the updated results back
+                        window.ReactNativeWebView.postMessage(JSON.stringify({
+                            type: 'subscription',
+                            subscriptionId: subscriptionId,
+                            results: results
+                        }));
+                    } catch (error) {
+                        console.error('Error processing change:', error);
+                    }
+                });
+
+                return "Subscription started";
+            }
+
+            // Cancel a subscription
+            function unsubscribe(subscriptionId) {
+                if (changeListeners[subscriptionId]) {
+                    changeListeners[subscriptionId].cancel();
+                    delete changeListeners[subscriptionId];
+                    return "Subscription cancelled";
+                }
+                return "Subscription not found";
+            }
+
+            // Clean up all subscriptions (e.g., when closing DB)
+            function cancelAllSubscriptions() {
+                for (const subId in changeListeners) {
+                    changeListeners[subId].cancel();
+                }
+                Object.keys(changeListeners).forEach(key => delete changeListeners[key]);
+            }
+
+            // Update the close method to cancel subscriptions
+            function close() {
+                if (db) {
+                    cancelAllSubscriptions();
+                    db.close();
+                    db = null;
+                    return "Database closed successfully";
+                } else {
+                    return "Database not open";
+                }
+            }
+
             // Listener for React Native messages
             window.addEventListener("message", async (event) => {
                 const { action, payload, requestId } = event.data;
@@ -122,6 +213,14 @@
 
                         case "find":
                             response = await find(payload.query)
+                            break;
+
+                        case "subscribe":
+                            response = await subscribe(payload.subscriptionId, payload.query);
+                            break;
+                            
+                        case "unsubscribe":
+                            response = unsubscribe(payload.subscriptionId);
                             break;
                     }
 

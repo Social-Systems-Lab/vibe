@@ -25,7 +25,7 @@ const EXCLUDED_FIELDS = ["_id", "_rev", "$collection"];
 
 export default function BrowserTab({ tab }: Props) {
     const { currentAccount, initialized } = useAuth();
-    const { installedApps, addOrUpdateApp, checkPermission, readOnce, write } = useAppService();
+    const { installedApps, addOrUpdateApp, checkPermission, readOnce, read, write } = useAppService();
     const { updateTabScreenshot } = useTabs();
 
     const webViewRef = useRef<WebView>(null);
@@ -47,6 +47,7 @@ export default function BrowserTab({ tab }: Props) {
         collection: string;
         filter: any;
         results: ReadResult;
+        isSubscription?: boolean;
     } | null>(null);
 
     // Write request states
@@ -71,6 +72,8 @@ export default function BrowserTab({ tab }: Props) {
 
     const [dontAskAgain, setDontAskAgain] = useState(false);
     const [showMultipleDocs, setShowMultipleDocs] = useState(false);
+
+    const activeSubscriptions = useRef<Record<string, () => void>>({});
 
     useEffect(() => {
         setWebViewUrl(tab.url);
@@ -113,6 +116,10 @@ export default function BrowserTab({ tab }: Props) {
                 handleInitRequest(data, requestId);
             } else if (type === MessageType.READ_ONCE_REQUEST) {
                 await handleReadOnceRequest(data, requestId);
+            } else if (type === MessageType.READ_REQUEST) {
+                await handleReadRequest(data, requestId);
+            } else if (type === MessageType.UNSUBSCRIBE_REQUEST) {
+                handleUnsubscribeRequest(data, requestId);
             } else if (type === MessageType.WRITE_REQUEST) {
                 await handleWriteRequest(data, requestId);
             } else if (type === MessageType.LOG_REQUEST) {
@@ -233,6 +240,80 @@ export default function BrowserTab({ tab }: Props) {
         }
     };
 
+    // Handle read subscription request
+    const handleReadRequest = async (data: any, requestId: string) => {
+        if (!currentApp) {
+            sendNativeResponse({
+                requestId,
+                error: "read failed, no active app.",
+            });
+            return;
+        }
+
+        const { collection, filter } = data;
+        const permission = await checkPermission(currentApp.appId, "read", collection);
+
+        if (permission === "never") {
+            sendNativeResponse({ requestId, error: "Permission denied" });
+            return;
+        }
+
+        try {
+            if (permission === "always") {
+                // Start subscription directly for "always" permission
+                setupSubscription(requestId, collection, filter);
+            } else if (permission === "ask") {
+                // For "ask" permission, we'll handle this similar to readOnce
+                // but we'll need to remember to set up subscription if allowed
+                const results = await readOnce(collection, filter);
+
+                setReadPromptData({
+                    requestId,
+                    collection,
+                    filter,
+                    results,
+                    isSubscription: true, // Mark this as a subscription request
+                });
+
+                if (results.docs && results.docs.length > 1) {
+                    setExpandedDocs(Array(results.docs.length).fill(false));
+                    setAllExpanded(false);
+                }
+
+                setReadModalVisible(true);
+            }
+        } catch (error: any) {
+            sendNativeResponse({ requestId, error: error.message });
+        }
+    };
+
+    // Set up a PouchDB subscription
+    const setupSubscription = (requestId: string, collection: string, filter: any) => {
+        // Start the subscription
+        read(collection, filter, (results) => {
+            // Send results to WebView
+            sendNativeResponse({ requestId, result: results });
+        })
+            .then((unsubscribe) => {
+                // Store the unsubscribe function
+                activeSubscriptions.current[requestId] = unsubscribe;
+            })
+            .catch((error) => {
+                console.error("Error setting up subscription:", error);
+                sendNativeResponse({ requestId, error: error.message });
+            });
+    };
+
+    // Handle unsubscribe request
+    const handleUnsubscribeRequest = (data: any) => {
+        const subRequestId = data.requestId;
+        if (activeSubscriptions.current[subRequestId]) {
+            // Call the unsubscribe function
+            activeSubscriptions.current[subRequestId]();
+            delete activeSubscriptions.current[subRequestId];
+        }
+    };
+
     /** Write request handler */
     const handleWriteRequest = async (data: any, requestId: string) => {
         if (!currentApp) {
@@ -330,6 +411,7 @@ export default function BrowserTab({ tab }: Props) {
 
     async function handleReadAllow() {
         if (!readPromptData) return;
+
         if (dontAskAgain && currentApp) {
             const permKey = `read.${readPromptData.collection}`;
             const updatedPermissions = {
@@ -339,12 +421,18 @@ export default function BrowserTab({ tab }: Props) {
             addOrUpdateApp({ ...currentApp, permissions: updatedPermissions });
         }
 
-        const { requestId, results } = readPromptData;
+        const { requestId, collection, filter, results, isSubscription } = readPromptData;
+
+        // First send the immediate results
         sendNativeResponse({ requestId, result: results });
+
+        // If this is a subscription request, set up the subscription
+        if (isSubscription) {
+            setupSubscription(requestId, collection, filter);
+        }
 
         setReadPromptData(null);
         setReadModalVisible(false);
-        setDontAskAgain(false);
         setDontAskAgain(false);
     }
 
@@ -462,16 +550,7 @@ export default function BrowserTab({ tab }: Props) {
             )}
 
             {/* Main WebView */}
-            {jsCode && (
-                <WebView
-                    ref={webViewRef}
-                    source={{ uri: webViewUrl }}
-                    style={{ flex: 1 }}
-                    onMessage={handleWebViewMessage}
-                    injectedJavaScript={jsCode}
-                    javaScriptEnabled
-                />
-            )}
+            {jsCode && <WebView ref={webViewRef} source={{ uri: webViewUrl }} style={{ flex: 1 }} onMessage={handleWebViewMessage} injectedJavaScript={jsCode} javaScriptEnabled />}
 
             {/* Modal: initial permission request */}
             <Modal visible={modalVisible} transparent animationType="fade">
@@ -495,9 +574,7 @@ export default function BrowserTab({ tab }: Props) {
                                                 style={[styles.permissionButton, level === val && styles.permissionButtonSelected]}
                                                 onPress={() => handlePermissionChange(perm, val)}
                                             >
-                                                <Text style={level === val ? styles.permissionButtonSelectedText : styles.permissionButtonText}>
-                                                    {val.charAt(0).toUpperCase() + val.slice(1)}
-                                                </Text>
+                                                <Text style={level === val ? styles.permissionButtonSelectedText : styles.permissionButtonText}>{val.charAt(0).toUpperCase() + val.slice(1)}</Text>
                                             </TouchableOpacity>
                                         ))}
                                     </View>
@@ -530,8 +607,7 @@ export default function BrowserTab({ tab }: Props) {
 
                                 <Text style={styles.appDescription}>
                                     This app wants to read {readPromptData?.results.docs.length ?? 0} document
-                                    {readPromptData?.results.docs.length !== 1 ? "s" : ""} from your{" "}
-                                    <Text style={{ fontWeight: "600" }}>{readPromptData?.collection}</Text> collection.
+                                    {readPromptData?.results.docs.length !== 1 ? "s" : ""} from your <Text style={{ fontWeight: "600" }}>{readPromptData?.collection}</Text> collection.
                                 </Text>
 
                                 {/* If multiple docs */}
@@ -556,11 +632,7 @@ export default function BrowserTab({ tab }: Props) {
                                                 <>
                                                     {/* Expand/Collapse All */}
                                                     <TouchableOpacity onPress={toggleAllDocs} style={styles.iconButton}>
-                                                        <MaterialCommunityIcons
-                                                            name={allExpanded ? "collapse-all-outline" : "expand-all-outline"}
-                                                            size={20}
-                                                            color="#007bff"
-                                                        />
+                                                        <MaterialCommunityIcons name={allExpanded ? "collapse-all-outline" : "expand-all-outline"} size={20} color="#007bff" />
                                                     </TouchableOpacity>
 
                                                     {/* Toggle raw vs structured */}
@@ -583,19 +655,10 @@ export default function BrowserTab({ tab }: Props) {
                                                             const isExpanded = expandedDocs[idx];
                                                             return (
                                                                 <View key={idx} style={{ marginBottom: 10 }}>
-                                                                    <CollapsedDocRow
-                                                                        doc={doc}
-                                                                        index={idx}
-                                                                        isExpanded={isExpanded}
-                                                                        onPress={() => toggleDoc(idx)}
-                                                                    />
+                                                                    <CollapsedDocRow doc={doc} index={idx} isExpanded={isExpanded} onPress={() => toggleDoc(idx)} />
                                                                     {isExpanded && (
                                                                         <View style={styles.expandedContent}>
-                                                                            {showRawJson ? (
-                                                                                <Text style={styles.jsonText}>{JSON.stringify(doc, null, 2)}</Text>
-                                                                            ) : (
-                                                                                renderStructuredFields(doc)
-                                                                            )}
+                                                                            {showRawJson ? <Text style={styles.jsonText}>{JSON.stringify(doc, null, 2)}</Text> : renderStructuredFields(doc)}
                                                                         </View>
                                                                     )}
                                                                 </View>
@@ -613,11 +676,7 @@ export default function BrowserTab({ tab }: Props) {
 
                                 <View style={styles.checkboxContainer}>
                                     <TouchableOpacity onPress={() => setDontAskAgain(!dontAskAgain)} style={styles.checkbox}>
-                                        <MaterialCommunityIcons
-                                            name={dontAskAgain ? "checkbox-marked" : "checkbox-blank-outline"}
-                                            size={24}
-                                            color={dontAskAgain ? "#28a745" : "#ccc"}
-                                        />
+                                        <MaterialCommunityIcons name={dontAskAgain ? "checkbox-marked" : "checkbox-blank-outline"} size={24} color={dontAskAgain ? "#28a745" : "#ccc"} />
                                     </TouchableOpacity>
                                     <Text style={styles.checkboxLabel}>Don't ask me again</Text>
                                 </View>
@@ -648,8 +707,7 @@ export default function BrowserTab({ tab }: Props) {
                                 </View>
 
                                 <Text style={styles.appDescription}>
-                                    This app wants to write a document to your <Text style={{ fontWeight: "600" }}>{writePromptData?.collection}</Text>{" "}
-                                    collection.
+                                    This app wants to write a document to your <Text style={{ fontWeight: "600" }}>{writePromptData?.collection}</Text> collection.
                                 </Text>
 
                                 <View style={styles.docListHeader}>
@@ -672,22 +730,14 @@ export default function BrowserTab({ tab }: Props) {
                                 {writeDocVisible && (
                                     <View style={styles.scrollArea}>
                                         <ScrollView>
-                                            {showWriteRawJson ? (
-                                                <Text style={styles.jsonText}>{JSON.stringify(writePromptData?.doc, null, 2)}</Text>
-                                            ) : (
-                                                renderStructuredFields(writePromptData?.doc)
-                                            )}
+                                            {showWriteRawJson ? <Text style={styles.jsonText}>{JSON.stringify(writePromptData?.doc, null, 2)}</Text> : renderStructuredFields(writePromptData?.doc)}
                                         </ScrollView>
                                     </View>
                                 )}
 
                                 <View style={styles.checkboxContainer}>
                                     <TouchableOpacity onPress={() => setDontAskAgain(!dontAskAgain)} style={styles.checkbox}>
-                                        <MaterialCommunityIcons
-                                            name={dontAskAgain ? "checkbox-marked" : "checkbox-blank-outline"}
-                                            size={24}
-                                            color={dontAskAgain ? "#28a745" : "#ccc"}
-                                        />
+                                        <MaterialCommunityIcons name={dontAskAgain ? "checkbox-marked" : "checkbox-blank-outline"} size={24} color={dontAskAgain ? "#28a745" : "#ccc"} />
                                     </TouchableOpacity>
                                     <Text style={styles.checkboxLabel}>Don't ask me again</Text>
                                 </View>
@@ -729,11 +779,7 @@ function SingleDocView({ doc }: { doc: any }) {
 
                 {visible && (
                     <TouchableOpacity onPress={() => setShowRaw(!showRaw)} style={styles.iconButton}>
-                        {showRaw ? (
-                            <MaterialCommunityIcons name="file-document-outline" size={20} color="#007bff" />
-                        ) : (
-                            <MaterialCommunityIcons name="code-json" size={20} color="#007bff" />
-                        )}
+                        {showRaw ? <MaterialCommunityIcons name="file-document-outline" size={20} color="#007bff" /> : <MaterialCommunityIcons name="code-json" size={20} color="#007bff" />}
                     </TouchableOpacity>
                 )}
             </View>

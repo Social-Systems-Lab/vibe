@@ -2,13 +2,14 @@
 "use client";
 
 import { createContext, useState, useEffect, useContext, useCallback, ReactNode } from "react";
-import { vibe, VibeState, AppManifest, Account } from "vibe-sdk";
+import { vibe, VibeState, AppManifest, Account, Unsubscribe } from "vibe-sdk";
 
 /* eslint-disable  @typescript-eslint/no-explicit-any */
 interface VibeContextValue {
     account: Account | undefined;
     init: () => void; // manually call vibe.init if needed
     readOnce: (collection: string, filter?: any) => Promise<any>;
+    read: (collection: string, filter?: any, callback?: (result: any) => void) => Unsubscribe;
     write: (collection: string, data: any) => Promise<any>;
 }
 
@@ -55,9 +56,13 @@ export function VibeProvider({ children, manifest, autoInit = true }: VibeProvid
         vibe.init(manifest, (state) => setVibeState(state));
     }, [manifest]);
 
-    // Wrappers around vibe.readOnce and vibe.write
+    // Wrappers around vibe.readOnce, vibe.read and vibe.write
     const readOnce = useCallback((collection: string, filter?: any) => {
         return vibe.readOnce(collection, filter);
+    }, []);
+
+    const read = useCallback((collection: string, filter?: any, callback?: (result: any) => void) => {
+        return vibe.read(collection, filter, callback);
     }, []);
 
     const write = useCallback((collection: string, data: any) => {
@@ -70,6 +75,7 @@ export function VibeProvider({ children, manifest, autoInit = true }: VibeProvid
                 account: vibeState?.account,
                 init,
                 readOnce,
+                read,
                 write,
             }}
         >

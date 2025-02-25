@@ -20,7 +20,7 @@ const manifest: AppManifest = {
     id: "dev.vibeapp.vibe-web",
     name: "Vibe Website",
     description: "Official Vibe Website",
-    permissions: ["read.name", "read.ratings"],
+    permissions: ["read.contacts"],
     onetapEnabled: false,
     pictureUrl: "https://vibeapp.dev/favicon-96x96.png",
 };

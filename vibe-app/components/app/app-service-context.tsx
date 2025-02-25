@@ -19,6 +19,7 @@ interface AppServiceContextValue {
     checkPermission: (appId: string, operation: Operation, collection: string) => Promise<PermissionSetting>;
     updatePermission: (appId: string, operation: Operation, collection: string, newValue: PermissionSetting) => Promise<void>;
     readOnce: (collection: string, filter: any) => Promise<ReadResult>;
+    read: (collection: string, filter: any, callback: (results: ReadResult) => void) => Promise<() => void>;
     write: (collection: string, docs: any) => Promise<void>;
 }
 
@@ -26,7 +27,7 @@ const AppServiceContext = createContext<AppServiceContextValue | undefined>(unde
 
 export function AppServiceProvider({ children }: { children: React.ReactNode }) {
     const { currentAccount } = useAuth();
-    const { find, put } = useDb();
+    const { find, put, subscribe } = useDb();
     const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
     const APPS_KEY = `${APPS_KEY_PREFIX}${currentAccount?.did}`;
 
@@ -125,6 +126,27 @@ export function AppServiceProvider({ children }: { children: React.ReactNode }) 
         return ret;
     }
 
+    async function read(collection: string, filter: any, callback: (results: ReadResult) => void) {
+        const query = {
+            selector: {
+                ...filter,
+                $collection: collection,
+            },
+        };
+
+        console.log("Setting up subscription with query: ", JSON.stringify(query, null, 2));
+
+        // Start subscription
+        let unsubscribe = await subscribe(query, (results) => {
+            const formattedResults: ReadResult = {
+                docs: results.docs,
+                doc: results.docs[0],
+            };
+            callback(formattedResults);
+        });
+        return unsubscribe;
+    }
+
     async function write(collection: string, doc: any) {
         if (!doc) return undefined; // TODO return error message
         if (!doc._id) {
@@ -154,6 +176,7 @@ export function AppServiceProvider({ children }: { children: React.ReactNode }) 
                 checkPermission,
                 updatePermission,
                 readOnce,
+                read,
                 write,
             }}
         >
