@@ -156,7 +156,7 @@ export default function ShareButton() {
 
                                                 {/* Contact Info */}
                                                 <div className="flex-1">
-                                                    <h3 className="text-sm font-medium">{contact.name}</h3>
+                                                    <div className="text-sm font-medium">{contact.name}</div>
                                                     <p className="text-xs text-gray-500 truncate">{contact.email || contact.phone || "No contact info"}</p>
                                                 </div>
                                             </li>
