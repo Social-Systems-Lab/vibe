@@ -13,13 +13,14 @@ interface Contact {
     email?: string;
 }
 
-export default function ShareButton({ url = window.location.href }) {
+export default function ShareButton() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [contacts, setContacts] = useState<Contact[]>([]);
     const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const { account, read } = useVibe();
+    const url = typeof window === "undefined" ? "" : window.location.href;
 
     // Function to determine a consistent color based on name
     function stringToColor(str: string): string {
