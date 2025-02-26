@@ -134,7 +134,7 @@ export default function HomePage() {
             <div className="bg-gray-100 py-12">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
                     <h3 className="text-2xl font-bold text-gray-900 mb-4">Your digital freedom begins here</h3>
-                    <p className="text-4xl font-bold text-blue-600 mb-6">2</p>
+                    <p className="text-4xl font-bold text-blue-600 mb-6">7</p>
                     <Link
                         href="/developers"
                         className="inline-flex items-center bg-[#c17dff] text-white px-8 py-3 rounded-full font-semibold text-lg hover:bg-opacity-90 transition duration-300 shadow-lg"

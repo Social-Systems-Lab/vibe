@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useVibe } from "./vibe-context";
+import { useVibe } from "vibe-react";
 import { IoMdShare } from "react-icons/io";
 import { FaCheck } from "react-icons/fa";
 

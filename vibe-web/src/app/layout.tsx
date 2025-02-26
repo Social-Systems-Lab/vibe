@@ -6,8 +6,8 @@ import Link from "next/link";
 import type React from "react";
 import "./globals.css";
 import { Info, Mail } from "lucide-react";
-import { VibeProvider } from "@/components/vibe-context";
 import { AppManifest } from "vibe-sdk";
+import { VibeProvider } from "vibe-react";
 
 const libreFranklin = Libre_Franklin({ subsets: ["latin"], weight: ["400", "600", "700"] });
 

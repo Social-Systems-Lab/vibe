@@ -8,13 +8,13 @@ Vibe is a **self-sovereign identity (SSI) framework** that gives users full cont
 
 This repo is structured as follows:
 
-| Project               | Description                                                  |
-| --------------------- | ------------------------------------------------------------ |
-| **`vibe-app`**        | Mobile application for managing self-sovereign identities. Built with **Expo/React Native**. |
-| **`vibe-web`**        | Vibe website hosted at [vibeapp.dev](vibeapp.dev) providing documentation and integration with the vibe app. Built with **Next.js**. |
-| **`vibe-sdk`**        | JavaScript/TypeScript SDK that enables applications to interact with Vibe for authentication, data access, and permissions handling. |
-| **`vibe-react`**      | React integration for Vibe, simplifying usage of Vibe within React applications. |
-| **`apps/*`**          | Web applications built on top of Vibe, using the Vibe SDK for authentication and data handling. Built using **Vite + React**. |
+| Project          | Description                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **`vibe-app`**   | Mobile application for managing self-sovereign identities. Built with **Expo/React Native**.                                         |
+| **`vibe-web`**   | Vibe website hosted at [vibeapp.dev](vibeapp.dev) providing documentation and integration with the vibe app. Built with **Next.js**. |
+| **`vibe-sdk`**   | JavaScript/TypeScript SDK that enables applications to interact with Vibe for authentication, data access, and permissions handling. |
+| **`vibe-react`** | React integration for Vibe, simplifying usage of Vibe within React applications.                                                     |
+| **`apps/*`**     | Web applications built on top of Vibe, using the Vibe SDK for authentication and data handling. Built using **Vite + React**.        |
 
 ---
 
@@ -26,30 +26,43 @@ This repo is structured as follows:
 npm install
 ```
 
-### 2️⃣ Start Development
+### 2️⃣ Build Libraries (First Time Only)
+
+```bash
+npm run build
+```
+
+This builds the core libraries (vibe-sdk and vibe-react) needed by the web applications.
+
+### 3️⃣ Start Development
 
 #### 🟢 Start the Mobile App
 
-Ensure an Android emulator or device is available, then run:
+Ensure an emulator or device is set up, then run:
 
 ```bash
-npm run start-vibe-app
+npm run app
 ```
 
-#### 🌐 Start the Web Apps
+#### 🌐 Start the Web Applications
 
-Build and watch the SDK:
-
-```{bash
-npm run watch-vibe-sdk
-```
-
-Then start any of the web applications:
+The repository includes a streamlined development workflow:
 
 ```bash
-npm run start-vibe-web      # Start the Vibe developer portal
-npm run start-app-<appname> # Start a specific web app
+# Start all web apps with auto-rebuilding of dependencies
+npm run dev
+
+# Start a specific app (e.g., contacts)
+npm run dev contacts
+
+# Start multiple apps simultaneously (e.g., web and contacts)
+npm run dev web contacts
+
+# See all available options
+npm run dev --help
 ```
+
+This command automatically watches for changes in vibe-sdk and vibe-react while running your selected applications.
 
 ---
 

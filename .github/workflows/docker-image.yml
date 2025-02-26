@@ -8,6 +8,7 @@ on:
             - "vibe-web/**"
             - "apps/contacts/**"
             - "vibe-sdk/**"
+            - "vibe-react/**"
 
 jobs:
     changes:
@@ -24,9 +25,11 @@ jobs:
                       vibe-web:
                         - 'vibe-web/**'
                         - 'vibe-sdk/**'
+                        - 'vibe-react/**'
                       contacts:
                         - 'apps/contacts/**'
                         - 'vibe-sdk/**'
+                        - 'vibe-react/**'
 
     build-vibe-web:
         needs: changes

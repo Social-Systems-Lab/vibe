@@ -6,6 +6,16 @@ RUN npm install
 COPY vibe-sdk/ .
 RUN npm run build
 
+# Copy and build Vibe React
+FROM node:20-alpine AS react-builder
+WORKDIR /app/vibe-react
+COPY vibe-react/package*.json ./
+RUN npm install
+COPY vibe-react/ .
+COPY --from=sdk-builder /app/vibe-sdk /app/vibe-sdk
+RUN npm install /app/vibe-sdk
+RUN npm run build
+
 # Build the contacts app
 FROM node:20-alpine AS app-builder
 WORKDIR /app/contacts
@@ -13,6 +23,7 @@ COPY apps/contacts/package*.json ./
 RUN npm install
 COPY apps/contacts/ .
 COPY --from=sdk-builder /app/vibe-sdk /app/vibe-sdk
+COPY --from=react-builder /app/vibe-react /app/vibe-react
 RUN npm install /app/vibe-sdk
 RUN npm run build
 
