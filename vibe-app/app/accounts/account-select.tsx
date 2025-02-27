@@ -75,27 +75,29 @@ export default function AccountSelect() {
             </View>
 
             {/* Account List */}
-            <FlatList
-                data={accounts}
-                keyExtractor={(item) => item.did}
-                numColumns={2}
-                renderItem={({ item, index }) => (
-                    <TouchableOpacity style={styles.accountButton} onPress={() => handleAccountSelect(item.did)}>
-                        <View style={[styles.accountImageContainer]}>
-                            <SquircleMask size={120}>
-                                <Image
-                                    source={{
-                                        uri: `${item.pictureUrl}?v=${item.updatedAt}`,
-                                    }}
-                                    style={styles.accountImage}
-                                />
-                            </SquircleMask>
-                        </View>
-                        <Text style={[styles.accountName, { color: textColor }, item.did === "new" ? styles.newAccountText : null]}>{item.name}</Text>
-                    </TouchableOpacity>
-                )}
-                contentContainerStyle={styles.accountsGrid}
-            />
+            <View style={styles.accountListContainer}>
+                <FlatList
+                    data={accounts}
+                    keyExtractor={(item) => item.did}
+                    numColumns={2}
+                    renderItem={({ item, index }) => (
+                        <TouchableOpacity style={styles.accountButton} onPress={() => handleAccountSelect(item.did)}>
+                            <View style={[styles.accountImageContainer]}>
+                                <SquircleMask size={120}>
+                                    <Image
+                                        source={{
+                                            uri: `${item.pictureUrl}?v=${item.updatedAt}`,
+                                        }}
+                                        style={styles.accountImage}
+                                    />
+                                </SquircleMask>
+                            </View>
+                            <Text style={[styles.accountName, { color: textColor }, item.did === "new" ? styles.newAccountText : null]}>{item.name}</Text>
+                        </TouchableOpacity>
+                    )}
+                    contentContainerStyle={styles.accountsGrid}
+                />
+            </View>
 
             {/* Test screen */}
             <TouchableOpacity style={styles.adminDashboardButton} onPress={() => router.push("/accounts/test")}>
@@ -132,9 +134,14 @@ const styles = StyleSheet.create({
         top: 16,
         right: 16,
     },
+    accountListContainer: {
+        flex: 1,
+        marginBottom: 96 + 32 + 32, // Space for buttons at bottom
+    },
     accountsGrid: {
         alignItems: "center",
         justifyContent: "center",
+        paddingBottom: 20,
     },
     accountButton: {
         alignItems: "center",

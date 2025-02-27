@@ -12,13 +12,17 @@ import { InstalledApp } from "@/types/types";
 // Step definitions
 type WizardStep = "intro-welcome" | "intro-privacy" | "intro-data" | "profile-setup" | "app-selection" | "import-contacts" | "complete";
 
+// Force showing welcome screens during development
+const FORCE_ALWAYS_SHOW_WELCOME = __DEV__;
+
 export default function CreateAccountWizard() {
     const router = useRouter();
-    const { createAccount } = useAuth();
+    const { createAccount, accounts } = useAuth();
     const { addOrUpdateApp, write } = useAppService();
 
     // State variables
-    const [currentStep, setCurrentStep] = useState<WizardStep>("intro-welcome");
+    const [initialStep, setInitialStep] = useState<WizardStep>("intro-welcome");
+    const [currentStep, setCurrentStep] = useState<WizardStep | null>(null);
     const [alias, setAlias] = useState("");
     const [profilePicture, setProfilePicture] = useState<string | undefined>(undefined);
     const [loading, setLoading] = useState(false);
@@ -95,8 +99,13 @@ export default function CreateAccountWizard() {
 
     // Go to next step
     const handleNext = () => {
-        const steps: WizardStep[] = ["intro-welcome", "intro-privacy", "intro-data", "profile-setup", "app-selection", "import-contacts", "complete"];
+        const allSteps: WizardStep[] = ["intro-welcome", "intro-privacy", "intro-data", "profile-setup", "app-selection", "import-contacts", "complete"];
+        // For non-first accounts or when not in dev mode, skip the intro steps
+        const steps = FORCE_ALWAYS_SHOW_WELCOME || accounts.length === 0 
+            ? allSteps 
+            : allSteps.filter(step => !step.startsWith('intro-'));
 
+        if (!currentStep) return;
         const currentIndex = steps.indexOf(currentStep);
         if (currentIndex < steps.length - 1) {
             setCurrentStep(steps[currentIndex + 1]);
@@ -105,8 +114,13 @@ export default function CreateAccountWizard() {
 
     // Go to previous step
     const handleBack = () => {
-        const steps: WizardStep[] = ["intro-welcome", "intro-privacy", "intro-data", "profile-setup", "app-selection", "import-contacts", "complete"];
+        const allSteps: WizardStep[] = ["intro-welcome", "intro-privacy", "intro-data", "profile-setup", "app-selection", "import-contacts", "complete"];
+        // For non-first accounts or when not in dev mode, skip the intro steps
+        const steps = FORCE_ALWAYS_SHOW_WELCOME || accounts.length === 0 
+            ? allSteps 
+            : allSteps.filter(step => !step.startsWith('intro-'));
 
+        if (!currentStep) return;
         const currentIndex = steps.indexOf(currentStep);
         if (currentIndex > 0) {
             setCurrentStep(steps[currentIndex - 1]);
@@ -138,14 +152,16 @@ export default function CreateAccountWizard() {
         try {
             // 1. Create the account
             const finalAlias = alias.trim() !== "" ? alias.trim() : `User${Math.floor(Math.random() * 10000)}`;
-            await createAccount(finalAlias, "BIOMETRIC", profilePicture);
+            const account = await createAccount(finalAlias, "BIOMETRIC", profilePicture);
+            
+            console.log("Account created:", account);
 
-            console.log("Account created");
-
-            // 2. Install selected apps
+            // 2. Install selected apps after account is created
             for (const appId of selectedApps) {
                 const app = availableApps.find((a) => a.appId === appId);
                 if (app) {
+                    console.log("Installing app:", app.appId);
+                    // Reload app service context to ensure currentAccount is updated
                     await addOrUpdateApp(app);
                 }
             }
@@ -168,6 +184,7 @@ export default function CreateAccountWizard() {
                     })
                     .filter(Boolean);
 
+                console.log("Importing contacts:", vibeContacts.length);
                 // Import all selected contacts at once
                 await write("contacts", vibeContacts);
                 setImportingContacts(false);
@@ -182,6 +199,14 @@ export default function CreateAccountWizard() {
             setLoading(false);
         }
     };
+
+    // Determine initial step based on whether this is the first account
+    useEffect(() => {
+        const shouldShowIntro = FORCE_ALWAYS_SHOW_WELCOME || accounts.length === 0;
+        const startingStep = shouldShowIntro ? "intro-welcome" : "profile-setup";
+        setInitialStep(startingStep);
+        setCurrentStep(startingStep);
+    }, [accounts]);
 
     // Request contacts permission when reaching the import contacts step
     useEffect(() => {
@@ -295,23 +320,26 @@ export default function CreateAccountWizard() {
                                     </TouchableOpacity>
                                 </View>
 
-                                <FlatList
-                                    data={phoneContacts}
-                                    keyExtractor={(item) => item.id}
-                                    renderItem={({ item }) => (
-                                        <TouchableOpacity style={styles.contactItem} onPress={() => toggleContact(item.id)}>
-                                            <View style={styles.contactInitials}>
-                                                <Text style={styles.initialsText}>{item.name?.charAt(0) || "?"}</Text>
-                                            </View>
-                                            <View style={styles.contactInfo}>
-                                                <Text style={styles.contactName}>{item.name}</Text>
-                                                <Text style={styles.contactDetails}>{item.phoneNumbers?.[0]?.number || item.emails?.[0]?.email || "No contact info"}</Text>
-                                            </View>
-                                            <View style={styles.checkbox}>{selectedContacts.includes(item.id) && <Ionicons name="checkmark" size={24} color="#3498db" />}</View>
-                                        </TouchableOpacity>
-                                    )}
-                                    style={styles.contactList}
-                                />
+                                {/* Contacts list needs to be in its own View, not inside ScrollView */}
+                                <View style={styles.contactListWrapper}>
+                                    <FlatList
+                                        data={phoneContacts}
+                                        keyExtractor={(item) => item.id}
+                                        renderItem={({ item }) => (
+                                            <TouchableOpacity style={styles.contactItem} onPress={() => toggleContact(item.id)}>
+                                                <View style={styles.contactInitials}>
+                                                    <Text style={styles.initialsText}>{item.name?.charAt(0) || "?"}</Text>
+                                                </View>
+                                                <View style={styles.contactInfo}>
+                                                    <Text style={styles.contactName}>{item.name}</Text>
+                                                    <Text style={styles.contactDetails}>{item.phoneNumbers?.[0]?.number || item.emails?.[0]?.email || "No contact info"}</Text>
+                                                </View>
+                                                <View style={styles.checkbox}>{selectedContacts.includes(item.id) && <Ionicons name="checkmark" size={24} color="#3498db" />}</View>
+                                            </TouchableOpacity>
+                                        )}
+                                        style={styles.contactList}
+                                    />
+                                </View>
 
                                 <View style={styles.selectedCountContainer}>
                                     <Text style={styles.selectedCount}>{selectedContacts.length} contacts selected</Text>
@@ -514,7 +542,11 @@ const styles = StyleSheet.create({
     },
     contactListContainer: {
         flex: 1,
-        height: 300,
+        height: 420, // Increased height to show more contacts
+    },
+    contactListWrapper: {
+        height: 350, // Fixed height for FlatList container
+        width: '100%',
     },
     contactHeader: {
         flexDirection: "row",
