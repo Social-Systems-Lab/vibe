@@ -14,7 +14,7 @@ import { TabInfo, useTabs } from "./tab-context";
 import { useAppService } from "../app/app-service-context";
 import { InstalledApp, PermissionSetting, ReadResult } from "@/types/types";
 
-const FORCE_ALWAYS_ASK_PERMISSIONS = __DEV__;
+const FORCE_ALWAYS_ASK_PERMISSIONS = false; //__DEV__;
 
 interface Props {
     tab: TabInfo;
@@ -119,7 +119,7 @@ export default function BrowserTab({ tab }: Props) {
             } else if (type === MessageType.READ_REQUEST) {
                 await handleReadRequest(data, requestId);
             } else if (type === MessageType.UNSUBSCRIBE_REQUEST) {
-                handleUnsubscribeRequest(data, requestId);
+                handleUnsubscribeRequest(data);
             } else if (type === MessageType.WRITE_REQUEST) {
                 await handleWriteRequest(data, requestId);
             } else if (type === MessageType.LOG_REQUEST) {
