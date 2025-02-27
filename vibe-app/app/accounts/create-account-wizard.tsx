@@ -15,7 +15,7 @@ type WizardStep = "intro-welcome" | "intro-privacy" | "intro-data" | "profile-se
 export default function CreateAccountWizard() {
     const router = useRouter();
     const { createAccount } = useAuth();
-    const { addOrUpdateApp } = useAppService();
+    const { addOrUpdateApp, write } = useAppService();
 
     // State variables
     const [currentStep, setCurrentStep] = useState<WizardStep>("intro-welcome");
@@ -154,20 +154,20 @@ export default function CreateAccountWizard() {
             if (selectedContacts.length > 0) {
                 setImportingContacts(true);
                 // Convert phone contacts to vibe contacts
-                const vibeContacts = selectedContacts.map(contactId => {
-                    const phoneContact = phoneContacts.find(c => c.id === contactId);
-                    if (!phoneContact) return null;
-                    
-                    // Create a simplified contact structure
-                    return {
-                        name: phoneContact.name || 'Unknown',
-                        email: phoneContact.emails && phoneContact.emails.length > 0 
-                            ? phoneContact.emails[0].email : undefined,
-                        phone: phoneContact.phoneNumbers && phoneContact.phoneNumbers.length > 0 
-                            ? phoneContact.phoneNumbers[0].number : undefined
-                    };
-                }).filter(Boolean);
-                
+                const vibeContacts = selectedContacts
+                    .map((contactId) => {
+                        const phoneContact = phoneContacts.find((c) => c.id === contactId);
+                        if (!phoneContact) return null;
+
+                        // Create a simplified contact structure
+                        return {
+                            name: phoneContact.name || "Unknown",
+                            email: phoneContact.emails && phoneContact.emails.length > 0 ? phoneContact.emails[0].email : undefined,
+                            phone: phoneContact.phoneNumbers && phoneContact.phoneNumbers.length > 0 ? phoneContact.phoneNumbers[0].number : undefined,
+                        };
+                    })
+                    .filter(Boolean);
+
                 // Import all selected contacts at once
                 await write("contacts", vibeContacts);
                 setImportingContacts(false);

@@ -10,7 +10,7 @@ interface VibeContextValue {
     init: () => void; // manually call vibe.init if needed
     readOnce: (collection: string, filter?: any) => Promise<any>;
     read: (collection: string, filter?: any, callback?: (result: any) => void) => Unsubscribe;
-    write: (collection: string, data: any) => Promise<any>;
+    write: (collection: string, data: any | any[]) => Promise<any>;
 }
 
 const VibeContext = createContext<VibeContextValue | undefined>(undefined);
@@ -65,7 +65,7 @@ export function VibeProvider({ children, manifest, autoInit = true }: VibeProvid
         return vibe.read(collection, filter, callback);
     }, []);
 
-    const write = useCallback((collection: string, data: any) => {
+    const write = useCallback((collection: string, data: any | any[]) => {
         return vibe.write(collection, data);
     }, []);
 

@@ -1,6 +1,6 @@
 // contacts.tsx - Enhanced contact list and management
 import { useEffect, useState, useMemo } from "react";
-import { useVibe } from "./vibe-context";
+import { useVibe } from "vibe-react";
 import { IoMdAdd, IoMdClose, IoMdMail, IoMdCall } from "react-icons/io";
 import { HiDotsVertical } from "react-icons/hi";
 
