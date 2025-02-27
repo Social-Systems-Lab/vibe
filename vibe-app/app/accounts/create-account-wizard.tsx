@@ -3,60 +3,57 @@ import React, { useState, useEffect } from "react";
 import { View, Button, Text, TextInput, Image, StyleSheet, Alert, ScrollView, TouchableOpacity, Switch, FlatList } from "react-native";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import * as Contacts from 'expo-contacts';
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import * as Contacts from "expo-contacts";
+import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/components/auth/auth-context";
 import { useAppService } from "@/components/app/app-service-context";
 import { InstalledApp } from "@/types/types";
 
 // Step definitions
-type WizardStep = 
-    | "intro-welcome" 
-    | "intro-privacy" 
-    | "intro-data" 
-    | "profile-setup" 
-    | "app-selection" 
-    | "import-contacts" 
-    | "complete";
+type WizardStep = "intro-welcome" | "intro-privacy" | "intro-data" | "profile-setup" | "app-selection" | "import-contacts" | "complete";
 
 export default function CreateAccountWizard() {
     const router = useRouter();
     const { createAccount } = useAuth();
     const { addOrUpdateApp } = useAppService();
-    
+
     // State variables
     const [currentStep, setCurrentStep] = useState<WizardStep>("intro-welcome");
     const [alias, setAlias] = useState("");
     const [profilePicture, setProfilePicture] = useState<string | undefined>(undefined);
     const [loading, setLoading] = useState(false);
-    const [selectedApps, setSelectedApps] = useState<string[]>(["contacts"]);
+    const [selectedApps, setSelectedApps] = useState<string[]>(["dev.vibeapp.contacts"]);
     const [hasContactsPermission, setHasContactsPermission] = useState(false);
     const [phoneContacts, setPhoneContacts] = useState<Contacts.Contact[]>([]);
     const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
     const [importingContacts, setImportingContacts] = useState(false);
-    
+
     // Predefined apps (for now just contacts)
     const availableApps: InstalledApp[] = [
         {
-            appId: "contacts",
+            appId: "dev.vibeapp.contacts",
             name: "Contacts",
             description: "Manage your contacts with self-sovereign storage",
             pictureUrl: "https://vibeapp.dev/apps/contacts/icon.png",
             url: "https://vibeapp.dev/apps/contacts",
             permissions: {
                 "read.contacts": "always",
-                "write.contacts": "always"
+                "write.contacts": "always",
             },
-            hidden: false
-        }
+            hidden: false,
+        },
     ];
 
     // Request contacts permission
     const requestContactsPermission = async () => {
+        console.log("Requesting contacts permission...");
         const { status } = await Contacts.requestPermissionsAsync();
-        setHasContactsPermission(status === 'granted');
-        if (status === 'granted') {
+        console.log("Permission status:", status);
+        setHasContactsPermission(status === "granted");
+        if (status === "granted") {
             loadPhoneContacts();
+        } else {
+            console.log("Permission denied");
         }
     };
 
@@ -64,12 +61,12 @@ export default function CreateAccountWizard() {
     const loadPhoneContacts = async () => {
         try {
             const { data } = await Contacts.getContactsAsync({
-                fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers, Contacts.Fields.Emails]
+                fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers, Contacts.Fields.Emails],
             });
-            
+
             if (data.length > 0) {
                 // Filter out contacts without names
-                const validContacts = data.filter(contact => contact.name);
+                const validContacts = data.filter((contact) => contact.name);
                 setPhoneContacts(validContacts);
             }
         } catch (error) {
@@ -98,16 +95,8 @@ export default function CreateAccountWizard() {
 
     // Go to next step
     const handleNext = () => {
-        const steps: WizardStep[] = [
-            "intro-welcome", 
-            "intro-privacy", 
-            "intro-data", 
-            "profile-setup", 
-            "app-selection", 
-            "import-contacts", 
-            "complete"
-        ];
-        
+        const steps: WizardStep[] = ["intro-welcome", "intro-privacy", "intro-data", "profile-setup", "app-selection", "import-contacts", "complete"];
+
         const currentIndex = steps.indexOf(currentStep);
         if (currentIndex < steps.length - 1) {
             setCurrentStep(steps[currentIndex + 1]);
@@ -116,16 +105,8 @@ export default function CreateAccountWizard() {
 
     // Go to previous step
     const handleBack = () => {
-        const steps: WizardStep[] = [
-            "intro-welcome", 
-            "intro-privacy", 
-            "intro-data", 
-            "profile-setup", 
-            "app-selection", 
-            "import-contacts", 
-            "complete"
-        ];
-        
+        const steps: WizardStep[] = ["intro-welcome", "intro-privacy", "intro-data", "profile-setup", "app-selection", "import-contacts", "complete"];
+
         const currentIndex = steps.indexOf(currentStep);
         if (currentIndex > 0) {
             setCurrentStep(steps[currentIndex - 1]);
@@ -135,7 +116,7 @@ export default function CreateAccountWizard() {
     // Handle app selection toggle
     const toggleApp = (appId: string) => {
         if (selectedApps.includes(appId)) {
-            setSelectedApps(selectedApps.filter(id => id !== appId));
+            setSelectedApps(selectedApps.filter((id) => id !== appId));
         } else {
             setSelectedApps([...selectedApps, appId]);
         }
@@ -144,7 +125,7 @@ export default function CreateAccountWizard() {
     // Handle contact selection toggle
     const toggleContact = (contactId: string) => {
         if (selectedContacts.includes(contactId)) {
-            setSelectedContacts(selectedContacts.filter(id => id !== contactId));
+            setSelectedContacts(selectedContacts.filter((id) => id !== contactId));
         } else {
             setSelectedContacts([...selectedContacts, contactId]);
         }
@@ -153,20 +134,22 @@ export default function CreateAccountWizard() {
     // Create account and handle final steps
     const handleFinish = async () => {
         setLoading(true);
-        
+
         try {
             // 1. Create the account
             const finalAlias = alias.trim() !== "" ? alias.trim() : `User${Math.floor(Math.random() * 10000)}`;
             await createAccount(finalAlias, "BIOMETRIC", profilePicture);
-            
+
+            console.log("Account created");
+
             // 2. Install selected apps
             for (const appId of selectedApps) {
-                const app = availableApps.find(a => a.appId === appId);
+                const app = availableApps.find((a) => a.appId === appId);
                 if (app) {
                     await addOrUpdateApp(app);
                 }
             }
-            
+
             // 3. Import selected contacts if any
             if (selectedContacts.length > 0) {
                 setImportingContacts(true);
@@ -174,12 +157,12 @@ export default function CreateAccountWizard() {
                 // For now it's just a mock
                 // Actual implementation would convert phone contacts to vibe contacts
                 // and write them to the vibe storage
-                
+
                 // Simulate the import delay
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                await new Promise((resolve) => setTimeout(resolve, 1000));
                 setImportingContacts(false);
             }
-            
+
             // 4. Navigate to the main app
             router.replace("/main");
         } catch (error) {
@@ -207,13 +190,10 @@ export default function CreateAccountWizard() {
                             <MaterialIcons name="waving-hand" size={50} color="#3498db" />
                         </View>
                         <Text style={styles.title}>Welcome to Vibe</Text>
-                        <Text style={styles.description}>
-                            Vibe gives you full control over your digital identity and data.
-                            Let's get you set up with your own self-sovereign identity.
-                        </Text>
+                        <Text style={styles.description}>Vibe gives you full control over your digital identity and data. Let's get you set up with your own self-sovereign identity.</Text>
                     </View>
                 );
-            
+
             case "intro-privacy":
                 return (
                     <View style={styles.stepContainer}>
@@ -222,13 +202,11 @@ export default function CreateAccountWizard() {
                         </View>
                         <Text style={styles.title}>Your Privacy Matters</Text>
                         <Text style={styles.description}>
-                            With Vibe, your data stays with you. No centralized storage 
-                            or third-party intermediaries can access your information 
-                            without your explicit permission.
+                            With Vibe, your data stays with you. No centralized storage or third-party intermediaries can access your information without your explicit permission.
                         </Text>
                     </View>
                 );
-                
+
             case "intro-data":
                 return (
                     <View style={styles.stepContainer}>
@@ -236,24 +214,16 @@ export default function CreateAccountWizard() {
                             <MaterialIcons name="storage" size={50} color="#3498db" />
                         </View>
                         <Text style={styles.title}>Your Data, Your Rules</Text>
-                        <Text style={styles.description}>
-                            You decide which apps can access your data and when.
-                            Revoke access at any time. It's your digital identity, on your terms.
-                        </Text>
+                        <Text style={styles.description}>You decide which apps can access your data and when. Revoke access at any time. It's your digital identity, on your terms.</Text>
                     </View>
                 );
-                
+
             case "profile-setup":
                 return (
                     <View style={styles.stepContainer}>
                         <Text style={styles.title}>Create Your Profile</Text>
-                        <TextInput 
-                            style={styles.input} 
-                            placeholder="Enter your name" 
-                            value={alias} 
-                            onChangeText={setAlias} 
-                        />
-                        
+                        <TextInput style={styles.input} placeholder="Enter your name" value={alias} onChangeText={setAlias} />
+
                         <View style={styles.profileImageContainer}>
                             {profilePicture ? (
                                 <Image source={{ uri: profilePicture }} style={styles.profileImage} />
@@ -263,58 +233,44 @@ export default function CreateAccountWizard() {
                                 </View>
                             )}
                             <TouchableOpacity style={styles.imagePickerButton} onPress={pickImage}>
-                                <Text style={styles.imagePickerButtonText}>
-                                    {profilePicture ? "Change Photo" : "Add Photo"}
-                                </Text>
+                                <Text style={styles.imagePickerButtonText}>{profilePicture ? "Change Photo" : "Add Photo"}</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
                 );
-                
+
             case "app-selection":
                 return (
                     <View style={styles.stepContainer}>
                         <Text style={styles.title}>Select Base Apps</Text>
-                        <Text style={styles.description}>
-                            Choose the apps you want to install to get started with Vibe.
-                        </Text>
-                        
+                        <Text style={styles.description}>Choose the apps you want to install to get started with Vibe.</Text>
+
                         <View style={styles.appListContainer}>
                             <Text style={styles.sectionTitle}>Base Apps</Text>
-                            
-                            {availableApps.map(app => (
+
+                            {availableApps.map((app) => (
                                 <View key={app.appId} style={styles.appItem}>
                                     <View style={styles.appInfoContainer}>
                                         <Text style={styles.appName}>{app.name}</Text>
                                         <Text style={styles.appDescription}>{app.description}</Text>
                                     </View>
-                                    <Switch
-                                        value={selectedApps.includes(app.appId)}
-                                        onValueChange={() => toggleApp(app.appId)}
-                                    />
+                                    <Switch value={selectedApps.includes(app.appId)} onValueChange={() => toggleApp(app.appId)} />
                                 </View>
                             ))}
                         </View>
                     </View>
                 );
-                
+
             case "import-contacts":
                 return (
                     <View style={styles.stepContainer}>
                         <Text style={styles.title}>Import Contacts</Text>
-                        <Text style={styles.description}>
-                            Import your existing contacts to get started quickly.
-                        </Text>
-                        
+                        <Text style={styles.description}>Import your existing contacts to get started quickly.</Text>
+
                         {!hasContactsPermission ? (
                             <View style={styles.permissionContainer}>
-                                <Text style={styles.permissionText}>
-                                    Vibe needs permission to access your contacts.
-                                </Text>
-                                <Button 
-                                    title="Grant Permission" 
-                                    onPress={requestContactsPermission} 
-                                />
+                                <Text style={styles.permissionText}>Vibe needs permission to access your contacts.</Text>
+                                <Button title="Grant Permission" onPress={requestContactsPermission} />
                             </View>
                         ) : phoneContacts.length === 0 ? (
                             <View style={styles.emptyStateContainer}>
@@ -324,62 +280,37 @@ export default function CreateAccountWizard() {
                             <View style={styles.contactListContainer}>
                                 <View style={styles.contactHeader}>
                                     <Text>Select contacts to import</Text>
-                                    <TouchableOpacity 
-                                        onPress={() => setSelectedContacts(
-                                            selectedContacts.length === phoneContacts.length 
-                                                ? [] 
-                                                : phoneContacts.map(c => c.id)
-                                        )}
-                                    >
-                                        <Text style={styles.selectAllText}>
-                                            {selectedContacts.length === phoneContacts.length 
-                                                ? "Deselect All" 
-                                                : "Select All"}
-                                        </Text>
+                                    <TouchableOpacity onPress={() => setSelectedContacts(selectedContacts.length === phoneContacts.length ? [] : phoneContacts.map((c) => c.id))}>
+                                        <Text style={styles.selectAllText}>{selectedContacts.length === phoneContacts.length ? "Deselect All" : "Select All"}</Text>
                                     </TouchableOpacity>
                                 </View>
-                                
+
                                 <FlatList
                                     data={phoneContacts}
                                     keyExtractor={(item) => item.id}
                                     renderItem={({ item }) => (
-                                        <TouchableOpacity 
-                                            style={styles.contactItem}
-                                            onPress={() => toggleContact(item.id)}
-                                        >
+                                        <TouchableOpacity style={styles.contactItem} onPress={() => toggleContact(item.id)}>
                                             <View style={styles.contactInitials}>
-                                                <Text style={styles.initialsText}>
-                                                    {item.name?.charAt(0) || "?"}
-                                                </Text>
+                                                <Text style={styles.initialsText}>{item.name?.charAt(0) || "?"}</Text>
                                             </View>
                                             <View style={styles.contactInfo}>
                                                 <Text style={styles.contactName}>{item.name}</Text>
-                                                <Text style={styles.contactDetails}>
-                                                    {item.phoneNumbers?.[0]?.number || 
-                                                     item.emails?.[0]?.email || 
-                                                     "No contact info"}
-                                                </Text>
+                                                <Text style={styles.contactDetails}>{item.phoneNumbers?.[0]?.number || item.emails?.[0]?.email || "No contact info"}</Text>
                                             </View>
-                                            <View style={styles.checkbox}>
-                                                {selectedContacts.includes(item.id) && (
-                                                    <Ionicons name="checkmark" size={24} color="#3498db" />
-                                                )}
-                                            </View>
+                                            <View style={styles.checkbox}>{selectedContacts.includes(item.id) && <Ionicons name="checkmark" size={24} color="#3498db" />}</View>
                                         </TouchableOpacity>
                                     )}
                                     style={styles.contactList}
                                 />
-                                
+
                                 <View style={styles.selectedCountContainer}>
-                                    <Text style={styles.selectedCount}>
-                                        {selectedContacts.length} contacts selected
-                                    </Text>
+                                    <Text style={styles.selectedCount}>{selectedContacts.length} contacts selected</Text>
                                 </View>
                             </View>
                         )}
                     </View>
                 );
-                
+
             case "complete":
                 return (
                     <View style={styles.stepContainer}>
@@ -387,13 +318,10 @@ export default function CreateAccountWizard() {
                             <MaterialIcons name="check-circle" size={60} color="#2ecc71" />
                         </View>
                         <Text style={styles.title}>All Set!</Text>
-                        <Text style={styles.description}>
-                            Your Vibe account is ready to use. Tap Finish to start using your 
-                            self-sovereign identity and take control of your digital life.
-                        </Text>
+                        <Text style={styles.description}>Your Vibe account is ready to use. Tap Finish to start using your self-sovereign identity and take control of your digital life.</Text>
                     </View>
                 );
-                
+
             default:
                 return <View />;
         }
@@ -404,43 +332,25 @@ export default function CreateAccountWizard() {
             {/* Progress indicator */}
             <View style={styles.progressContainer}>
                 {["intro-welcome", "intro-privacy", "intro-data", "profile-setup", "app-selection", "import-contacts", "complete"].map((step, index) => (
-                    <View 
-                        key={step} 
-                        style={[
-                            styles.progressDot,
-                            currentStep === step ? styles.progressDotActive : null
-                        ]}
-                    />
+                    <View key={step} style={[styles.progressDot, currentStep === step ? styles.progressDotActive : null]} />
                 ))}
             </View>
-            
+
             {/* Content area */}
             <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
                 {renderStep()}
             </ScrollView>
-            
+
             {/* Navigation buttons */}
             <View style={styles.navigationContainer}>
                 {currentStep !== "intro-welcome" && (
-                    <TouchableOpacity
-                        style={styles.navigationButton}
-                        onPress={handleBack}
-                        disabled={loading || importingContacts}
-                    >
+                    <TouchableOpacity style={styles.navigationButton} onPress={handleBack} disabled={loading || importingContacts}>
                         <Text style={styles.navigationButtonText}>Back</Text>
                     </TouchableOpacity>
                 )}
-                
-                <TouchableOpacity
-                    style={[styles.navigationButton, styles.primaryButton]}
-                    onPress={currentStep === "complete" ? handleFinish : handleNext}
-                    disabled={loading || importingContacts}
-                >
-                    <Text style={styles.primaryButtonText}>
-                        {loading ? "Processing..." : 
-                         importingContacts ? "Importing..." :
-                         currentStep === "complete" ? "Finish" : "Next"}
-                    </Text>
+
+                <TouchableOpacity style={[styles.navigationButton, styles.primaryButton]} onPress={currentStep === "complete" ? handleFinish : handleNext} disabled={loading || importingContacts}>
+                    <Text style={styles.primaryButtonText}>{loading ? "Processing..." : importingContacts ? "Importing..." : currentStep === "complete" ? "Finish" : "Next"}</Text>
                 </TouchableOpacity>
             </View>
         </View>

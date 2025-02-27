@@ -52,6 +52,8 @@ export function AppServiceProvider({ children }: { children: React.ReactNode }) 
 
     // Add or update an app
     async function addOrUpdateApp(app: Partial<InstalledApp>) {
+        console.log("addOrUpdateApp", currentAccount, ", app", app);
+
         let existingIndex = installedApps.findIndex((a) => a.appId === app.appId);
         let newList;
         if (existingIndex >= 0) {
