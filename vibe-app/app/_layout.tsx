@@ -5,7 +5,6 @@ import { Stack, useRouter } from "expo-router";
 import { WebViewProvider } from "@/components/ui/web-view-context";
 import { Linking, StatusBar, useColorScheme } from "react-native";
 import { TabsProvider } from "@/components/ui/tab-context";
-import { AppServiceProvider } from "@/components/app/app-service-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { DbProvider } from "@/components/db/db-context";
 
@@ -48,22 +47,20 @@ export default function RootLayout() {
     return (
         <WebViewProvider>
             <TabsProvider>
-                <AuthProvider>
-                    <DbProvider>
-                        <AppServiceProvider>
-                            <GestureHandlerRootView>
-                                <StatusBar
-                                    backgroundColor={colorScheme === "light" ? "#FFFFFF" : "#1E293B"}
-                                    barStyle={colorScheme === "light" ? "dark-content" : "light-content"}
-                                    translucent={false}
-                                />
-                                <Stack screenOptions={{ headerShown: false }}>
-                                    <Stack.Screen name="index" />
-                                </Stack>
-                            </GestureHandlerRootView>
-                        </AppServiceProvider>
-                    </DbProvider>
-                </AuthProvider>
+                <DbProvider>
+                    <AuthProvider>
+                        <GestureHandlerRootView>
+                            <StatusBar
+                                backgroundColor={colorScheme === "light" ? "#FFFFFF" : "#1E293B"}
+                                barStyle={colorScheme === "light" ? "dark-content" : "light-content"}
+                                translucent={false}
+                            />
+                            <Stack screenOptions={{ headerShown: false }}>
+                                <Stack.Screen name="index" />
+                            </Stack>
+                        </GestureHandlerRootView>
+                    </AuthProvider>
+                </DbProvider>
             </TabsProvider>
         </WebViewProvider>
     );

@@ -6,7 +6,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as Contacts from "expo-contacts";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/components/auth/auth-context";
-import { useAppService } from "@/components/app/app-service-context";
+import { useDb } from "@/components/db/db-context";
 import { InstalledApp } from "@/types/types";
 
 // Step definitions
@@ -17,8 +17,8 @@ const FORCE_ALWAYS_SHOW_WELCOME = __DEV__;
 
 export default function CreateAccountWizard() {
     const router = useRouter();
-    const { createAccount, accounts } = useAuth();
-    const { addOrUpdateApp, write } = useAppService();
+    const { createAccount, accounts, addOrUpdateApp } = useAuth();
+    const { write } = useDb();
 
     // State variables
     const [initialStep, setInitialStep] = useState<WizardStep>("intro-welcome");
@@ -156,41 +156,56 @@ export default function CreateAccountWizard() {
             
             console.log("Account created:", account);
 
-            // 2. Install selected apps after account is created
+            // Database and apps are already set up by createAccount
+
+            // 3. Install selected apps after account is created
             for (const appId of selectedApps) {
                 const app = availableApps.find((a) => a.appId === appId);
                 if (app) {
-                    console.log("Installing app:", app.appId);
-                    // Reload app service context to ensure currentAccount is updated
-                    await addOrUpdateApp(app);
+                    try {
+                        console.log("Installing app:", app.appId);
+                        await addOrUpdateApp(app);
+                    } catch (appError) {
+                        console.error(`Error installing app ${app.appId}:`, appError);
+                        // Continue with other apps
+                    }
                 }
             }
 
-            // 3. Import selected contacts if any
+            // 4. Import selected contacts if any
             if (selectedContacts.length > 0) {
                 setImportingContacts(true);
-                // Convert phone contacts to vibe contacts
-                const vibeContacts = selectedContacts
-                    .map((contactId) => {
-                        const phoneContact = phoneContacts.find((c) => c.id === contactId);
-                        if (!phoneContact) return null;
+                try {
+                    // Convert phone contacts to vibe contacts
+                    const vibeContacts = selectedContacts
+                        .map((contactId) => {
+                            const phoneContact = phoneContacts.find((c) => c.id === contactId);
+                            if (!phoneContact) return null;
 
-                        // Create a simplified contact structure
-                        return {
-                            name: phoneContact.name || "Unknown",
-                            email: phoneContact.emails && phoneContact.emails.length > 0 ? phoneContact.emails[0].email : undefined,
-                            phone: phoneContact.phoneNumbers && phoneContact.phoneNumbers.length > 0 ? phoneContact.phoneNumbers[0].number : undefined,
-                        };
-                    })
-                    .filter(Boolean);
+                            // Create a simplified contact structure
+                            return {
+                                name: phoneContact.name || "Unknown",
+                                email: phoneContact.emails && phoneContact.emails.length > 0 ? phoneContact.emails[0].email : undefined,
+                                phone: phoneContact.phoneNumbers && phoneContact.phoneNumbers.length > 0 ? phoneContact.phoneNumbers[0].number : undefined,
+                            };
+                        })
+                        .filter(Boolean);
 
-                console.log("Importing contacts:", vibeContacts.length);
-                // Import all selected contacts at once
-                await write("contacts", vibeContacts);
-                setImportingContacts(false);
+                    console.log("Importing contacts:", vibeContacts.length);
+                    
+                    if (vibeContacts.length > 0) {
+                        // Import all selected contacts at once
+                        await write("contacts", vibeContacts);
+                    }
+                } catch (contactsError) {
+                    console.error("Error importing contacts:", contactsError);
+                    Alert.alert("Warning", "Some contacts may not have been imported correctly.");
+                } finally {
+                    setImportingContacts(false);
+                }
             }
 
-            // 4. Navigate to the main app
+            // 5. Navigate to the main app
             router.replace("/main");
         } catch (error) {
             console.error("Account creation failed:", error);
@@ -374,10 +389,16 @@ export default function CreateAccountWizard() {
                 ))}
             </View>
 
-            {/* Content area */}
-            <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-                {renderStep()}
-            </ScrollView>
+            {/* Content area - Not using ScrollView for steps with FlatList */}
+            {currentStep === "import-contacts" ? (
+                <View style={styles.content}>
+                    {renderStep()}
+                </View>
+            ) : (
+                <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+                    {renderStep()}
+                </ScrollView>
+            )}
 
             {/* Navigation buttons */}
             <View style={styles.navigationContainer}>

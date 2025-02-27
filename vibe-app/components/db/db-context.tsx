@@ -1,15 +1,21 @@
 // db-context.tsx - Low-level interface for storing user/app data in PouchDB.
 // Uses a WebView to interact with the pouchdb library
 
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
+import React, { createContext, useContext, useRef, useCallback } from "react";
 import { View, StyleSheet } from "react-native";
 import WebView, { WebViewMessageEvent } from "react-native-webview";
 import { Asset } from "expo-asset";
-import { useAuth } from "../auth/auth-context";
 
 type SubscriptionCallback = (results: any) => void;
 
+// Define a result type for read operations
+type ReadResult = {
+    docs: any[];
+    doc: any;  // First doc for convenience
+};
+
 type DbContextType = {
+    // Core database operations
     pouchdbWebViewRef: React.RefObject<WebView>;
     open: (dbName: string) => Promise<any>;
     close: () => Promise<any>;
@@ -19,6 +25,14 @@ type DbContextType = {
     get: (docId: string) => Promise<any>;
     find: (query: any) => Promise<any>;
     subscribe: (query: any, callback: SubscriptionCallback) => Promise<() => void>;
+    
+    // Helper functions
+    getDbNameFromDid: (did: string) => string; // Helper to get valid DB name from DID
+    
+    // High-level operations (moved from AppService)
+    read: (collection: string, filter: any, callback: (results: ReadResult) => void) => Promise<() => void>;
+    readOnce: (collection: string, filter: any) => Promise<ReadResult>;
+    write: (collection: string, doc: any | any[]) => Promise<any>;
 };
 
 const DbContext = createContext<DbContextType | undefined>(undefined);
@@ -28,7 +42,6 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     const pouchdbHtmlUri = Asset.fromModule(require("@/assets/db/pouchdb.html")).uri;
     const pendingRequests = useRef<{ [key: string]: (value: any) => void }>({});
     const subscriptions = useRef<{ [key: string]: SubscriptionCallback }>({});
-    const { currentAccount } = useAuth();
 
     // Helper to derive a valid database name from a DID
     const getDbName = (did: string): string => {
@@ -181,16 +194,109 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         [callWebViewFunction]
     );
 
-    useEffect(() => {
-        if (currentAccount) {
-            const dbName = getDbName(currentAccount.did);
-            open(dbName)
-                .then((response) => console.log("Database created/opened:", dbName, response))
-                .catch((err) => console.error("Error creating/opening database:", dbName, err));
-        } else {
-            close();
-        }
-    }, [currentAccount, open]);
+    // We're removing the automatic database opening based on currentAccount
+    // The AuthProvider will handle opening the database when an account is selected
+
+    // Helper function to get DB name from a DID
+    const getDbNameFromDid = useCallback((did: string): string => {
+        return did.toLowerCase().replace(/[^a-z0-9_$()+/-]/g, "");
+    }, []);
+
+    // High-level read function with subscription
+    const read = useCallback(
+        async (collection: string, filter: any, callback: (results: ReadResult) => void): Promise<() => void> => {
+            const query = {
+                selector: {
+                    ...filter,
+                    $collection: collection,
+                },
+            };
+
+            console.log("Setting up subscription with query: ", JSON.stringify(query, null, 2));
+
+            // Start subscription
+            let unsubscribe = await subscribe(query, (results) => {
+                const formattedResults: ReadResult = {
+                    docs: results.docs,
+                    doc: results.docs[0],
+                };
+                callback(formattedResults);
+            });
+            return unsubscribe;
+        },
+        [subscribe]
+    );
+
+    // High-level readOnce function
+    const readOnce = useCallback(
+        async (collection: string, filter: any): Promise<ReadResult> => {
+            const query = {
+                selector: {
+                    ...filter,
+                    $collection: collection,
+                },
+            };
+
+            console.log("Calling find with the following query: ", JSON.stringify(query, null, 2));
+
+            const result = await find(query);
+            let ret: ReadResult = {
+                docs: result.docs,
+                doc: result.docs[0],
+            };
+            return ret;
+        },
+        [find]
+    );
+
+    // High-level write function that handles collections and IDs
+    const write = useCallback(
+        async (collection: string, doc: any | any[]): Promise<any> => {
+            // Handle array of documents
+            if (Array.isArray(doc)) {
+                if (doc.length === 0) return undefined; // Empty array, nothing to do
+                
+                // Process each document in the array
+                const docs = doc.map(item => {
+                    if (!item) return null; // Skip null/undefined items
+                    
+                    let processedDoc = { ...item };
+                    
+                    if (!processedDoc._id) {
+                        // Create random ID for the document
+                        processedDoc._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                    } else if (!processedDoc._id.startsWith(`${collection}/`)) {
+                        // Invalid ID for this collection
+                        return null;
+                    }
+                    
+                    processedDoc.$collection = collection;
+                    return processedDoc;
+                }).filter(Boolean); // Remove null items
+                
+                if (docs.length === 0) return undefined;
+                
+                console.log("writing docs batch", docs.length);
+                // Use bulkDocs for array of documents
+                const results = await bulkPut(docs);
+                return results;
+            } else {
+                // Original single document logic
+                if (!doc) return undefined; 
+                if (!doc._id) {
+                    doc._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                } else if (!doc._id.startsWith(`${collection}/`)) {
+                    return undefined;
+                }
+                doc.$collection = collection;
+
+                console.log("writing doc", doc);
+                const result = await put(doc);
+                return result;
+            }
+        },
+        [put, bulkPut]
+    );
 
     return (
         <DbContext.Provider
@@ -204,6 +310,10 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                 bulkPut,
                 find,
                 subscribe,
+                getDbNameFromDid,
+                read,
+                readOnce,
+                write,
             }}
         >
             <View style={styles.hidden}>

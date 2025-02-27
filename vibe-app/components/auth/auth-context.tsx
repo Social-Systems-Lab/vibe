@@ -12,7 +12,7 @@ import WebView from "react-native-webview";
 import { Asset } from "expo-asset";
 import { useTabs } from "../ui/tab-context";
 import { APPS_KEY_PREFIX } from "@/constants/constants";
-import { Account, AuthType, RsaKeys } from "@/types/types";
+import { Account, AuthType, RsaKeys, InstalledApp } from "@/types/types";
 import { useDb } from "../db/db-context";
 
 // Polyfill Buffer for React Native if necessary
@@ -20,7 +20,11 @@ if (typeof Buffer === "undefined") {
     global.Buffer = require("buffer").Buffer;
 }
 
+type Operation = "read" | "write";
+type PermissionSetting = "never" | "ask" | "always";
+
 type AuthContextType = {
+    // Account management
     jsrsaWebViewRef: React.RefObject<WebView>;
     accounts: Account[];
     currentAccount: Account | null;
@@ -28,13 +32,24 @@ type AuthContextType = {
     initialized: boolean;
     generateRSAKeys: () => Promise<RsaKeys>;
     signChallenge: (privateKey: string, challenge: string) => Promise<string>;
-    createAccount: (accountName: string, authType: AuthType, pictureUrl?: string, pin?: string) => Promise<void>;
+    createAccount: (accountName: string, authType: AuthType, pictureUrl?: string, pin?: string) => Promise<Account>;
     updateAccount: (accountDid: string, newName?: string, newPictureUri?: string) => Promise<void>;
     deleteAccount: (accountDid: string) => Promise<void>;
     encryptData: (data: string) => Promise<string>;
     decryptData: (encryptedData: string) => Promise<string>;
     login: (accountDid: string, pin?: string) => Promise<void>;
     logout: () => Promise<void>;
+    
+    // App management (moved from AppService)
+    installedApps: InstalledApp[];
+    addOrUpdateApp: (app: Partial<InstalledApp>) => Promise<void>;
+    removeApp: (appId: string) => Promise<void>;
+    setAppPinned: (appId: string, pinned: boolean) => Promise<void>;
+    setAppHidden: (appId: string, hidden: boolean) => Promise<void>;
+    
+    // Permissions (moved from AppService)
+    checkPermission: (appId: string, operation: Operation, collection: string) => Promise<PermissionSetting>;
+    updatePermission: (appId: string, operation: Operation, collection: string, newValue: PermissionSetting) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -48,9 +63,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
     const [loading, setLoading] = useState<boolean>(false);
     const [initialized, setInitialized] = useState<boolean>(false);
+    const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
     const { resetTabs, clearTabs } = useTabs();
+    const { open, close, getDbNameFromDid } = useDb(); // Get database functions
 
     const ACCOUNTS_KEY = "accounts";
+    const getAppsKey = (did: string) => `${APPS_KEY_PREFIX}${did}`;
+    
+    // Function to handle setting up an account: open DB and load apps
+    const setupAccount = async (account: Account) => {
+        if (!account) return;
+        
+        try {
+            // 1. Open the database for this account
+            const dbName = getDbNameFromDid(account.did);
+            console.log(`Opening database for account: ${dbName}`);
+            await open(dbName);
+            console.log(`Database opened successfully`);
+            
+            // 2. Load installed apps for this account
+            const appsKey = getAppsKey(account.did);
+            const data = await AsyncStorage.getItem(appsKey);
+            if (data) {
+                setInstalledApps(JSON.parse(data));
+            } else {
+                setInstalledApps([]);
+            }
+        } catch (error) {
+            console.error("Error setting up account:", error);
+            // Continue anyway as we want basic functionality to work
+        }
+    };
 
     const callWebViewFunction = useCallback((message: { action: string; payload?: any }) => {
         return new Promise<any>((resolve, reject) => {
@@ -96,6 +139,80 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const loadAccounts = async (): Promise<Account[]> => {
         const data = await AsyncStorage.getItem(ACCOUNTS_KEY);
         return data ? JSON.parse(data) : [];
+    };
+    
+    // App management functions
+    async function saveInstalledApps(apps: InstalledApp[]) {
+        if (!currentAccount) return;
+        
+        setInstalledApps(apps);
+        const appsKey = getAppsKey(currentAccount.did);
+        await AsyncStorage.setItem(appsKey, JSON.stringify(apps));
+    }
+
+    // Add or update an app
+    async function addOrUpdateApp(app: Partial<InstalledApp>) {
+        if (!currentAccount) {
+            throw new Error("Cannot add app: No account selected");
+        }
+        
+        console.log("addOrUpdateApp for account:", currentAccount.did, ", app:", app);
+        
+        let existingIndex = installedApps.findIndex((a) => a.appId === app.appId);
+        let newList;
+        if (existingIndex >= 0) {
+            // update
+            newList = [...installedApps];
+            newList[existingIndex] = { ...installedApps[existingIndex], ...app } as InstalledApp;
+        } else {
+            // add
+            newList = [...installedApps, app as InstalledApp];
+        }
+        await saveInstalledApps(newList);
+    }
+
+    async function removeApp(appId: string) {
+        const filtered = installedApps.filter((a) => a.appId !== appId);
+        await saveInstalledApps(filtered);
+    }
+
+    async function setAppPinned(appId: string, pinned: boolean) {
+        const newList = installedApps.map((a) => {
+            if (a.appId === appId) return { ...a, pinned };
+            return a;
+        });
+        await saveInstalledApps(newList);
+    }
+
+    async function setAppHidden(appId: string, hidden: boolean) {
+        const newList = installedApps.map((a) => {
+            if (a.appId === appId) return { ...a, hidden };
+            return a;
+        });
+        await saveInstalledApps(newList);
+    }
+
+    // Permission management functions
+    async function checkPermission(appId: string, operation: Operation, collection: string): Promise<PermissionSetting> {
+        // e.g. expecting "read.contacts" or "write.contacts"
+        const permKey = `${operation}.${collection}`;
+        const app = installedApps.find((a) => a.appId === appId);
+        if (!app) throw new Error("App not installed");
+
+        // Get or default to "never"
+        const permission = app.permissions?.[permKey] ?? "never";
+        return permission;
+    }
+
+    async function updatePermission(appId: string, operation: Operation, collection: string, newValue: PermissionSetting) {
+        const permKey = `${operation}.${collection}`;
+        const app = installedApps.find((a) => a.appId === appId);
+        if (!app) return;
+        app.permissions = {
+            ...app.permissions,
+            [permKey]: newValue,
+        };
+        await saveInstalledApps([...installedApps]);
     };
 
     const generateEncryptionKey = async (): Promise<string> => {
@@ -174,66 +291,79 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return `did:fan:${base64Url}`;
     };
 
-    const createAccount = async (accountName: string, authType: AuthType, pictureUrl?: string, pin?: string) => {
+    const createAccount = async (accountName: string, authType: AuthType, pictureUrl?: string, pin?: string): Promise<Account> => {
         setLoading(true);
-        const rsaKeys = await generateRSAKeys();
-        const encryptionKey = await generateEncryptionKey();
-        const encryptedPrivateKey = await encryptDataWithEncryptionKey(rsaKeys.privateKey, encryptionKey);
+        try {
+            const rsaKeys = await generateRSAKeys();
+            const encryptionKey = await generateEncryptionKey();
+            const encryptedPrivateKey = await encryptDataWithEncryptionKey(rsaKeys.privateKey, encryptionKey);
 
-        const did = await generateDid(rsaKeys.publicKey);
-        const accountFolder = `${FileSystem.documentDirectory}${did}/`;
-        await FileSystem.makeDirectoryAsync(accountFolder, { intermediates: true });
-        await FileSystem.writeAsStringAsync(`${accountFolder}privateKey.pem.enc`, encryptedPrivateKey);
+            const did = await generateDid(rsaKeys.publicKey);
+            const accountFolder = `${FileSystem.documentDirectory}${did}/`;
+            await FileSystem.makeDirectoryAsync(accountFolder, { intermediates: true });
+            await FileSystem.writeAsStringAsync(`${accountFolder}privateKey.pem.enc`, encryptedPrivateKey);
 
-        // store profile picture
-        let storedPicturePath: string | undefined = undefined;
-        let sourcePictureUri: string | undefined = pictureUrl;
-        if (!sourcePictureUri) {
-            const defaultAsset = Asset.fromModule(require("@/assets/images/default-picture.png"));
-            if (!defaultAsset.localUri) {
-                await defaultAsset.downloadAsync();
+            // store profile picture
+            let storedPicturePath: string | undefined = undefined;
+            let sourcePictureUri: string | undefined = pictureUrl;
+            if (!sourcePictureUri) {
+                const defaultAsset = Asset.fromModule(require("@/assets/images/default-picture.png"));
+                if (!defaultAsset.localUri) {
+                    await defaultAsset.downloadAsync();
+                }
+                sourcePictureUri = defaultAsset.localUri ?? undefined;
             }
-            sourcePictureUri = defaultAsset.localUri ?? undefined;
+
+            if (sourcePictureUri) {
+                let extension = ".png";
+                const match = sourcePictureUri.match(/\.(\w+)(\?|$)/);
+                if (match && match[1]) {
+                    extension = `.${match[1]}`;
+                }
+
+                const destination = `${accountFolder}picture${extension}`;
+                try {
+                    await FileSystem.copyAsync({
+                        from: sourcePictureUri,
+                        to: destination,
+                    });
+                    storedPicturePath = destination;
+                } catch (err) {
+                    console.error("Error copying profile picture:", err);
+                }
+            }
+
+            const now = Date.now();
+            const newAccount: Account = {
+                did,
+                publicKey: rsaKeys.publicKey,
+                name: accountName,
+                pictureUrl: storedPicturePath,
+                requireAuthentication: authType,
+                updatedAt: now,
+            };
+
+            await storeEncryptionKey(newAccount, encryptionKey, pin);
+
+            const updatedAccounts = [...accounts, newAccount];
+            setAccounts(updatedAccounts);
+            await storeAccounts(updatedAccounts);
+
+            // Set current account and encryption key
+            setCurrentAccount(newAccount);
+            setEncryptionKey(encryptionKey);
+            
+            // Set up the account (open DB and load apps)
+            await setupAccount(newAccount);
+            
+            // Return the new account for immediate use
+            return newAccount;
+        } catch (error) {
+            console.error("Error creating account:", error);
+            throw error;
+        } finally {
+            setLoading(false);
         }
-
-        if (sourcePictureUri) {
-            let extension = ".png";
-            const match = sourcePictureUri.match(/\.(\w+)(\?|$)/);
-            if (match && match[1]) {
-                extension = `.${match[1]}`;
-            }
-
-            const destination = `${accountFolder}picture${extension}`;
-            try {
-                await FileSystem.copyAsync({
-                    from: sourcePictureUri,
-                    to: destination,
-                });
-                storedPicturePath = destination;
-            } catch (err) {
-                console.error("Error copying profile picture:", err);
-            }
-        }
-
-        const now = Date.now();
-        const newAccount: Account = {
-            did,
-            publicKey: rsaKeys.publicKey,
-            name: accountName,
-            pictureUrl: storedPicturePath,
-            requireAuthentication: authType,
-            updatedAt: now,
-        };
-
-        await storeEncryptionKey(newAccount, encryptionKey, pin);
-
-        const updatedAccounts = [...accounts, newAccount];
-        setAccounts(updatedAccounts);
-        await storeAccounts(updatedAccounts);
-
-        setCurrentAccount(newAccount);
-        setEncryptionKey(encryptionKey);
-        setLoading(false);
     };
 
     async function updateAccount(accountDid: string, newName?: string, newPictureUri?: string): Promise<void> {
@@ -274,50 +404,93 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const login = async (accountDid: string, pin?: string) => {
-        const account = accounts.find((acc) => acc.did === accountDid);
-        if (!account) throw new Error("Account not found");
-        const encryptionKey = await retrieveEncryptionKey(account, pin);
-        setCurrentAccount(account);
-        setEncryptionKey(encryptionKey);
-
-        // reset tabs when logging in
-        resetTabs();
+        try {
+            const account = accounts.find((acc) => acc.did === accountDid);
+            if (!account) throw new Error("Account not found");
+            
+            // Get encryption key
+            const encryptionKey = await retrieveEncryptionKey(account, pin);
+            
+            // Close current database if there is one
+            if (currentAccount) {
+                await close().catch(err => console.error("Error closing previous database:", err));
+            }
+            
+            // Set current account and encryption key
+            setCurrentAccount(account);
+            setEncryptionKey(encryptionKey);
+            
+            // Set up the account (open DB and load apps)
+            await setupAccount(account);
+            
+            // Reset tabs when logging in
+            resetTabs();
+        } catch (error) {
+            console.error("Login failed:", error);
+            throw error;
+        }
     };
 
     const logout = async () => {
-        setCurrentAccount(null);
-        clearTabs();
+        try {
+            // Close the database if there's an active account
+            if (currentAccount) {
+                await close().catch(err => console.error("Error closing database on logout:", err));
+            }
+            
+            // Clear account and installed apps
+            setCurrentAccount(null);
+            setInstalledApps([]); // Clear installed apps since no account is selected
+            clearTabs();
+        } catch (error) {
+            console.error("Error during logout:", error);
+            // Still clear the account even if there was an error
+            setCurrentAccount(null);
+            setInstalledApps([]);
+            clearTabs();
+        }
     };
 
     const deleteAccount = async (accountDid: string) => {
         setLoading(true);
 
-        // delete the account folder (which holds the private key, profile picture, etc.)
-        const accountFolder = `${FileSystem.documentDirectory}${accountDid}/`;
         try {
-            await FileSystem.deleteAsync(accountFolder, { idempotent: true });
-        } catch (err) {
-            console.error("Error deleting account folder:", err);
+            // If it's the current account, close the database first
+            if (currentAccount?.did === accountDid) {
+                await close().catch(err => console.error("Error closing database for deleted account:", err));
+            }
+            
+            // delete the account folder (which holds the private key, profile picture, etc.)
+            const accountFolder = `${FileSystem.documentDirectory}${accountDid}/`;
+            try {
+                await FileSystem.deleteAsync(accountFolder, { idempotent: true });
+            } catch (err) {
+                console.error("Error deleting account folder:", err);
+            }
+            
+            // remove account app registry data from AsyncStorage.
+            const appsKey = `${APPS_KEY_PREFIX}${accountDid}`;
+            try {
+                await AsyncStorage.removeItem(appsKey);
+            } catch (err) {
+                console.error("Error removing installed apps data:", err);
+            }
+            
+            // remove the account from the global accounts list.
+            const updatedAccounts = accounts.filter((account) => account.did !== accountDid);
+            setAccounts(updatedAccounts);
+            await storeAccounts(updatedAccounts);
+            
+            // if the deleted account was currently active, clear current account
+            if (currentAccount?.did === accountDid) {
+                setCurrentAccount(null);
+            }
+        } catch (error) {
+            console.error("Error deleting account:", error);
+            throw error;
+        } finally {
+            setLoading(false);
         }
-
-        // remove account app registry data from AsyncStorage.
-        const appsKey = `${APPS_KEY_PREFIX}${accountDid}`;
-        try {
-            await AsyncStorage.removeItem(appsKey);
-        } catch (err) {
-            console.error("Error removing installed apps data:", err);
-        }
-
-        // remove the account from the global accounts list.
-        const updatedAccounts = accounts.filter((account) => account.did !== accountDid);
-        setAccounts(updatedAccounts);
-        await storeAccounts(updatedAccounts);
-
-        // if the deleted account was currently active, log out.
-        if (currentAccount?.did === accountDid) {
-            setCurrentAccount(null);
-        }
-        setLoading(false);
     };
 
     useEffect(() => {
@@ -334,6 +507,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return (
         <AuthContext.Provider
             value={{
+                // Account management
                 jsrsaWebViewRef,
                 generateRSAKeys,
                 signChallenge,
@@ -348,6 +522,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 loading,
                 initialized,
                 deleteAccount,
+                
+                // App management (moved from AppService)
+                installedApps,
+                addOrUpdateApp,
+                removeApp,
+                setAppPinned,
+                setAppHidden,
+                
+                // Permissions (moved from AppService)
+                checkPermission,
+                updatePermission,
             }}
         >
             <View style={styles.hidden}>
