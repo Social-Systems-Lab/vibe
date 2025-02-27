@@ -153,13 +153,23 @@ export default function CreateAccountWizard() {
             // 3. Import selected contacts if any
             if (selectedContacts.length > 0) {
                 setImportingContacts(true);
-                // This would be implemented to use the vibe write functionality
-                // For now it's just a mock
-                // Actual implementation would convert phone contacts to vibe contacts
-                // and write them to the vibe storage
-
-                // Simulate the import delay
-                await new Promise((resolve) => setTimeout(resolve, 1000));
+                // Convert phone contacts to vibe contacts
+                const vibeContacts = selectedContacts.map(contactId => {
+                    const phoneContact = phoneContacts.find(c => c.id === contactId);
+                    if (!phoneContact) return null;
+                    
+                    // Create a simplified contact structure
+                    return {
+                        name: phoneContact.name || 'Unknown',
+                        email: phoneContact.emails && phoneContact.emails.length > 0 
+                            ? phoneContact.emails[0].email : undefined,
+                        phone: phoneContact.phoneNumbers && phoneContact.phoneNumbers.length > 0 
+                            ? phoneContact.phoneNumbers[0].number : undefined
+                    };
+                }).filter(Boolean);
+                
+                // Import all selected contacts at once
+                await write("contacts", vibeContacts);
                 setImportingContacts(false);
             }
 

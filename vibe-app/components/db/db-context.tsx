@@ -15,6 +15,7 @@ type DbContextType = {
     close: () => Promise<any>;
     destroy: () => Promise<any>;
     put: (doc: any) => Promise<any>;
+    bulkPut: (docs: any[]) => Promise<any>;
     get: (docId: string) => Promise<any>;
     find: (query: any) => Promise<any>;
     subscribe: (query: any, callback: SubscriptionCallback) => Promise<() => void>;
@@ -128,6 +129,16 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         },
         [callWebViewFunction]
     );
+    
+    const bulkPut = useCallback(
+        (docs: any[]) => {
+            return callWebViewFunction({
+                action: "bulkPut", 
+                payload: { docs },
+            });
+        },
+        [callWebViewFunction]
+    );
 
     const find = useCallback(
         (query: any) => {
@@ -190,6 +201,7 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                 destroy,
                 get,
                 put,
+                bulkPut,
                 find,
                 subscribe,
             }}

@@ -184,6 +184,27 @@
                 }
             }
 
+            // Bulk write function
+            async function bulkPut(docs) {
+                if (!db) {
+                    throw new Error("Database not open");
+                }
+                
+                // Process each document - handle _rev for existing docs
+                const processedDocs = await Promise.all(docs.map(async (doc) => {
+                    if (doc._id) {
+                        // Get existing doc if it exists
+                        let existing = await db.get(doc._id).catch(() => null);
+                        if (existing && existing._rev) {
+                            doc._rev = existing._rev;
+                        }
+                    }
+                    return doc;
+                }));
+                
+                return await db.bulkDocs(processedDocs);
+            }
+
             // Listener for React Native messages
             window.addEventListener("message", async (event) => {
                 const { action, payload, requestId } = event.data;
@@ -205,6 +226,10 @@
 
                         case "put":
                             response = await put(payload.doc);
+                            break;
+                            
+                        case "bulkPut":
+                            response = await bulkPut(payload.docs);
                             break;
 
                         case "get":

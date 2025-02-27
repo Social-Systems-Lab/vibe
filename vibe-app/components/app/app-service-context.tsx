@@ -149,21 +149,49 @@ export function AppServiceProvider({ children }: { children: React.ReactNode }) 
         return unsubscribe;
     }
 
-    async function write(collection: string, doc: any) {
-        if (!doc) return undefined; // TODO return error message
-        if (!doc._id) {
-            // create random ID for the document
-            // TODO generate uuid
-            doc._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
-        } else if (!doc._id.startsWith(`${collection}/`)) {
-            // TODO return error message
-            return undefined;
-        }
-        doc.$collection = collection;
+    async function write(collection: string, doc: any | any[]) {
+        // Handle array of documents
+        if (Array.isArray(doc)) {
+            if (doc.length === 0) return undefined; // Empty array, nothing to do
+            
+            // Process each document in the array
+            const docs = doc.map(item => {
+                if (!item) return null; // Skip null/undefined items
+                
+                let processedDoc = { ...item };
+                
+                if (!processedDoc._id) {
+                    // Create random ID for the document
+                    processedDoc._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                } else if (!processedDoc._id.startsWith(`${collection}/`)) {
+                    // Invalid ID for this collection
+                    return null;
+                }
+                
+                processedDoc.$collection = collection;
+                return processedDoc;
+            }).filter(Boolean); // Remove null items
+            
+            if (docs.length === 0) return undefined;
+            
+            console.log("writing docs batch", docs.length);
+            // Use bulkDocs for array of documents
+            const results = await bulkPut(docs);
+            return results;
+        } else {
+            // Original single document logic
+            if (!doc) return undefined; 
+            if (!doc._id) {
+                doc._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            } else if (!doc._id.startsWith(`${collection}/`)) {
+                return undefined;
+            }
+            doc.$collection = collection;
 
-        console.log("writing doc", doc);
-        const result = await put(doc);
-        return result;
+            console.log("writing doc", doc);
+            const result = await put(doc);
+            return result;
+        }
     }
 
     return (

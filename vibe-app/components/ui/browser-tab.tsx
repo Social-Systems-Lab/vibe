@@ -72,6 +72,10 @@ export default function BrowserTab({ tab }: Props) {
 
     const [dontAskAgain, setDontAskAgain] = useState(false);
     const [showMultipleDocs, setShowMultipleDocs] = useState(false);
+    
+    // For handling multiple documents in write requests
+    const [isMultipleDocuments, setIsMultipleDocuments] = useState(false);
+    const [docCount, setDocCount] = useState(0);
 
     const activeSubscriptions = useRef<Record<string, () => void>>({});
 
@@ -337,6 +341,15 @@ export default function BrowserTab({ tab }: Props) {
                 // Reset single doc UI
                 setShowWriteRawJson(false);
                 setWriteDocVisible(false);
+                
+                // If it's an array of documents, update UI state to show that
+                if (Array.isArray(doc)) {
+                    setIsMultipleDocuments(true);
+                    setDocCount(doc.length);
+                } else {
+                    setIsMultipleDocuments(false);
+                }
+                
                 setWriteModalVisible(true);
             }
         } catch (error: any) {
@@ -707,7 +720,7 @@ export default function BrowserTab({ tab }: Props) {
                                 </View>
 
                                 <Text style={styles.appDescription}>
-                                    This app wants to write a document to your <Text style={{ fontWeight: "600" }}>{writePromptData?.collection}</Text> collection.
+                                    This app wants to write {isMultipleDocuments ? `${docCount} documents` : "a document"} to your <Text style={{ fontWeight: "600" }}>{writePromptData?.collection}</Text> collection.
                                 </Text>
 
                                 <View style={styles.docListHeader}>
