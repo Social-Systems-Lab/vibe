@@ -10,7 +10,7 @@ export default function HomePage() {
         <>
             {/* Hero Section */}
             <div className="relative">
-                <div className="pt-12 pb-20">
+                <div className="pt-6 pb-20">
                     <div className="max-w-7xl mx-auto">
                         <div className="grid lg:grid-cols-golden items-center px-4 sm:px-6 lg:px-8">
                             <div className="text-white space-y-8">

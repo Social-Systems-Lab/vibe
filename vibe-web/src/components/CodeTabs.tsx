@@ -27,7 +27,7 @@ export const CodeTabs = ({ tabs }: CodeTabProps) => {
         const mapping: Record<string, string> = {
             typescript: "tsx",
             javascript: "jsx",
-            bash: "bash"
+            bash: "bash",
         };
         return mapping[language] || language;
     };
@@ -42,35 +42,19 @@ export const CodeTabs = ({ tabs }: CodeTabProps) => {
                     <button
                         key={index}
                         onClick={() => setActiveTab(index)}
-                        className={`px-4 py-2 text-sm font-medium ${
-                            activeTab === index
-                                ? "bg-white text-purple-600 border-t-2 border-purple-500"
-                                : "text-gray-600 hover:text-purple-500"
-                        }`}
+                        className={`px-4 py-2 text-sm font-medium ${activeTab === index ? "bg-white text-purple-600 border-t-2 border-purple-500" : "text-gray-600 hover:text-purple-500"}`}
                     >
                         {tab.label}
                     </button>
                 ))}
             </div>
             <div className="relative">
-                <button
-                    onClick={() => copyToClipboard(activeCode)}
-                    className="absolute top-2 right-2 p-1.5 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-300 z-10"
-                    aria-label="Copy code"
-                >
-                    {copied ? (
-                        <Check size={16} className="text-green-400" />
-                    ) : (
-                        <Copy size={16} />
-                    )}
+                <button onClick={() => copyToClipboard(activeCode)} className="absolute top-2 right-2 p-1.5 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-300 z-10" aria-label="Copy code">
+                    {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
                 </button>
-                
-                <Highlight 
-                    theme={themes.nightOwl} 
-                    code={activeCode} 
-                    language={activeLanguage}
-                >
-                    {({ className, style, tokens, getLineProps, getTokenProps }) => (
+
+                <Highlight theme={themes.nightOwl} code={activeCode} language={activeLanguage}>
+                    {({ style, tokens, getLineProps, getTokenProps }) => (
                         <pre className="overflow-x-auto text-sm p-4 m-0" style={style}>
                             {tokens.map((line, i) => (
                                 <div key={i} {...getLineProps({ line })}>
