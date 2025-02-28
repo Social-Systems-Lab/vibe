@@ -11,8 +11,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "@/components/auth/auth-context";
 import { MessageType } from "@/sdk";
 import { TabInfo, useTabs } from "./tab-context";
-import { useAppService } from "../app/app-service-context";
 import { InstalledApp, PermissionSetting, ReadResult } from "@/types/types";
+import { useDb } from "../db/db-context";
 
 const FORCE_ALWAYS_ASK_PERMISSIONS = false; //__DEV__;
 
@@ -24,8 +24,8 @@ interface Props {
 const EXCLUDED_FIELDS = ["_id", "_rev", "$collection"];
 
 export default function BrowserTab({ tab }: Props) {
-    const { currentAccount, initialized } = useAuth();
-    const { installedApps, addOrUpdateApp, checkPermission, readOnce, read, write } = useAppService();
+    const { currentAccount, initialized, installedApps, addOrUpdateApp, checkPermission } = useAuth();
+    const { readOnce, read, write } = useDb();
     const { updateTabScreenshot } = useTabs();
 
     const webViewRef = useRef<WebView>(null);
@@ -72,7 +72,7 @@ export default function BrowserTab({ tab }: Props) {
 
     const [dontAskAgain, setDontAskAgain] = useState(false);
     const [showMultipleDocs, setShowMultipleDocs] = useState(false);
-    
+
     // For handling multiple documents in write requests
     const [isMultipleDocuments, setIsMultipleDocuments] = useState(false);
     const [docCount, setDocCount] = useState(0);
@@ -341,7 +341,7 @@ export default function BrowserTab({ tab }: Props) {
                 // Reset single doc UI
                 setShowWriteRawJson(false);
                 setWriteDocVisible(false);
-                
+
                 // If it's an array of documents, update UI state to show that
                 if (Array.isArray(doc)) {
                     setIsMultipleDocuments(true);
@@ -349,7 +349,7 @@ export default function BrowserTab({ tab }: Props) {
                 } else {
                     setIsMultipleDocuments(false);
                 }
-                
+
                 setWriteModalVisible(true);
             }
         } catch (error: any) {
@@ -720,7 +720,8 @@ export default function BrowserTab({ tab }: Props) {
                                 </View>
 
                                 <Text style={styles.appDescription}>
-                                    This app wants to write {isMultipleDocuments ? `${docCount} documents` : "a document"} to your <Text style={{ fontWeight: "600" }}>{writePromptData?.collection}</Text> collection.
+                                    This app wants to write {isMultipleDocuments ? `${docCount} documents` : "a document"} to your{" "}
+                                    <Text style={{ fontWeight: "600" }}>{writePromptData?.collection}</Text> collection.
                                 </Text>
 
                                 <View style={styles.docListHeader}>

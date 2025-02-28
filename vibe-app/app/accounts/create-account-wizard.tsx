@@ -101,9 +101,7 @@ export default function CreateAccountWizard() {
     const handleNext = () => {
         const allSteps: WizardStep[] = ["intro-welcome", "intro-privacy", "intro-data", "profile-setup", "app-selection", "import-contacts", "complete"];
         // For non-first accounts or when not in dev mode, skip the intro steps
-        const steps = FORCE_ALWAYS_SHOW_WELCOME || accounts.length === 0 
-            ? allSteps 
-            : allSteps.filter(step => !step.startsWith('intro-'));
+        const steps = FORCE_ALWAYS_SHOW_WELCOME || accounts.length === 0 ? allSteps : allSteps.filter((step) => !step.startsWith("intro-"));
 
         if (!currentStep) return;
         const currentIndex = steps.indexOf(currentStep);
@@ -116,9 +114,7 @@ export default function CreateAccountWizard() {
     const handleBack = () => {
         const allSteps: WizardStep[] = ["intro-welcome", "intro-privacy", "intro-data", "profile-setup", "app-selection", "import-contacts", "complete"];
         // For non-first accounts or when not in dev mode, skip the intro steps
-        const steps = FORCE_ALWAYS_SHOW_WELCOME || accounts.length === 0 
-            ? allSteps 
-            : allSteps.filter(step => !step.startsWith('intro-'));
+        const steps = FORCE_ALWAYS_SHOW_WELCOME || accounts.length === 0 ? allSteps : allSteps.filter((step) => !step.startsWith("intro-"));
 
         if (!currentStep) return;
         const currentIndex = steps.indexOf(currentStep);
@@ -153,7 +149,7 @@ export default function CreateAccountWizard() {
             // 1. Create the account
             const finalAlias = alias.trim() !== "" ? alias.trim() : `User${Math.floor(Math.random() * 10000)}`;
             const account = await createAccount(finalAlias, "BIOMETRIC", profilePicture);
-            
+
             console.log("Account created:", account);
 
             // Database and apps are already set up by createAccount
@@ -164,7 +160,7 @@ export default function CreateAccountWizard() {
                 if (app) {
                     try {
                         console.log("Installing app:", app.appId);
-                        await addOrUpdateApp(app);
+                        await addOrUpdateApp(app, account);
                     } catch (appError) {
                         console.error(`Error installing app ${app.appId}:`, appError);
                         // Continue with other apps
@@ -192,7 +188,7 @@ export default function CreateAccountWizard() {
                         .filter(Boolean);
 
                     console.log("Importing contacts:", vibeContacts.length);
-                    
+
                     if (vibeContacts.length > 0) {
                         // Import all selected contacts at once
                         await write("contacts", vibeContacts);
@@ -391,9 +387,7 @@ export default function CreateAccountWizard() {
 
             {/* Content area - Not using ScrollView for steps with FlatList */}
             {currentStep === "import-contacts" ? (
-                <View style={styles.content}>
-                    {renderStep()}
-                </View>
+                <View style={styles.content}>{renderStep()}</View>
             ) : (
                 <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
                     {renderStep()}
@@ -567,7 +561,7 @@ const styles = StyleSheet.create({
     },
     contactListWrapper: {
         height: 350, // Fixed height for FlatList container
-        width: '100%',
+        width: "100%",
     },
     contactHeader: {
         flexDirection: "row",

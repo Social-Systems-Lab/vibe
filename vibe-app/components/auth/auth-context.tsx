@@ -39,14 +39,14 @@ type AuthContextType = {
     decryptData: (encryptedData: string) => Promise<string>;
     login: (accountDid: string, pin?: string) => Promise<void>;
     logout: () => Promise<void>;
-    
+
     // App management (moved from AppService)
     installedApps: InstalledApp[];
-    addOrUpdateApp: (app: Partial<InstalledApp>) => Promise<void>;
+    addOrUpdateApp: (app: Partial<InstalledApp>, account?: Account) => Promise<void>;
     removeApp: (appId: string) => Promise<void>;
     setAppPinned: (appId: string, pinned: boolean) => Promise<void>;
     setAppHidden: (appId: string, hidden: boolean) => Promise<void>;
-    
+
     // Permissions (moved from AppService)
     checkPermission: (appId: string, operation: Operation, collection: string) => Promise<PermissionSetting>;
     updatePermission: (appId: string, operation: Operation, collection: string, newValue: PermissionSetting) => Promise<void>;
@@ -69,18 +69,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const ACCOUNTS_KEY = "accounts";
     const getAppsKey = (did: string) => `${APPS_KEY_PREFIX}${did}`;
-    
+
     // Function to handle setting up an account: open DB and load apps
     const setupAccount = async (account: Account) => {
         if (!account) return;
-        
+
         try {
             // 1. Open the database for this account
             const dbName = getDbNameFromDid(account.did);
             console.log(`Opening database for account: ${dbName}`);
             await open(dbName);
             console.log(`Database opened successfully`);
-            
+
             // 2. Load installed apps for this account
             const appsKey = getAppsKey(account.did);
             const data = await AsyncStorage.getItem(appsKey);
@@ -140,24 +140,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const data = await AsyncStorage.getItem(ACCOUNTS_KEY);
         return data ? JSON.parse(data) : [];
     };
-    
+
     // App management functions
-    async function saveInstalledApps(apps: InstalledApp[]) {
-        if (!currentAccount) return;
-        
+    async function saveInstalledApps(apps: InstalledApp[], account?: Account) {
+        const targetAccount = account || currentAccount;
+        if (!targetAccount) {
+            throw new Error("Cannot add app: No account selected");
+        }
+
         setInstalledApps(apps);
-        const appsKey = getAppsKey(currentAccount.did);
+        const appsKey = getAppsKey(targetAccount.did);
         await AsyncStorage.setItem(appsKey, JSON.stringify(apps));
     }
 
     // Add or update an app
-    async function addOrUpdateApp(app: Partial<InstalledApp>) {
-        if (!currentAccount) {
+    async function addOrUpdateApp(app: Partial<InstalledApp>, account?: Account) {
+        const targetAccount = account || currentAccount;
+        if (!targetAccount) {
             throw new Error("Cannot add app: No account selected");
         }
-        
-        console.log("addOrUpdateApp for account:", currentAccount.did, ", app:", app);
-        
+
+        console.log("addOrUpdateApp for account:", targetAccount.did, ", app:", app);
+
         let existingIndex = installedApps.findIndex((a) => a.appId === app.appId);
         let newList;
         if (existingIndex >= 0) {
@@ -168,7 +172,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // add
             newList = [...installedApps, app as InstalledApp];
         }
-        await saveInstalledApps(newList);
+        await saveInstalledApps(newList, account);
     }
 
     async function removeApp(appId: string) {
@@ -213,7 +217,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             [permKey]: newValue,
         };
         await saveInstalledApps([...installedApps]);
-    };
+    }
 
     const generateEncryptionKey = async (): Promise<string> => {
         let keyBytes = await Crypto.getRandomBytesAsync(32);
@@ -352,10 +356,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Set current account and encryption key
             setCurrentAccount(newAccount);
             setEncryptionKey(encryptionKey);
-            
+
             // Set up the account (open DB and load apps)
             await setupAccount(newAccount);
-            
+
             // Return the new account for immediate use
             return newAccount;
         } catch (error) {
@@ -407,22 +411,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
             const account = accounts.find((acc) => acc.did === accountDid);
             if (!account) throw new Error("Account not found");
-            
+
             // Get encryption key
             const encryptionKey = await retrieveEncryptionKey(account, pin);
-            
+
             // Close current database if there is one
             if (currentAccount) {
-                await close().catch(err => console.error("Error closing previous database:", err));
+                await close().catch((err) => console.error("Error closing previous database:", err));
             }
-            
+
             // Set current account and encryption key
             setCurrentAccount(account);
             setEncryptionKey(encryptionKey);
-            
+
             // Set up the account (open DB and load apps)
             await setupAccount(account);
-            
+
             // Reset tabs when logging in
             resetTabs();
         } catch (error) {
@@ -435,9 +439,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
             // Close the database if there's an active account
             if (currentAccount) {
-                await close().catch(err => console.error("Error closing database on logout:", err));
+                await close().catch((err) => console.error("Error closing database on logout:", err));
             }
-            
+
             // Clear account and installed apps
             setCurrentAccount(null);
             setInstalledApps([]); // Clear installed apps since no account is selected
@@ -457,9 +461,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
             // If it's the current account, close the database first
             if (currentAccount?.did === accountDid) {
-                await close().catch(err => console.error("Error closing database for deleted account:", err));
+                await close().catch((err) => console.error("Error closing database for deleted account:", err));
             }
-            
+
             // delete the account folder (which holds the private key, profile picture, etc.)
             const accountFolder = `${FileSystem.documentDirectory}${accountDid}/`;
             try {
@@ -467,7 +471,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } catch (err) {
                 console.error("Error deleting account folder:", err);
             }
-            
+
             // remove account app registry data from AsyncStorage.
             const appsKey = `${APPS_KEY_PREFIX}${accountDid}`;
             try {
@@ -475,12 +479,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } catch (err) {
                 console.error("Error removing installed apps data:", err);
             }
-            
+
             // remove the account from the global accounts list.
             const updatedAccounts = accounts.filter((account) => account.did !== accountDid);
             setAccounts(updatedAccounts);
             await storeAccounts(updatedAccounts);
-            
+
             // if the deleted account was currently active, clear current account
             if (currentAccount?.did === accountDid) {
                 setCurrentAccount(null);
@@ -522,14 +526,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 loading,
                 initialized,
                 deleteAccount,
-                
+
                 // App management (moved from AppService)
                 installedApps,
                 addOrUpdateApp,
                 removeApp,
                 setAppPinned,
                 setAppHidden,
-                
+
                 // Permissions (moved from AppService)
                 checkPermission,
                 updatePermission,

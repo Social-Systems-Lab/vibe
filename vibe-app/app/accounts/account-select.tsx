@@ -13,7 +13,6 @@ const { width, height } = Dimensions.get("window");
 export default function AccountSelect() {
     const { accounts, logout, login } = useAuth();
     const router = useRouter();
-    const [currentAccount, setCurrentAccount] = useState<string | null>(null);
 
     const colorScheme = Appearance.getColorScheme();
     const textColor = useThemeColor({}, "text");
@@ -21,8 +20,6 @@ export default function AccountSelect() {
     const iconColor = useThemeColor({}, "icon");
 
     const handleAccountSelect = async (accountDid: string) => {
-        setCurrentAccount(accountDid);
-
         try {
             // await logout(); // don't log out since login can be cancelled
             await login(accountDid);

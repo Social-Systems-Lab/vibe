@@ -11,7 +11,7 @@ type SubscriptionCallback = (results: any) => void;
 // Define a result type for read operations
 type ReadResult = {
     docs: any[];
-    doc: any;  // First doc for convenience
+    doc: any; // First doc for convenience
 };
 
 type DbContextType = {
@@ -25,11 +25,11 @@ type DbContextType = {
     get: (docId: string) => Promise<any>;
     find: (query: any) => Promise<any>;
     subscribe: (query: any, callback: SubscriptionCallback) => Promise<() => void>;
-    
+
     // Helper functions
     getDbNameFromDid: (did: string) => string; // Helper to get valid DB name from DID
-    
-    // High-level operations (moved from AppService)
+
+    // High-level operations
     read: (collection: string, filter: any, callback: (results: ReadResult) => void) => Promise<() => void>;
     readOnce: (collection: string, filter: any) => Promise<ReadResult>;
     write: (collection: string, doc: any | any[]) => Promise<any>;
@@ -142,11 +142,11 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         },
         [callWebViewFunction]
     );
-    
+
     const bulkPut = useCallback(
         (docs: any[]) => {
             return callWebViewFunction({
-                action: "bulkPut", 
+                action: "bulkPut",
                 payload: { docs },
             });
         },
@@ -255,34 +255,36 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
             // Handle array of documents
             if (Array.isArray(doc)) {
                 if (doc.length === 0) return undefined; // Empty array, nothing to do
-                
+
                 // Process each document in the array
-                const docs = doc.map(item => {
-                    if (!item) return null; // Skip null/undefined items
-                    
-                    let processedDoc = { ...item };
-                    
-                    if (!processedDoc._id) {
-                        // Create random ID for the document
-                        processedDoc._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
-                    } else if (!processedDoc._id.startsWith(`${collection}/`)) {
-                        // Invalid ID for this collection
-                        return null;
-                    }
-                    
-                    processedDoc.$collection = collection;
-                    return processedDoc;
-                }).filter(Boolean); // Remove null items
-                
+                const docs = doc
+                    .map((item) => {
+                        if (!item) return null; // Skip null/undefined items
+
+                        let processedDoc = { ...item };
+
+                        if (!processedDoc._id) {
+                            // Create random ID for the document
+                            processedDoc._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                        } else if (!processedDoc._id.startsWith(`${collection}/`)) {
+                            // Invalid ID for this collection
+                            return null;
+                        }
+
+                        processedDoc.$collection = collection;
+                        return processedDoc;
+                    })
+                    .filter(Boolean); // Remove null items
+
                 if (docs.length === 0) return undefined;
-                
+
                 console.log("writing docs batch", docs.length);
                 // Use bulkDocs for array of documents
                 const results = await bulkPut(docs);
                 return results;
             } else {
                 // Original single document logic
-                if (!doc) return undefined; 
+                if (!doc) return undefined;
                 if (!doc._id) {
                     doc._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
                 } else if (!doc._id.startsWith(`${collection}/`)) {

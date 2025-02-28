@@ -2,17 +2,16 @@ import React, { useState, useRef } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, Dimensions, Animated } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTabs } from "./tab-context";
-import { useAppService } from "../app/app-service-context";
-import { InstalledApp } from "@/types/types";
 import { SquircleIcon } from "./squircle";
 import { PanGestureHandler, State } from "react-native-gesture-handler";
+import { useAuth } from "../auth/auth-context";
 
 const { width, height } = Dimensions.get("window");
 const SWIPE_THRESHOLD = width / 5;
 
 export default function HomeScreen() {
     const { addTab } = useTabs();
-    const { installedApps } = useAppService();
+    const { installedApps } = useAuth();
     const [currentPage, setCurrentPage] = useState(0);
     const translateX = useRef(new Animated.Value(0)).current;
     const lastOffset = useRef(0);
