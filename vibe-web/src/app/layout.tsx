@@ -31,7 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <html lang="en">
                 <body className={`min-h-screen bg-gradient-to-br from-blue-500 to-purple-400 ${libreFranklin.className}`}>
                     <div className="relative min-h-screen">
-                        <nav className="max-w-7xl mx-auto pt-6 px-4 sm:px-6 lg:px-8">
+                        <nav className="max-w-7xl mx-auto pt-6 pb-6 px-4 sm:px-6 lg:px-8">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center space-x-6">
                                     <Link href="/" className="flex items-center space-x-2">
