@@ -97,7 +97,7 @@ export default function AccountSelect() {
             </View>
 
             {/* Test screen */}
-            <TouchableOpacity style={styles.adminDashboardButton} onPress={() => router.push("/accounts/test")}>
+            <TouchableOpacity style={styles.adminDashboardButton} onPress={() => router.push("/test/test")}>
                 <Ionicons name="cube-outline" size={24} color={textColor} />
                 <Text style={[styles.addAccountText, { color: textColor }]}>Admin Dashboard</Text>
             </TouchableOpacity>

@@ -148,10 +148,7 @@ export default function TestScreen() {
                 <Text style={styles.sectionTitle}>Create Account</Text>
                 <TextInput placeholder="Account Name" value={accountName} onChangeText={setAccountName} style={styles.input} />
                 <Text>Auth Type:</Text>
-                <Button
-                    title={authType === "BIOMETRIC" ? "Switch to PIN" : "Switch to Biometric"}
-                    onPress={() => setAuthType(authType === "BIOMETRIC" ? "PIN" : "BIOMETRIC")}
-                />
+                <Button title={authType === "BIOMETRIC" ? "Switch to PIN" : "Switch to Biometric"} onPress={() => setAuthType(authType === "BIOMETRIC" ? "PIN" : "BIOMETRIC")} />
                 {authType === "PIN" && <TextInput placeholder="PIN" value={pin} onChangeText={setPin} secureTextEntry style={styles.input} />}
                 <Button title="Create Account" onPress={handleCreateAccount} />
             </View>
@@ -192,6 +189,7 @@ export default function TestScreen() {
             </View>
 
             <View style={styles.section}>
+                <Button title="Go to P2P Test" onPress={() => router.push("/test/p2p-test")} />
                 <Button title="Go to Account Select Screen" onPress={() => router.replace("/accounts/account-select")} />
             </View>
 
