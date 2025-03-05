@@ -1,9 +1,17 @@
 {
     "scripts": {
-        "install": "cd ./vibe-web && npm install && cd ../vibe-app && npm install && cd ../vibe-sdk && npm install && cd ../vibe-react && npm install && cd ../apps/contacts && npm install",
+        "install": "cd ./vibe-web && npm install && cd ../vibe-app && npm install && cd ../vibe-sdk && npm install && cd ../vibe-react && npm install && cd ../vibe-cloud && npm install && cd ../apps/contacts && npm install",
         "app": "npm run start --prefix ./vibe-app",
-        "build": "npm run build --prefix ./vibe-sdk && npm run build --prefix ./vibe-react",
-        "dev": "node scripts/dev.js"
+        "build": "npm run build --prefix ./vibe-sdk && npm run build --prefix ./vibe-react && npm run build --prefix ./vibe-cloud",
+        "dev": "node scripts/dev.js",
+        "cloud": "npm run dev --prefix ./vibe-cloud",
+        "watch-vibe-sdk": "npm run watch:esm --prefix ./vibe-sdk",
+        "watch-vibe-react": "npm run watch:esm --prefix ./vibe-react",
+        "start-vibe-web": "npm run dev --prefix ./vibe-web",
+        "start-app-contacts": "cd apps/contacts && npm run dev",
+        "start-vibe-cloud": "npm run dev --prefix ./vibe-cloud",
+        "test-cloud": "npm test --prefix ./vibe-cloud",
+        "docker-cloud": "cd vibe-cloud && docker-compose up -d"
     },
     "devDependencies": {
         "concurrently": "^9.1.1"

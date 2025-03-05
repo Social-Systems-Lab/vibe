@@ -17,11 +17,13 @@ if (args.includes("--help") || args.includes("-h")) {
   Available apps:
     web        - vibe-web developer portal
     contacts   - contacts application
+    cloud      - vibe-cloud P2P server
     
   Examples:
     npm run dev              - Runs watches + all apps (default)
     npm run dev contacts     - Runs watches + contacts app
     npm run dev web contacts - Runs watches + both apps
+    npm run dev cloud        - Runs watches + cloud server
     `);
     process.exit(0);
 }
@@ -30,6 +32,7 @@ if (args.includes("--help") || args.includes("-h")) {
 const appScripts = {
     web: "start-vibe-web",
     contacts: "start-app-contacts",
+    cloud: "start-vibe-cloud",
     // Add more apps here as they're added to your monorepo
 };
 
@@ -49,7 +52,7 @@ apps.forEach((app) => {
     commands.push({
         command: `npm run ${scriptName}`,
         name: app,
-        prefixColor: "green",
+        prefixColor: app === "cloud" ? "cyan" : "green",
     });
 });
 

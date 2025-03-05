@@ -1,0 +1,45 @@
+{
+    "name": "vibe-cloud",
+    "version": "0.1.0",
+    "description": "P2P signaling and TURN server for Vibe platform",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "scripts": {
+        "build": "tsc",
+        "dev": "nodemon --exec ts-node src/index.ts",
+        "start": "node dist/index.js",
+        "test": "jest",
+        "lint": "eslint 'src/**/*.{ts,tsx}'"
+    },
+    "keywords": [
+        "signaling",
+        "webrtc",
+        "p2p",
+        "turn"
+    ],
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        "cors": "^2.8.5",
+        "dotenv": "^16.4.5",
+        "express": "^4.19.2",
+        "node-turn": "^0.0.6",
+        "socket.io": "^4.7.5",
+        "socket.io-client": "^4.8.1",
+        "uuid": "^9.0.1",
+        "winston": "^3.12.0"
+    },
+    "devDependencies": {
+        "@types/cors": "^2.8.17",
+        "@types/express": "^4.17.21",
+        "@types/jest": "^29.5.12",
+        "@types/node": "^20.13.6",
+        "@types/uuid": "^9.0.8",
+        "eslint": "^8.57.0",
+        "jest": "^29.7.0",
+        "nodemon": "^3.1.0",
+        "ts-jest": "^29.1.2",
+        "ts-node": "^10.9.2",
+        "typescript": "^5.4.5"
+    }
+}

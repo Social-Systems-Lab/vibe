@@ -14,6 +14,7 @@ This repo is structured as follows:
 | **`vibe-web`**   | Vibe website hosted at [vibeapp.dev](vibeapp.dev) providing documentation and integration with the vibe app. Built with **Next.js**. |
 | **`vibe-sdk`**   | JavaScript/TypeScript SDK that enables applications to interact with Vibe for authentication, data access, and permissions handling. |
 | **`vibe-react`** | React integration for Vibe, simplifying usage of Vibe within React applications.                                                     |
+| **`vibe-cloud`** | Personal cloud infrastructure enabling P2P communication, data storage, and node hosting. Allows users to self-host their digital presence or use Vibe's infrastructure.                                                     |
 | **`apps/*`**     | Web applications built on top of Vibe, using the Vibe SDK for authentication and data handling. Built using **Vite + React**.        |
 
 ---
