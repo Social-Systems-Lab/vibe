@@ -32,8 +32,9 @@ type AuthContextType = {
     initialized: boolean;
     generateRSAKeys: () => Promise<RsaKeys>;
     signChallenge: (privateKey: string, challenge: string) => Promise<string>;
-    createAccount: (accountName: string, authType: AuthType, pictureUrl?: string, pin?: string) => Promise<Account>;
+    createAccount: (accountName: string, authType: AuthType, pictureUrl?: string, pin?: string, serverConfig?: ServerConfig) => Promise<Account>;
     updateAccount: (accountDid: string, newName?: string, newPictureUri?: string) => Promise<void>;
+    updateServerConfig: (accountDid: string, serverConfig: ServerConfig) => Promise<void>;
     deleteAccount: (accountDid: string) => Promise<void>;
     encryptData: (data: string) => Promise<string>;
     decryptData: (encryptedData: string) => Promise<string>;
@@ -295,7 +296,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return `did:fan:${base64Url}`;
     };
 
-    const createAccount = async (accountName: string, authType: AuthType, pictureUrl?: string, pin?: string): Promise<Account> => {
+    const createAccount = async (accountName: string, authType: AuthType, pictureUrl?: string, pin?: string, serverConfig?: ServerConfig): Promise<Account> => {
         setLoading(true);
         try {
             const rsaKeys = await generateRSAKeys();
@@ -337,6 +338,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
             }
 
+            // Set up default server config if none provided
+            const defaultServer: ServerConfig = serverConfig || {
+                url: "http://localhost:5000",
+                name: "Local Server",
+                isConnected: false
+            };
+
             const now = Date.now();
             const newAccount: Account = {
                 did,
@@ -345,6 +353,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 pictureUrl: storedPicturePath,
                 requireAuthentication: authType,
                 updatedAt: now,
+                server: defaultServer,
             };
 
             await storeEncryptionKey(newAccount, encryptionKey, pin);
@@ -406,6 +415,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setCurrentAccount(updatedAccount);
         }
     }
+    
+    // Update server configuration for an account
+    async function updateServerConfig(accountDid: string, serverConfig: ServerConfig): Promise<void> {
+        const index = accounts.findIndex((acc) => acc.did === accountDid);
+        if (index < 0) throw new Error("Account not found");
+        const account = accounts[index];
+        
+        // Update account object with new server config
+        const now = Date.now();
+        const updatedAccount = {
+            ...account,
+            server: serverConfig,
+            updatedAt: now,
+        };
+        
+        // Update accounts in state and storage
+        const newAccounts = [...accounts];
+        newAccounts[index] = updatedAccount;
+        setAccounts(newAccounts);
+        await storeAccounts(newAccounts);
+        
+        // If this is the current account, update it
+        if (currentAccount?.did === accountDid) {
+            setCurrentAccount(updatedAccount);
+        }
+    }
 
     const login = async (accountDid: string, pin?: string) => {
         try {
@@ -429,6 +464,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             // Reset tabs when logging in
             resetTabs();
+            
+            // For context communication, we'll use a different approach in React Native
         } catch (error) {
             console.error("Login failed:", error);
             throw error;
@@ -519,6 +556,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 currentAccount,
                 createAccount,
                 updateAccount,
+                updateServerConfig,
                 encryptData,
                 decryptData,
                 login,

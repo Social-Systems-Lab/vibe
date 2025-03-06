@@ -25,6 +25,13 @@ export type RsaKeys = {
 
 export type AuthType = "PIN" | "BIOMETRIC";
 
+export interface ServerConfig {
+    url: string;
+    name?: string;
+    isConnected?: boolean;
+    lastConnected?: number;
+}
+
 export type Account = {
     did: string;
     publicKey: string;
@@ -32,6 +39,7 @@ export type Account = {
     pictureUrl?: string;
     requireAuthentication: AuthType;
     updatedAt?: number; // timestamp for cache busting
+    server?: ServerConfig; // P2P server configuration
 };
 
 export type ReadResult = {

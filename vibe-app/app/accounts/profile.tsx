@@ -54,8 +54,28 @@ export default function ProfileScreen() {
                     </View>
                 </TouchableOpacity>
 
+                {/* Server Status */}
+                <View style={styles.sectionContainer}>
+                    <Text style={styles.sectionTitle}>Server Connection</Text>
+                    <View style={styles.serverInfoContainer}>
+                        <View style={styles.serverNameContainer}>
+                            <Text style={styles.serverName}>
+                                {currentAccount.server?.name || 'No server configured'}
+                            </Text>
+                            <Text style={styles.serverUrl} numberOfLines={1} ellipsizeMode="tail">
+                                {currentAccount.server?.url || ''}
+                            </Text>
+                        </View>
+                        <View style={[
+                            styles.connectionIndicator,
+                            currentAccount.server?.isConnected ? styles.connected : styles.disconnected
+                        ]} />
+                    </View>
+                </View>
+                
                 {/* Menu Items */}
                 <View style={styles.menuContainer}>
+                    <MenuItem iconName="cloud-outline" label="Server Settings" onPress={() => router.push("/accounts/server-settings")} />
                     <MenuItem iconName="swap-horizontal-outline" label="Switch Account" onPress={handleSwitchAccount} />
                     <MenuItem iconName="log-out-outline" label="Log Out" onPress={handleLogout} />
                 </View>
@@ -126,8 +146,51 @@ const styles = StyleSheet.create({
         fontSize: 13,
         color: "#666",
     },
-    menuContainer: {
+    sectionContainer: {
+        marginTop: 20,
+        paddingHorizontal: 20,
+    },
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: "600",
+        marginBottom: 10,
+    },
+    serverInfoContainer: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: 16,
+        backgroundColor: "#f9f9f9",
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: "#eee",
+    },
+    serverNameContainer: {
+        flex: 1,
+    },
+    serverName: {
+        fontSize: 16,
+        fontWeight: "600",
+    },
+    serverUrl: {
+        fontSize: 13,
+        color: "#666",
         marginTop: 4,
+    },
+    connectionIndicator: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        marginLeft: 8,
+    },
+    connected: {
+        backgroundColor: "#4CAF50",
+    },
+    disconnected: {
+        backgroundColor: "#F44336",
+    },
+    menuContainer: {
+        marginTop: 20,
     },
     menuItem: {
         flexDirection: "row",

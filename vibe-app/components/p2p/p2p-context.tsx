@@ -21,6 +21,10 @@ interface P2PContextType {
     localPeerId: string | null;
     webViewRef: React.RefObject<WebView>;
     isReady: boolean;
+    serverUrl: string | null;
+    serverStatus: 'disconnected' | 'connecting' | 'connected';
+    setServerUrl: (url: string) => void;
+    checkServerConnection: () => Promise<boolean>;
 }
 
 export const P2PContext = createContext<P2PContextType | null>(null);
@@ -31,6 +35,8 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [messages, setMessages] = useState<Message[]>([]);
     const [localPeerId, setLocalPeerId] = useState<string | null>(null);
     const [isReady, setIsReady] = useState<boolean>(false);
+    const [serverUrl, setServerUrl] = useState<string | null>("http://localhost:5000"); // Default to local server
+    const [serverStatus, setServerStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
     const webViewRef = useRef<WebView>(null);
     const pendingActionsRef = useRef<{ action: string; args: any[] }[]>([]);
 
@@ -123,6 +129,14 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     // In a real app, this would go through a signaling server
                     console.log("Received ICE candidate from WebRTC layer", data);
                     break;
+                    
+                case "serverStatus":
+                    // Update server connection status
+                    setServerStatus(data.status);
+                    if (data.error) {
+                        console.error("Server connection error:", data.error);
+                    }
+                    break;
 
                 case "error":
                     console.error("WebRTC error:", data.error);
@@ -179,6 +193,63 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         sendToWebView("handleIceCandidate", { peerId, candidate });
     };
 
+    // Check if the server is reachable
+    const checkServerConnection = async (): Promise<boolean> => {
+        if (!serverUrl) {
+            setServerStatus('disconnected');
+            return false;
+        }
+        
+        try {
+            setServerStatus('connecting');
+            
+            // Send a request to the server's health endpoint
+            // We'll use WebView to fetch since we can't use XMLHttpRequest directly
+            const checkScript = `
+                fetch('${serverUrl}/health')
+                    .then(response => response.json())
+                    .then(data => {
+                        window.ReactNativeWebView.postMessage(JSON.stringify({
+                            action: 'serverStatus',
+                            status: data.status === 'healthy' ? 'connected' : 'disconnected'
+                        }));
+                        return data.status === 'healthy';
+                    })
+                    .catch(error => {
+                        window.ReactNativeWebView.postMessage(JSON.stringify({
+                            action: 'serverStatus',
+                            status: 'disconnected',
+                            error: error.message
+                        }));
+                        return false;
+                    });
+                true;
+            `;
+            
+            if (webViewRef.current && isReady) {
+                webViewRef.current.injectJavaScript(checkScript);
+                // The result will be handled in the onMessage handler
+                return serverStatus === 'connected';
+            } else {
+                setServerStatus('disconnected');
+                return false;
+            }
+        } catch (error) {
+            console.error('Error checking server connection:', error);
+            setServerStatus('disconnected');
+            return false;
+        }
+    };
+    
+    // Effect to check connection when server URL changes
+    useEffect(() => {
+        if (isReady && serverUrl) {
+            checkServerConnection();
+        }
+    }, [isReady, serverUrl]);
+    
+    // We'll use a different approach for context communication in React Native
+
     const contextValue: P2PContextType = {
         connections,
         messages,
@@ -188,6 +259,10 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localPeerId,
         webViewRef,
         isReady,
+        serverUrl,
+        serverStatus,
+        setServerUrl,
+        checkServerConnection,
     };
 
     return (

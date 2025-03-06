@@ -8,6 +8,13 @@ import { TabsProvider } from "@/components/ui/tab-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { DbProvider } from "@/components/db/db-context";
 import { P2PProvider } from "@/components/p2p/p2p-context";
+import { useAccountSync } from "@/hooks/useAccountSync";
+
+// Component to handle context synchronization
+function ContextSync() {
+    useAccountSync();
+    return null;
+}
 
 export default function RootLayout() {
     const colorScheme = useColorScheme();
@@ -57,6 +64,7 @@ export default function RootLayout() {
                                     barStyle={colorScheme === "light" ? "dark-content" : "light-content"}
                                     translucent={false}
                                 />
+                                <ContextSync />
                                 <Stack screenOptions={{ headerShown: false }}>
                                     <Stack.Screen name="index" />
                                 </Stack>
