@@ -164,15 +164,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       console.log('Creating account with:', { accountName, authType, pictureUrl, pin, serverConfig });
       
+      // Map AUTH_TYPE from component to native values
+      const nativeAuthType = authType === 'PASSWORD' ? 'PIN' : authType;
+      
+      console.log('Mapped auth type:', { from: authType, to: nativeAuthType });
+      
       // Call main process to create account
       // Note: We pass individual arguments instead of an object to better match the native API
       const newAccount = await window.electron.createAccount(
         accountName,
         pin || '',
         pictureUrl,
-        authType,
+        nativeAuthType,
         serverConfig
       );
+      
+      console.log('Account created response:', newAccount);
 
       // Update local state
       setAccounts(prev => [...prev, newAccount]);
