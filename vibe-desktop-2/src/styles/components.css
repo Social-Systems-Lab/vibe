@@ -1,0 +1,33 @@
+@layer components {
+  .btn-primary {
+    @apply bg-[#396cd8] text-white px-4 py-2 rounded-full hover:bg-[#405989] transition-colors;
+  }
+  
+  .btn-outline {
+    @apply border border-[#396cd8] text-[#396cd8] px-4 py-2 rounded-md hover:bg-blue-50 transition-colors;
+  }
+  
+  .input-field {
+    @apply bg-[#fafafa] border border-[#c1c1c1] rounded px-3 py-2 focus:border-[#396cd8] focus:bg-[#f4f4f4] hover:border-[#396cd8] transition-colors w-full;
+  }
+  
+  .title-bar {
+    @apply bg-white h-[50px] flex items-center px-3 [app-region:drag];
+  }
+  
+  .window-control-btn {
+    @apply [app-region:none] p-2 text-gray-700 hover:bg-gray-200;
+  }
+  
+  .window-close-btn {
+    @apply [app-region:none] p-2 text-gray-700 hover:bg-[#e81123] hover:text-white;
+  }
+  
+  .form-label {
+    @apply font-medium text-sm mb-1;
+  }
+  
+  .error-text {
+    @apply text-red-500 text-xs mt-1;
+  }
+}

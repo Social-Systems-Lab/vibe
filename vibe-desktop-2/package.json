@@ -1,0 +1,48 @@
+{
+    "name": "vibe-desktop",
+    "version": "0.1.0",
+    "main": "dist-electron/main/index.js",
+    "description": "Your network platform",
+    "license": "MIT",
+    "private": true,
+    "debug": {
+        "env": {
+            "VITE_DEV_SERVER_URL": "http://127.0.0.1:7777/"
+        }
+    },
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build && electron-builder",
+        "preview": "vite preview"
+    },
+    "dependencies": {
+        "@fontsource/roboto": "^5.0.8",
+        "electron-updater": "^6.1.1",
+        "formik": "^2.4.5",
+        "jotai": "^2.4.3",
+        "openai": "^4.14.1",
+        "react-arborist": "^3.2.0",
+        "react-device-detect": "^2.2.3",
+        "react-dropzone": "^14.2.3",
+        "react-icons": "^4.11.0",
+        "realm": "^12.2.1",
+        "sharp": "^0.32.6",
+        "vectordb": "^0.3.5"
+    },
+    "devDependencies": {
+        "@vitejs/plugin-react": "^4.0.4",
+        "autoprefixer": "^10.4.20",
+        "electron": "^26.0.0",
+        "electron-builder": "^24.6.3",
+        "postcss": "^8.5.3",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "tailwindcss": "^4.0.12",
+        "vite": "^4.4.9",
+        "vite-plugin-electron": "^0.13.0-beta.3",
+        "vite-plugin-electron-renderer": "^0.14.5"
+    },
+    "engines": {
+        "node": "^14.18.0 || >=16.0.0"
+    }
+}
