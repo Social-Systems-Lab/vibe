@@ -1,7 +1,7 @@
 // Account management for vibe-desktop
 // Adapted from vibe-app/components/auth/auth-context.tsx
 
-import { app, ipcMain, BrowserWindow } from 'electron';
+import { app, ipcMain, BrowserWindow, dialog } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -18,28 +18,24 @@ const ENCRYPTION = 'aes-256-cbc';
 
 // In-memory state
 let _accounts: Account[] = [];
-let _accountsInitialized = false;
 let _accountsDirectoryWatcher: fs.FSWatcher | null = null;
 
-// Create the accounts directory if it doesn't exist
-if (!fs.existsSync(ACCOUNTS_DIR)) {
-  fs.mkdirSync(ACCOUNTS_DIR, { recursive: true });
+// Define account types
+interface ServerConfig {
+  url: string;
+  name?: string;
+  isConnected?: boolean;
+  lastConnected?: number;
 }
 
-// Types
 interface Account {
-  did?: string;
-  publicKey?: string;
   name: string;
+  did: string;
+  publicKey: string;
   pictureUrl?: string;
-  requireAuthentication?: 'PIN' | 'BIOMETRIC';
-  updatedAt?: number;
-  server?: {
-    url: string;
-    name?: string;
-    isConnected?: boolean;
-    lastConnected?: number;
-  };
+  requireAuthentication: 'PIN' | 'BIOMETRIC' | 'NONE';
+  updatedAt: number;
+  server?: ServerConfig;
 }
 
 interface RsaKeys {
@@ -47,160 +43,135 @@ interface RsaKeys {
   privateKey: string;
 }
 
-// --- Account functions ---
+// Initialize accounts directory
+if (!fs.existsSync(ACCOUNTS_DIR)) {
+  fs.mkdirSync(ACCOUNTS_DIR, { recursive: true });
+}
 
-// Gets list of accounts on the device
-const getAccounts = (): Account[] => {
-  console.log('getAccounts called');
-  if (_accountsInitialized) {
-    return _accounts;
-  }
-
-  _accountsInitialized = true;
+// Load account list from disk
+const loadAccounts = (): void => {
+  _accounts = [];
   
-  // Load accounts from disk
   try {
-    const accountDirs = fs.readdirSync(ACCOUNTS_DIR);
+    // List all directories in the accounts directory
+    const accountDirs = fs.readdirSync(ACCOUNTS_DIR, { withFileTypes: true })
+      .filter(dirent => dirent.isDirectory())
+      .map(dirent => dirent.name);
     
-    // Read accounts.json which contains the account metadata
-    const accountsFilePath = path.join(ACCOUNTS_DIR, 'accounts.json');
-    
-    if (fs.existsSync(accountsFilePath)) {
-      const accountsData = fs.readFileSync(accountsFilePath, 'utf8');
-      _accounts = JSON.parse(accountsData);
-      
-      // Make sure pictureUrl paths are absolute
-      _accounts = _accounts.map(account => {
-        if (account.pictureUrl && !path.isAbsolute(account.pictureUrl)) {
-          const accountPath = path.join(ACCOUNTS_DIR, account.name);
-          account.pictureUrl = path.join(accountPath, PICTURE_FILENAME);
+    // Load each account
+    for (const accountDir of accountDirs) {
+      try {
+        const accountConfigPath = path.join(ACCOUNTS_DIR, accountDir, 'config.json');
+        if (fs.existsSync(accountConfigPath)) {
+          const accountConfig = JSON.parse(fs.readFileSync(accountConfigPath, 'utf8'));
+          
+          // Ensure account has required fields
+          if (!accountConfig.name || !accountConfig.did || !accountConfig.publicKey) {
+            console.error(`Invalid account config in ${accountDir}`);
+            continue;
+          }
+          
+          // Add picture URL if available
+          const picturePath = path.join(ACCOUNTS_DIR, accountDir, PICTURE_FILENAME);
+          let pictureUrl;
+          if (fs.existsSync(picturePath)) {
+            pictureUrl = `file://${picturePath}`;
+          }
+          
+          // Add account to list
+          _accounts.push({
+            ...accountConfig,
+            pictureUrl
+          });
         }
-        return account;
-      });
-    } else {
-      _accounts = [];
-      // Try loading legacy format accounts
-      _accounts = accountDirs
-        .map((dir) => {
-            const accountPath = path.join(ACCOUNTS_DIR, dir);
-            if (fs.statSync(accountPath).isDirectory()) {
-                const account: Account = { name: dir }; // assuming the directory name is the display name
-                const picturePath = path.join(accountPath, PICTURE_FILENAME);
-                if (fs.existsSync(picturePath)) {
-                    account.pictureUrl = picturePath;
-                }
-                return account;
-            }
-            return null;
-        })
-        .filter(Boolean) as Account[]; // filter out any null values (non-directory files)
+      } catch (error) {
+        console.error(`Error loading account ${accountDir}:`, error);
+      }
     }
   } catch (error) {
     console.error('Error loading accounts:', error);
-    _accounts = [];
+  }
+};
+
+// Save account list to disk
+const saveAccounts = async (): Promise<void> => {
+  try {
+    // Save each account's config
+    for (const account of _accounts) {
+      const accountDir = path.join(ACCOUNTS_DIR, account.name);
+      
+      // Create account directory if it doesn't exist
+      if (!fs.existsSync(accountDir)) {
+        fs.mkdirSync(accountDir, { recursive: true });
+      }
+      
+      // Save account config without pictureUrl (it's derived)
+      const { pictureUrl, ...accountConfig } = account;
+      fs.writeFileSync(
+        path.join(accountDir, 'config.json'),
+        JSON.stringify(accountConfig, null, 2)
+      );
+    }
+  } catch (error) {
+    console.error('Error saving accounts:', error);
+  }
+};
+
+// Get all accounts
+const getAccounts = (): Account[] => {
+  // Load accounts if not already loaded
+  if (_accounts.length === 0) {
+    loadAccounts();
   }
   
   return _accounts;
 };
 
-// Save accounts to disk
-const saveAccounts = async (): Promise<void> => {
-  const accountsFilePath = path.join(ACCOUNTS_DIR, 'accounts.json');
-  
-  // Create a copy of accounts with relative paths for storage
-  const accountsToSave = _accounts.map(account => {
-    const accountCopy = { ...account };
+// Generate a DID
+const generateDid = (): string => {
+  const id = crypto.randomBytes(16).toString('hex');
+  return `did:vibe:${id}`;
+};
+
+// Generate RSA key pair for identity
+const generateRSAKeys = async (): Promise<RsaKeys> => {
+  try {
+    const keyPair = jsrsasign.KEYUTIL.generateKeypair('RSA', 2048);
     
-    // Store relative paths for pictures
-    if (accountCopy.pictureUrl) {
-      const accountPath = path.join(ACCOUNTS_DIR, account.name);
-      if (accountCopy.pictureUrl.startsWith(accountPath)) {
-        accountCopy.pictureUrl = path.relative(accountPath, accountCopy.pictureUrl);
-      }
-    }
+    const publicKey = jsrsasign.KEYUTIL.getPEM(keyPair.pubKeyObj);
+    const privateKey = jsrsasign.KEYUTIL.getPEM(keyPair.prvKeyObj, 'PKCS8PRV');
     
-    return accountCopy;
-  });
-  
-  fs.writeFileSync(accountsFilePath, JSON.stringify(accountsToSave, null, 2));
+    return { publicKey, privateKey };
+  } catch (error) {
+    console.error('Error generating RSA keys:', error);
+    throw error;
+  }
 };
 
-// Generate a DID from a public key
-const generateDid = (publicKey: string): string => {
-  // Hash the public key using SHA-256
-  const hash = crypto.createHash('sha256').update(publicKey).digest('hex');
-  
-  // Convert the hash to Base64 and make it URL safe
-  const base64Url = Buffer.from(hash, 'hex')
-    .toString('base64')
-    .replace(/\+/g, '-') // Replace + with -
-    .replace(/\//g, '_') // Replace / with _
-    .replace(/=+$/, ''); // Remove trailing =
-  
-  // Prefix the result to form a DID
-  return `did:fan:${base64Url}`;
-};
-
-// Generate RSA key pair
-const generateRSAKeys = (): RsaKeys => {
-  // Generate a new key pair
-  const keyPair = crypto.generateKeyPairSync('rsa', {
-    modulusLength: 2048,
-    publicKeyEncoding: {
-      type: 'spki',
-      format: 'pem'
-    },
-    privateKeyEncoding: {
-      type: 'pkcs8',
-      format: 'pem'
-    }
-  });
-  
-  return {
-    publicKey: keyPair.publicKey,
-    privateKey: keyPair.privateKey
-  };
-};
-
-// Encrypt data with a key
-const encryptData = (data: string, encryptionKey: string): string => {
-  const iv = crypto.randomBytes(16);
-  const key = Buffer.from(encryptionKey, 'base64').subarray(0, 32);
+// Encrypt data with account password
+const encryptData = (data: string, password: string, salt: Buffer, iv: Buffer): Buffer => {
+  const key = crypto.scryptSync(password, salt, 32);
   const cipher = crypto.createCipheriv(ENCRYPTION, key, iv);
   
-  let encrypted = cipher.update(data, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
+  const encrypted = Buffer.concat([
+    cipher.update(Buffer.from(data)),
+    cipher.final()
+  ]);
   
-  // Prefix the IV to the encrypted data
-  return iv.toString('hex') + ':' + encrypted;
+  return encrypted;
 };
 
-// Decrypt data with a key
-const decryptData = (encryptedData: string, encryptionKey: string): string => {
-  const [ivHex, encryptedHex] = encryptedData.split(':');
-  const iv = Buffer.from(ivHex, 'hex');
-  const key = Buffer.from(encryptionKey, 'base64').subarray(0, 32);
-  
+// Decrypt data with account password
+const decryptData = (encryptedData: Buffer, password: string, salt: Buffer, iv: Buffer): string => {
+  const key = crypto.scryptSync(password, salt, 32);
   const decipher = crypto.createDecipheriv(ENCRYPTION, key, iv);
   
-  let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
+  const decrypted = Buffer.concat([
+    decipher.update(encryptedData),
+    decipher.final()
+  ]);
   
-  return decrypted;
-};
-
-// Generate encryption key
-const generateEncryptionKey = (): string => {
-  const keyBytes = crypto.randomBytes(32);
-  return keyBytes.toString('base64');
-};
-
-// Sign challenge with private key
-const signChallenge = (privateKey: string, challenge: string): string => {
-  const sig = new jsrsasign.KJUR.crypto.Signature({ alg: 'SHA256withRSA' });
-  sig.init(privateKey);
-  sig.updateString(challenge);
-  return sig.sign();
+  return decrypted.toString();
 };
 
 // Create a new account
@@ -208,175 +179,127 @@ const createAccount = async (
   accountName: string, 
   password: string, 
   picturePath?: string, 
-  authType: 'PIN' | 'BIOMETRIC' = 'PIN',
-  serverConfig?: { url: string; name?: string; }
+  authType: 'PIN' | 'BIOMETRIC' | 'NONE' = 'PIN',
+  serverConfig?: ServerConfig
 ): Promise<Account> => {
-  console.log('createAccount called');
-  
-  if (!_accountsInitialized) {
-    getAccounts();
+  // Check if account already exists
+  const existingAccount = _accounts.find(account => account.name === accountName);
+  if (existingAccount) {
+    throw new Error(`Account ${accountName} already exists`);
   }
-
+  
   try {
-    // Generate keys and encryption key
-    const rsaKeys = generateRSAKeys();
-    const encryptionKey = generateEncryptionKey();
+    // Generate DID
+    const did = generateDid();
     
-    // Generate DID from public key
-    const did = generateDid(rsaKeys.publicKey);
+    // Generate RSA keys
+    const { publicKey, privateKey } = await generateRSAKeys();
     
     // Create account directory
     const accountDir = path.join(ACCOUNTS_DIR, accountName);
-    if (fs.existsSync(accountDir)) {
-      throw new Error('Account already exists');
+    if (!fs.existsSync(accountDir)) {
+      fs.mkdirSync(accountDir, { recursive: true });
     }
     
-    fs.mkdirSync(accountDir, { recursive: true });
+    // Generate salt and IV
+    const salt = crypto.randomBytes(16);
+    const iv = crypto.randomBytes(16);
     
-    // Encrypt private key with the encryption key
-    const encryptedPrivateKey = encryptData(rsaKeys.privateKey, encryptionKey);
+    // Save salt and IV
+    fs.writeFileSync(path.join(accountDir, SALT_FILENAME), salt);
+    fs.writeFileSync(path.join(accountDir, IV_FILENAME), iv);
     
-    // Store the public key and encrypted private key
-    fs.writeFileSync(path.join(accountDir, PUBLIC_KEY_FILENAME), rsaKeys.publicKey);
-    fs.writeFileSync(path.join(accountDir, PRIVATE_KEY_FILENAME), encryptedPrivateKey);
+    // Save public key
+    fs.writeFileSync(path.join(accountDir, PUBLIC_KEY_FILENAME), publicKey);
     
-    // If PIN auth, create a salt and store the encryption key encrypted with the PIN
-    if (authType === 'PIN') {
-      // Generate a salt
-      const salt = crypto.randomBytes(16);
-      fs.writeFileSync(path.join(accountDir, SALT_FILENAME), salt);
-      
-      // Hash the PIN with the salt to create a key
-      const derivedKey = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha512');
-      
-      // Encrypt the encryption key with the derived key
-      const iv = crypto.randomBytes(16);
-      fs.writeFileSync(path.join(accountDir, IV_FILENAME), iv);
-      
-      const cipher = crypto.createCipheriv(ENCRYPTION, derivedKey, iv);
-      let encryptedKey = cipher.update(encryptionKey, 'utf8', 'hex');
-      encryptedKey += cipher.final('hex');
-      
-      // Store the encrypted encryption key
-      fs.writeFileSync(path.join(accountDir, 'encryption-key.enc'), encryptedKey);
+    // Encrypt and save private key
+    if (password) {
+      const encryptedPrivateKey = encryptData(privateKey, password, salt, iv);
+      fs.writeFileSync(path.join(accountDir, PRIVATE_KEY_FILENAME), encryptedPrivateKey);
     } else {
-      // For biometric, just store the encryption key directly
-      // In a real implementation, you'd use the OS keychain
-      fs.writeFileSync(path.join(accountDir, 'encryption-key'), encryptionKey);
+      // For 'NONE' auth type, just save the private key unencrypted (in a real app, use system keychain)
+      fs.writeFileSync(path.join(accountDir, PRIVATE_KEY_FILENAME), privateKey);
     }
     
-    // Copy profile picture if provided
-    let storedPicturePath: string | undefined = undefined;
-    if (picturePath && fs.existsSync(picturePath)) {
-      const destination = path.join(accountDir, PICTURE_FILENAME);
-      fs.copyFileSync(picturePath, destination);
-      storedPicturePath = destination;
-    } else {
-      // Use default picture
-      const defaultPicture = path.join(app.getAppPath(), 'resources', 'default-profile.png');
-      if (fs.existsSync(defaultPicture)) {
-        const destination = path.join(accountDir, PICTURE_FILENAME);
-        fs.copyFileSync(defaultPicture, destination);
-        storedPicturePath = destination;
+    // Save profile picture if provided
+    let pictureUrl;
+    if (picturePath) {
+      try {
+        const pictureDest = path.join(accountDir, PICTURE_FILENAME);
+        fs.copyFileSync(picturePath, pictureDest);
+        pictureUrl = `file://${pictureDest}`;
+      } catch (error) {
+        console.error('Error copying profile picture:', error);
       }
     }
     
-    // Set up default server config if none provided
-    const defaultServer = serverConfig || {
-      url: 'http://localhost:5000',
-      name: 'Local Server',
-      isConnected: false
+    // Default server config
+    const defaultServerConfig: ServerConfig = {
+      url: 'https://cloud.vibeapp.dev',
+      name: 'Official Vibe Cloud',
+      isConnected: false,
     };
     
+    // Create account object
     const now = Date.now();
-    const newAccount: Account = {
-      did,
-      publicKey: rsaKeys.publicKey,
+    const account: Account = {
       name: accountName,
-      pictureUrl: storedPicturePath,
+      did,
+      publicKey,
+      pictureUrl,
       requireAuthentication: authType,
       updatedAt: now,
-      server: defaultServer
+      server: serverConfig || defaultServerConfig
     };
     
-    // Add to accounts list and save
-    _accounts.push(newAccount);
-    await saveAccounts();
+    // Save account config
+    fs.writeFileSync(
+      path.join(accountDir, 'config.json'),
+      JSON.stringify(account, null, 2)
+    );
     
-    return newAccount;
+    // Add to accounts list
+    _accounts.push(account);
+    
+    return account;
   } catch (error) {
     console.error('Error creating account:', error);
     throw error;
   }
 };
 
-// Login to an account
-const login = async (name: string, password: string): Promise<Account> => {
-  console.log('login called');
-  
-  // Get account
-  if (!_accountsInitialized) {
-    getAccounts();
-  }
-  
-  const account = _accounts.find(a => a.name === name);
+// Login to account
+const login = async (accountName: string, password: string): Promise<Account> => {
+  // Find account
+  const account = _accounts.find(acc => acc.name === accountName);
   if (!account) {
     throw new Error('Account not found');
   }
   
-  const accountDir = path.join(ACCOUNTS_DIR, name);
+  const accountDir = path.join(ACCOUNTS_DIR, accountName);
   
+  // If auth type is NONE, just return the account
+  if (account.requireAuthentication === 'NONE') {
+    return account;
+  }
+  
+  // Verify password by attempting to decrypt the private key
   try {
-    // Get the encryption key based on auth type
-    let encryptionKey: string;
+    const salt = fs.readFileSync(path.join(accountDir, SALT_FILENAME));
+    const iv = fs.readFileSync(path.join(accountDir, IV_FILENAME));
+    const encryptedPrivateKey = fs.readFileSync(path.join(accountDir, PRIVATE_KEY_FILENAME));
     
-    if (account.requireAuthentication === 'PIN') {
-      // Read salt and derive key from PIN
-      const salt = fs.readFileSync(path.join(accountDir, SALT_FILENAME));
-      const derivedKey = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha512');
-      
-      // Read IV and encrypted key
-      const iv = fs.readFileSync(path.join(accountDir, IV_FILENAME));
-      const encryptedKey = fs.readFileSync(path.join(accountDir, 'encryption-key.enc'), 'utf8');
-      
-      // Decrypt the encryption key
-      const decipher = crypto.createDecipheriv(ENCRYPTION, derivedKey, iv);
-      let decryptedKey = decipher.update(encryptedKey, 'hex', 'utf8');
-      decryptedKey += decipher.final('utf8');
-      
-      encryptionKey = decryptedKey;
-    } else {
-      // For biometric, read the encryption key directly
-      // In a real implementation, you'd use the OS keychain
-      encryptionKey = fs.readFileSync(path.join(accountDir, 'encryption-key'), 'utf8');
-    }
+    // Try to decrypt the private key
+    decryptData(encryptedPrivateKey, password, salt, iv);
     
-    // Read and decrypt the private key as a test
-    const encryptedPrivateKey = fs.readFileSync(path.join(accountDir, PRIVATE_KEY_FILENAME), 'utf8');
-    
-    try {
-      const privateKey = decryptData(encryptedPrivateKey, encryptionKey);
-      
-      // Check if the decrypted private key is valid
-      if (!privateKey.startsWith('-----BEGIN PRIVATE KEY-----')) {
-        throw new Error('Invalid private key format');
-      }
-      
-      // Store the encryption key in-memory for this session
-      (account as any).encryptionKey = encryptionKey;
-      
-      return account;
-    } catch (error) {
-      console.error('Error decrypting private key:', error);
-      throw new Error('Incorrect PIN or authentication failed');
-    }
+    // If decryption succeeds, return the account
+    return account;
   } catch (error) {
-    console.error('Login error:', error);
-    throw error;
+    throw new Error('Invalid password');
   }
 };
 
-// Update account
+// Update account info
 const updateAccount = async (
   accountName: string, 
   newName?: string, 
@@ -388,12 +311,41 @@ const updateAccount = async (
   const account = _accounts[index];
   const accountDir = path.join(ACCOUNTS_DIR, accountName);
   
-  // Update picture if provided
-  let storedPicturePath = account.pictureUrl;
-  if (newPictureUri && fs.existsSync(newPictureUri)) {
-    const destination = path.join(accountDir, PICTURE_FILENAME);
-    fs.copyFileSync(newPictureUri, destination);
-    storedPicturePath = destination;
+  // If renaming account, update directory
+  if (newName && newName !== accountName) {
+    const newAccountDir = path.join(ACCOUNTS_DIR, newName);
+    
+    // Check if new name is already taken
+    if (fs.existsSync(newAccountDir)) {
+      throw new Error(`Account ${newName} already exists`);
+    }
+    
+    // Rename directory
+    fs.renameSync(accountDir, newAccountDir);
+  }
+  
+  // Update profile picture if provided
+  let storedPicturePath;
+  if (newPictureUri) {
+    try {
+      // Extract file path from URI
+      const picturePath = newPictureUri.replace('file://', '');
+      
+      // Target path for picture
+      const pictureDest = path.join(
+        newName ? path.join(ACCOUNTS_DIR, newName) : accountDir, 
+        PICTURE_FILENAME
+      );
+      
+      // Copy file
+      fs.copyFileSync(picturePath, pictureDest);
+      storedPicturePath = `file://${pictureDest}`;
+    } catch (error) {
+      console.error('Error updating profile picture:', error);
+    }
+  } else {
+    // Keep existing picture
+    storedPicturePath = account.pictureUrl;
   }
   
   // Update account object
@@ -503,16 +455,55 @@ export const stopWatchingAccountsDirectory = (): void => {
   _accountsDirectoryWatcher = null;
 };
 
+// Image selection helper
+export async function selectImage(): Promise<string | undefined> {
+  const mainWindow = BrowserWindow.getFocusedWindow();
+  if (!mainWindow) return undefined;
+  
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters: [
+      { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp'] }
+    ]
+  });
+  
+  if (result.canceled || result.filePaths.length === 0) {
+    return undefined;
+  }
+  
+  return result.filePaths[0];
+}
+
 // Set up IPC handlers
 export function setupAccountHandlers(): void {
+  // Image selection
+  ipcMain.handle('select-image', selectImage);
+  
   // Get all accounts
   ipcMain.handle('get-accounts', () => {
     return getAccounts();
   });
   
   // Create a new account
-  ipcMain.handle('create-account', (_, accountName, password, picturePath, authType, serverConfig) => {
-    return createAccount(accountName, password, picturePath, authType || 'PIN', serverConfig);
+  ipcMain.handle('create-account', (_, data) => {
+    // Handle object-style parameter for new code
+    if (typeof data === 'object' && data !== null) {
+      return createAccount(
+        data.name, 
+        data.pin || '', 
+        data.pictureUrl, 
+        data.authType || 'PIN', 
+        data.serverConfig
+      );
+    } else {
+      // Original signature for backward compatibility
+      const accountName = arguments[1];
+      const password = arguments[2];
+      const picturePath = arguments[3];
+      const authType = arguments[4];
+      const serverConfig = arguments[5];
+      return createAccount(accountName, password, picturePath, authType || 'PIN', serverConfig);
+    }
   });
   
   // Login to an account
@@ -550,5 +541,6 @@ export default {
   updateServerConfig,
   deleteAccount,
   startWatchingAccountsDirectory,
-  stopWatchingAccountsDirectory
+  stopWatchingAccountsDirectory,
+  selectImage
 };

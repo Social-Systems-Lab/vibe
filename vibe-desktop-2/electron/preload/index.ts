@@ -11,10 +11,18 @@ contextBridge.exposeInMainWorld('electron', {
   // Get config
   getConfig: () => ipcRenderer.invoke('get-config'),
   
+  // Image selection
+  selectImage: () => ipcRenderer.invoke('select-image'),
+  
   // Account management
   getAccounts: () => ipcRenderer.invoke('get-accounts'),
-  createAccount: (name: string, password: string, picturePath?: string, authType?: 'PIN' | 'BIOMETRIC', serverConfig?: any) => 
-    ipcRenderer.invoke('create-account', name, password, picturePath, authType, serverConfig),
+  createAccount: (data: { 
+    name: string; 
+    authType: string; 
+    pictureUrl?: string; 
+    pin?: string;
+    serverConfig?: any 
+  }) => ipcRenderer.invoke('create-account', data),
   login: (name: string, password: string) => ipcRenderer.invoke('login', name, password),
   updateAccount: (name: string, newName?: string, newPictureUri?: string) => 
     ipcRenderer.invoke('update-account', name, newName, newPictureUri),

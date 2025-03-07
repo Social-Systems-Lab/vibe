@@ -73,12 +73,20 @@ export const CreateAccountWizard: React.FC<CreateAccountWizardProps> = ({ onComp
   // Profile picture selection
   const handleProfilePictureSelect = async () => {
     try {
+      if (!window.electron.selectImage) {
+        console.error('selectImage function not available');
+        alert('Image selection is not available');
+        return;
+      }
+      
       const result = await window.electron.selectImage();
+      console.log('Selected image:', result);
       if (result) {
         setProfilePicture(result);
       }
     } catch (error) {
       console.error('Error selecting image:', error);
+      alert('Error selecting image: ' + error);
     }
   };
 
@@ -585,9 +593,9 @@ export const CreateAccountWizard: React.FC<CreateAccountWizardProps> = ({ onComp
   };
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className="h-full flex flex-col bg-white overflow-hidden">
       {/* Progress dots */}
-      <div className="flex justify-center py-6">
+      <div className="flex justify-center py-4 shrink-0">
         {['intro-welcome', 'intro-privacy', 'intro-data', 'profile-setup', 'server-setup', 'app-selection', 'complete'].map((step, index) => (
           <div 
             key={step} 
@@ -600,13 +608,15 @@ export const CreateAccountWizard: React.FC<CreateAccountWizardProps> = ({ onComp
         ))}
       </div>
       
-      {/* Content */}
-      <div className="flex-1 flex items-center justify-center p-6">
-        {renderStep()}
+      {/* Content - Make it scrollable */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="min-h-full flex items-center justify-center p-6">
+          {renderStep()}
+        </div>
       </div>
       
-      {/* Navigation buttons */}
-      <div className="flex justify-between p-6 border-t border-gray-200">
+      {/* Navigation buttons - Fixed at bottom */}
+      <div className="flex justify-between p-4 border-t border-gray-200 bg-white shrink-0">
         <button
           onClick={handleBack}
           disabled={loading}
