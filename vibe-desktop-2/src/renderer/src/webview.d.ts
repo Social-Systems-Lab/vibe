@@ -14,8 +14,19 @@ interface VibeAPI {
   write: (collection: string, doc: any) => Promise<any>;
 }
 
-interface WebviewElectronAPI {
+interface ElectronAPI {
+  // IPC methods
   send: (channel: string, data: any) => void;
+  
+  // Account methods
+  getConfig: () => Promise<any>;
+  getInstalledApps: () => Promise<any[]>;
+  getAccounts: () => Promise<any[]>;
+  createAccount: (data: any) => Promise<any>;
+  loginAccount: (accountId: string) => Promise<any>;
+  
+  // WebView methods
+  captureWebViewScreenshot: (tabId: string) => Promise<void>;
 }
 
 interface WebviewElement extends HTMLElement {
@@ -34,16 +45,23 @@ interface WebviewElement extends HTMLElement {
   // Methods
   loadURL: (url: string) => void;
   getURL: () => string;
+  getTitle: () => string;
   reload: () => void;
   stop: () => void;
   goBack: () => void;
   goForward: () => void;
+  canGoBack: () => boolean;
+  canGoForward: () => boolean;
   executeJavaScript: (code: string) => Promise<any>;
   openDevTools: () => void;
   closeDevTools: () => void;
   isDevToolsOpened: () => boolean;
   focus: () => void;
   blur: () => void;
+  
+  // Events
+  addEventListener: (event: string, listener: (event: any) => void) => void;
+  removeEventListener: (event: string, listener: (event: any) => void) => void;
 }
 
 declare global {
@@ -55,7 +73,7 @@ declare global {
   
   interface Window {
     vibe: VibeAPI;
-    electron: WebviewElectronAPI;
+    electron: ElectronAPI;
   }
 
   interface HTMLElementTagNameMap {
