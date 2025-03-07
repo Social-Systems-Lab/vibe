@@ -23,7 +23,14 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^4.0.0",
-    "electron-updater": "^6.3.9"
+    "autoprefixer": "^10.4.20",
+    "crypto-js": "^4.2.0",
+    "electron-updater": "^6.3.9",
+    "jsrsasign": "^11.1.0",
+    "postcss": "^8.5.3",
+    "pouchdb": "^9.0.0",
+    "pouchdb-find": "^9.0.0",
+    "tailwindcss": "^4.0.12"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",

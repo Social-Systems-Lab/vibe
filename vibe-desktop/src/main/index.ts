@@ -2,28 +2,59 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { setupAccountHandlers } from './account'
+import { setupDatabaseHandlers } from './database'
+import { setupWebViewHandlers } from './webview'
+
+// Main application window
+let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
-  // Create the browser window.
-  const mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+  // Create the browser window
+  mainWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
     show: false,
     autoHideMenuBar: true,
+    frame: false, // Frameless window
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+      webviewTag: true // Enable webview tag
     }
   })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    mainWindow?.show()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
+  })
+
+  // Window controls
+  ipcMain.handle('minimize-window', () => {
+    mainWindow?.minimize()
+  })
+
+  ipcMain.handle('maximize-window', () => {
+    if (mainWindow?.isMaximized()) {
+      mainWindow?.unmaximize()
+    } else {
+      mainWindow?.maximize()
+    }
+  })
+
+  ipcMain.handle('close-window', () => {
+    mainWindow?.close()
+  })
+
+  ipcMain.handle('is-window-maximized', () => {
+    return mainWindow?.isMaximized()
   })
 
   // HMR for renderer base on electron-vite cli.
@@ -33,6 +64,11 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  // Open DevTools in development
+  if (is.dev) {
+    mainWindow.webContents.openDevTools()
+  }
 }
 
 // This method will be called when Electron has finished
@@ -40,7 +76,7 @@ function createWindow(): void {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.vibe.desktop')
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
@@ -49,9 +85,12 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
+  // Set up all handlers
+  setupAccountHandlers()
+  setupDatabaseHandlers()
+  setupWebViewHandlers()
 
+  // Create the main window
   createWindow()
 
   app.on('activate', function () {
@@ -65,6 +104,7 @@ app.whenReady().then(() => {
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
+  mainWindow = null
   if (process.platform !== 'darwin') {
     app.quit()
   }

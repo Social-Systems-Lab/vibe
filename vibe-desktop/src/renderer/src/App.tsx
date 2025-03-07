@@ -1,34 +1,52 @@
-import Versions from './components/Versions'
-import electronLogo from './assets/electron.svg'
+import { useState, useEffect } from 'react'
+import TitleBar from './components/TitleBar'
+import LoginScreen from './components/auth/LoginScreen'
+import MainScreen from './components/MainScreen'
 
 function App(): JSX.Element {
-  const ipcHandle = (): void => window.electron.ipcRenderer.send('ping')
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false)
+  const [currentAccount, setCurrentAccount] = useState<any>(null)
+
+  // Check if there's a logged in account on startup
+  useEffect(() => {
+    // This would typically load from session storage or similar
+    // For now, we'll just check if there are accounts
+    const checkAccounts = async () => {
+      try {
+        const accounts = await window.api.accounts.getAll()
+        if (accounts && accounts.length > 0) {
+          // We have accounts, but not logged in yet
+          console.log(`Found ${accounts.length} accounts`)
+        }
+      } catch (error) {
+        console.error('Error checking accounts:', error)
+      }
+    }
+
+    checkAccounts()
+  }, [])
+
+  const handleLogin = (account: any) => {
+    setCurrentAccount(account)
+    setIsLoggedIn(true)
+  }
+
+  const handleLogout = () => {
+    setCurrentAccount(null)
+    setIsLoggedIn(false)
+  }
 
   return (
-    <>
-      <img alt="logo" className="logo" src={electronLogo} />
-      <div className="creator">Powered by electron-vite</div>
-      <div className="text">
-        Build an Electron app with <span className="react">React</span>
-        &nbsp;and <span className="ts">TypeScript</span>
+    <div className="flex flex-col h-full">
+      <TitleBar />
+      <div className="flex-1 overflow-hidden">
+        {isLoggedIn ? (
+          <MainScreen account={currentAccount} onLogout={handleLogout} />
+        ) : (
+          <LoginScreen onLogin={handleLogin} />
+        )}
       </div>
-      <p className="tip">
-        Please try pressing <code>F12</code> to open the devTool
-      </p>
-      <div className="actions">
-        <div className="action">
-          <a href="https://electron-vite.org/" target="_blank" rel="noreferrer">
-            Documentation
-          </a>
-        </div>
-        <div className="action">
-          <a target="_blank" rel="noreferrer" onClick={ipcHandle}>
-            Send IPC
-          </a>
-        </div>
-      </div>
-      <Versions></Versions>
-    </>
+    </div>
   )
 }
 
