@@ -8,14 +8,15 @@ Vibe is a **self-sovereign identity (SSI) framework** that gives users full cont
 
 This repo is structured as follows:
 
-| Project          | Description                                                                                                                          |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **`vibe-app`**   | Mobile application for managing self-sovereign identities. Built with **Expo/React Native**.                                         |
-| **`vibe-web`**   | Vibe website hosted at [vibeapp.dev](vibeapp.dev) providing documentation and integration with the vibe app. Built with **Next.js**. |
-| **`vibe-sdk`**   | JavaScript/TypeScript SDK that enables applications to interact with Vibe for authentication, data access, and permissions handling. |
-| **`vibe-react`** | React integration for Vibe, simplifying usage of Vibe within React applications.                                                     |
-| **`vibe-cloud`** | Personal cloud infrastructure enabling P2P communication, data storage, and node hosting. Allows users to self-host their digital presence or use Vibe's infrastructure.                                                     |
-| **`apps/*`**     | Web applications built on top of Vibe, using the Vibe SDK for authentication and data handling. Built using **Vite + React**.        |
+| Project            | Description                                                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **`vibe-app`**     | Vibe mobile application. Built with **Expo/React Native**.                                                                           |
+| **`vibe-desktop`** | Vibe desktop application. Built with **Electron + React Native**.                                                                    |
+| **`vibe-web`**     | Vibe website hosted at [vibeapp.dev](vibeapp.dev) providing documentation and integration with the vibe app. Built with **Next.js**. |
+| **`vibe-sdk`**     | JavaScript/TypeScript SDK that enables applications to interact with Vibe for authentication, data access, and permissions handling. |
+| **`vibe-react`**   | React integration for Vibe, simplifying usage of Vibe within React applications.                                                     |
+| **`vibe-cloud`**   | Vibe cloud enabling P2P communication and data storage. Allows users to self-host their digital presence.                            |
+| **`apps/*`**       | Web applications built on top of Vibe, using the Vibe SDK for authentication and data handling. Built using **Vite + React**.        |
 
 ---
 
@@ -82,10 +83,10 @@ The current focus is on implementing the **core functionality** of Vibe, ensurin
 
 ## 📝 Documentation
 
-Documentation will be available soon at:  
+Some documentation is available at:  
 👉 **[vibeapp.dev/developers](https://vibeapp.dev/developers)**
 
-For now, refer to the codebase and project structure for integration details.
+Refer to the codebase and project structure for integration details and don't hesitate to reach out on the [Vibe Development Chat on Signal](https://signal.group/#CjQKILrCh74fbcqVeLI-q3FqkoDLoMJEcbx7kdXv-C04jcZPEhCVn3D5HPUc_d1oGXkJOtrK) if you have any questions.
 
 ---
 
