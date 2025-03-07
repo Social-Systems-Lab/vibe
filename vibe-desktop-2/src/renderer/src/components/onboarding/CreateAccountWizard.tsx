@@ -20,10 +20,15 @@ type WizardStep =
   | 'app-selection' 
   | 'complete';
 
-// Force showing welcome screens
+// Force showing welcome screens during development
 const FORCE_ALWAYS_SHOW_WELCOME = false;
 
-export const CreateAccountWizard: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
+interface CreateAccountWizardProps {
+  onComplete: () => void;
+  onBack?: () => void;
+}
+
+export const CreateAccountWizard: React.FC<CreateAccountWizardProps> = ({ onComplete, onBack }) => {
   const { createAccount, accounts, addOrUpdateApp } = useAuth();
   const { write } = useDb();
 
@@ -31,6 +36,9 @@ export const CreateAccountWizard: React.FC<{ onComplete: () => void }> = ({ onCo
   const [initialStep, setInitialStep] = useState<WizardStep>('intro-welcome');
   const [currentStep, setCurrentStep] = useState<WizardStep | null>(null);
   const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [profilePicture, setProfilePicture] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [selectedApps, setSelectedApps] = useState<string[]>(['dev.vibeapp.contacts']);
@@ -74,6 +82,23 @@ export const CreateAccountWizard: React.FC<{ onComplete: () => void }> = ({ onCo
     }
   };
 
+  // Validate profile step inputs
+  const validateProfileStep = () => {
+    if (!name.trim()) {
+      return false;
+    }
+
+    // Only validate password if we're using password authentication
+    if (name && password && confirmPassword !== password) {
+      setPasswordError('Passwords do not match');
+      return false;
+    } else {
+      setPasswordError(null);
+    }
+
+    return true;
+  };
+
   // Go to next step
   const handleNext = () => {
     const allSteps: WizardStep[] = [
@@ -93,18 +118,23 @@ export const CreateAccountWizard: React.FC<{ onComplete: () => void }> = ({ onCo
 
     if (!currentStep) return;
     
-    // Special validation for server setup step
+    // Profile step validation
+    if (currentStep === 'profile-setup') {
+      if (!validateProfileStep()) {
+        return;
+      }
+    }
+    
+    // Server setup step validation
     if (currentStep === 'server-setup' && serverOption === 'custom') {
       // Validate custom server configuration
       if (!serverUrl.trim()) {
-        // In a real app, you'd show an error dialog here
-        console.error('Missing Server URL');
+        alert('Please enter a server URL');
         return;
       }
       
       // If not connected, ask if they want to proceed anyway
       if (!serverConnected) {
-        // In a real app, you'd show a confirmation dialog here
         if (!window.confirm('Server connection not verified. Continue anyway?')) {
           return;
         }
@@ -136,6 +166,12 @@ export const CreateAccountWizard: React.FC<{ onComplete: () => void }> = ({ onCo
 
     if (!currentStep) return;
     
+    // If we're at the first step and onBack is provided, use it
+    if (currentStep === steps[0] && onBack) {
+      onBack();
+      return;
+    }
+    
     const currentIndex = steps.indexOf(currentStep);
     if (currentIndex > 0) {
       setCurrentStep(steps[currentIndex - 1]);
@@ -161,8 +197,7 @@ export const CreateAccountWizard: React.FC<{ onComplete: () => void }> = ({ onCo
     
     // For custom server, check the connection
     if (!serverUrl) {
-      // In a real app, you'd show an error dialog here
-      console.error('Missing Server URL');
+      alert('Please enter a server URL');
       return false;
     }
     
@@ -176,11 +211,9 @@ export const CreateAccountWizard: React.FC<{ onComplete: () => void }> = ({ onCo
       setCheckingServer(false);
       
       if (isConnected) {
-        // Success message
-        console.log('Connected to server successfully');
+        alert('Connected to server successfully');
       } else {
-        // Error message
-        console.error('Server responded but health check failed');
+        alert('Server responded but health check failed');
       }
       
       return isConnected;
@@ -188,8 +221,7 @@ export const CreateAccountWizard: React.FC<{ onComplete: () => void }> = ({ onCo
       console.error('Error checking server:', error);
       setServerConnected(false);
       setCheckingServer(false);
-      // Error message
-      console.error('Could not connect to the server');
+      alert('Could not connect to the server');
       return false;
     }
   };
@@ -210,7 +242,10 @@ export const CreateAccountWizard: React.FC<{ onComplete: () => void }> = ({ onCo
         lastConnected: serverOption === 'official' || serverConnected ? Date.now() : undefined
       };
       
-      const account = await createAccount(finalName, 'NONE', profilePicture, undefined, serverConfig);
+      // Determine authentication type
+      const authType = password ? 'PASSWORD' : 'NONE';
+      
+      const account = await createAccount(finalName, authType, profilePicture, password, serverConfig);
       console.log('Account created:', account);
 
       // Install selected apps
@@ -230,7 +265,7 @@ export const CreateAccountWizard: React.FC<{ onComplete: () => void }> = ({ onCo
       onComplete();
     } catch (error) {
       console.error('Account creation failed:', error);
-      // In a real app, you'd show an error dialog here
+      alert(`Account creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -303,6 +338,46 @@ export const CreateAccountWizard: React.FC<{ onComplete: () => void }> = ({ onCo
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 placeholder="Enter your name"
               />
+            </div>
+            
+            <div className="mb-6 w-full max-w-sm">
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+                Password (Optional)
+              </label>
+              <input
+                type="password"
+                id="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Create a password"
+              />
+              {password && (
+                <div className="mt-4">
+                  <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
+                    Confirm Password
+                  </label>
+                  <input
+                    type="password"
+                    id="confirmPassword"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Confirm your password"
+                  />
+                  {passwordError && (
+                    <p className="text-red-500 text-sm mt-1">{passwordError}</p>
+                  )}
+                </div>
+              )}
+              {password && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mt-4">
+                  <p className="text-sm text-yellow-800">
+                    <strong>Important:</strong> Your password protects your account on this device. 
+                    There's no password reset option, so be sure to remember it!
+                  </p>
+                </div>
+              )}
             </div>
             
             <div className="mb-6 flex flex-col items-center">
@@ -532,18 +607,14 @@ export const CreateAccountWizard: React.FC<{ onComplete: () => void }> = ({ onCo
       
       {/* Navigation buttons */}
       <div className="flex justify-between p-6 border-t border-gray-200">
-        {currentStep !== 'intro-welcome' ? (
-          <button
-            onClick={handleBack}
-            disabled={loading}
-            className="flex items-center px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-          >
-            <FiArrowLeft className="mr-2" />
-            Back
-          </button>
-        ) : (
-          <div></div> // Empty div to maintain layout
-        )}
+        <button
+          onClick={handleBack}
+          disabled={loading}
+          className="flex items-center px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+        >
+          <FiArrowLeft className="mr-2" />
+          Back
+        </button>
         
         <button
           onClick={currentStep === 'complete' ? handleFinish : handleNext}

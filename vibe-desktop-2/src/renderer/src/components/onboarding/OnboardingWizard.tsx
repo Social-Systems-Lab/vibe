@@ -61,6 +61,13 @@ const OnboardingWizard: React.FC = () => {
     setMode('create_account');
   };
   
+  // Handle back from create account to account select
+  const handleBackToAccountSelect = () => {
+    if (accounts.length > 0) {
+      setMode('select_account');
+    }
+  };
+  
   return (
     <div className="w-full h-full bg-white">
       {error && (
@@ -77,7 +84,10 @@ const OnboardingWizard: React.FC = () => {
           loading={loading}
         />
       ) : (
-        <CreateAccountWizard onComplete={handleAccountCreationComplete} />
+        <CreateAccountWizard 
+          onComplete={handleAccountCreationComplete} 
+          onBack={handleBackToAccountSelect}
+        />
       )}
     </div>
   );
