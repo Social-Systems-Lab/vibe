@@ -75,5 +75,53 @@ contextBridge.exposeInMainWorld('electron', {
   // Remove all listeners for a specific channel
   removeAllListeners: (channel: string) => {
     ipcRenderer.removeAllListeners(channel);
+  },
+  
+  // P2P functionality (stubs for now)
+  initializeP2P: () => Promise.resolve({ localPeerId: 'local-peer-' + Math.random().toString(36).substr(2, 9) }),
+  connectToPeer: (peerId: string) => Promise.resolve(),
+  disconnectFromPeer: (peerId: string) => {},
+  sendMessageToPeer: (peerId: string, content: string) => Promise.resolve(),
+  setP2PServerUrl: (url: string) => {},
+  checkP2PServerConnection: () => Promise.resolve(true),
+  
+  // P2P event listeners (stubs for now)
+  onPeerConnected: (callback: (event: any, peerId: string) => void) => {
+    const channel = 'peer-connected';
+    const subscription = (_event: any, peerId: string) => callback(_event, peerId);
+    ipcRenderer.on(channel, subscription);
+    return () => ipcRenderer.removeListener(channel, subscription);
+  },
+  onPeerDisconnected: (callback: (event: any, peerId: string) => void) => {
+    const channel = 'peer-disconnected';
+    const subscription = (_event: any, peerId: string) => callback(_event, peerId);
+    ipcRenderer.on(channel, subscription);
+    return () => ipcRenderer.removeListener(channel, subscription);
+  },
+  onMessageReceived: (callback: (event: any, message: { peerId: string; content: string }) => void) => {
+    const channel = 'message-received';
+    const subscription = (_event: any, message: { peerId: string; content: string }) => callback(_event, message);
+    ipcRenderer.on(channel, subscription);
+    return () => ipcRenderer.removeListener(channel, subscription);
+  },
+  onServerStatusChanged: (callback: (event: any, status: 'disconnected' | 'connecting' | 'connected') => void) => {
+    const channel = 'server-status-changed';
+    const subscription = (_event: any, status: 'disconnected' | 'connecting' | 'connected') => callback(_event, status);
+    ipcRenderer.on(channel, subscription);
+    return () => ipcRenderer.removeListener(channel, subscription);
+  },
+  
+  // P2P event listener removal (stubs for now)
+  removePeerConnectedListener: () => {
+    ipcRenderer.removeAllListeners('peer-connected');
+  },
+  removePeerDisconnectedListener: () => {
+    ipcRenderer.removeAllListeners('peer-disconnected');
+  },
+  removeMessageReceivedListener: () => {
+    ipcRenderer.removeAllListeners('message-received');
+  },
+  removeServerStatusChangedListener: () => {
+    ipcRenderer.removeAllListeners('server-status-changed');
   }
 });

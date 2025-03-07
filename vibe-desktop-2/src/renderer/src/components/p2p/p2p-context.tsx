@@ -1,7 +1,7 @@
 // p2p-context.tsx - Peer-to-peer communication using WebRTC
 // For vibe-desktop-2, adaptation of vibe-app/components/p2p/p2p-context.tsx
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from '../auth/auth-context';
 
 // Message type definitions
@@ -50,39 +50,6 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const result = await window.electron.initializeP2P();
         setLocalPeerId(result.localPeerId);
         setIsReady(true);
-        
-        // Set up event listeners for P2P events
-        window.electron.onPeerConnected((event, peerId) => {
-          setConnections(prev => {
-            const newConnections = new Map(prev);
-            newConnections.set(peerId, true);
-            return newConnections;
-          });
-        });
-        
-        window.electron.onPeerDisconnected((event, peerId) => {
-          setConnections(prev => {
-            const newConnections = new Map(prev);
-            newConnections.delete(peerId);
-            return newConnections;
-          });
-        });
-        
-        window.electron.onMessageReceived((event, message) => {
-          setMessages(prev => [
-            ...prev,
-            {
-              peerId: message.peerId,
-              content: message.content,
-              incoming: true,
-              timestamp: new Date(),
-            },
-          ]);
-        });
-        
-        window.electron.onServerStatusChanged((event, status) => {
-          setServerStatus(status);
-        });
       } catch (error) {
         console.error('Error initializing P2P:', error);
       }
@@ -92,20 +59,14 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       initializeP2P();
     }
     
-    // Clean up on unmount
-    return () => {
-      // Remove event listeners
-      window.electron.removePeerConnectedListener();
-      window.electron.removePeerDisconnectedListener();
-      window.electron.removeMessageReceivedListener();
-      window.electron.removeServerStatusChangedListener();
-    };
+    // No cleanup needed for now
+    return () => {};
   }, [currentAccount]);
   
   // Update server URL when it changes
   useEffect(() => {
     if (isReady && serverUrl) {
-      window.electron.setP2PServerUrl(serverUrl);
+      window.electron.setP2PServerUrl?.(serverUrl);
       checkServerConnection();
     }
   }, [isReady, serverUrl]);
@@ -117,7 +78,13 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     
     try {
-      await window.electron.connectToPeer(peerId);
+      await window.electron.connectToPeer?.(peerId);
+      // Update local state (since we don't have listeners yet)
+      setConnections(prev => {
+        const newConnections = new Map(prev);
+        newConnections.set(peerId, true);
+        return newConnections;
+      });
     } catch (error) {
       console.error('Error connecting to peer:', error);
       throw error;
@@ -126,13 +93,19 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Disconnect from a peer
   const disconnectFromPeer = (peerId: string): void => {
-    window.electron.disconnectFromPeer(peerId);
+    window.electron.disconnectFromPeer?.(peerId);
+    // Update local state (since we don't have listeners yet)
+    setConnections(prev => {
+      const newConnections = new Map(prev);
+      newConnections.delete(peerId);
+      return newConnections;
+    });
   };
 
   // Send a message to a peer
   const sendMessage = async (peerId: string, content: string): Promise<void> => {
     try {
-      await window.electron.sendMessageToPeer(peerId, content);
+      await window.electron.sendMessageToPeer?.(peerId, content);
       
       // Add to local messages
       setMessages(prev => [
@@ -159,7 +132,7 @@ export const P2PProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     try {
       setServerStatus('connecting');
-      const connected = await window.electron.checkP2PServerConnection();
+      const connected = await window.electron.checkP2PServerConnection?.() || false;
       setServerStatus(connected ? 'connected' : 'disconnected');
       return connected;
     } catch (error) {

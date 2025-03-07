@@ -3,6 +3,7 @@ import * as path from 'path';
 import { setupAccountHandlers, startWatchingAccountsDirectory, stopWatchingAccountsDirectory } from './account';
 import { setupDatabaseHandlers } from './database';
 import { setupWebViewHandlers } from './webview';
+import { setupP2PHandlers } from './p2p';
 
 // Main window reference
 let mainWindow: BrowserWindow | null = null;
@@ -104,6 +105,7 @@ app.whenReady().then(() => {
   setupAccountHandlers();
   setupDatabaseHandlers();
   setupWebViewHandlers();
+  setupP2PHandlers();
   
   // Create the application window
   createWindow();
