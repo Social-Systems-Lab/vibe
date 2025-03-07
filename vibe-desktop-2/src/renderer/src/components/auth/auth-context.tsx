@@ -162,14 +162,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ): Promise<Account> => {
     setLoading(true);
     try {
+      console.log('Creating account with:', { accountName, authType, pictureUrl, pin, serverConfig });
+      
       // Call main process to create account
-      const newAccount = await window.electron.createAccount({
-        name: accountName,
-        authType,
+      // Note: We pass individual arguments instead of an object to better match the native API
+      const newAccount = await window.electron.createAccount(
+        accountName,
+        pin || '',
         pictureUrl,
-        pin,
+        authType,
         serverConfig
-      });
+      );
 
       // Update local state
       setAccounts(prev => [...prev, newAccount]);

@@ -182,6 +182,8 @@ const createAccount = async (
   authType: 'PIN' | 'BIOMETRIC' | 'NONE' = 'PIN',
   serverConfig?: ServerConfig
 ): Promise<Account> => {
+  console.log('Creating account with params:', { accountName, password, picturePath, authType, serverConfig });
+  
   // Check if account already exists
   const existingAccount = _accounts.find(account => account.name === accountName);
   if (existingAccount) {
@@ -457,6 +459,7 @@ export const stopWatchingAccountsDirectory = (): void => {
 
 // Image selection helper
 export async function selectImage(): Promise<string | undefined> {
+  console.log('Selecting image...');
   const mainWindow = BrowserWindow.getFocusedWindow();
   if (!mainWindow) return undefined;
   
@@ -467,6 +470,8 @@ export async function selectImage(): Promise<string | undefined> {
     ]
   });
   
+  console.log('Dialog result:', result);
+  
   if (result.canceled || result.filePaths.length === 0) {
     return undefined;
   }
@@ -476,8 +481,13 @@ export async function selectImage(): Promise<string | undefined> {
 
 // Set up IPC handlers
 export function setupAccountHandlers(): void {
+  console.log('Setting up account handlers');
+  
   // Image selection
-  ipcMain.handle('select-image', selectImage);
+  ipcMain.handle('select-image', async () => {
+    console.log('Handling select-image');
+    return await selectImage();
+  });
   
   // Get all accounts
   ipcMain.handle('get-accounts', () => {
@@ -485,25 +495,9 @@ export function setupAccountHandlers(): void {
   });
   
   // Create a new account
-  ipcMain.handle('create-account', (_, data) => {
-    // Handle object-style parameter for new code
-    if (typeof data === 'object' && data !== null) {
-      return createAccount(
-        data.name, 
-        data.pin || '', 
-        data.pictureUrl, 
-        data.authType || 'PIN', 
-        data.serverConfig
-      );
-    } else {
-      // Original signature for backward compatibility
-      const accountName = arguments[1];
-      const password = arguments[2];
-      const picturePath = arguments[3];
-      const authType = arguments[4];
-      const serverConfig = arguments[5];
-      return createAccount(accountName, password, picturePath, authType || 'PIN', serverConfig);
-    }
+  ipcMain.handle('create-account', (_, accountName, password, picturePath, authType, serverConfig) => {
+    console.log('Creating account with args:', { accountName, password, picturePath, authType, serverConfig });
+    return createAccount(accountName, password, picturePath, authType, serverConfig);
   });
   
   // Login to an account

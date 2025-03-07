@@ -16,13 +16,8 @@ contextBridge.exposeInMainWorld('electron', {
   
   // Account management
   getAccounts: () => ipcRenderer.invoke('get-accounts'),
-  createAccount: (data: { 
-    name: string; 
-    authType: string; 
-    pictureUrl?: string; 
-    pin?: string;
-    serverConfig?: any 
-  }) => ipcRenderer.invoke('create-account', data),
+  createAccount: (accountName, password, picturePath, authType, serverConfig) => 
+    ipcRenderer.invoke('create-account', accountName, password, picturePath, authType, serverConfig),
   login: (name: string, password: string) => ipcRenderer.invoke('login', name, password),
   updateAccount: (name: string, newName?: string, newPictureUri?: string) => 
     ipcRenderer.invoke('update-account', name, newName, newPictureUri),

@@ -1,6 +1,6 @@
-import { app, BrowserWindow, shell, ipcMain } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, dialog } from 'electron';
 import * as path from 'path';
-import { setupAccountHandlers, startWatchingAccountsDirectory, stopWatchingAccountsDirectory } from './account';
+import { setupAccountHandlers, startWatchingAccountsDirectory, stopWatchingAccountsDirectory, selectImage } from './account';
 import { setupDatabaseHandlers } from './database';
 import { setupWebViewHandlers } from './webview';
 import { setupP2PHandlers } from './p2p';
@@ -60,6 +60,11 @@ function createWindow(): void {
 
   ipcMain.handle('is-window-maximized', () => {
     return mainWindow?.isMaximized();
+  });
+  
+  // Image selection
+  ipcMain.handle('select-image', async () => {
+    return await selectImage();
   });
 
   // Get application configuration
