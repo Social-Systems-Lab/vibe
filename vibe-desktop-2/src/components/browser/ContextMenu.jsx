@@ -1,4 +1,3 @@
-import { Box, Menu, Text, MenuButton, MenuItem, MenuList } from "@chakra-ui/react";
 import { MouseEventHandler } from "react";
 import { RiHeartAddLine, RiHeartAddFill } from "react-icons/ri";
 import { MdCompare } from "react-icons/md";
@@ -6,31 +5,37 @@ import { GrInspect } from "react-icons/gr";
 
 const ContextMenu = ({ href, src, mouseX, mouseY }) => {
     return (
-        <Menu isOpen>
-            <MenuButton as={Box} position="absolute" top={mouseY + 120} left={mouseX} />
-            <MenuList maxWidth="200px">
-                {/* {href && (
-                    <Text paddingLeft="10px" noOfLines={1}>
-                        {href}
-                    </Text>
-                )} */}
+        <div className="relative">
+            <div className="absolute" style={{ top: mouseY + 120, left: mouseX }}></div>
+            <div className="bg-white rounded shadow-lg border border-gray-200 max-w-[200px] py-2 absolute z-50" style={{ top: mouseY + 120, left: mouseX }}>
                 {src && (
-                    <Text paddingLeft="10px" noOfLines={1} fontWeight="500">
+                    <p className="px-2.5 font-medium truncate">
                         Image
-                    </Text>
+                    </p>
                 )}
-                <MenuItem icon={<RiHeartAddLine size="18px" />} onClick={() => console.log("Add to circle...")}>
+                <button 
+                    className="w-full text-left px-2.5 py-1.5 hover:bg-gray-100 flex items-center"
+                    onClick={() => console.log("Add to circle...")}
+                >
+                    <RiHeartAddLine size="18px" className="mr-2" />
                     Add to circle...
-                </MenuItem>
-                <MenuItem icon={<MdCompare size="18px" />} onClick={() => console.log("Find similar")}>
+                </button>
+                <button 
+                    className="w-full text-left px-2.5 py-1.5 hover:bg-gray-100 flex items-center"
+                    onClick={() => console.log("Find similar")}
+                >
+                    <MdCompare size="18px" className="mr-2" />
                     Find similar
-                </MenuItem>
-                {/* Other cool options */}
-                <MenuItem icon={<GrInspect size="18px" />} onClick={() => console.log("Inspect Element")}>
+                </button>
+                <button 
+                    className="w-full text-left px-2.5 py-1.5 hover:bg-gray-100 flex items-center"
+                    onClick={() => console.log("Inspect Element")}
+                >
+                    <GrInspect size="18px" className="mr-2" />
                     Inspect Element
-                </MenuItem>
-            </MenuList>
-        </Menu>
+                </button>
+            </div>
+        </div>
     );
 };
 

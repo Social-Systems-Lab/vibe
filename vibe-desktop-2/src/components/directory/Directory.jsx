@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { Tree } from "react-arborist";
-import { Box, Image, Button, Text, Input, Portal, HStack, InputGroup, InputLeftElement, InputRightElement, IconButton, Flex, Tooltip } from "@chakra-ui/react";
 import useWindowDimensions from "../useWindowDimensions";
 import { MdOutlinePlaylistAddCircle, MdArrowDropDown, MdArrowRight } from "react-icons/md";
 
 const FolderArrow = ({ node }) => {
     return (
-        <Box width="16px" minWidth="16px">
+        <div className="w-4 min-w-4">
             {node.children?.length > 0 && (
                 <>
                     {node.isLeaf ? null : node.isOpen ? (
                         <MdArrowDropDown
-                            cursor="pointer"
+                            className="cursor-pointer"
                             onMouseDown={(e) => e.stopPropagation()}
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -20,7 +19,7 @@ const FolderArrow = ({ node }) => {
                         />
                     ) : (
                         <MdArrowRight
-                            cursor="pointer"
+                            className="cursor-pointer"
                             onMouseDown={(e) => e.stopPropagation()}
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -30,7 +29,7 @@ const FolderArrow = ({ node }) => {
                     )}
                 </>
             )}
-        </Box>
+        </div>
     );
 };
 
@@ -41,19 +40,11 @@ const Directory = ({ account }) => {
 
     const DirectoryTreeNode = ({ node, style }) => {
         return (
-            <Flex
+            <div
                 style={style}
-                height="32px"
-                flexDirection="row"
-                alignItems="center"
-                borderRadius="7px"
-                backgroundColor={node.isSelected ? "#bddbee" : "transparent"}
-                cursor="pointer"
-                paddingBottom="0px"
-                _hover={{
-                    backgroundColor: "#eaeaea",
-                }}
-                userSelect="none"
+                className={`h-8 flex flex-row items-center rounded-md ${
+                    node.isSelected ? 'bg-[#bddbee]' : 'bg-transparent hover:bg-[#eaeaea]'
+                } cursor-pointer select-none`}
                 onClick={(e) => {
                     // select node (and deselect all others)
                     node.select();
@@ -71,14 +62,14 @@ const Directory = ({ account }) => {
                     }
                 }}
             >
-                <Flex marginLeft="10px" flexDirection="row" align="center">
+                <div className="ml-2.5 flex flex-row items-center">
                     <FolderArrow node={node} />
-                    <Image src={node.data.icon} width="18px" minWidth="18px" height="18px" marginRight="5px" />
-                    <Text color={"#333"} fontSize={"16px"} noOfLines={1}>
+                    <img src={node.data.icon} className="w-[18px] min-w-[18px] h-[18px] mr-1.5" />
+                    <span className="text-[#333] text-base truncate">
                         {node.data.name}
-                    </Text>
-                </Flex>
-            </Flex>
+                    </span>
+                </div>
+            </div>
         );
     };
 
@@ -106,27 +97,29 @@ const Directory = ({ account }) => {
     }, [account]);
 
     return (
-        <Flex flexGrow="1" width="100%" height="100%">
-            <Flex width="300px" padding="10px" flexDirection="column">
-                {/* <Text fontSize="20px" marginLeft="28px">
-                    Explorer
-                </Text> */}
-                <Tree data={treeData} disableMultiSelection={true} openByDefault={false} width="100%" height={windowHeight - 115} indent={10} rowHeight={32}>
+        <div className="flex flex-grow w-full h-full">
+            <div className="w-[300px] p-2.5 flex flex-col">
+                <Tree 
+                    data={treeData} 
+                    disableMultiSelection={true} 
+                    openByDefault={false} 
+                    width="100%" 
+                    height={windowHeight - 115} 
+                    indent={10} 
+                    rowHeight={32}
+                >
                     {DirectoryTreeNode}
                 </Tree>
-            </Flex>
-            <Flex flexGrow="1" flexDirection="column">
-                {/* <Text fontSize="20px" marginLeft="28px">
-                    Details
-                </Text> */}
+            </div>
+            <div className="flex-grow flex flex-col">
                 {selectedFile && (
                     <webview
                         src={`/dist-electron/main/Accounts/${selectedFile}`}
-                        style={{ width: "100%", height: "100%", marginTop: "10px" }} // Adjust as needed
+                        style={{ width: "100%", height: "100%", marginTop: "10px" }}
                     />
                 )}
-            </Flex>
-        </Flex>
+            </div>
+        </div>
     );
 };
 

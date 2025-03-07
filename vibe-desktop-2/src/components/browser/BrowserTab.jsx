@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useRef, useEffect, useLayoutEffect } from "react";
-import { Box, Image, Button, Text, Input, Portal, HStack, InputGroup, InputLeftElement, InputRightElement, IconButton, Flex, Tooltip } from "@chakra-ui/react";
 import { FiLock, FiArrowLeft, FiArrowRight, FiRefreshCw, FiBook, FiBookmark } from "react-icons/fi";
 import { MdOutlinePlaylistAddCircle, MdArrowDropDown, MdArrowRight } from "react-icons/md";
 import { BsHouseLock, BsHouseLockFill, BsBookmarkPlus, BsBookmarkStar, BsStar, BsBook } from "react-icons/bs";
@@ -48,12 +47,12 @@ const data = [
 
 const FolderArrow = ({ node }) => {
     return (
-        <Box width="16px" minWidth="16px">
+        <div className="w-4 min-w-4">
             {node.children?.length > 0 && (
                 <>
                     {node.isLeaf ? null : node.isOpen ? (
                         <MdArrowDropDown
-                            cursor="pointer"
+                            className="cursor-pointer"
                             onMouseDown={(e) => e.stopPropagation()}
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -62,7 +61,7 @@ const FolderArrow = ({ node }) => {
                         />
                     ) : (
                         <MdArrowRight
-                            cursor="pointer"
+                            className="cursor-pointer"
                             onMouseDown={(e) => e.stopPropagation()}
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -72,123 +71,84 @@ const FolderArrow = ({ node }) => {
                     )}
                 </>
             )}
-        </Box>
+        </div>
     );
 };
 
 const Toolbar = ({ activeSection, onSectionClick }) => {
-    const borderRadius = "107px";
-    const size = "xs";
-    const variant = "ghost";
-    const showIcon = true;
-    const fontWeight = "400";
     return (
-        <HStack spacing="4px" paddingLeft="10px" paddingBottom="5px" paddingTop="5px">
-            <Button
+        <div className="flex space-x-1 pl-2.5 pb-1.5 pt-1.5">
+            <button
                 aria-label="Home"
-                variant={variant}
-                leftIcon={showIcon ? <FiHome /> : undefined}
-                borderRadius={borderRadius}
-                size={size}
-                fontWeight={fontWeight}
+                className={`rounded-full px-2.5 py-1 text-sm font-normal flex items-center ${activeSection === "home" ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
                 onClick={() => onSectionClick("home")}
-                backgroundColor={activeSection === "home" ? "gray.100" : undefined}
             >
+                <FiHome className="mr-1.5" />
                 Home
-            </Button>
-            <Button
+            </button>
+            <button
                 aria-label="Feed"
-                variant={variant}
-                leftIcon={showIcon ? <FiRss /> : undefined}
-                borderRadius={borderRadius}
-                size={size}
-                fontWeight={fontWeight}
+                className={`rounded-full px-2.5 py-1 text-sm font-normal flex items-center ${activeSection === "feed" ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
                 onClick={() => onSectionClick("feed")}
-                backgroundColor={activeSection === "feed" ? "gray.100" : undefined}
             >
+                <FiRss className="mr-1.5" />
                 Feed
-            </Button>
-            <Button
+            </button>
+            <button
                 aria-label="Chat"
-                variant={variant}
-                leftIcon={showIcon ? <FiMessageCircle /> : undefined}
-                borderRadius={borderRadius}
-                size={size}
-                fontWeight={fontWeight}
+                className={`rounded-full px-2.5 py-1 text-sm font-normal flex items-center ${activeSection === "chat" ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
                 onClick={() => onSectionClick("chat")}
-                backgroundColor={activeSection === "chat" ? "gray.100" : undefined}
             >
+                <FiMessageCircle className="mr-1.5" />
                 Chat
-            </Button>
-            <Button
+            </button>
+            <button
                 aria-label="Circles"
-                variant={variant}
-                leftIcon={showIcon ? <LuFolderHeart /> : undefined}
-                borderRadius={borderRadius}
-                size={size}
-                fontWeight={fontWeight}
+                className={`rounded-full px-2.5 py-1 text-sm font-normal flex items-center ${activeSection === "circles" ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
                 onClick={() => onSectionClick("circles")}
-                backgroundColor={activeSection === "circles" ? "gray.100" : undefined}
             >
+                <LuFolderHeart className="mr-1.5" />
                 Links
-            </Button>
-            <Button
+            </button>
+            <button
                 aria-label="Video"
-                variant={variant}
-                leftIcon={showIcon ? <FiVideo /> : undefined}
-                borderRadius={borderRadius}
-                size={size}
-                fontWeight={fontWeight}
+                className={`rounded-full px-2.5 py-1 text-sm font-normal flex items-center ${activeSection === "video" ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
                 onClick={() => onSectionClick("video")}
-                backgroundColor={activeSection === "video" ? "gray.100" : undefined}
             >
+                <FiVideo className="mr-1.5" />
                 Video
-            </Button>
-            <Button
+            </button>
+            <button
                 aria-label="Members"
-                variant={variant}
-                leftIcon={showIcon ? <FiUsers /> : undefined}
-                borderRadius={borderRadius}
-                size={size}
-                fontWeight={fontWeight}
+                className={`rounded-full px-2.5 py-1 text-sm font-normal flex items-center ${activeSection === "members" ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
                 onClick={() => onSectionClick("members")}
-                backgroundColor={activeSection === "members" ? "gray.100" : undefined}
             >
+                <FiUsers className="mr-1.5" />
                 Members
-            </Button>
-            <Button
+            </button>
+            <button
                 aria-label="Calendar"
-                variant={variant}
-                leftIcon={showIcon ? <FiCalendar /> : undefined}
-                borderRadius={borderRadius}
-                size={size}
-                fontWeight={fontWeight}
+                className={`rounded-full px-2.5 py-1 text-sm font-normal flex items-center ${activeSection === "calendar" ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
                 onClick={() => onSectionClick("calendar")}
-                backgroundColor={activeSection === "calendar" ? "gray.100" : undefined}
             >
+                <FiCalendar className="mr-1.5" />
                 Calendar
-            </Button>
-            <Button
-                leftIcon={showIcon ? <MdOutlinePayment /> : undefined}
-                variant={variant}
-                colorScheme="blue"
-                borderRadius={borderRadius}
-                size={size}
-                fontWeight={fontWeight}
+            </button>
+            <button
+                aria-label="Donate"
+                className="rounded-full px-2.5 py-1 text-sm font-normal flex items-center text-blue-600 hover:bg-blue-50"
             >
+                <MdOutlinePayment className="mr-1.5" />
                 Donate
-            </Button>
-            <Button
-                leftIcon={showIcon ? <MdOutlinePersonAdd /> : undefined}
-                variant={variant}
-                colorScheme="green"
-                borderRadius={borderRadius}
-                size={size}
-                fontWeight={fontWeight}
+            </button>
+            <button
+                aria-label="Join"
+                className="rounded-full px-2.5 py-1 text-sm font-normal flex items-center text-green-600 hover:bg-green-50"
             >
+                <MdOutlinePersonAdd className="mr-1.5" />
                 Join
-            </Button>
-        </HStack>
+            </button>
+        </div>
     );
 };
 
@@ -394,17 +354,9 @@ const BrowserTab = ({ initialUrl, setTitle, setFavicon, openUrlInNewTab, initial
 
     const CircleTreeNode = ({ node, style }) => {
         return (
-            <Flex
+            <div
                 style={style}
-                flexDirection="row"
-                alignItems="center"
-                backgroundColor={node.data.isSelected ? "#c5c5c5" : "transparent"}
-                cursor="pointer"
-                paddingBottom="0px"
-                _hover={{
-                    backgroundColor: "#eaeaea",
-                }}
-                userSelect="none"
+                className={`flex flex-row items-center ${node.data.isSelected ? 'bg-[#c5c5c5]' : 'bg-transparent hover:bg-[#eaeaea]'} cursor-pointer pb-0 select-none`}
                 onClick={(e) => {
                     // navigate to circle
                     navigateToUrl(node.data.url);
@@ -418,112 +370,108 @@ const BrowserTab = ({ initialUrl, setTitle, setFavicon, openUrlInNewTab, initial
                     }
                 }}
             >
-                <Flex marginLeft="10px" flexDirection="row" align="center">
+                <div className="ml-2.5 flex flex-row items-center">
                     <FolderArrow node={node} />
-                    <Image src={node.data.favicon} color="#666666" width="18px" minWidth="18px" height="18px" marginRight="5px" />
-                    <Text color={"#5f5f5f"} fontSize={"16px"} noOfLines={1} height="21px">
+                    <img src={node.data.favicon} className="text-[#666666] w-[18px] min-w-[18px] h-[18px] mr-1.5" />
+                    <span className="text-[#5f5f5f] text-base truncate h-[21px]">
                         {node.data.name}
-                    </Text>
-                </Flex>
-            </Flex>
+                    </span>
+                </div>
+            </div>
+        );
+    };
+
+    const CustomTooltip = ({ label, children }) => {
+        return (
+            <div className="group relative">
+                {children}
+                <div className="absolute z-10 hidden group-hover:block bottom-full left-1/2 transform -translate-x-1/2 mb-1 px-3 py-1 text-xs bg-gray-900 text-white rounded">
+                    {label}
+                </div>
+            </div>
         );
     };
 
     return (
-        <Flex flexDirection="column" height="100%">
-            <Flex height="40px" align="center" paddingLeft="10px" paddingRight="10px" marginTop="8px">
-                <HStack spacing="0px">
-                    <IconButton aria-label="Back" icon={<FiArrowLeft />} isRound variant="ghost" onClick={handleBackClick} />
-                    <IconButton aria-label="Forward" icon={<FiArrowRight />} isRound variant="ghost" onClick={handleForwardClick} />
-                    <IconButton aria-label="Refresh" icon={<FiRefreshCw />} isRound variant="ghost" onClick={handleRefreshClick} />
-                </HStack>
-                <Flex flexGrow="1" position="relative" align="center">
-                    <Input
+        <div className="flex flex-col h-full">
+            <div className="h-[40px] flex items-center px-2.5 mt-2">
+                <div className="flex space-x-0">
+                    <button 
+                        aria-label="Back" 
+                        className="rounded-full p-2 hover:bg-gray-200" 
+                        onClick={handleBackClick}
+                    >
+                        <FiArrowLeft />
+                    </button>
+                    <button 
+                        aria-label="Forward" 
+                        className="rounded-full p-2 hover:bg-gray-200" 
+                        onClick={handleForwardClick}
+                    >
+                        <FiArrowRight />
+                    </button>
+                    <button 
+                        aria-label="Refresh" 
+                        className="rounded-full p-2 hover:bg-gray-200" 
+                        onClick={handleRefreshClick}
+                    >
+                        <FiRefreshCw />
+                    </button>
+                </div>
+                <div className="flex-grow relative flex items-center">
+                    <input
                         type="text"
                         value={url}
                         onChange={handleUrlChange}
                         onKeyDown={handleUrlKeyPress}
-                        borderRadius="100px"
-                        marginLeft="10px"
-                        paddingLeft={isHome ? "38px" : "16px"}
+                        className="rounded-full border border-gray-300 w-full ml-2.5 pl-4 pr-8 py-1.5 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                        style={{ paddingLeft: isHome ? '38px' : '16px' }}
                         onFocus={handleFocus}
                         ref={inputRef}
                     />
                     {isHome && (
-                        <Tooltip
-                            label="This is your private circle, everything here is local to your device and not accessible to anyone but you"
-                            aria-label="Home"
-                        >
-                            <IconButton
+                        <CustomTooltip label="This is your private circle, everything here is local to your device and not accessible to anyone but you">
+                            <button
                                 aria-label="Home icon"
-                                icon={<BiSolidLockAlt />}
-                                isRound
-                                variant="ghost"
+                                className="absolute left-[15px] rounded-full p-1 hover:bg-gray-200 w-[32px] h-[32px] z-10"
                                 onClick={handleRefreshClick}
-                                position="absolute"
-                                left="15px"
-                                width="32px"
-                                minWidth="32px"
-                                height="32px"
-                                padding="0"
-                                zIndex="1"
-                            />
-                        </Tooltip>
+                            >
+                                <BiSolidLockAlt className="w-full h-full" />
+                            </button>
+                        </CustomTooltip>
                     )}
-                    <IconButton
+                    <button
                         aria-label="Add to circle"
-                        icon={<RiHeartAddLine />}
-                        // icon={<RiHeartAddFill />}
-                        //icon={<AiOutlineHeart />}
-                        // icon={<BsBookmarkStar />}
-                        // icon={<FiBookmark />}
-                        // icon={<BsBookmarkPlus />}
-                        // icon={<BsStar />}
-                        // icon={<AiOutlinePlusCircle />}
-                        isRound
-                        variant="ghost"
+                        className="absolute right-[5px] rounded-full p-1 hover:bg-gray-200 w-[32px] h-[32px] z-10"
                         onClick={handleRefreshClick}
-                        position="absolute"
-                        right="5px"
-                        width="32px"
-                        minWidth="32px"
-                        height="32px"
-                        padding="0"
-                        zIndex="1"
-                    />
-                </Flex>
-                <IconButton
+                    >
+                        <RiHeartAddLine className="w-full h-full" />
+                    </button>
+                </div>
+                <button
                     ref={circlesExplorerIconRef}
                     aria-label="Circles Explorer"
-                    // icon={<BiBookHeart size="22px" />}
-                    icon={<LuFolderHeart />}
-                    // icon={<FiBook />}
-                    // icon={<BsBook />}
-                    isRound
-                    variant="ghost"
+                    className="rounded-full p-2 hover:bg-gray-200 ml-2.5"
                     onClick={handleCirclesExplorerClick}
-                    marginLeft="10px"
-                />
-                <IconButton
+                >
+                    <LuFolderHeart />
+                </button>
+                <button
                     aria-label="Current Account"
-                    icon={
-                        <Image
-                            src={`/dist-electron/main/Accounts/${currentAccount.name}/picture.png`}
-                            alt={defaultPicture}
-                            width="28px"
-                            height="28px"
-                            objectFit="cover"
-                            borderRadius="50%"
-                        />
-                    }
-                    isRound
-                    variant="ghost"
+                    className="rounded-full p-2 hover:bg-gray-200"
                     onClick={handleAccountClick}
-                />
-            </Flex>
+                >
+                    <img
+                        src={`/dist-electron/main/Accounts/${currentAccount.name}/picture.png`}
+                        alt={defaultPicture}
+                        className="w-[28px] h-[28px] object-cover rounded-full"
+                    />
+                </button>
+            </div>
+            
             {!isHome && <Toolbar activeSection={activeSection} onSectionClick={handleSectionClick} />}
-            {/* {isHome && <Toolbar activeSection={activeSection} onSectionClick={handleSectionClick} />} */}
-            <Box flexGrow="1" position="relative">
+            
+            <div className="flex-grow relative">
                 <webview
                     ref={webViewRef}
                     src={getFormattedUrl(initialUrl)}
@@ -532,77 +480,43 @@ const BrowserTab = ({ initialUrl, setTitle, setFavicon, openUrlInNewTab, initial
                 ></webview>
 
                 {activeSection !== "home" && (
-                    <Flex width="100vw" height="100vh" top="0" left="0" backgroundColor="#a9a9a9" position="absolute" zIndex="1"></Flex>
+                    <div className="w-screen h-screen top-0 left-0 bg-[#a9a9a9] absolute z-10"></div>
                 )}
+                
                 {isHome && (
-                    <Flex zIndex="1" position="absolute" top="0" left="0" width="100%" height="100%">
+                    <div className="z-10 absolute top-0 left-0 w-full h-full">
                         <Directory account={currentAccount} />
-                    </Flex>
+                    </div>
                 )}
-            </Box>
+            </div>
 
             {isCirclesExplorerOpen && (
-                <Portal>
-                    <Box
-                        ref={circlesExplorerRef}
-                        position="absolute"
-                        right="10px" // position it next to the Circles Explorer button
-                        top="105px" // height of the top bar + a little margin
-                        width="300px" // fixed width as you mentioned
-                        minHeight="100px"
-                        maxHeight="calc(100vh - 105px)" // take the remaining vertical space
-                        overflowY="auto" // make it scrollable if the content is larger
-                        bg="white"
-                        boxShadow="md"
-                        border="1px solid"
-                        borderColor="gray.200"
-                        borderRadius="md"
-                        zIndex="10"
-                        // padding="10px"
+                <div 
+                    ref={circlesExplorerRef}
+                    className="absolute right-[10px] top-[105px] w-[300px] min-h-[100px] max-h-[calc(100vh-105px)] overflow-y-auto bg-white shadow-md border border-gray-200 rounded-md z-10"
+                >
+                    <div
+                        className="flex flex-row items-center cursor-pointer pb-0 bg-[#f8f8f8] hover:bg-[#eaeaea] select-none h-[44px] pl-2.5 mb-1.5"
+                        onClick={(e) => {
+                            // TODO navigate to circle
+                        }}
                     >
-                        <Flex
-                            flexDirection="row"
-                            align="center"
-                            cursor="pointer"
-                            paddingBottom="0px"
-                            backgroundColor="#f8f8f8"
-                            _hover={{
-                                backgroundColor: "#eaeaea",
-                            }}
-                            userSelect="none"
-                            onClick={(e) => {
-                                // TODO navigate to circle
-                            }}
-                            height="44px"
-                            paddingLeft="10px"
-                            marginBottom="5px"
-                        >
-                            <Image
-                                src={
-                                    "https://ik.imagekit.io/4nfhhm6unw/storage/v0/b/codo-fab51.appspot.com/o/circles%2FCuu0TEAx01WIKOu2iXqBmHV7A2t1%2Fpublic%2Fpicture?alt=media&token=0f46a5a4-b0b2-4bfb-aa47-18e179307dab&tr=w-128,h-128"
-                                }
-                                color="#666666"
-                                width="18px"
-                                minWidth="18px"
-                                height="18px"
-                                marginRight="8px"
-                                borderRadius="50%"
-                            />
-                            <Text fontWeight="500" color={"#5f5f5f"} fontSize={"16px"} noOfLines={1}>
-                                Patrik Opacic
-                            </Text>
-                        </Flex>
-                        <Tree data={data} openByDefault={false} width="100%" height={windowHeight - 165} indent={10}>
-                            {CircleTreeNode}
-                        </Tree>
-
-                        {/* Your menu content goes here */}
-                    </Box>
-                </Portal>
+                        <img
+                            src="https://ik.imagekit.io/4nfhhm6unw/storage/v0/b/codo-fab51.appspot.com/o/circles%2FCuu0TEAx01WIKOu2iXqBmHV7A2t1%2Fpublic%2Fpicture?alt=media&token=0f46a5a4-b0b2-4bfb-aa47-18e179307dab&tr=w-128,h-128"
+                            className="text-[#666666] w-[18px] min-w-[18px] h-[18px] mr-2 rounded-full"
+                        />
+                        <span className="font-medium text-[#5f5f5f] text-base truncate">
+                            Patrik Opacic
+                        </span>
+                    </div>
+                    <Tree data={data} openByDefault={false} width="100%" height={windowHeight - 165} indent={10}>
+                        {CircleTreeNode}
+                    </Tree>
+                </div>
             )}
 
             {contextMenuOpen && <ContextMenu mouseX={mouseX} mouseY={mouseY} href={href} src={src} />}
-        </Flex>
+        </div>
     );
 };
 
