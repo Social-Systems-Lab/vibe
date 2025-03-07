@@ -1,53 +1,84 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FiPlus, FiLock } from 'react-icons/fi';
 import { BsPersonCircle } from 'react-icons/bs';
-
-interface Account {
-  name: string;
-  pictureUrl?: string;
-}
+import { Account } from '../auth/auth-context';
 
 interface AccountSelectProps {
   accounts: Account[];
-  onSelectAccount: (account: Account) => void;
+  onSelectAccount: (accountDid: string, pin?: string) => void;
   onCreateAccount: () => void;
+  loading?: boolean;
 }
 
 const AccountSelect: React.FC<AccountSelectProps> = ({ 
   accounts, 
   onSelectAccount, 
-  onCreateAccount 
+  onCreateAccount,
+  loading = false
 }) => {
-  const [password, setPassword] = useState('');
+  const [pin, setPin] = useState('');
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(
     accounts.length > 0 ? accounts[0] : null
   );
   const [error, setError] = useState('');
-  const [loggingIn, setLoggingIn] = useState(false);
+  const [requiresPin, setRequiresPin] = useState(false);
+
+  // When accounts change, update selected account
+  useEffect(() => {
+    if (accounts.length > 0 && !selectedAccount) {
+      setSelectedAccount(accounts[0]);
+    }
+  }, [accounts, selectedAccount]);
+
+  // Check if selected account requires a PIN
+  useEffect(() => {
+    if (selectedAccount) {
+      setRequiresPin(selectedAccount.requireAuthentication === 'PIN');
+      
+      // If account doesn't require PIN, auto-login
+      if (selectedAccount.requireAuthentication !== 'PIN' && !loading) {
+        handleLogin();
+      }
+    }
+  }, [selectedAccount]);
 
   const handleSelectAccount = (account: Account) => {
     setSelectedAccount(account);
     setError('');
-    setPassword('');
+    setPin('');
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = () => {
     if (!selectedAccount) return;
     
     setError('');
-    setLoggingIn(true);
     
     try {
-      // This will be handled by the parent component
-      onSelectAccount({
-        ...selectedAccount,
-        password
-      } as any);
+      // If PIN is required but not provided, don't proceed
+      if (requiresPin && !pin) {
+        setError('PIN is required');
+        return;
+      }
+      
+      // Login with the selected account
+      onSelectAccount(
+        selectedAccount.did,
+        requiresPin ? pin : undefined
+      );
     } catch (error) {
-      setError('Incorrect password');
-      setLoggingIn(false);
+      setError('Login failed');
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleLogin();
+  };
+
+  // Handle image source safely
+  const getImageSource = (path?: string) => {
+    if (!path) return undefined;
+    return path.startsWith('http') || path.startsWith('data:') ? path : `file://${path}`;
   };
 
   return (
@@ -62,16 +93,16 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
       <div className="grid grid-cols-3 gap-4 mb-8">
         {accounts.map((account) => (
           <div
-            key={account.name}
+            key={account.did}
             className={`flex flex-col items-center p-3 rounded-lg cursor-pointer ${
-              selectedAccount?.name === account.name ? 'bg-blue-50 border border-blue-300' : 'hover:bg-gray-50'
+              selectedAccount?.did === account.did ? 'bg-blue-50 border border-blue-300' : 'hover:bg-gray-50'
             }`}
             onClick={() => handleSelectAccount(account)}
           >
             <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-200 mb-2">
               {account.pictureUrl ? (
                 <img 
-                  src={`file://${account.pictureUrl}`} 
+                  src={getImageSource(account.pictureUrl)} 
                   alt={account.name} 
                   className="w-full h-full object-cover"
                 />
@@ -100,13 +131,13 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
         </div>
       </div>
 
-      {selectedAccount && (
+      {selectedAccount && requiresPin && (
         <form onSubmit={handleSubmit} className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
           <div className="flex items-center mb-4">
             <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-200 mr-3">
               {selectedAccount.pictureUrl ? (
                 <img 
-                  src={`file://${selectedAccount.pictureUrl}`} 
+                  src={getImageSource(selectedAccount.pictureUrl)} 
                   alt={selectedAccount.name} 
                   className="w-full h-full object-cover"
                 />
@@ -118,7 +149,7 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
             </div>
             <div>
               <h3 className="font-semibold">{selectedAccount.name}</h3>
-              <p className="text-xs text-gray-500">Enter your password to continue</p>
+              <p className="text-xs text-gray-500">Enter your PIN to continue</p>
             </div>
           </div>
           
@@ -126,13 +157,13 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
             <div className="relative">
               <input
                 type="password"
-                value={password}
+                value={pin}
                 onChange={(e) => {
-                  setPassword(e.target.value);
+                  setPin(e.target.value);
                   setError('');
                 }}
-                placeholder="Password"
-                className={`input-field pl-10 ${error ? 'border-red-500' : ''}`}
+                placeholder="PIN"
+                className={`w-full pl-10 pr-3 py-2 border ${error ? 'border-red-500' : 'border-gray-300'} rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500`}
                 autoFocus
               />
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -146,10 +177,10 @@ const AccountSelect: React.FC<AccountSelectProps> = ({
           
           <button 
             type="submit"
-            className="btn-primary w-full py-2"
-            disabled={!password || loggingIn}
+            className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            disabled={!pin || loading}
           >
-            {loggingIn ? 'Signing in...' : 'Sign In'}
+            {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
       )}

@@ -4,8 +4,9 @@ import { signInStatusAtom, configAtom } from './components/atoms';
 import MainScreen from './components/MainScreen';
 import TitleBar from './components/TitleBar';
 import { OnboardingWizard } from './components/onboarding';
+import VibeContextProvider from './components/contexts';
 
-function App() {
+function AppContent() {
   const [signInStatus] = useAtom(signInStatusAtom);
   const [config, setConfig] = useAtom(configAtom);
 
@@ -33,6 +34,15 @@ function App() {
         {signInStatus === 'loggedIn' ? <MainScreen /> : <OnboardingWizard />}
       </div>
     </div>
+  );
+}
+
+// Wrap the app with all the context providers
+function App() {
+  return (
+    <VibeContextProvider>
+      <AppContent />
+    </VibeContextProvider>
   );
 }
 
