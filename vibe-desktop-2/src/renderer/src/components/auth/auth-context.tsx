@@ -94,7 +94,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [initialized, setInitialized] = useState<boolean>(false);
   const [encryptionKey, setEncryptionKey] = useState<string>('');
 
-  const { resetTabs, clearTabs } = useTabs();
+  // Get the tabs context functions
+  const { resetTabs } = useTabs();
 
   // Load accounts from storage
   useEffect(() => {
@@ -291,7 +292,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCurrentAccount(null);
         setActiveAccount(null);
         setSignInStatus('notLoggedIn');
-        clearTabs();
+        resetTabs();
       }
     } catch (error) {
       console.error('Error deleting account:', error);
@@ -379,15 +380,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Update sign in status
       setSignInStatus('notLoggedIn');
       
-      // Clear tabs
-      clearTabs();
+      // Reset tabs
+      resetTabs();
     } catch (error) {
       console.error('Error during logout:', error);
       // Still clear the account even if there was an error
       setCurrentAccount(null);
       setActiveAccount(null);
       setSignInStatus('notLoggedIn');
-      clearTabs();
+      resetTabs();
     }
   };
 

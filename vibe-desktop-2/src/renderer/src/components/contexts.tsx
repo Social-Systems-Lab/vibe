@@ -8,17 +8,17 @@ import { WebViewProvider } from './browser/web-view-context';
 // VibeContextProvider wraps all the context providers for the app
 export const VibeContextProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
-    <AuthProvider>
-      <DbProvider>
-        <P2PProvider>
-          <WebViewProvider>
-            <TabsProvider>
+    <TabsProvider>
+      <WebViewProvider>
+        <AuthProvider>
+          <DbProvider>
+            <P2PProvider>
               {children}
-            </TabsProvider>
-          </WebViewProvider>
-        </P2PProvider>
-      </DbProvider>
-    </AuthProvider>
+            </P2PProvider>
+          </DbProvider>
+        </AuthProvider>
+      </WebViewProvider>
+    </TabsProvider>
   );
 };
 
