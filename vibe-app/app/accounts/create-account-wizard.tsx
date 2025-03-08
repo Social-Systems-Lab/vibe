@@ -7,7 +7,7 @@ import * as Contacts from "expo-contacts";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/components/auth/auth-context";
 import { useDb } from "@/components/db/db-context";
-import { InstalledApp } from "@/types/types";
+import { InstalledApp, ServerOption } from "@/types/types";
 
 // Step definitions
 type WizardStep = "intro-welcome" | "intro-privacy" | "intro-data" | "profile-setup" | "server-setup" | "app-selection" | "import-contacts" | "complete";
@@ -17,7 +17,7 @@ const FORCE_ALWAYS_SHOW_WELCOME = __DEV__;
 
 export default function CreateAccountWizard() {
     const router = useRouter();
-    const { createAccount, accounts, addOrUpdateApp } = useAuth();
+    const { createAccount, accounts, addOrUpdateApp, registerWithVibeCloud } = useAuth();
     const { write } = useDb();
 
     // State variables
@@ -31,14 +31,13 @@ export default function CreateAccountWizard() {
     const [phoneContacts, setPhoneContacts] = useState<Contacts.Contact[]>([]);
     const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
     const [importingContacts, setImportingContacts] = useState(false);
-    
+
     // Server configuration options
-    const [serverOption, setServerOption] = useState<'official' | 'custom'>('official');
+    const [serverOption, setServerOption] = useState<ServerOption>("official");
     const [serverUrl, setServerUrl] = useState("");
-    const [serverName, setServerName] = useState("");
     const [checkingServer, setCheckingServer] = useState(false);
     const [serverConnected, setServerConnected] = useState(false);
-    
+
     // Official server details (these would come from config in a real app)
     const OFFICIAL_SERVER_URL = "https://cloud.vibeapp.dev";
     const OFFICIAL_SERVER_NAME = "Official Vibe Cloud";
@@ -115,46 +114,42 @@ export default function CreateAccountWizard() {
         const steps = FORCE_ALWAYS_SHOW_WELCOME || accounts.length === 0 ? allSteps : allSteps.filter((step) => !step.startsWith("intro-"));
 
         if (!currentStep) return;
-        
+
         // Special validation for server setup step
-        if (currentStep === "server-setup" && serverOption === 'custom') {
+        if (currentStep === "server-setup" && serverOption === "custom") {
             // Validate custom server configuration
             if (!serverUrl.trim()) {
                 Alert.alert("Missing Server URL", "Please enter a server URL or choose the Official Vibe Cloud option");
                 return;
             }
-            
+
             // If not connected, ask if they want to proceed anyway
             if (!serverConnected) {
-                Alert.alert(
-                    "Server Not Connected",
-                    "You haven't verified the connection to the server. Would you like to check the connection now or continue anyway?",
-                    [
-                        {
-                            text: "Check Connection",
-                            style: "default",
-                            onPress: checkServer
-                        },
-                        {
-                            text: "Continue Anyway",
-                            style: "default",
-                            onPress: () => {
-                                const currentIndex = steps.indexOf(currentStep);
-                                if (currentIndex < steps.length - 1) {
-                                    setCurrentStep(steps[currentIndex + 1]);
-                                }
+                Alert.alert("Server Not Connected", "You haven't verified the connection to the server. Would you like to check the connection now or continue anyway?", [
+                    {
+                        text: "Check Connection",
+                        style: "default",
+                        onPress: checkServer,
+                    },
+                    {
+                        text: "Continue Anyway",
+                        style: "default",
+                        onPress: () => {
+                            const currentIndex = steps.indexOf(currentStep);
+                            if (currentIndex < steps.length - 1) {
+                                setCurrentStep(steps[currentIndex + 1]);
                             }
                         },
-                        {
-                            text: "Cancel",
-                            style: "cancel"
-                        }
-                    ]
-                );
+                    },
+                    {
+                        text: "Cancel",
+                        style: "cancel",
+                    },
+                ]);
                 return;
             }
         }
-        
+
         const currentIndex = steps.indexOf(currentStep);
         if (currentIndex < steps.length - 1) {
             setCurrentStep(steps[currentIndex + 1]);
@@ -195,21 +190,19 @@ export default function CreateAccountWizard() {
     // Check server connection
     const checkServer = async () => {
         // If using official server, we assume it's connected
-        if (serverOption === 'official') {
+        if (serverOption === "official") {
             setServerConnected(true);
             return true;
         }
-        
+
         // For custom server, check the connection
         if (!serverUrl) {
             Alert.alert("Missing Server URL", "Please enter a valid server URL");
             return false;
         }
-        
+
         setCheckingServer(true);
         try {
-            // We need to do this manually since we're not in the P2P context
-            // Create a Promise that will resolve when we get a response
             return new Promise<boolean>((resolve) => {
                 const timeoutId = setTimeout(() => {
                     setServerConnected(false);
@@ -217,26 +210,30 @@ export default function CreateAccountWizard() {
                     Alert.alert("Connection Timeout", "Could not connect to the server. Please check the URL and try again.");
                     resolve(false);
                 }, 5000);
-                
-                fetch(`${serverUrl}/health`)
-                    .then(response => response.json())
-                    .then(data => {
+
+                fetch(`${serverUrl}/health`, {
+                    headers: {
+                        "ngrok-skip-browser-warning": "1",
+                    },
+                })
+                    .then((response) => response.json())
+                    .then((data) => {
                         clearTimeout(timeoutId);
-                        const isConnected = data.status === 'healthy';
+                        const isConnected = data.status === "healthy";
                         setServerConnected(isConnected);
                         setCheckingServer(false);
-                        
+
                         if (isConnected) {
                             Alert.alert("Success", "Successfully connected to the server");
                         } else {
                             Alert.alert("Connection Failed", "Server responded but health check failed. Please check the server status.");
                         }
-                        
+
                         resolve(isConnected);
                     })
-                    .catch(error => {
+                    .catch((error) => {
                         clearTimeout(timeoutId);
-                        console.error('Error checking server:', error);
+                        console.error("Error checking server:", error, `${serverUrl}/health`);
                         setServerConnected(false);
                         setCheckingServer(false);
                         Alert.alert("Connection Failed", "Could not connect to the server. Please check the URL and try again.");
@@ -244,7 +241,7 @@ export default function CreateAccountWizard() {
                     });
             });
         } catch (error) {
-            console.error('Error in checkServer:', error);
+            console.error("Error in checkServer:", error);
             setServerConnected(false);
             setCheckingServer(false);
             Alert.alert("Error", "An unexpected error occurred while checking the connection");
@@ -259,18 +256,30 @@ export default function CreateAccountWizard() {
         try {
             // 1. Create the account
             const finalAlias = alias.trim() !== "" ? alias.trim() : `User${Math.floor(Math.random() * 10000)}`;
-            
+
             // Set up server configuration based on selected option
             const serverConfig = {
-                url: serverOption === 'official' ? OFFICIAL_SERVER_URL : serverUrl,
-                name: serverOption === 'official' ? OFFICIAL_SERVER_NAME : (serverName || "Custom Vibe Cloud"),
-                isConnected: serverOption === 'official' ? true : serverConnected,
-                lastConnected: serverOption === 'official' || serverConnected ? Date.now() : undefined
+                url: serverOption === "official" ? OFFICIAL_SERVER_URL : serverUrl,
+                name: serverOption === "official" ? OFFICIAL_SERVER_NAME : "Custom Vibe Cloud",
+                isConnected: serverOption === "official" ? true : serverConnected,
+                lastConnected: serverOption === "official" || serverConnected ? Date.now() : undefined,
+                serverOption,
             };
-            
+
             const account = await createAccount(finalAlias, "BIOMETRIC", profilePicture, undefined, serverConfig);
 
             console.log("Account created:", account);
+
+            // Attempt to register with Vibe Cloud
+            if (serverOption !== "none") {
+                const cloudRegistered = await registerWithVibeCloud(account);
+                if (!cloudRegistered) {
+                    // If official cloud registration failed, show a warning but continue
+                    Alert.alert("Cloud Registration Issue", "We couldn't connect to the Vibe Cloud. Your account is created but may not sync across devices until connected.", [
+                        { text: "Continue Anyway" },
+                    ]);
+                }
+            }
 
             // Database and apps are already set up by createAccount
 
@@ -391,127 +400,76 @@ export default function CreateAccountWizard() {
                             <MaterialIcons name="cloud" size={50} color="#3498db" />
                         </View>
                         <Text style={styles.title}>Choose Vibe Cloud</Text>
-                        <Text style={styles.description}>
-                            Where would you like to securely store and sync your data?
-                        </Text>
-                        
+                        <Text style={styles.description}>Where would you like to securely store and sync your data?</Text>
+
                         {/* Option Cards */}
                         <View style={styles.optionCardsContainer}>
                             {/* Official Vibe Cloud Option */}
-                            <TouchableOpacity 
-                                style={[
-                                    styles.optionCard,
-                                    serverOption === 'official' && styles.selectedOptionCard
-                                ]}
-                                onPress={() => setServerOption('official')}
-                            >
+                            <TouchableOpacity style={[styles.optionCard, serverOption === "official" && styles.selectedOptionCard]} onPress={() => setServerOption("official")}>
                                 <View style={styles.optionCardContent}>
                                     <View style={styles.optionCardHeader}>
-                                        <MaterialIcons 
-                                            name="cloud" 
-                                            size={24} 
-                                            color={serverOption === 'official' ? "#3498db" : "#666"} 
-                                        />
-                                        <Text style={[
-                                            styles.optionCardTitle,
-                                            serverOption === 'official' && styles.selectedOptionText
-                                        ]}>
-                                            Official Vibe Cloud
-                                        </Text>
+                                        <MaterialIcons name="cloud" size={24} color={serverOption === "official" ? "#3498db" : "#666"} />
+                                        <Text style={[styles.optionCardTitle, serverOption === "official" && styles.selectedOptionText]}>Official Vibe Cloud</Text>
                                     </View>
-                                    <Text style={styles.optionCardDescription}>
-                                        Secure syncing provided by Vibe
-                                    </Text>
+                                    <Text style={styles.optionCardDescription}>Secure syncing provided by Vibe</Text>
                                 </View>
-                                <View style={styles.optionCardCheckbox}>
-                                    {serverOption === 'official' && (
-                                        <MaterialIcons name="check-circle" size={24} color="#3498db" />
+                                <View style={styles.optionCardCheckbox}>{serverOption === "official" && <MaterialIcons name="check-circle" size={24} color="#3498db" />}</View>
+                            </TouchableOpacity>
+
+                            {/* Custom (Self-hosted / Third Party) Option */}
+                            <TouchableOpacity style={[styles.optionCard, serverOption === "custom" && styles.selectedOptionCard]} onPress={() => setServerOption("custom")}>
+                                <View style={styles.optionCardContent}>
+                                    <View style={{ flexDirection: "row" }}>
+                                        <View style={styles.customOptionContent}>
+                                            <View style={styles.optionCardHeader}>
+                                                <MaterialIcons name="dns" size={24} color={serverOption === "custom" ? "#3498db" : "#666"} />
+                                                <Text style={[styles.optionCardTitle, serverOption === "custom" && styles.selectedOptionText]}>Custom Host</Text>
+                                            </View>
+                                            <Text style={styles.optionCardDescription}>Use a self-hosted or a third party vibe cloud service</Text>
+                                        </View>
+                                        {/* <View style={styles.optionCardCheckbox}>{serverOption === "custom" && <MaterialIcons name="check-circle" size={24} color="#3498db" />}</View> */}
+                                    </View>
+
+                                    {/* Custom Server Configuration - Only show when custom option selected */}
+                                    {serverOption === "custom" && (
+                                        <View style={styles.customServerContainer}>
+                                            <View style={styles.formGroup}>
+                                                <Text style={styles.label}>Server URL</Text>
+                                                <TextInput
+                                                    style={styles.input}
+                                                    value={serverUrl}
+                                                    onChangeText={(text) => setServerUrl(text.trim().replace(/\/+$/, ""))}
+                                                    placeholder="e.g. https://my-vibe-cloud.com"
+                                                    keyboardType="url"
+                                                    autoCapitalize="none"
+                                                />
+                                            </View>
+
+                                            <View style={styles.connectionStatusContainer}>
+                                                <TouchableOpacity style={styles.checkButton} onPress={checkServer} disabled={checkingServer || !serverUrl}>
+                                                    <Text style={styles.checkButtonText}>{checkingServer ? "Checking..." : "Check Connection"}</Text>
+                                                </TouchableOpacity>
+                                                <View style={styles.connectionStatus}>
+                                                    <View style={[styles.statusIndicator, serverConnected ? styles.connected : styles.disconnected]} />
+                                                    <Text style={styles.statusText}>{checkingServer ? "Checking connection..." : serverConnected ? "Connected" : "Not connected"}</Text>
+                                                </View>
+                                            </View>
+                                        </View>
                                     )}
                                 </View>
                             </TouchableOpacity>
-                            
-                            {/* Self-hosted / Third Party Option */}
-                            <TouchableOpacity 
-                                style={[
-                                    styles.optionCard,
-                                    serverOption === 'custom' && styles.selectedOptionCard
-                                ]}
-                                onPress={() => setServerOption('custom')}
-                            >
+
+                            <TouchableOpacity style={[styles.optionCard, serverOption === "none" && styles.selectedOptionCard]} onPress={() => setServerOption("none")}>
                                 <View style={styles.optionCardContent}>
                                     <View style={styles.optionCardHeader}>
-                                        <MaterialIcons 
-                                            name="dns" 
-                                            size={24} 
-                                            color={serverOption === 'custom' ? "#3498db" : "#666"} 
-                                        />
-                                        <Text style={[
-                                            styles.optionCardTitle,
-                                            serverOption === 'custom' && styles.selectedOptionText
-                                        ]}>
-                                            Self-hosted / Third party
-                                        </Text>
+                                        <MaterialIcons name="phonelink" size={24} color={serverOption === "none" ? "#3498db" : "#666"} />
+                                        <Text style={[styles.optionCardTitle, serverOption === "none" && styles.selectedOptionText]}>Device Only</Text>
                                     </View>
-                                    <Text style={styles.optionCardDescription}>
-                                        Use a self-hosted or a third party vibe cloud service
-                                    </Text>
+                                    <Text style={styles.optionCardDescription}>Your data stays on this device only</Text>
                                 </View>
-                                <View style={styles.optionCardCheckbox}>
-                                    {serverOption === 'custom' && (
-                                        <MaterialIcons name="check-circle" size={24} color="#3498db" />
-                                    )}
-                                </View>
+                                <View style={styles.optionCardCheckbox}>{serverOption === "none" && <MaterialIcons name="check-circle" size={24} color="#3498db" />}</View>
                             </TouchableOpacity>
                         </View>
-                        
-                        {/* Custom Server Configuration - Only show when custom option selected */}
-                        {serverOption === 'custom' && (
-                            <View style={styles.customServerContainer}>
-                                <View style={styles.formGroup}>
-                                    <Text style={styles.label}>Server Name (Optional)</Text>
-                                    <TextInput 
-                                        style={styles.input}
-                                        value={serverName}
-                                        onChangeText={setServerName}
-                                        placeholder="Give this server a name"
-                                    />
-                                </View>
-                                
-                                <View style={styles.formGroup}>
-                                    <Text style={styles.label}>Server URL</Text>
-                                    <TextInput 
-                                        style={styles.input}
-                                        value={serverUrl}
-                                        onChangeText={setServerUrl}
-                                        placeholder="e.g. https://my-vibe-cloud.com"
-                                        keyboardType="url"
-                                        autoCapitalize="none"
-                                    />
-                                </View>
-                                
-                                <View style={styles.connectionStatusContainer}>
-                                    <View style={styles.connectionStatus}>
-                                        <View style={[
-                                            styles.statusIndicator, 
-                                            serverConnected ? styles.connected : styles.disconnected
-                                        ]} />
-                                        <Text style={styles.statusText}>
-                                            {checkingServer ? 'Checking connection...' : 
-                                             serverConnected ? 'Connected' : 'Not connected'}
-                                        </Text>
-                                    </View>
-                                    <TouchableOpacity 
-                                        style={styles.checkButton}
-                                        onPress={checkServer}
-                                        disabled={checkingServer || !serverUrl}
-                                    >
-                                        <Text style={styles.checkButtonText}>
-                                            {checkingServer ? 'Checking...' : 'Check Connection'}
-                                        </Text>
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        )}
                     </View>
                 );
 
@@ -577,7 +535,7 @@ export default function CreateAccountWizard() {
                             <View style={styles.contactListContainer}>
                                 <View style={styles.contactHeader}>
                                     <Text>Select contacts to import</Text>
-                                    <TouchableOpacity onPress={() => setSelectedContacts(selectedContacts.length === phoneContacts.length ? [] : phoneContacts.map((c) => c.id))}>
+                                    <TouchableOpacity onPress={() => setSelectedContacts(selectedContacts.length === phoneContacts.length ? [] : phoneContacts.map((c) => c.id!))}>
                                         <Text style={styles.selectAllText}>{selectedContacts.length === phoneContacts.length ? "Deselect All" : "Select All"}</Text>
                                     </TouchableOpacity>
                                 </View>
@@ -586,9 +544,9 @@ export default function CreateAccountWizard() {
                                 <View style={styles.contactListWrapper}>
                                     <FlatList
                                         data={phoneContacts}
-                                        keyExtractor={(item) => item.id}
+                                        keyExtractor={(item) => item.id!}
                                         renderItem={({ item }) => (
-                                            <TouchableOpacity style={styles.contactItem} onPress={() => toggleContact(item.id)}>
+                                            <TouchableOpacity style={styles.contactItem} onPress={() => toggleContact(item.id!)}>
                                                 <View style={styles.contactInitials}>
                                                     <Text style={styles.initialsText}>{item.name?.charAt(0) || "?"}</Text>
                                                 </View>
@@ -596,7 +554,7 @@ export default function CreateAccountWizard() {
                                                     <Text style={styles.contactName}>{item.name}</Text>
                                                     <Text style={styles.contactDetails}>{item.phoneNumbers?.[0]?.number || item.emails?.[0]?.email || "No contact info"}</Text>
                                                 </View>
-                                                <View style={styles.checkbox}>{selectedContacts.includes(item.id) && <Ionicons name="checkmark" size={24} color="#3498db" />}</View>
+                                                <View style={styles.checkbox}>{selectedContacts.includes(item.id!) && <Ionicons name="checkmark" size={24} color="#3498db" />}</View>
                                             </TouchableOpacity>
                                         )}
                                         style={styles.contactList}
@@ -684,27 +642,21 @@ const styles = StyleSheet.create({
         height: 12,
         borderRadius: 6,
     },
-    formGroup: {
-        marginBottom: 15,
-    },
+    formGroup: {},
     label: {
         fontSize: 16,
         marginBottom: 8,
-        fontWeight: '500',
-        color: '#333',
+        fontWeight: "500",
+        color: "#333",
     },
     connectionStatusContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginTop: 15,
-        backgroundColor: '#f5f5f5',
-        borderRadius: 8,
-        padding: 12,
+        marginTop: 8,
+        flexDirection: "column",
+        alignItems: "center",
     },
     connectionStatus: {
-        flexDirection: 'row',
-        alignItems: 'center',
+        flexDirection: "row",
+        alignItems: "center",
     },
     statusIndicator: {
         width: 12,
@@ -713,78 +665,83 @@ const styles = StyleSheet.create({
         marginRight: 8,
     },
     connected: {
-        backgroundColor: '#4CAF50',
+        backgroundColor: "#4CAF50",
     },
     disconnected: {
-        backgroundColor: '#F44336',
+        backgroundColor: "#F44336",
     },
     statusText: {
         fontSize: 16,
-        color: '#333',
+        color: "#333",
     },
     checkButton: {
-        backgroundColor: '#3498db',
+        backgroundColor: "#3498db",
         paddingVertical: 8,
         paddingHorizontal: 16,
         borderRadius: 6,
     },
     checkButtonText: {
-        color: '#fff',
-        fontWeight: '500',
+        color: "#fff",
+        fontWeight: "500",
     },
     optionCardsContainer: {
-        marginTop: 20,
-        marginBottom: 20,
+        marginTop: 40,
+        marginBottom: 0,
     },
     optionCard: {
-        flexDirection: 'row',
+        flexDirection: "row",
         borderWidth: 1,
-        borderColor: '#e0e0e0',
+        borderColor: "#e0e0e0",
         borderRadius: 8,
         padding: 16,
         marginBottom: 12,
-        alignItems: 'center',
-        backgroundColor: '#fff',
+        alignItems: "center",
+        backgroundColor: "#fff",
+    },
+    customOptionContent: {
+        flexDirection: "column",
     },
     selectedOptionCard: {
-        borderColor: '#3498db',
+        borderColor: "#3498db",
         borderWidth: 2,
-        backgroundColor: '#f0f9ff',
+        backgroundColor: "#f0f9ff",
     },
     optionCardContent: {
         flex: 1,
+        flexDirection: "column",
     },
     optionCardHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
+        flex: 1,
+        flexDirection: "row",
+        alignItems: "center",
         marginBottom: 6,
     },
     optionCardTitle: {
         fontSize: 18,
-        fontWeight: '600',
+        fontWeight: "600",
         marginLeft: 10,
-        color: '#333',
+        color: "#333",
     },
     selectedOptionText: {
-        color: '#3498db',
+        color: "#3498db",
     },
     optionCardDescription: {
         fontSize: 14,
-        color: '#666',
+        color: "#666",
         marginLeft: 34, // Aligns with title text
     },
     optionCardCheckbox: {
         width: 30,
-        justifyContent: 'center',
-        alignItems: 'center',
+        justifyContent: "center",
+        alignItems: "center",
     },
     customServerContainer: {
         marginTop: 12,
-        backgroundColor: '#f9f9f9',
+        backgroundColor: "#f9f9f9",
         borderRadius: 8,
         padding: 16,
         borderWidth: 1,
-        borderColor: '#e0e0e0',
+        borderColor: "#e0e0e0",
     },
     content: {
         flex: 1,

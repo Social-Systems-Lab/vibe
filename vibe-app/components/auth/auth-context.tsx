@@ -7,12 +7,13 @@ import * as FileSystem from "expo-file-system";
 import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Crypto from "expo-crypto";
+import * as Device from "expo-device";
 import { View, StyleSheet } from "react-native";
 import WebView from "react-native-webview";
 import { Asset } from "expo-asset";
 import { useTabs } from "../ui/tab-context";
 import { APPS_KEY_PREFIX } from "@/constants/constants";
-import { Account, AuthType, RsaKeys, InstalledApp } from "@/types/types";
+import { Account, AuthType, RsaKeys, InstalledApp, ServerConfig, ChallengeResponse, RegistrationResponse } from "@/types/types";
 import { useDb } from "../db/db-context";
 
 // Polyfill Buffer for React Native if necessary
@@ -41,16 +42,19 @@ type AuthContextType = {
     login: (accountDid: string, pin?: string) => Promise<void>;
     logout: () => Promise<void>;
 
-    // App management (moved from AppService)
+    // App management
     installedApps: InstalledApp[];
     addOrUpdateApp: (app: Partial<InstalledApp>, account?: Account) => Promise<void>;
     removeApp: (appId: string) => Promise<void>;
     setAppPinned: (appId: string, pinned: boolean) => Promise<void>;
     setAppHidden: (appId: string, hidden: boolean) => Promise<void>;
 
-    // Permissions (moved from AppService)
+    // Permissions
     checkPermission: (appId: string, operation: Operation, collection: string) => Promise<PermissionSetting>;
     updatePermission: (appId: string, operation: Operation, collection: string, newValue: PermissionSetting) => Promise<void>;
+
+    // Vibe Cloud
+    registerWithVibeCloud: (account: Account) => Promise<boolean>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -69,6 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { open, close, getDbNameFromDid } = useDb(); // Get database functions
 
     const ACCOUNTS_KEY = "accounts";
+    const DEVICE_ID_KEY = "deviceId";
     const getAppsKey = (did: string) => `${APPS_KEY_PREFIX}${did}`;
 
     // Function to handle setting up an account: open DB and load apps
@@ -342,7 +347,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const defaultServer: ServerConfig = serverConfig || {
                 url: "http://localhost:5000",
                 name: "Local Server",
-                isConnected: false
+                isConnected: false,
             };
 
             const now = Date.now();
@@ -415,13 +420,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setCurrentAccount(updatedAccount);
         }
     }
-    
+
     // Update server configuration for an account
     async function updateServerConfig(accountDid: string, serverConfig: ServerConfig): Promise<void> {
         const index = accounts.findIndex((acc) => acc.did === accountDid);
         if (index < 0) throw new Error("Account not found");
         const account = accounts[index];
-        
+
         // Update account object with new server config
         const now = Date.now();
         const updatedAccount = {
@@ -429,13 +434,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             server: serverConfig,
             updatedAt: now,
         };
-        
+
         // Update accounts in state and storage
         const newAccounts = [...accounts];
         newAccounts[index] = updatedAccount;
         setAccounts(newAccounts);
         await storeAccounts(newAccounts);
-        
+
         // If this is the current account, update it
         if (currentAccount?.did === accountDid) {
             setCurrentAccount(updatedAccount);
@@ -464,7 +469,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             // Reset tabs when logging in
             resetTabs();
-            
+
             // For context communication, we'll use a different approach in React Native
         } catch (error) {
             console.error("Login failed:", error);
@@ -534,6 +539,142 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
+    const getDeviceId = async () => {
+        // Check if we already have a device ID
+        const existingId = await AsyncStorage.getItem(DEVICE_ID_KEY);
+        if (existingId) return existingId;
+
+        // Generate a new UUID for this device
+        const newId = Crypto.randomUUID();
+        await SecureStore.setItemAsync(DEVICE_ID_KEY, newId);
+        return newId;
+    };
+
+    const storeCredentials = async (
+        account: Account,
+        credentials: {
+            username: string;
+            password: string;
+            dbName: string;
+            deviceId: string;
+        }
+    ) => {
+        const accountFolder = `${FileSystem.documentDirectory}${account.did}/`;
+        // Encrypt before storing
+        const encryptedCredentials = await encryptData(JSON.stringify(credentials));
+        await FileSystem.writeAsStringAsync(`${accountFolder}cloud-credentials.enc`, encryptedCredentials);
+    };
+
+    // Implement the registration function
+    const registerWithVibeCloud = async (account: Account): Promise<boolean> => {
+        if (!account || !account.server?.url) {
+            console.error("No account or server URL provided");
+            return false;
+        }
+
+        try {
+            const deviceId = await getDeviceId();
+            const serverUrl = account.server.url;
+            console.log(`Attempting to register with Vibe Cloud at ${serverUrl}`);
+
+            // 1. Request a challenge from the server
+            const challengeResponse = await fetch(`${serverUrl}/api/account/challenge`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    did: account.did,
+                }),
+            });
+
+            if (!challengeResponse.ok) {
+                console.error("Failed to get challenge from server", await challengeResponse.text());
+                return false;
+            }
+
+            const challengeData = (await challengeResponse.json()) as ChallengeResponse;
+            if (!challengeData.success || !challengeData.challenge) {
+                console.error("Invalid challenge response", challengeData);
+                return false;
+            }
+
+            // 2. Get the account's private key
+            const accountFolder = `${FileSystem.documentDirectory}${account.did}/`;
+            const encryptedPrivateKey = await FileSystem.readAsStringAsync(`${accountFolder}privateKey.pem.enc`);
+            const privateKey = await decryptDataWithEncryptionKey(encryptedPrivateKey, encryptionKey);
+
+            // 3. Sign the challenge
+            const signature = await signChallenge(privateKey, challengeData.challenge);
+
+            // 4. Send the signature back to complete registration
+            const registrationResponse = await fetch(`${serverUrl}/api/account/register`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    did: account.did,
+                    publicKey: account.publicKey,
+                    signature: signature,
+                    deviceId: deviceId,
+                    deviceName: Device.deviceName || "Device",
+                }),
+            });
+
+            if (!registrationResponse.ok) {
+                console.error("Registration request failed", await registrationResponse.text());
+                return false;
+            }
+
+            const registrationResult = (await registrationResponse.json()) as RegistrationResponse;
+            if (!registrationResult.success) {
+                console.error("Registration failed", registrationResult);
+                return false;
+            }
+
+            // 5. Update the account with cloud credentials (store securely)
+            // For this integration, we'll encrypt and store credentials alongside the account
+
+            const credentials = registrationResult.credentials;
+
+            // Call the new storeCredentials function
+            await storeCredentials(account, {
+                username: credentials.username,
+                password: credentials.password,
+                dbName: credentials.dbName,
+                deviceId: deviceId,
+            });
+
+            // const credentials = registrationResult.credentials;
+            // const cloudCredentials = {
+            //     username: credentials.username,
+            //     password: credentials.password,
+            //     dbName: credentials.dbName,
+            //     registeredAt: Date.now(),
+            // };
+
+            // // Encrypt credentials before storing
+            // const encryptedCredentials = await encryptData(JSON.stringify(cloudCredentials));
+            // await FileSystem.writeAsStringAsync(`${accountFolder}cloud-credentials.enc`, encryptedCredentials);
+
+            // 6. Update account server connection status
+            const updatedServerConfig: ServerConfig = {
+                ...account.server,
+                isConnected: true,
+                lastConnected: Date.now(),
+            };
+
+            await updateServerConfig(account.did, updatedServerConfig);
+
+            console.log("Successfully registered with Vibe Cloud");
+            return true;
+        } catch (error) {
+            console.error("Error registering with Vibe Cloud:", error);
+            return false;
+        }
+    };
+
     useEffect(() => {
         const initialize = async () => {
             setLoading(true);
@@ -565,16 +706,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 initialized,
                 deleteAccount,
 
-                // App management (moved from AppService)
+                // App management
                 installedApps,
                 addOrUpdateApp,
                 removeApp,
                 setAppPinned,
                 setAppHidden,
 
-                // Permissions (moved from AppService)
+                // Permissions
                 checkPermission,
                 updatePermission,
+
+                // Vibe Cloud
+                registerWithVibeCloud,
             }}
         >
             <View style={styles.hidden}>

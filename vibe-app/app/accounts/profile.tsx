@@ -36,11 +36,7 @@ export default function ProfileScreen() {
                 <TouchableOpacity style={styles.profileInfoContainer} onPress={() => router.push("/accounts/edit-profile")}>
                     <SquircleMask size={70} style={{ marginRight: 16 }}>
                         <Image
-                            source={
-                                currentAccount.pictureUrl
-                                    ? { uri: `${currentAccount.pictureUrl}?v=${currentAccount.updatedAt}` }
-                                    : require("@/assets/images/default-picture.png")
-                            }
+                            source={currentAccount.pictureUrl ? { uri: `${currentAccount.pictureUrl}?v=${currentAccount.updatedAt}` } : require("@/assets/images/default-picture.png")}
                             style={styles.profileImage}
                         />
                     </SquircleMask>
@@ -55,27 +51,23 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
 
                 {/* Server Status */}
-                <View style={styles.sectionContainer}>
-                    <Text style={styles.sectionTitle}>Server Connection</Text>
-                    <View style={styles.serverInfoContainer}>
-                        <View style={styles.serverNameContainer}>
-                            <Text style={styles.serverName}>
-                                {currentAccount.server?.name || 'No server configured'}
-                            </Text>
-                            <Text style={styles.serverUrl} numberOfLines={1} ellipsizeMode="tail">
-                                {currentAccount.server?.url || ''}
-                            </Text>
+                <TouchableOpacity onPress={() => router.push("/accounts/server-settings")}>
+                    <View style={styles.sectionContainer}>
+                        <View style={styles.serverInfoContainer}>
+                            <View style={styles.serverNameContainer}>
+                                <Text style={styles.serverName}>{currentAccount.server?.name || "No Vibe Cloud Configured"}</Text>
+                                <Text style={styles.serverUrl} numberOfLines={1} ellipsizeMode="tail">
+                                    {currentAccount.server?.url || ""}
+                                </Text>
+                            </View>
+                            <View style={[styles.connectionIndicator, currentAccount.server?.isConnected ? styles.connected : styles.disconnected]} />
                         </View>
-                        <View style={[
-                            styles.connectionIndicator,
-                            currentAccount.server?.isConnected ? styles.connected : styles.disconnected
-                        ]} />
                     </View>
-                </View>
-                
+                </TouchableOpacity>
+
                 {/* Menu Items */}
                 <View style={styles.menuContainer}>
-                    <MenuItem iconName="cloud-outline" label="Server Settings" onPress={() => router.push("/accounts/server-settings")} />
+                    {/* <MenuItem iconName="cloud-outline" label="Server Settings" } /> */}
                     <MenuItem iconName="swap-horizontal-outline" label="Switch Account" onPress={handleSwitchAccount} />
                     <MenuItem iconName="log-out-outline" label="Log Out" onPress={handleLogout} />
                 </View>

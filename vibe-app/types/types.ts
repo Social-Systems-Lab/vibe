@@ -25,11 +25,13 @@ export type RsaKeys = {
 
 export type AuthType = "PIN" | "BIOMETRIC";
 
+export type ServerOption = "official" | "custom" | "none";
 export interface ServerConfig {
     url: string;
     name?: string;
     isConnected?: boolean;
     lastConnected?: number;
+    serverOption: ServerOption;
 }
 
 export type Account = {
@@ -46,3 +48,26 @@ export type ReadResult = {
     doc: any;
     docs: any[];
 };
+
+export type ServerResponse<T> = {
+    success: boolean;
+    error?: string;
+} & T;
+
+export type ChallengeResponse = ServerResponse<{
+    challenge: string;
+    timestamp: number;
+    expiresAt: number;
+}>;
+
+export type RegistrationResponse = ServerResponse<{
+    credentials: {
+        username: string;
+        password: string;
+        dbName: string;
+    };
+    serverInfo: {
+        version: string;
+        features: string[];
+    };
+}>;
