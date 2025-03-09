@@ -26,13 +26,14 @@ type DbContextType = {
     find: (query: any) => Promise<any>;
     subscribe: (query: any, callback: SubscriptionCallback) => Promise<() => void>;
 
-    // Helper functions
-    getDbNameFromDid: (did: string) => string; // Helper to get valid DB name from DID
-
     // High-level operations
     read: (collection: string, filter: any, callback: (results: ReadResult) => void) => Promise<() => void>;
     readOnce: (collection: string, filter: any) => Promise<ReadResult>;
     write: (collection: string, doc: any | any[]) => Promise<any>;
+    
+    // Sync operations
+    syncWithServer: (serverUrl: string, username: string, password: string, dbName: string) => Promise<any>;
+    stopSync: () => Promise<any>;
 };
 
 const DbContext = createContext<DbContextType | undefined>(undefined);
@@ -194,14 +195,6 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         [callWebViewFunction]
     );
 
-    // We're removing the automatic database opening based on currentAccount
-    // The AuthProvider will handle opening the database when an account is selected
-
-    // Helper function to get DB name from a DID
-    const getDbNameFromDid = useCallback((did: string): string => {
-        return did.toLowerCase().replace(/[^a-z0-9_$()+/-]/g, "");
-    }, []);
-
     // High-level read function with subscription
     const read = useCallback(
         async (collection: string, filter: any, callback: (results: ReadResult) => void): Promise<() => void> => {
@@ -247,6 +240,52 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
             return ret;
         },
         [find]
+    );
+
+    // Set up database synchronization with remote CouchDB
+    const syncWithServer = useCallback(
+        async (serverUrl: string, username: string, password: string, dbName: string) => {
+            if (!pouchdbWebViewRef.current) {
+                throw new Error("PouchDB WebView not initialized");
+            }
+
+            console.log(`Setting up sync with ${serverUrl}/db/${dbName}`);
+
+            // Construct the remote database URL
+            const remoteDbUrl = `${serverUrl.replace(/\/+$/, '')}/db/${dbName}`;
+            const authHeader = `Basic ${btoa(`${username}:${password}`)}`;
+
+            return callWebViewFunction({
+                action: "sync",
+                payload: {
+                    remoteUrl: remoteDbUrl,
+                    headers: {
+                        Authorization: authHeader
+                    },
+                    // Set options for continuous sync
+                    options: {
+                        live: true,
+                        retry: true,
+                        // Add more sync options here if needed
+                    }
+                }
+            });
+        },
+        [callWebViewFunction]
+    );
+
+    // Stop synchronization
+    const stopSync = useCallback(
+        async () => {
+            if (!pouchdbWebViewRef.current) {
+                return;
+            }
+
+            return callWebViewFunction({
+                action: "stopSync"
+            });
+        },
+        [callWebViewFunction]
     );
 
     // High-level write function that handles collections and IDs
@@ -312,10 +351,11 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                 bulkPut,
                 find,
                 subscribe,
-                getDbNameFromDid,
                 read,
                 readOnce,
                 write,
+                syncWithServer,
+                stopSync,
             }}
         >
             <View style={styles.hidden}>

@@ -1,5 +1,5 @@
 // create-account-wizard.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { View, Button, Text, TextInput, Image, StyleSheet, Alert, ScrollView, TouchableOpacity, Switch, FlatList } from "react-native";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -17,7 +17,7 @@ const FORCE_ALWAYS_SHOW_WELCOME = __DEV__;
 
 export default function CreateAccountWizard() {
     const router = useRouter();
-    const { createAccount, accounts, addOrUpdateApp, registerWithVibeCloud } = useAuth();
+    const { currentAccount, createAccount, accounts, addOrUpdateApp, registerWithVibeCloud } = useAuth();
     const { write } = useDb();
 
     // State variables
@@ -31,6 +31,7 @@ export default function CreateAccountWizard() {
     const [phoneContacts, setPhoneContacts] = useState<Contacts.Contact[]>([]);
     const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
     const [importingContacts, setImportingContacts] = useState(false);
+    const [isFinishing, setIsFinishing] = useState<string | undefined>(undefined);
 
     // Server configuration options
     const [serverOption, setServerOption] = useState<ServerOption>("official");
@@ -39,7 +40,7 @@ export default function CreateAccountWizard() {
     const [serverConnected, setServerConnected] = useState(false);
 
     // Official server details (these would come from config in a real app)
-    const OFFICIAL_SERVER_URL = "https://cloud.vibeapp.dev";
+    const OFFICIAL_SERVER_URL = "https://19c8-102-39-154-203.ngrok-free.app";
     const OFFICIAL_SERVER_NAME = "Official Vibe Cloud";
 
     // Predefined apps (for now just contacts)
@@ -189,13 +190,6 @@ export default function CreateAccountWizard() {
 
     // Check server connection
     const checkServer = async () => {
-        // If using official server, we assume it's connected
-        if (serverOption === "official") {
-            setServerConnected(true);
-            return true;
-        }
-
-        // For custom server, check the connection
         if (!serverUrl) {
             Alert.alert("Missing Server URL", "Please enter a valid server URL");
             return false;
@@ -261,18 +255,30 @@ export default function CreateAccountWizard() {
             const serverConfig = {
                 url: serverOption === "official" ? OFFICIAL_SERVER_URL : serverUrl,
                 name: serverOption === "official" ? OFFICIAL_SERVER_NAME : "Custom Vibe Cloud",
-                isConnected: serverOption === "official" ? true : serverConnected,
-                lastConnected: serverOption === "official" || serverConnected ? Date.now() : undefined,
+                isConnected: serverConnected,
+                lastConnected: serverConnected ? Date.now() : undefined,
                 serverOption,
             };
 
-            const account = await createAccount(finalAlias, "BIOMETRIC", profilePicture, undefined, serverConfig);
+            let result = await createAccount(finalAlias, "BIOMETRIC", profilePicture, undefined, serverConfig);
+            setIsFinishing(result.account.did);
 
-            console.log("Account created:", account);
+            // rest of the registration process in the below useEffect that waits for currentAccount to be set before proceeding
+        } catch (error) {
+            console.error("Account creation failed:", error);
+            Alert.alert("Error", "Account creation failed. Please try again.");
+            setLoading(false);
+        }
+    };
 
+    const handleFinishFinalSteps = useCallback(async () => {
+        if (!currentAccount) return;
+
+        try {
+            // finish the registration process
             // Attempt to register with Vibe Cloud
             if (serverOption !== "none") {
-                const cloudRegistered = await registerWithVibeCloud(account);
+                const cloudRegistered = await registerWithVibeCloud(currentAccount);
                 if (!cloudRegistered) {
                     // If official cloud registration failed, show a warning but continue
                     Alert.alert("Cloud Registration Issue", "We couldn't connect to the Vibe Cloud. Your account is created but may not sync across devices until connected.", [
@@ -289,7 +295,7 @@ export default function CreateAccountWizard() {
                 if (app) {
                     try {
                         console.log("Installing app:", app.appId);
-                        await addOrUpdateApp(app, account);
+                        await addOrUpdateApp(app);
                     } catch (appError) {
                         console.error(`Error installing app ${app.appId}:`, appError);
                         // Continue with other apps
@@ -333,12 +339,19 @@ export default function CreateAccountWizard() {
             // 5. Navigate to the main app
             router.replace("/main");
         } catch (error) {
-            console.error("Account creation failed:", error);
-            Alert.alert("Error", "Account creation failed. Please try again.");
         } finally {
             setLoading(false);
         }
-    };
+    }, [currentAccount, serverOption, registerWithVibeCloud, selectedApps, availableApps, addOrUpdateApp, selectedContacts, phoneContacts, write, router, setLoading, setImportingContacts]);
+
+    useEffect(() => {
+        if (!isFinishing) return;
+        const accountExists = accounts.some((acc) => acc.did === isFinishing);
+        if (!accountExists || currentAccount?.did !== isFinishing) return;
+
+        handleFinishFinalSteps();
+        setIsFinishing(undefined);
+    }, [isFinishing, accounts, currentAccount, handleFinishFinalSteps, setIsFinishing]);
 
     // Determine initial step based on whether this is the first account
     useEffect(() => {

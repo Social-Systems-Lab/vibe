@@ -15,6 +15,7 @@ import { useTabs } from "../ui/tab-context";
 import { APPS_KEY_PREFIX } from "@/constants/constants";
 import { Account, AuthType, RsaKeys, InstalledApp, ServerConfig, ChallengeResponse, RegistrationResponse } from "@/types/types";
 import { useDb } from "../db/db-context";
+import { getDirNameFromDid } from "@/lib/utils";
 
 // Polyfill Buffer for React Native if necessary
 if (typeof Buffer === "undefined") {
@@ -23,6 +24,18 @@ if (typeof Buffer === "undefined") {
 
 type Operation = "read" | "write";
 type PermissionSetting = "never" | "ask" | "always";
+
+type CloudCredentials = {
+    username: string;
+    password: string;
+    dbName: string;
+    deviceId: string;
+}
+
+type CreateAccountResult = {
+    account: Account;
+    encryptionKey: string;
+}
 
 type AuthContextType = {
     // Account management
@@ -33,7 +46,7 @@ type AuthContextType = {
     initialized: boolean;
     generateRSAKeys: () => Promise<RsaKeys>;
     signChallenge: (privateKey: string, challenge: string) => Promise<string>;
-    createAccount: (accountName: string, authType: AuthType, pictureUrl?: string, pin?: string, serverConfig?: ServerConfig) => Promise<Account>;
+    createAccount: (accountName: string, authType: AuthType, pictureUrl?: string, pin?: string, serverConfig?: ServerConfig) => Promise<CreateAccountResult>;
     updateAccount: (accountDid: string, newName?: string, newPictureUri?: string) => Promise<void>;
     updateServerConfig: (accountDid: string, serverConfig: ServerConfig) => Promise<void>;
     deleteAccount: (accountDid: string) => Promise<void>;
@@ -54,7 +67,12 @@ type AuthContextType = {
     updatePermission: (appId: string, operation: Operation, collection: string, newValue: PermissionSetting) => Promise<void>;
 
     // Vibe Cloud
-    registerWithVibeCloud: (account: Account) => Promise<boolean>;
+    storeCredentials: (
+        account: Account,
+        credentials: CloudCredentials
+    ) => Promise<void>;
+    loadCredentials: (account: Account) => Promise<CloudCredentials | null>;
+    registerWithVibeCloud: (account: Account, inEncryptionKey?: string) => Promise<boolean>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -70,7 +88,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [initialized, setInitialized] = useState<boolean>(false);
     const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
     const { resetTabs, clearTabs } = useTabs();
-    const { open, close, getDbNameFromDid } = useDb(); // Get database functions
+    const { open, close } = useDb(); // Get database functions
 
     const ACCOUNTS_KEY = "accounts";
     const DEVICE_ID_KEY = "deviceId";
@@ -82,7 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         try {
             // 1. Open the database for this account
-            const dbName = getDbNameFromDid(account.did);
+            const dbName = getDirNameFromDid(account.did);
             console.log(`Opening database for account: ${dbName}`);
             await open(dbName);
             console.log(`Database opened successfully`);
@@ -276,14 +294,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         [callWebViewFunction]
     );
 
-    const encryptData = async (data: string): Promise<string> => {
-        if (!currentAccount) throw new Error("No account selected");
-        return encryptDataWithEncryptionKey(data, encryptionKey);
+    const encryptData = async (data: string, inEncryptionKey?: string): Promise<string> => {
+        return encryptDataWithEncryptionKey(data, inEncryptionKey ?? encryptionKey);
     };
 
-    const decryptData = async (encryptedData: string): Promise<string> => {
-        if (!currentAccount) throw new Error("No account selected");
-        return decryptDataWithEncryptionKey(encryptedData, encryptionKey);
+    const decryptData = async (encryptedData: string, inEncryptionKey?: string): Promise<string> => {
+        return decryptDataWithEncryptionKey(encryptedData, inEncryptionKey ?? encryptionKey);
     };
 
     const generateDid = async (publicKey: string): Promise<string> => {
@@ -301,7 +317,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return `did:fan:${base64Url}`;
     };
 
-    const createAccount = async (accountName: string, authType: AuthType, pictureUrl?: string, pin?: string, serverConfig?: ServerConfig): Promise<Account> => {
+    const createAccount = async (accountName: string, authType: AuthType, pictureUrl?: string, pin?: string, serverConfig?: ServerConfig): Promise<CreateAccountResult> => {
         setLoading(true);
         try {
             const rsaKeys = await generateRSAKeys();
@@ -309,7 +325,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const encryptedPrivateKey = await encryptDataWithEncryptionKey(rsaKeys.privateKey, encryptionKey);
 
             const did = await generateDid(rsaKeys.publicKey);
-            const accountFolder = `${FileSystem.documentDirectory}${did}/`;
+            const accountFolder = `${FileSystem.documentDirectory}${getDirNameFromDid(did)}/`;
             await FileSystem.makeDirectoryAsync(accountFolder, { intermediates: true });
             await FileSystem.writeAsStringAsync(`${accountFolder}privateKey.pem.enc`, encryptedPrivateKey);
 
@@ -348,6 +364,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 url: "http://localhost:5000",
                 name: "Local Server",
                 isConnected: false,
+                serverOption: "none",
             };
 
             const now = Date.now();
@@ -375,7 +392,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             await setupAccount(newAccount);
 
             // Return the new account for immediate use
-            return newAccount;
+            let result: CreateAccountResult = {
+                account: newAccount,
+                encryptionKey,
+            }
+            return result;
         } catch (error) {
             console.error("Error creating account:", error);
             throw error;
@@ -392,7 +413,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // if a new picture was provided, copy it into the account folder
         let storedPicturePath = account.pictureUrl;
         if (newPictureUri) {
-            const accountFolder = `${FileSystem.documentDirectory}${accountDid}/`;
+            const accountFolder = `${FileSystem.documentDirectory}${getDirNameFromDid(accountDid)}/`;
             // derive extension, copy file, etc. (like in createAccount)
             const extension = newPictureUri.match(/\.(\w+)(\?|$)/)?.[1] || "png";
             const destination = `${accountFolder}picture.${extension}`;
@@ -444,6 +465,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // If this is the current account, update it
         if (currentAccount?.did === accountDid) {
             setCurrentAccount(updatedAccount);
+            
+            // If server URL changed and the database is open, we should
+            // potentially reinitialize database sync
+            // This will be handled by the useAccountSync hook's effect
         }
     }
 
@@ -507,7 +532,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
 
             // delete the account folder (which holds the private key, profile picture, etc.)
-            const accountFolder = `${FileSystem.documentDirectory}${accountDid}/`;
+            const accountFolder = `${FileSystem.documentDirectory}${getDirNameFromDid(accountDid)}/`;
             try {
                 await FileSystem.deleteAsync(accountFolder, { idempotent: true });
             } catch (err) {
@@ -550,23 +575,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return newId;
     };
 
-    const storeCredentials = async (
-        account: Account,
-        credentials: {
-            username: string;
-            password: string;
-            dbName: string;
-            deviceId: string;
-        }
-    ) => {
-        const accountFolder = `${FileSystem.documentDirectory}${account.did}/`;
-        // Encrypt before storing
-        const encryptedCredentials = await encryptData(JSON.stringify(credentials));
-        await FileSystem.writeAsStringAsync(`${accountFolder}cloud-credentials.enc`, encryptedCredentials);
-    };
-
     // Implement the registration function
-    const registerWithVibeCloud = async (account: Account): Promise<boolean> => {
+    const registerWithVibeCloud = async (account: Account, inEncryptionKey?: string): Promise<boolean> => {
         if (!account || !account.server?.url) {
             console.error("No account or server URL provided");
             return false;
@@ -600,12 +610,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
 
             // 2. Get the account's private key
-            const accountFolder = `${FileSystem.documentDirectory}${account.did}/`;
+            const accountFolder = `${FileSystem.documentDirectory}${getDirNameFromDid(account.did)}/`;
             const encryptedPrivateKey = await FileSystem.readAsStringAsync(`${accountFolder}privateKey.pem.enc`);
-            const privateKey = await decryptDataWithEncryptionKey(encryptedPrivateKey, encryptionKey);
+            const privateKey = await decryptDataWithEncryptionKey(encryptedPrivateKey, inEncryptionKey ?? encryptionKey);
 
             // 3. Sign the challenge
             const signature = await signChallenge(privateKey, challengeData.challenge);
+
+
+            console.log("START #########");
+            console.log("START #########");
+            console.log("encryptedPrivateKey", encryptedPrivateKey);
+            console.log("privateKey", privateKey);
+            console.log("encryptionKey", inEncryptionKey ?? encryptionKey);
+            console.log("END #########");
+            console.log("END #########");
 
             // 4. Send the signature back to complete registration
             const registrationResponse = await fetch(`${serverUrl}/api/account/register`, {
@@ -644,19 +663,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 password: credentials.password,
                 dbName: credentials.dbName,
                 deviceId: deviceId,
-            });
-
-            // const credentials = registrationResult.credentials;
-            // const cloudCredentials = {
-            //     username: credentials.username,
-            //     password: credentials.password,
-            //     dbName: credentials.dbName,
-            //     registeredAt: Date.now(),
-            // };
-
-            // // Encrypt credentials before storing
-            // const encryptedCredentials = await encryptData(JSON.stringify(cloudCredentials));
-            // await FileSystem.writeAsStringAsync(`${accountFolder}cloud-credentials.enc`, encryptedCredentials);
+            }, inEncryptionKey);
 
             // 6. Update account server connection status
             const updatedServerConfig: ServerConfig = {
@@ -665,13 +672,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 lastConnected: Date.now(),
             };
 
-            await updateServerConfig(account.did, updatedServerConfig);
+            await updateServerConfig(account.did!, updatedServerConfig);
 
             console.log("Successfully registered with Vibe Cloud");
             return true;
         } catch (error) {
             console.error("Error registering with Vibe Cloud:", error);
             return false;
+        }
+    };
+
+    const storeCredentials = async (
+        account: Account,
+        credentials: CloudCredentials,
+        inEncryptionKey?: string,
+    ) => {
+        const accountFolder = `${FileSystem.documentDirectory}${getDirNameFromDid(account.did)}/`;
+        // Encrypt before storing
+        const encryptedCredentials = await encryptData(JSON.stringify(credentials), inEncryptionKey);
+        await FileSystem.writeAsStringAsync(`${accountFolder}cloud-credentials.enc`, encryptedCredentials);
+    };
+
+    const loadCredentials = async (account: Account): Promise<CloudCredentials | null> => {
+        try {
+            const accountFolder = `${FileSystem.documentDirectory}${getDirNameFromDid(account.did)}/`;
+            const credentialsPath = `${accountFolder}cloud-credentials.enc`;
+            
+            // Check if credentials exist
+            const fileInfo = await FileSystem.getInfoAsync(credentialsPath);
+            if (!fileInfo.exists) {
+                return null;
+            }
+    
+            // Read and decrypt credentials
+            const encryptedCredentials = await FileSystem.readAsStringAsync(credentialsPath);
+            const decryptedCredentials = await decryptData(encryptedCredentials);
+            return JSON.parse(decryptedCredentials);
+        } catch (error) {
+            console.error('Error loading cloud credentials:', error);
+            throw error;
         }
     };
 
@@ -705,6 +744,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 loading,
                 initialized,
                 deleteAccount,
+                storeCredentials,
+                loadCredentials,
 
                 // App management
                 installedApps,

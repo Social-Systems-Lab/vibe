@@ -5,6 +5,8 @@ import { useRouter } from "expo-router";
 import { useAuth } from "@/components/auth/auth-context";
 import { MaterialIcons } from "@expo/vector-icons";
 import { ServerConfig, ServerOption } from "@/types/types";
+import { useAccountSync } from "@/hooks/useAccountSync";
+import ServerStatusIndicator from "@/components/ui/server-status-indicator";
 
 // Constants
 const OFFICIAL_SERVER_URL = "https://cloud.vibeapp.dev";
@@ -13,6 +15,7 @@ const OFFICIAL_SERVER_NAME = "Official Vibe Cloud";
 export default function ServerSettingsScreen() {
     const router = useRouter();
     const { currentAccount, updateServerConfig, registerWithVibeCloud } = useAuth();
+    const { serverStatus, isRegistered, checkServerStatus } = useAccountSync();
 
     const [serverOption, setServerOption] = useState<ServerOption>("official");
     const [serverUrl, setServerUrl] = useState("");
@@ -30,12 +33,6 @@ export default function ServerSettingsScreen() {
 
     // Check server connection
     const handleCheckConnection = async () => {
-        if (serverOption === "official") {
-            setServerConnected(true);
-            Alert.alert("Success", "Connected to Official Vibe Cloud");
-            return true;
-        }
-
         if (!serverUrl.trim()) {
             Alert.alert("Invalid URL", "Please enter a valid server URL");
             return false;
@@ -141,8 +138,8 @@ export default function ServerSettingsScreen() {
             url: serverOption === "official" ? OFFICIAL_SERVER_URL : serverUrl,
             name: serverOption === "official" ? OFFICIAL_SERVER_NAME : "Custom Vibe Cloud",
             serverOption,
-            isConnected: serverOption === "official" ? true : serverConnected,
-            lastConnected: serverOption === "official" || serverConnected ? Date.now() : undefined,
+            isConnected: serverConnected,
+            lastConnected: serverConnected ? Date.now() : undefined,
         };
 
         await updateServerConfig(currentAccount!.did, newServerConfig);
@@ -199,10 +196,19 @@ export default function ServerSettingsScreen() {
                                 </View>
 
                                 <View style={styles.connectionStatusContainer}>
-                                    <TouchableOpacity style={styles.checkButton} onPress={handleCheckConnection} disabled={checking || !serverUrl}>
+                                    <TouchableOpacity style={styles.checkButton} onPress={() => {
+                                        setChecking(true);
+                                        checkServerStatus().finally(() => {
+                                            setChecking(false);
+                                            // Update local state based on the global state result
+                                            setServerConnected(serverStatus === 'online');
+                                        });
+                                    }} disabled={checking || !serverUrl}>
                                         <Text style={styles.checkButtonText}>{checking ? "Checking..." : "Check Connection"}</Text>
                                     </TouchableOpacity>
 
+                                    <ServerStatusIndicator />
+                                    
                                     <View style={styles.connectionStatus}>
                                         <View style={[styles.statusIndicator, serverConnected ? styles.connected : styles.disconnected]} />
                                         <Text style={styles.statusText}>{checking ? "Checking..." : serverConnected ? "Connected" : "Not connected"}</Text>
