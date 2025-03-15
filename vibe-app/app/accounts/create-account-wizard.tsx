@@ -8,6 +8,7 @@ import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/components/auth/auth-context";
 import { useDb } from "@/components/db/db-context";
 import { InstalledApp, ServerOption } from "@/types/types";
+import { OFFICIAL_SERVER_NAME, OFFICIAL_SERVER_URL } from "@/constants/constants";
 
 // Step definitions
 type WizardStep = "intro-welcome" | "intro-privacy" | "intro-data" | "profile-setup" | "server-setup" | "app-selection" | "import-contacts" | "complete";
@@ -38,10 +39,6 @@ export default function CreateAccountWizard() {
     const [serverUrl, setServerUrl] = useState("");
     const [checkingServer, setCheckingServer] = useState(false);
     const [serverConnected, setServerConnected] = useState(false);
-
-    // Official server details (these would come from config in a real app)
-    const OFFICIAL_SERVER_URL = "https://19c8-102-39-154-203.ngrok-free.app";
-    const OFFICIAL_SERVER_NAME = "Official Vibe Cloud";
 
     // Predefined apps (for now just contacts)
     const availableApps: InstalledApp[] = [

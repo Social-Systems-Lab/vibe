@@ -7,10 +7,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { ServerConfig, ServerOption } from "@/types/types";
 import ServerStatusIndicator from "@/components/ui/server-status-indicator";
 import { useCloud } from "@/components/cloud/cloud-context";
-
-// Constants
-const OFFICIAL_SERVER_URL = "https://cloud.vibeapp.dev";
-const OFFICIAL_SERVER_NAME = "Official Vibe Cloud";
+import { OFFICIAL_SERVER_NAME, OFFICIAL_SERVER_URL } from "@/constants/constants";
 
 export default function ServerSettingsScreen() {
     const router = useRouter();
