@@ -30,12 +30,12 @@ type CloudCredentials = {
     password: string;
     dbName: string;
     deviceId: string;
-}
+};
 
 type CreateAccountResult = {
     account: Account;
     encryptionKey: string;
-}
+};
 
 type AuthContextType = {
     // Account management
@@ -67,10 +67,7 @@ type AuthContextType = {
     updatePermission: (appId: string, operation: Operation, collection: string, newValue: PermissionSetting) => Promise<void>;
 
     // Vibe Cloud
-    storeCredentials: (
-        account: Account,
-        credentials: CloudCredentials
-    ) => Promise<void>;
+    storeCredentials: (account: Account, credentials: CloudCredentials) => Promise<void>;
     loadCredentials: (account: Account) => Promise<CloudCredentials | null>;
     registerWithVibeCloud: (account: Account, inEncryptionKey?: string) => Promise<boolean>;
 };
@@ -95,10 +92,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const getAppsKey = (did: string) => `${APPS_KEY_PREFIX}${did}`;
 
     // Function to handle setting up an account: open DB and load apps
-    const setupAccount = async (account: Account) => {
+    const setAndSetupAccount = async (account: Account, encryptionKey: string) => {
         if (!account) return;
 
         try {
+            if (currentAccount) {
+                await close().catch((err) => console.error("Error closing previous database:", err));
+            }
+
             // 1. Open the database for this account
             const dbName = getDirNameFromDid(account.did);
             console.log(`Opening database for account: ${dbName}`);
@@ -113,6 +114,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } else {
                 setInstalledApps([]);
             }
+
+            // 3) Set the encryption key and current account
+            setEncryptionKey(encryptionKey);
+            setCurrentAccount(account);
+
+            // reset tabs
+            resetTabs();
         } catch (error) {
             console.error("Error setting up account:", error);
             // Continue anyway as we want basic functionality to work
@@ -384,18 +392,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setAccounts(updatedAccounts);
             await storeAccounts(updatedAccounts);
 
-            // Set current account and encryption key
-            setCurrentAccount(newAccount);
-            setEncryptionKey(encryptionKey);
-
             // Set up the account (open DB and load apps)
-            await setupAccount(newAccount);
+            await setAndSetupAccount(newAccount, encryptionKey);
 
             // Return the new account for immediate use
             let result: CreateAccountResult = {
                 account: newAccount,
                 encryptionKey,
-            }
+            };
             return result;
         } catch (error) {
             console.error("Error creating account:", error);
@@ -465,10 +469,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // If this is the current account, update it
         if (currentAccount?.did === accountDid) {
             setCurrentAccount(updatedAccount);
-            
-            // If server URL changed and the database is open, we should
-            // potentially reinitialize database sync
-            // This will be handled by the useAccountSync hook's effect
         }
     }
 
@@ -485,17 +485,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 await close().catch((err) => console.error("Error closing previous database:", err));
             }
 
-            // Set current account and encryption key
-            setCurrentAccount(account);
-            setEncryptionKey(encryptionKey);
-
             // Set up the account (open DB and load apps)
-            await setupAccount(account);
-
-            // Reset tabs when logging in
-            resetTabs();
-
-            // For context communication, we'll use a different approach in React Native
+            await setAndSetupAccount(account, encryptionKey);
         } catch (error) {
             console.error("Login failed:", error);
             throw error;
@@ -617,15 +608,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // 3. Sign the challenge
             const signature = await signChallenge(privateKey, challengeData.challenge);
 
-
-            console.log("START #########");
-            console.log("START #########");
-            console.log("encryptedPrivateKey", encryptedPrivateKey);
-            console.log("privateKey", privateKey);
-            console.log("encryptionKey", inEncryptionKey ?? encryptionKey);
-            console.log("END #########");
-            console.log("END #########");
-
             // 4. Send the signature back to complete registration
             const registrationResponse = await fetch(`${serverUrl}/api/account/register`, {
                 method: "POST",
@@ -658,12 +640,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const credentials = registrationResult.credentials;
 
             // Call the new storeCredentials function
-            await storeCredentials(account, {
-                username: credentials.username,
-                password: credentials.password,
-                dbName: credentials.dbName,
-                deviceId: deviceId,
-            }, inEncryptionKey);
+            await storeCredentials(
+                account,
+                {
+                    username: credentials.username,
+                    password: credentials.password,
+                    dbName: credentials.dbName,
+                    deviceId: deviceId,
+                },
+                inEncryptionKey
+            );
 
             // 6. Update account server connection status
             const updatedServerConfig: ServerConfig = {
@@ -682,11 +668,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
-    const storeCredentials = async (
-        account: Account,
-        credentials: CloudCredentials,
-        inEncryptionKey?: string,
-    ) => {
+    const storeCredentials = async (account: Account, credentials: CloudCredentials, inEncryptionKey?: string) => {
         const accountFolder = `${FileSystem.documentDirectory}${getDirNameFromDid(account.did)}/`;
         // Encrypt before storing
         const encryptedCredentials = await encryptData(JSON.stringify(credentials), inEncryptionKey);
@@ -697,19 +679,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
             const accountFolder = `${FileSystem.documentDirectory}${getDirNameFromDid(account.did)}/`;
             const credentialsPath = `${accountFolder}cloud-credentials.enc`;
-            
+
             // Check if credentials exist
             const fileInfo = await FileSystem.getInfoAsync(credentialsPath);
             if (!fileInfo.exists) {
                 return null;
             }
-    
+
             // Read and decrypt credentials
             const encryptedCredentials = await FileSystem.readAsStringAsync(credentialsPath);
             const decryptedCredentials = await decryptData(encryptedCredentials);
             return JSON.parse(decryptedCredentials);
         } catch (error) {
-            console.error('Error loading cloud credentials:', error);
+            console.error("Error loading cloud credentials:", error);
             throw error;
         }
     };
