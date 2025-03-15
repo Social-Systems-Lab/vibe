@@ -17,7 +17,7 @@ if (args.includes("--help") || args.includes("-h")) {
   Available apps:
     web        - vibe-web developer portal
     contacts   - contacts application
-    cloud      - vibe-cloud P2P server
+    cloud      - vibe-cloud server
     
   Examples:
     npm run dev              - Runs watches + all apps (default)

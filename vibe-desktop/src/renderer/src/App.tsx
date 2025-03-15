@@ -1,53 +1,49 @@
-import { useState, useEffect } from 'react'
-import TitleBar from './components/TitleBar'
-import LoginScreen from './components/auth/LoginScreen'
-import MainScreen from './components/MainScreen'
+import React, { useEffect } from 'react';
+import { useAtom } from 'jotai';
+import { signInStatusAtom, configAtom } from './components/atoms';
+import MainScreen from './components/MainScreen';
+import TitleBar from './components/TitleBar';
+import { OnboardingWizard } from './components/onboarding';
+import VibeContextProvider from './components/contexts';
 
-function App(): JSX.Element {
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false)
-  const [currentAccount, setCurrentAccount] = useState<any>(null)
+function AppContent() {
+  const [signInStatus] = useAtom(signInStatusAtom);
+  const [config, setConfig] = useAtom(configAtom);
 
-  // Check if there's a logged in account on startup
   useEffect(() => {
-    // This would typically load from session storage or similar
-    // For now, we'll just check if there are accounts
-    const checkAccounts = async () => {
+    const initializeApp = async () => {
       try {
-        const accounts = await window.api.accounts.getAll()
-        if (accounts && accounts.length > 0) {
-          // We have accounts, but not logged in yet
-          console.log(`Found ${accounts.length} accounts`)
-        }
+        const appConfig = await window.electron.getConfig();
+        setConfig(appConfig);
       } catch (error) {
-        console.error('Error checking accounts:', error)
+        console.error('Failed to initialize app:', error);
       }
-    }
+    };
 
-    checkAccounts()
-  }, [])
+    initializeApp();
+  }, []);
 
-  const handleLogin = (account: any) => {
-    setCurrentAccount(account)
-    setIsLoggedIn(true)
-  }
-
-  const handleLogout = () => {
-    setCurrentAccount(null)
-    setIsLoggedIn(false)
+  if (!config) {
+    return <div className="w-full h-full flex items-center justify-center">Loading...</div>;
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="w-full h-full flex flex-col">
       <TitleBar />
       <div className="flex-1 overflow-hidden">
-        {isLoggedIn ? (
-          <MainScreen account={currentAccount} onLogout={handleLogout} />
-        ) : (
-          <LoginScreen onLogin={handleLogin} />
-        )}
+        {signInStatus === 'loggedIn' ? <MainScreen /> : <OnboardingWizard />}
       </div>
     </div>
-  )
+  );
 }
 
-export default App
+// Wrap the app with all the context providers
+function App() {
+  return (
+    <VibeContextProvider>
+      <AppContent />
+    </VibeContextProvider>
+  );
+}
+
+export default App;

@@ -1,78 +1,52 @@
-import { useState, useEffect } from 'react'
+import React from 'react';
+import { VscChromeMaximize, VscChromeMinimize, VscChromeClose } from 'react-icons/vsc';
 
-/**
- * TitleBar component for the window controls
- * This is used for the frameless window to provide minimize, maximize, and close buttons
- */
 const TitleBar: React.FC = () => {
-  const [isMaximized, setIsMaximized] = useState(false)
+  const handleMinimize = () => {
+    window.electron.minimizeWindow();
+  };
 
-  useEffect(() => {
-    // Check if window is maximized on load
-    const checkMaximized = async (): Promise<void> => {
-      const maximized = await window.api.window.isMaximized()
-      setIsMaximized(maximized)
-    }
-    checkMaximized()
-  }, [])
+  const handleMaximize = () => {
+    window.electron.maximizeWindow();
+  };
 
-  const handleMinimize = (): void => {
-    window.api.window.minimize()
-  }
-
-  const handleMaximize = async (): Promise<void> => {
-    await window.api.window.maximize()
-    // Update state after window is maximized/restored
-    const maximized = await window.api.window.isMaximized()
-    setIsMaximized(maximized)
-  }
-
-  const handleClose = (): void => {
-    window.api.window.close()
-  }
+  const handleClose = () => {
+    window.electron.closeWindow();
+  };
 
   return (
-    <div className="flex justify-between items-center bg-gray-800 text-white h-10 select-none">
-      <div className="px-4 py-2 flex items-center">
-        <span className="font-semibold">Vibe Desktop</span>
+    <div className="title-bar">
+      <div className="flex-grow">
+        <span className="ml-2 text-sm font-medium text-gray-700">Vibe</span>
       </div>
-      <div className="flex">
-        <button
-          className="px-4 py-2 hover:bg-gray-700 focus:outline-none"
+      
+      <div className="flex [app-region:none] self-start">
+        <button 
+          className="window-control-btn"
+          aria-label="Minimize Window"
           onClick={handleMinimize}
-          aria-label="Minimize"
         >
-          <svg width="12" height="12" viewBox="0 0 12 12">
-            <rect width="10" height="1" x="1" y="6" />
-          </svg>
+          <VscChromeMinimize />
         </button>
+
         <button
-          className="px-4 py-2 hover:bg-gray-700 focus:outline-none"
+          className="window-control-btn"
+          aria-label="Maximize Window"
           onClick={handleMaximize}
-          aria-label={isMaximized ? 'Restore' : 'Maximize'}
         >
-          {isMaximized ? (
-            <svg width="12" height="12" viewBox="0 0 12 12">
-              <path d="M3,3 v6 h6 v-6 h-6 M2,2 h8 v8 h-8 v-8 z" />
-            </svg>
-          ) : (
-            <svg width="12" height="12" viewBox="0 0 12 12">
-              <path d="M2,2 v8 h8 v-8 h-8 z" />
-            </svg>
-          )}
+          <VscChromeMaximize />
         </button>
+
         <button
-          className="px-4 py-2 hover:bg-red-600 focus:outline-none"
+          className="window-close-btn"
+          aria-label="Close Window"
           onClick={handleClose}
-          aria-label="Close"
         >
-          <svg width="12" height="12" viewBox="0 0 12 12">
-            <path d="M1,1 l10,10 M1,11 l10,-10" stroke="currentColor" strokeWidth="1.5" />
-          </svg>
+          <VscChromeClose />
         </button>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default TitleBar
+export default TitleBar;

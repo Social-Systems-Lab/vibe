@@ -1,7 +1,7 @@
 {
     "name": "vibe-cloud",
     "version": "0.1.0",
-    "description": "P2P signaling and TURN server for Vibe platform",
+    "description": "Vibe Cloud platform",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
     "scripts": {
@@ -12,10 +12,8 @@
         "lint": "eslint 'src/**/*.{ts,tsx}'"
     },
     "keywords": [
-        "signaling",
-        "webrtc",
-        "p2p",
-        "turn"
+        "vibe",
+        "cloud"
     ],
     "author": "",
     "license": "MIT",
