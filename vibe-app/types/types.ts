@@ -41,7 +41,7 @@ export type Account = {
     pictureUrl?: string;
     requireAuthentication: AuthType;
     updatedAt?: number; // timestamp for cache busting
-    server?: ServerConfig; // P2P server configuration
+    server?: ServerConfig; // server configuration
 };
 
 export type ReadResult = {

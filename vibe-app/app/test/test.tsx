@@ -189,7 +189,6 @@ export default function TestScreen() {
             </View>
 
             <View style={styles.section}>
-                <Button title="Go to P2P Test" onPress={() => router.push("/test/p2p-test")} />
                 <Button title="Go to Account Select Screen" onPress={() => router.replace("/accounts/account-select")} />
             </View>
 
