@@ -23,9 +23,6 @@ type DbContextType = {
   find: (query: any) => Promise<any>;
   subscribe: (query: any, callback: SubscriptionCallback) => Promise<() => void>;
 
-  // Helper functions
-  getDbNameFromDid: (did: string) => string; // Helper to get valid DB name from DID
-
   // High-level operations
   read: (collection: string, filter: any, callback: (results: ReadResult) => void) => Promise<() => void>;
   readOnce: (collection: string, filter: any) => Promise<ReadResult>;
@@ -39,11 +36,6 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   
   // Track active subscriptions to be able to unsubscribe
   const subscriptions = React.useRef<{ [key: string]: SubscriptionCallback }>({});
-
-  // Helper to derive a valid database name from a DID
-  const getDbNameFromDid = useCallback((did: string): string => {
-    return did.toLowerCase().replace(/[^a-z0-9_$()+/-]/g, "");
-  }, []);
 
   // Open a database
   const open = useCallback(async (dbName: string) => {
@@ -259,7 +251,6 @@ export const DbProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         bulkPut,
         find,
         subscribe,
-        getDbNameFromDid,
         read,
         readOnce,
         write,

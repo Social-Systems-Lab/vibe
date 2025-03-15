@@ -172,11 +172,76 @@
                 }
                 Object.keys(changeListeners).forEach(key => delete changeListeners[key]);
             }
+            
+            // Track active replication/sync
+            let syncHandler = null;
+            
+            // Set up database synchronization with remote CouchDB
+            async function sync(remoteUrl, headers, options) {
+                if (!db) {
+                    throw new Error("Database not open");
+                }
+                
+                // Cancel any existing sync first
+                if (syncHandler) {
+                    syncHandler.cancel();
+                    syncHandler = null;
+                }
+                
+                // Create a remote database instance with authentication
+                const remoteDb = new PouchDB(remoteUrl, {
+                    fetch: function(url, opts) {
+                        // Add authorization headers
+                        opts.headers = opts.headers || {};
+                        Object.assign(opts.headers, headers);
+                        return PouchDB.fetch(url, opts);
+                    }
+                });
+                
+                // Set up bidirectional sync
+                syncHandler = db.sync(remoteDb, {
+                    live: options.live || false,
+                    retry: options.retry || false,
+                    batch_size: options.batch_size || 100,
+                })
+                .on('change', function(info) {
+                    console.log('Sync change:', info);
+                })
+                .on('paused', function(err) {
+                    console.log('Sync paused:', err);
+                })
+                .on('active', function() {
+                    console.log('Sync active');
+                })
+                .on('denied', function(err) {
+                    console.error('Sync denied:', err);
+                })
+                .on('complete', function(info) {
+                    console.log('Sync complete:', info);
+                })
+                .on('error', function(err) {
+                    console.error('Sync error:', err);
+                });
+                
+                return "Sync started successfully";
+            }
+            
+            // Stop synchronization
+            function stopSync() {
+                if (syncHandler) {
+                    syncHandler.cancel();
+                    syncHandler = null;
+                    return "Sync stopped successfully";
+                } else {
+                    return "No active sync to stop";
+                }
+            }
 
-            // Update the close method to cancel subscriptions
+            // Update the close method to cancel subscriptions and sync
             function close() {
                 if (db) {
                     cancelAllSubscriptions();
+                    stopSync();
                     db.close();
                     db = null;
                     return "Database closed successfully";
@@ -247,6 +312,18 @@
                             
                         case "unsubscribe":
                             response = unsubscribe(payload.subscriptionId);
+                            break;
+                            
+                        case "sync":
+                            response = await sync(
+                                payload.remoteUrl, 
+                                payload.headers, 
+                                payload.options
+                            );
+                            break;
+                            
+                        case "stopSync":
+                            response = stopSync();
                             break;
                     }
 

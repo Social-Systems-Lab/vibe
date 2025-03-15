@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/components/auth/auth-context";
 import Constants from "expo-constants";
 import { SquircleMask } from "@/components/ui/squircle";
+import ServerStatusIndicator from "@/components/ui/server-status-indicator";
 
 export default function ProfileScreen() {
     const router = useRouter();
@@ -60,7 +61,7 @@ export default function ProfileScreen() {
                                     {currentAccount.server?.url || ""}
                                 </Text>
                             </View>
-                            <View style={[styles.connectionIndicator, currentAccount.server?.isConnected ? styles.connected : styles.disconnected]} />
+                            <ServerStatusIndicator compact={true} />
                         </View>
                     </View>
                 </TouchableOpacity>
