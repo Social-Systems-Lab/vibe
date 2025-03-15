@@ -192,11 +192,8 @@ export default function BrowserTab({ tab }: Props) {
                     permissions: existingApp.permissions,
                 };
                 addOrUpdateApp(newApp);
+                console.log("Setting current app 1: ", existingApp);
                 setCurrentApp(existingApp);
-
-                sendNativeResponse({
-                    stateUpdate: { account: currentAccount, permissions: existingApp.permissions },
-                });
                 setPermissionsIndicator(false);
             }
         } else {
@@ -206,6 +203,14 @@ export default function BrowserTab({ tab }: Props) {
             setPermissionsIndicator(true);
         }
     };
+
+    useEffect(() => {
+        if (!currentApp) return;
+
+        sendNativeResponse({
+            stateUpdate: { account: currentAccount, permissions: currentApp.permissions },
+        });
+    }, [currentApp, currentAccount]);
 
     /** Read request handler */
     const handleReadOnceRequest = async (data: any, requestId: string) => {
@@ -246,6 +251,7 @@ export default function BrowserTab({ tab }: Props) {
 
     // Handle read subscription request
     const handleReadRequest = async (data: any, requestId: string) => {
+        console.log("read", currentApp);
         if (!currentApp) {
             sendNativeResponse({
                 requestId,
@@ -381,6 +387,7 @@ export default function BrowserTab({ tab }: Props) {
             hidden: false,
         };
         addOrUpdateApp(newApp);
+        console.log("Setting current app 2: ", newApp);
         setCurrentApp(newApp);
 
         setModalVisible(false);

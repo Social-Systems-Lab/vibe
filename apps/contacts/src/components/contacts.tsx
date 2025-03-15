@@ -123,7 +123,7 @@ export default function Contacts() {
         setLoading(true);
         try {
             // Subscribe to the contacts collection
-            const unsubscribe = read("contacts", {}, (result) => {
+            const unsubscribe = read("contacts", {}, (result: any) => {
                 console.log("Received contacts update:", result);
                 setContacts(result.docs || []);
                 setLoading(false);
