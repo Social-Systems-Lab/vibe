@@ -1,23 +1,13 @@
-FROM node:20-alpine
+FROM denoland/deno:latest
 
+# Create working directory
 WORKDIR /app
 
-# Copy package.json and package-lock.json
-COPY package*.json ./
-
-# Install dependencies
-RUN npm ci
-
-# Copy source code
+# Copy source
 COPY . .
 
-# Build TypeScript
-RUN npm run build
+# Compile the main app
+RUN deno cache main.ts
 
-# Expose ports - HTTP server, TURN/STUN
-EXPOSE 5000
-EXPOSE 3478/tcp
-EXPOSE 3478/udp
-
-# Run the server
-CMD ["npm", "start"]
+# Run the app
+CMD ["deno", "run", "--allow-net", "main.ts"]
