@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vibe SDK Example</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+        .card {
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        textarea {
+            height: 100px;
+            font-family: monospace;
+        }
+        .status {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .status.authenticated {
+            color: #27ae60;
+        }
+        .status.unauthenticated {
+            color: #e74c3c;
+        }
+        .hidden {
+            display: none;
+        }
+        #data-section {
+            margin-top: 20px;
+        }
+        #data-list {
+            list-style-type: none;
+            padding: 0;
+        }
+        #data-list li {
+            background-color: white;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            border-left: 3px solid #3498db;
+        }
+    </style>
+</head>
+<body>
+    <h1>Vibe SDK Example</h1>
+    
+    <div class="card">
+        <div id="auth-status" class="status unauthenticated">Not authenticated</div>
+        
+        <div id="login-form">
+            <h2>Sign In</h2>
+            <input type="text" id="handle" placeholder="username@domain" />
+            <input type="password" id="password" placeholder="Password" />
+            <button id="login-btn">Sign In</button>
+            <button id="register-btn">Register</button>
+        </div>
+        
+        <div id="user-info" class="hidden">
+            <h2>User Information</h2>
+            <p><strong>Username:</strong> <span id="username"></span></p>
+            <p><strong>DID:</strong> <span id="did"></span></p>
+            <p><strong>Domain:</strong> <span id="domain"></span></p>
+            <button id="logout-btn">Sign Out</button>
+        </div>
+    </div>
+    
+    <div id="data-section" class="hidden">
+        <div class="card">
+            <h2>Notes</h2>
+            <div>
+                <textarea id="note-content" placeholder="Write a note..."></textarea>
+                <button id="save-note-btn">Save Note</button>
+            </div>
+            
+            <h3>Your Notes</h3>
+            <ul id="data-list"></ul>
+            <button id="refresh-btn">Refresh</button>
+        </div>
+    </div>
+    
+    <!-- Load the Vibe SDK -->
+    <script type="module">
+        // Import the Vibe SDK
+        import { vibe } from '../vibe-sdk.ts';
+        
+        // App manifest
+        const manifest = {
+            id: 'com.example.notes',
+            name: 'Notes App',
+            description: 'A simple notes application',
+            permissions: ['read.notes', 'write.notes'],
+            onetapEnabled: true
+        };
+        
+        // DOM elements
+        const authStatus = document.getElementById('auth-status');
+        const loginForm = document.getElementById('login-form');
+        const userInfo = document.getElementById('user-info');
+        const dataSection = document.getElementById('data-section');
+        const usernameEl = document.getElementById('username');
+        const didEl = document.getElementById('did');
+        const domainEl = document.getElementById('domain');
+        const dataList = document.getElementById('data-list');
+        
+        // Initialize the SDK
+        vibe.init(manifest, (state) => {
+            if (state.account) {
+                // User is authenticated
+                authStatus.textContent = 'Authenticated';
+                authStatus.className = 'status authenticated';
+                loginForm.classList.add('hidden');
+                userInfo.classList.remove('hidden');
+                dataSection.classList.remove('hidden');
+                
+                // Update user info
+                usernameEl.textContent = state.account.username;
+                didEl.textContent = state.account.did;
+                domainEl.textContent = state.account.domain;
+                
+                // Load data
+                loadNotes();
+            } else {
+                // User is not authenticated
+                authStatus.textContent = 'Not authenticated';
+                authStatus.className = 'status unauthenticated';
+                loginForm.classList.remove('hidden');
+                userInfo.classList.add('hidden');
+                dataSection.classList.add('hidden');
+            }
+        });
+        
+        // Event listeners
+        document.getElementById('login-btn').addEventListener('click', async () => {
+            const handle = document.getElementById('handle').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                await vibe.authenticate(handle, password);
+                // Authentication successful - state update will be handled by the callback
+            } catch (error) {
+                alert(`Authentication failed: ${error.message}`);
+            }
+        });
+        
+        document.getElementById('register-btn').addEventListener('click', async () => {
+            const handle = document.getElementById('handle').value;
+            const password = document.getElementById('password').value;
+            const inviteCode = prompt('Please enter an invite code:');
+            
+            if (!inviteCode) return;
+            
+            try {
+                await vibe.register(handle, password, inviteCode);
+                // Registration successful - state update will be handled by the callback
+            } catch (error) {
+                alert(`Registration failed: ${error.message}`);
+            }
+        });
+        
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await vibe.logout();
+            // Logout successful - state update will be handled by the callback
+        });
+        
+        document.getElementById('save-note-btn').addEventListener('click', async () => {
+            const content = document.getElementById('note-content').value;
+            
+            if (!content) {
+                alert('Please enter a note');
+                return;
+            }
+            
+            try {
+                await vibe.write('notes', {
+                    content,
+                    created: new Date().toISOString()
+                });
+                
+                // Clear the input
+                document.getElementById('note-content').value = '';
+                
+                // Reload notes
+                loadNotes();
+            } catch (error) {
+                alert(`Failed to save note: ${error.message}`);
+            }
+        });
+        
+        document.getElementById('refresh-btn').addEventListener('click', () => {
+            loadNotes();
+        });
+        
+        // Load notes from the server
+        async function loadNotes() {
+            try {
+                const result = await vibe.readOnce('notes');
+                
+                // Clear the list
+                dataList.innerHTML = '';
+                
+                if (result.docs && result.docs.length > 0) {
+                    // Sort by creation date (newest first)
+                    result.docs.sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime());
+                    
+                    // Add each note to the list
+                    result.docs.forEach(note => {
+                        const li = document.createElement('li');
+                        
+                        // Format the date
+                        const date = new Date(note.created);
+                        const formattedDate = date.toLocaleString();
+                        
+                        li.innerHTML = `
+                            <div>${note.content}</div>
+                            <small>${formattedDate}</small>
+                        `;
+                        
+                        dataList.appendChild(li);
+                    });
+                } else {
+                    dataList.innerHTML = '<li>No notes found</li>';
+                }
+            } catch (error) {
+                console.error('Failed to load notes:', error);
+                dataList.innerHTML = `<li>Error loading notes: ${error.message}</li>`;
+            }
+        }
+    </script>
+</body>
+</html>

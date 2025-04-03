@@ -6,8 +6,11 @@ WORKDIR /app
 # Copy source
 COPY . .
 
-# Compile the main app
-RUN deno cache main.ts
+# Cache dependencies
+RUN deno cache --lock=deno.lock main.ts
+RUN deno cache --lock=deno.lock auth-routes.ts
+RUN deno cache --lock=deno.lock data-routes.ts
+RUN deno cache --lock=deno.lock crypto-utils.ts
 
 # Run the app
-CMD ["deno", "run", "--allow-net", "main.ts"]
+CMD ["deno", "run", "--allow-net", "--allow-env", "--allow-read", "main.ts"]
