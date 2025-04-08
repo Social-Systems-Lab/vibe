@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vibe Cloud WebAuthn Prototype</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        button { margin: 5px; padding: 10px; }
+        pre { background-color: #eee; padding: 10px; border-radius: 5px; white-space: pre-wrap; word-wrap: break-word; }
+        .hidden { display: none; }
+        #userInfo { margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Vibe Cloud WebAuthn Prototype</h1>
+
+    <div id="registrationSection">
+        <h2>Registration</h2>
+        <label for="usernameReg">Username:</label>
+        <input type="text" id="usernameReg" name="usernameReg" required>
+        <button id="btnRegister">Register New Authenticator</button>
+    </div>
+
+    <div id="loginSection">
+        <h2>Login</h2>
+        <label for="usernameLogin">Username (optional, for discoverable credentials):</label>
+        <input type="text" id="usernameLogin" name="usernameLogin">
+        <button id="btnLogin">Login with Authenticator</button>
+    </div>
+
+    <div id="userInfo" class="hidden">
+        <h2>User Info</h2>
+        <p>Logged in as: <strong id="loggedInUsername"></strong></p>
+        <button id="btnLogout">Logout</button>
+        <h3>Registered Authenticators:</h3>
+        <pre id="authenticatorInfo"></pre>
+    </div>
+
+    <div id="messageArea">
+        <h2>Messages</h2>
+        <pre id="messages"></pre>
+    </div>
+
+    <!-- Import the browser library -->
+    <script type="module" src="/client.js"></script>
+</body>
+</html>

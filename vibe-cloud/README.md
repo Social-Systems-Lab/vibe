@@ -1,7 +1,15 @@
-# Vibe Cloud
+# vibe-cloud
 
-Vibe Cloud is a self-hostable communication service and data storage for the Vibe platform.
+To install dependencies:
 
-## License
+```bash
+bun install
+```
 
-MIT
+To run:
+
+```bash
+bun run index.ts
+```
+
+This project was created using `bun init` in bun v1.2.9. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.

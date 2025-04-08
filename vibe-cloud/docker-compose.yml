@@ -1,30 +1,10 @@
 # docker-compose.yml
 services:
-    vibe-cloud:
-        build:
-            context: .
-            dockerfile: Dockerfile
-        ports:
-            - "5000:5000"
-        environment:
-            - PORT=5000
-            - HOST=0.0.0.0
-            - TURN_PORT=3478
-            - TURN_REALM=vibe.local
-            - TURN_AUTH_SECRET=${TURN_AUTH_SECRET}
-            - NODE_ENV=development
-            - LOG_LEVEL=debug
-            - COTURN_HOST=coturn
-        volumes:
-            - ./logs:/app/logs
-        depends_on:
-            - coturn
-        restart: unless-stopped
-        networks:
-            - vibe-network
 
     couchdb:
         image: couchdb:3.4.2
+        env_file:
+            - .env        
         container_name: vibe-couchdb
         environment:
             - COUCHDB_USER=${COUCHDB_ADMIN_USER}
@@ -39,32 +19,19 @@ services:
             - vibe-network
         restart: always
 
-    coturn:
-        image: coturn/coturn:latest
-        ports:
-            - "3478:3478/tcp"
-            - "3478:3478/udp"
-            - "5349:5349/tcp"
-            - "5349:5349/udp"
-            # - "49152-65535:49152-65535/udp" # port range for prod
-            - "50000-50010:50000-50010/udp"
+    minio:
+        image: minio/minio
+        env_file:
+            - .env
         environment:
-            - TURN_PORT=3478
-            - TURN_PORT_TLS=5349
-            - TURN_USERNAME=vibe
-            - TURN_REALM=vibe.local
-            - TURN_SECRET=${TURN_AUTH_SECRET}
-        command: >
-            -n --log-file=stdout
-            --lt-cred-mech --use-auth-secret
-            --static-auth-secret=${TURN_AUTH_SECRET}
-            --realm=vibe.local
-            --no-tls
-            --no-dtls
-            --min-port=49152
-            --max-port=65535
-            --allowed-peer-ip=0.0.0.0
-        restart: unless-stopped
+            MINIO_ROOT_USER: ${MINIO_ROOT_USERNAME}
+            MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+        command: server /data --console-address :9001
+        ports:
+            - "${MINIO_PORT}:${MINIO_PORT}"
+            - "9001:9001"
+        volumes:
+            - minio_data:/data
         networks:
             - vibe-network
 
@@ -74,3 +41,4 @@ networks:
 
 volumes:
     couchdb_data:
+    minio_data:
