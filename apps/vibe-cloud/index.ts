@@ -3,13 +3,9 @@ import { jwt as jwtPlugin } from "@elysiajs/jwt";
 import { websocket, type ElysiaWS } from "@elysiajs/websocket"; // Re-add websocket import
 import type { UserIdentity, VibeDocument, WsAgentToServerMessage, WsServerToAgentMessage } from "@vibe/shared-types"; // Re-add WS types
 import { v4 as uuidv4 } from "uuid";
-// Use 'any' for Nano Follow types for now to avoid potential version issues
-import Nano, { type MangoQuery, type DocumentScope } from "nano";
+// Use specific types from nano if available, otherwise use 'any' as fallback
+import Nano, { type MangoQuery, type DocumentScope, type FollowEmitter, type FollowResponseItem } from "nano";
 import crypto from "node:crypto";
-// Import Bun WebSocket type if needed for raw access, though ElysiaWS usually suffices
-// import type { ServerWebSocket } from "bun";
-// Import Bun WebSocket type if needed for raw access, though ElysiaWS usually suffices
-// import type { ServerWebSocket } from "bun";
 
 // --- Environment Variables ---
 const COUCHDB_URL = process.env.COUCHDB_URL || "http://admin:password@localhost:5984";
@@ -24,7 +20,7 @@ if (JWT_SECRET === "default-secret-key" || JWT_SECRET === "your-super-secret-jwt
 let nanoInstance: Nano.ServerScope;
 let usersDb: Nano.DocumentScope<UserIdentity>;
 let dataDb: Nano.DocumentScope<VibeDocument>;
-let changesFollower: any | null = null; // Use 'any' for FollowEmitter type for now
+let changesFollower: Nano.FollowEmitter | null = null; // Re-add changes feed variable
 
 try {
     nanoInstance = Nano(COUCHDB_URL);
@@ -53,7 +49,7 @@ try {
     });
 
     console.log("✅ Connected to CouchDB and databases ensured.");
-    startChangesFeed(); // Re-add startChangesFeed call
+    // startChangesFeed call removed
 } catch (error) {
     console.error("❌ Failed to connect to or initialize CouchDB:", error);
     process.exit(1);
@@ -116,9 +112,13 @@ const app = new Elysia()
 
 // --- Nonce Store (In-Memory for MVP) ---
 const nonceStore = new Map<string, { nonce: string; expires: number }>();
-const NONCE_EXPIRY_MS = 5 * 60 * 1000;
-
-// --- Routes ---
+ const NONCE_EXPIRY_MS = 5 * 60 * 1000;
+ 
++// --- WebSocket Subscription Management ---
++// Store the ElysiaWS object, which includes context data
++const userConnections = new Map<string, Set<ElysiaWS<any, any>>>(); // Use ElysiaWS (adjust types later if needed)
++
++// --- Routes ---
 
 // 1. Identity Management
 app.post(
@@ -340,40 +340,6 @@ app.get(
 
 // 4. WebSocket Endpoint (/ws) - Placeholder
 // TODO: Re-implement WebSocket logic carefully
-
-// --- CouchDB Changes Feed Logic --- (Placeholder Function)
-// Define the function before calling it in the try...catch block
-function startChangesFeed() {
-    if (changesFollower) {
-        console.log("Attempting to stop existing changes feed...");
-        changesFollower.stop();
-        changesFollower = null;
-    }
-    console.log("Starting CouchDB changes feed using db.follow...");
-    try {
-        // Use db.follow which returns FollowEmitter (using 'any' type for now)
-        changesFollower = dataDb.follow({ since: "now", include_docs: true, feed: "continuous", heartbeat: 10000 });
-
-        changesFollower.on("change", (change: any) => {
-            // Use 'any' for change type for now
-            // TODO: Implement change handling logic here
-            console.log("Received change:", change.id);
-        });
-
-        changesFollower.on("error", (err: Error) => {
-            console.error("❌ CouchDB changes feed error:", err);
-            changesFollower?.stop();
-            changesFollower = null;
-            console.log("Attempting to restart changes feed in 15 seconds...");
-            setTimeout(startChangesFeed, 15000);
-        });
-
-        changesFollower.follow(); // Start following
-        console.log("✅ CouchDB changes feed follower started.");
-    } catch (error) {
-        console.error("❌ Failed to start CouchDB changes feed:", error);
-    }
-}
 
 // --- Final Setup ---
 app.get("/", () => ({ status: "Vibe Cloud is running!" }));
