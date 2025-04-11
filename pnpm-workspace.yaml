@@ -1,0 +1,8 @@
+packages:
+    # all packages in subdirs of packages/
+    - "packages/*"
+    # all apps in subdirs of apps/
+    - "apps/*"
+    # exclude packages/shared-types if it's not meant to be published
+    # (adjust if needed)
+    # - '!packages/shared-types'

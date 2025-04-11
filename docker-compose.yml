@@ -1,0 +1,69 @@
+version: "3.8"
+
+networks:
+    vibe_net:
+        driver: bridge
+
+volumes:
+    couchdb_data:
+    minio_data:
+
+services:
+    vibe-cloud:
+        build:
+            context: ./apps/vibe-cloud # Path to the vibe-cloud Dockerfile directory
+            dockerfile: Dockerfile # Assumes Dockerfile exists in apps/vibe-cloud
+        container_name: vibe_cloud_service
+        restart: unless-stopped
+        ports:
+            - "3000:3000" # Expose Elysia port (default is 3000)
+        networks:
+            - vibe_net
+        depends_on:
+            - couchdb
+            - minio
+        environment:
+            # Pass necessary environment variables to the vibe-cloud service
+            - COUCHDB_URL=http://admin:password@couchdb:5984 # Use service name for hostname
+            - MINIO_ENDPOINT=minio
+            - MINIO_PORT=9000
+            - MINIO_ACCESS_KEY=minioadmin
+            - MINIO_SECRET_KEY=minioadmin
+            - MINIO_USE_SSL=false
+            - JWT_SECRET=your-super-secret-jwt-key # CHANGE THIS IN PRODUCTION
+            # Add any other required env vars for vibe-cloud
+        volumes:
+            # Optional: Mount source code for development (adjust as needed)
+            # - ./apps/vibe-cloud:/usr/src/app
+            # - /usr/src/app/node_modules # Prevent host node_modules from overwriting container's
+            - ./apps/vibe-cloud/bun.lockb:/app/bun.lockb # Mount bun lock file if needed for consistency
+
+    couchdb:
+        image: couchdb:latest
+        container_name: vibe_couchdb
+        restart: unless-stopped
+        ports:
+            - "5984:5984" # Expose CouchDB port
+        networks:
+            - vibe_net
+        volumes:
+            - couchdb_data:/opt/couchdb/data
+        environment:
+            - COUCHDB_USER=admin
+            - COUCHDB_PASSWORD=password # CHANGE THIS IN PRODUCTION
+
+    minio:
+        image: minio/minio:latest
+        container_name: vibe_minio
+        restart: unless-stopped
+        ports:
+            - "9000:9000" # API port
+            - "9001:9001" # Console port
+        networks:
+            - vibe_net
+        volumes:
+            - minio_data:/data
+        environment:
+            - MINIO_ROOT_USER=minioadmin # CHANGE THIS IN PRODUCTION
+            - MINIO_ROOT_PASSWORD=minioadmin # CHANGE THIS IN PRODUCTION
+        command: server /data --console-address ":9001"

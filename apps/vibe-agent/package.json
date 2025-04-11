@@ -1,0 +1,17 @@
+{
+  "name": "vibe-agent",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "echo 'Building vibe-agent... (no-op)'",
+    "lint": "echo 'Linting vibe-agent... (no-op)'"
+  },
+  "dependencies": {
+    "@vibe/sdk": "workspace:*",
+    "@vibe/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.263",
+    "typescript": "^5.0.0"
+  }
+}

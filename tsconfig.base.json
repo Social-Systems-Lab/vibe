@@ -1,0 +1,36 @@
+{
+    "compilerOptions": {
+        /* Base Options: */
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "target": "ES2022",
+        "allowJs": true,
+        "resolveJsonModule": true,
+        "moduleDetection": "force",
+        "isolatedModules": true,
+        "verbatimModuleSyntax": true,
+
+        /* Strictness */
+        "strict": true,
+        "noUncheckedIndexedAccess": true,
+        "noImplicitOverride": true,
+
+        /* If NOT transpiling with TypeScript: */
+        "moduleResolution": "Bundler",
+        "module": "ESNext",
+        "noEmit": true,
+
+        /* If your code runs in the DOM: */
+        "lib": ["es2022", "dom", "dom.iterable"]
+
+        /* If you need to support importing `.ts` files without the extension */
+        // "allowImportingTsExtensions": true,
+
+        /* Aliases for cleaner imports (optional, configure paths in specific tsconfig files) */
+        // "baseUrl": ".",
+        // "paths": {
+        //   "@shared/*": ["packages/shared-types/src/*"]
+        // }
+    },
+    "exclude": ["node_modules", "dist", "build"]
+}

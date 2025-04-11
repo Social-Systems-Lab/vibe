@@ -1,0 +1,27 @@
+{
+    "name": "@vibe/react",
+    "version": "0.0.1",
+    "private": true,
+    "main": "./src/index.ts",
+    "types": "./src/index.ts",
+    "scripts": {
+        "build": "echo 'Building vibe-react... (no-op)'",
+        "lint": "echo 'Linting vibe-react... (no-op)'",
+        "test": "echo 'Testing vibe-react... (no-op)'"
+    },
+    "dependencies": {
+        "@vibe/sdk": "workspace:*",
+        "@vibe/shared-types": "workspace:*"
+    },
+    "peerDependencies": {
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0"
+    },
+    "devDependencies": {
+        "@types/react": "^18.2.0",
+        "@types/react-dom": "^18.2.0",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "typescript": "^5.0.0"
+    }
+}
