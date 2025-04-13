@@ -1,0 +1,14 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        "outDir": "./dist",
+        "jsx": "react-jsx", // Added for React support
+        "baseUrl": ".",
+        "paths": {
+            "@vibe/sdk": ["../vibe-sdk/src"], // Adjust path based on actual location
+            "@vibe/shared-types": ["../shared-types/src"] // Adjust path based on actual location
+        }
+    },
+    "include": ["src/**/*"],
+    "exclude": ["node_modules", "dist"]
+}

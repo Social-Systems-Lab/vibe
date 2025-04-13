@@ -1,18 +1,37 @@
 {
     "name": "@vibe/sdk",
-    "version": "0.0.1",
+    "version": "0.1.0",
     "private": true,
-    "main": "./src/index.ts",
-    "types": "./src/index.ts",
+    "description": "Core SDK for interacting with the Vibe Agent",
+    "type": "module",
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "files": [
+        "dist/**"
+    ],
     "scripts": {
-        "build": "echo 'Building vibe-sdk... (no-op)'",
-        "lint": "echo 'Linting vibe-sdk... (no-op)'",
-        "test": "echo 'Testing vibe-sdk... (no-op)'"
+        "build": "tsup src/index.ts --format esm,cjs --dts --external react",
+        "dev": "tsup src/index.ts --format esm,cjs --dts --external react --watch",
+        "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+        "clean": "rm -rf dist"
+    },
+    "keywords": [
+        "vibe",
+        "sdk"
+    ],
+    "author": "Vibe Team",
+    "license": "MIT",
+    "devDependencies": {
+        "@types/chrome": "^0.0.268",
+        "eslint": "^8.57.0",
+        "tsup": "^8.2.3",
+        "typescript": "^5.5.4"
+    },
+    "peerDependencies": {
+        "@vibe/shared-types": "workspace:*"
     },
     "dependencies": {
         "@vibe/shared-types": "workspace:*"
-    },
-    "devDependencies": {
-        "typescript": "^5.0.0"
     }
 }

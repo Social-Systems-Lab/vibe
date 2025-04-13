@@ -1,0 +1,14 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        "outDir": "./dist",
+        // "rootDir": "./src", // Remove rootDir to allow imports from outside src
+        "baseUrl": ".", // Keep baseUrl for path resolution
+        "paths": {
+            // Ensure path points correctly to the source of shared-types
+            "@vibe/shared-types": ["../shared-types/src/index.ts"]
+        }
+    },
+    "include": ["src/**/*"],
+    "exclude": ["node_modules", "dist"]
+}

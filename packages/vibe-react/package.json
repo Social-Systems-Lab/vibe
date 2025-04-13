@@ -1,27 +1,45 @@
 {
     "name": "@vibe/react",
-    "version": "0.0.1",
+    "version": "0.1.0",
     "private": true,
-    "main": "./src/index.ts",
-    "types": "./src/index.ts",
+    "description": "React Hooks and Context Provider for Vibe SDK",
+    "type": "module",
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "files": [
+        "dist/**"
+    ],
     "scripts": {
-        "build": "echo 'Building vibe-react... (no-op)'",
-        "lint": "echo 'Linting vibe-react... (no-op)'",
-        "test": "echo 'Testing vibe-react... (no-op)'"
+        "build": "tsup src/index.tsx --format esm,cjs --dts --external react",
+        "dev": "tsup src/index.tsx --format esm,cjs --dts --external react --watch",
+        "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+        "clean": "rm -rf dist"
+    },
+    "keywords": [
+        "vibe",
+        "sdk",
+        "react",
+        "hooks"
+    ],
+    "author": "Vibe Team",
+    "license": "MIT",
+    "devDependencies": {
+        "@types/react": "^18.3.20",
+        "@types/react-dom": "^18.3.6",
+        "eslint": "^8.57.0",
+        "react": "^18.3.1",
+        "react-dom": "^19",
+        "tsup": "^8.2.3",
+        "typescript": "^5.5.4"
+    },
+    "peerDependencies": {
+        "@vibe/sdk": "workspace:*",
+        "@vibe/shared-types": "workspace:*",
+        "react": "^18.2.0"
     },
     "dependencies": {
         "@vibe/sdk": "workspace:*",
         "@vibe/shared-types": "workspace:*"
-    },
-    "peerDependencies": {
-        "react": "^18.2.0",
-        "react-dom": "^18.2.0"
-    },
-    "devDependencies": {
-        "@types/react": "^18.2.0",
-        "@types/react-dom": "^18.2.0",
-        "react": "^18.2.0",
-        "react-dom": "^18.2.0",
-        "typescript": "^5.0.0"
     }
 }
