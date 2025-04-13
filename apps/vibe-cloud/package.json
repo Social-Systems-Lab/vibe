@@ -1,8 +1,13 @@
 {
   "name": "vibe-cloud",
-  "module": "index.ts",
+  "module": "dist/index.js",
   "type": "module",
   "private": true,
+  "scripts": {
+    "build": "tsc -b",
+    "start": "bun run dist/index.js",
+    "dev": "bun --watch index.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/node": "^22.14.0",

@@ -1,0 +1,14 @@
+# /.dockerignore
+
+.git
+.gitignore
+node_modules
+apps/*/node_modules
+packages/*/node_modules
+apps/*/dist
+packages/*/dist
+.turbo
+*.log
+.env
+.env.*
+# Add any other files/folders you don't need in the build context

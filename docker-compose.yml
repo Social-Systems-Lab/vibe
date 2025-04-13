@@ -1,5 +1,4 @@
-version: "3.8"
-
+# /docker-compose.yml
 networks:
     vibe_net:
         driver: bridge
@@ -11,39 +10,33 @@ volumes:
 services:
     vibe-cloud:
         build:
-            context: ./apps/vibe-cloud # Path to the vibe-cloud Dockerfile directory
-            dockerfile: Dockerfile # Assumes Dockerfile exists in apps/vibe-cloud
+            context: . # <--- CHANGE: Use monorepo root as context
+            dockerfile: ./apps/vibe-cloud/Dockerfile # <--- CHANGE: Specify Dockerfile path relative to root
         container_name: vibe_cloud_service
         restart: unless-stopped
         ports:
-            - "3000:3000" # Expose Elysia port (default is 3000)
+            - "3000:3000"
         networks:
             - vibe_net
         depends_on:
             - couchdb
             - minio
         environment:
-            # Pass necessary environment variables to the vibe-cloud service
-            - COUCHDB_URL=http://admin:password@couchdb:5984 # Use service name for hostname
+            - COUCHDB_URL=http://admin:password@couchdb:5984
             - MINIO_ENDPOINT=minio
             - MINIO_PORT=9000
             - MINIO_ACCESS_KEY=minioadmin
             - MINIO_SECRET_KEY=minioadmin
             - MINIO_USE_SSL=false
             - JWT_SECRET=your-super-secret-jwt-key # CHANGE THIS IN PRODUCTION
-            # Add any other required env vars for vibe-cloud
-        volumes:
-            # Optional: Mount source code for development (adjust as needed)
-            # - ./apps/vibe-cloud:/usr/src/app
-            # - /usr/src/app/node_modules # Prevent host node_modules from overwriting container's
-            - ./apps/vibe-cloud/bun.lockb:/app/bun.lockb # Mount bun lock file if needed for consistency
 
     couchdb:
+        # ... (rest of couchdb config is fine)
         image: couchdb:latest
         container_name: vibe_couchdb
         restart: unless-stopped
         ports:
-            - "5984:5984" # Expose CouchDB port
+            - "5984:5984"
         networks:
             - vibe_net
         volumes:
@@ -53,12 +46,13 @@ services:
             - COUCHDB_PASSWORD=password # CHANGE THIS IN PRODUCTION
 
     minio:
+        # ... (rest of minio config is fine)
         image: minio/minio:latest
         container_name: vibe_minio
         restart: unless-stopped
         ports:
-            - "9000:9000" # API port
-            - "9001:9001" # Console port
+            - "9000:9000"
+            - "9001:9001"
         networks:
             - vibe_net
         volumes:
