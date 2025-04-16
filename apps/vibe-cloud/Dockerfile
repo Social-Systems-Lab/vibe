@@ -1,65 +1,84 @@
 # /apps/vibe-cloud/Dockerfile
 
 # ---- Base ----
-# Use the official Bun image as the base
+# Use the official Bun image
 FROM oven/bun:1 AS base
 WORKDIR /app
 
-# ---- Builder ----
-# This stage installs all dependencies and builds the application
-FROM base AS builder
+# ---- Dependencies ----
+# Install all dependencies including devDependencies
+FROM base AS deps
 WORKDIR /app
 
-# Install dependencies first to leverage Docker cache layers
-# Copy root configuration and lockfile
+# Copy root package config
 COPY package.json bun.lock ./
-COPY tsconfig.base.json ./
 
-# Copy package.json files for all workspaces needed for the build
-# This ensures bun install can resolve the workspace structure
+# Copy package.json files for all workspaces
+# Bun needs these to resolve the workspace structure during install
 COPY apps/vibe-cloud/package.json ./apps/vibe-cloud/
+COPY apps/test-app/package.json ./apps/test-app/
+COPY apps/vibe-agent/package.json ./apps/vibe-agent/
 COPY packages/shared-types/package.json ./packages/shared-types/
-# Add any other workspace package.json files if vibe-cloud depends on them
+COPY packages/vibe-react/package.json ./packages/vibe-react/
+COPY packages/vibe-sdk/package.json ./packages/vibe-sdk/
+# Add any other workspaces if they exist
 
-# Install ALL dependencies (including dev dependencies needed for build)
-# Use bun's cache directory for efficiency
+# Install all dependencies
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --frozen-lockfile
 
-# Copy the rest of the source code needed for the build
-# Copying the entire context might be simpler if filtering is complex
+# ---- Builder ----
+# Build the application
+FROM base AS builder
+WORKDIR /app
+
+# Copy node_modules from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy the entire source code
 COPY . .
 
 # Build the specific application (vibe-cloud)
-# This command should generate the distributable files (e.g., in ./apps/vibe-cloud/dist)
+# Ensure tsconfig paths are resolved correctly if needed
 RUN bun run --filter vibe-cloud build
 
 # ---- Runner ----
-# This stage creates the final, minimal image with only production dependencies
+# Create the final minimal image with only production dependencies
 FROM base AS runner
 WORKDIR /app
 
-# Copy necessary package manager files for production install
+# Set environment to production
+ENV NODE_ENV=production
+
+# Copy root package config
 COPY package.json bun.lock ./
+
+# Copy package.json files for all workspaces again for prod install
 COPY apps/vibe-cloud/package.json ./apps/vibe-cloud/
+COPY apps/test-app/package.json ./apps/test-app/
+COPY apps/vibe-agent/package.json ./apps/vibe-agent/
 COPY packages/shared-types/package.json ./packages/shared-types/
-# Add any other workspace package.json files if needed for runtime dependencies
+COPY packages/vibe-react/package.json ./packages/vibe-react/
+COPY packages/vibe-sdk/package.json ./packages/vibe-sdk/
+# Add any other workspaces if they exist
 
 # Install ONLY production dependencies
-# This requires the package.json files copied above to resolve dependencies
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --frozen-lockfile --production
 
 # Copy the built application code from the builder stage
-# Adjust the source path if your build process outputs elsewhere
 COPY --from=builder /app/apps/vibe-cloud/dist ./apps/vibe-cloud/dist
 
-# Copy any other necessary built assets or runtime dependencies from packages
-# e.g., COPY --from=builder /app/packages/shared-types/dist ./packages/shared-types/dist
+# Copy production node_modules (potentially smaller)
+# This might be redundant if the install above works correctly,
+# but follows the pattern from the docs example more closely.
+# Consider removing if the image size is acceptable without it.
+# COPY --from=deps /app/node_modules ./node_modules
 
 # Expose the port the application runs on
 EXPOSE 3000
 
 # Define the command to run the built application
 # Ensure this path matches the output of your build process
-CMD ["bun", "apps/vibe-cloud/dist/index.js"]
+# Using the relative path from WORKDIR
+CMD ["bun", "./apps/vibe-cloud/dist/index.js"]
