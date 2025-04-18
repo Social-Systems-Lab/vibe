@@ -5,7 +5,6 @@ services:
         build:
             context: ./vibe-cloud # Path to the directory containing the Dockerfile
             dockerfile: Dockerfile
-        container_name: vibe-cloud-app
         restart: unless-stopped
         env_file:
             - ./vibe-cloud/.env # Load environment variables from .env file
