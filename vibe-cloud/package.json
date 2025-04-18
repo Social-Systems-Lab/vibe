@@ -8,8 +8,7 @@
   },
   "devDependencies": {
     "@elysiajs/eden": "^1.2.0",
-    "@types/bun": "latest",
-    "vitest": "^3.1.1"
+    "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"

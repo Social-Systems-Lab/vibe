@@ -23,11 +23,10 @@ services:
         image: couchdb:latest # Use the official CouchDB image
         restart: unless-stopped
         env_file:
-            - ./vibe-cloud/.env # Load CouchDB credentials from .env
-        environment:
-            # These should be defined in your .env file
-            - COUCHDB_USER=${COUCHDB_USER}
-            - COUCHDB_PASSWORD=${COUCHDB_PASSWORD}
+            - ./vibe-cloud/.env # Load ALL variables from .env into the container environment
+        # environment: # Removed redundant block - CouchDB image reads COUCHDB_USER/PASSWORD from env loaded by env_file
+        #     - COUCHDB_USER=${COUCHDB_USER}
+        #     - COUCHDB_PASSWORD=${COUCHDB_PASSWORD}
         ports:
             # Map host port 5984 to container port 5984 (CouchDB default)
             - "5984:5984"

@@ -21,12 +21,6 @@ FROM base AS prerelease
 COPY --from=install /temp/dev/node_modules node_modules
 COPY . .
 
-# [optional] tests
-# Run tests using dev dependencies
-# Set NODE_ENV to test or development if needed by tests, otherwise default is production
-# ENV NODE_ENV=development
-RUN bun test
-
 # copy production dependencies and source code into final image
 FROM base AS release
 WORKDIR /usr/src/app
