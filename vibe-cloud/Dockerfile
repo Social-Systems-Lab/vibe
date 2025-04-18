@@ -21,18 +21,25 @@ FROM base AS prerelease
 COPY --from=install /temp/dev/node_modules node_modules
 COPY . .
 
-# [optional] tests & build
-ENV NODE_ENV=production
+# [optional] tests
+# Run tests using dev dependencies
+# Set NODE_ENV to test or development if needed by tests, otherwise default is production
+# ENV NODE_ENV=development
 RUN bun test
-RUN bun run build
 
 # copy production dependencies and source code into final image
 FROM base AS release
+WORKDIR /usr/src/app
 COPY --from=install /temp/prod/node_modules node_modules
-COPY --from=prerelease /usr/src/app/index.ts .
+# Copy necessary files from prerelease stage
 COPY --from=prerelease /usr/src/app/package.json .
+COPY --from=prerelease /usr/src/app/bun.lockb .
+COPY --from=prerelease /usr/src/app/tsconfig.json .
+COPY --from=prerelease /usr/src/app/src ./src
 
 # run the app
 USER bun
+# Expose the port defined by APP_PORT, default to 3000
+# Note: Actual port mapping is done in docker-compose.yml
 EXPOSE 3000/tcp
-ENTRYPOINT [ "bun", "run", "index.ts" ]
+ENTRYPOINT [ "bun", "run", "src/index.ts" ]

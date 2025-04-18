@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+    vibe-cloud:
+        build:
+            context: ./vibe-cloud # Path to the directory containing the Dockerfile
+            dockerfile: Dockerfile
+        container_name: vibe-cloud-app
+        restart: unless-stopped
+        env_file:
+            - ./vibe-cloud/.env # Load environment variables from .env file
+        ports:
+            # Map host port (left) to container port (right, from APP_PORT in .env or default 3000)
+            # Use the format "HOST_PORT:CONTAINER_PORT"
+            # Example: "3000:3000" maps host port 3000 to container port 3000
+            # You can change the host port if 3000 is already in use on your machine.
+            - "${APP_PORT:-3000}:${APP_PORT:-3000}"
+        networks:
+            - vibe-net
+
+networks:
+    vibe-net:
+        driver: bridge
