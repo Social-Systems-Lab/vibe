@@ -38,8 +38,10 @@ COPY --from=deps /app/node_modules ./node_modules
 # Copy the entire source code
 COPY . .
 
+# Build dependencies first using bun run --filter
+RUN bun run --filter @vibe/shared-types build
+
 # Build the specific application (vibe-cloud)
-# Ensure tsconfig paths are resolved correctly if needed
 RUN bun run --filter vibe-cloud build
 
 # ---- Runner ----
