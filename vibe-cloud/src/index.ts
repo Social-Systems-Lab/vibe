@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
-import { dataService } from "./services/data.service"; // Import the data service
+import { dataService } from "./services/data.service";
+import { logger } from "./utils/logger";
 
 // Define a basic schema for data documents (excluding _id, _rev, type)
 const DataDocumentSchema = t.Object({}, { additionalProperties: true }); // Allow any fields for now
@@ -21,67 +22,66 @@ export const app = new Elysia()
     .decorate("dataService", dataService) // Make service available in handlers
     .onError(({ code, error, set }) => {
         // Log the error code
-        console.error(`[${code}] Error occurred:`);
+        let isHandled = false; // Flag to track if we handled it
 
-        // Check if it's a standard Error object before accessing message/stack
+        // --- Handle Specific DataService Errors ---
         if (error instanceof Error) {
-            console.error(`Message: ${error.message}`);
-            console.error(error.stack); // Log stack trace for debugging
-
-            // Handle specific known errors from DataService based on message
             if (error.message.includes("not found")) {
-                set.status = 404; // Not Found
+                set.status = 404;
+                isHandled = true; // Mark as handled
                 return { error: "Resource not found." };
             }
             if (error.message.includes("Revision conflict")) {
-                set.status = 409; // Conflict
-                return { error: error.message }; // Return the specific conflict message
+                set.status = 409;
+                isHandled = true; // Mark as handled
+                return { error: error.message };
             }
             if (error.message.includes("Database connection not initialized")) {
-                set.status = 503; // Service Unavailable
+                // Log this critical error regardless of environment
+                logger.error(`[${code}] Service Unavailable: ${error.message}`, error.stack);
+                set.status = 503;
+                isHandled = true; // Mark as handled
                 return { error: "Database service is not available." };
             }
-        } else {
-            // Log non-standard errors differently
-            console.error("Non-standard error object:", error);
+            // Add other specific custom errors from your services here if needed
         }
-
-        // Handle Elysia validation errors specifically by code
+        // --- Handle Specific Elysia Codes ---
         if (code === "VALIDATION") {
-            set.status = 400; // Bad Request
-            // The 'error' object for VALIDATION might have specific structure.
-            // Let's try to return a generic validation message,
-            // potentially accessing error.message if it exists and is informative.
+            set.status = 400;
             let details = "Invalid request body or parameters.";
             if (error instanceof Error && error.message) {
-                try {
-                    // Attempt to parse Bun/Elysia's detailed validation error message
-                    const validationInfo = JSON.parse(error.message);
-                    if (validationInfo && Array.isArray(validationInfo.issues)) {
-                        details = validationInfo.issues.map((issue: any) => `${issue.path?.join(".") || "field"}: ${issue.message}`).join(", ");
-                    } else {
-                        details = error.message; // Use raw message if parsing fails
-                    }
-                } catch (e) {
-                    details = error.message; // Use raw message if JSON parsing fails
-                }
+                details = error.message;
             }
+            // Log validation errors only at WARN level
+            logger.warn(`[VALIDATION] Failed - Details: ${details}`, error);
+            isHandled = true; // Mark as handled
             return { error: "Validation failed", details: details };
         }
 
-        // Handle other specific Elysia error codes if needed
-        if (code === "NOT_FOUND") {
-            set.status = 404;
-            return { error: "API endpoint not found." };
-        }
         if (code === "PARSE") {
+            logger.warn(`[PARSE] Failed to parse request body.`, error);
             set.status = 400;
+            isHandled = true; // Mark as handled
             return { error: "Failed to parse request body." };
         }
 
-        // Default internal server error for unhandled cases
-        set.status = 500;
-        return { error: "An internal server error occurred." };
+        // --- Log ONLY if Error Was Not Handled Above ---
+        if (!isHandled) {
+            // Log truly unexpected errors (like internal server errors, code UNKNOWN for unhandled exceptions)
+            logger.error(`[${code}] Unhandled Error Occurred:`, error);
+        }
+
+        // --- Set Default Status and Return Generic Response for Unhandled ---
+        // (This part runs even for handled errors, but the response is already returned)
+        // Ensure a status code is set if it wasn't handled specifically
+        if (!set.status || Number(set.status) < 400) {
+            set.status = 500;
+        }
+        // If the error was handled, the specific return above already happened.
+        // If it wasn't handled, this provides a generic fallback response.
+        if (!isHandled) {
+            return { error: "An internal server error occurred." };
+        }
     })
     .get("/health", () => ({ status: "ok" }))
     .group("/api/v1/data", (group) =>
@@ -165,5 +165,5 @@ export const app = new Elysia()
 // Start the server only if the file is run directly
 if (import.meta.main) {
     app.listen(3000);
-    console.log(`🦊 Vibe Cloud is running at ${app.server?.hostname}:${app.server?.port}`);
+    logger.log(`🦊 Vibe Cloud is running at ${app.server?.hostname}:${app.server?.port}`);
 }

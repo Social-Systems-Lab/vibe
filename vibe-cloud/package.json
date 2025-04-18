@@ -1,20 +1,21 @@
 {
-  "name": "vibe-cloud",
-  "module": "src/index.ts",
-  "type": "module",
-  "scripts": {
-    "start": "bun run src/index.ts",
-    "test": "vitest run"
-  },
-  "devDependencies": {
-    "@elysiajs/eden": "^1.2.0",
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5.0.0"
-  },
-  "dependencies": {
-    "elysia": "^1.2.25",
-    "nano": "^10.1.4"
-  }
+    "name": "vibe-cloud",
+    "module": "src/index.ts",
+    "type": "module",
+    "scripts": {
+        "start": "bun run src/index.ts",
+        "test": "cross-env NODE_ENV=test COUCHDB_URL=http://127.0.0.1:5984 bun test"
+    },
+    "devDependencies": {
+        "@elysiajs/eden": "^1.2.0",
+        "@types/bun": "latest",
+        "cross-env": "^7.0.3"
+    },
+    "peerDependencies": {
+        "typescript": "^5.0.0"
+    },
+    "dependencies": {
+        "elysia": "^1.2.25",
+        "nano": "^10.1.4"
+    }
 }
