@@ -15,6 +15,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "elysia": "^1.2.25"
+    "elysia": "^1.2.25",
+    "nano": "^10.1.4"
   }
 }

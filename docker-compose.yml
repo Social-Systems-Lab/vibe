@@ -16,7 +16,30 @@ services:
             - "${APP_PORT:-3000}:${APP_PORT:-3000}"
         networks:
             - vibe-net
+        depends_on:
+            - couchdb # Ensure CouchDB starts before the app
+
+    couchdb:
+        image: couchdb:latest # Use the official CouchDB image
+        restart: unless-stopped
+        env_file:
+            - ./vibe-cloud/.env # Load CouchDB credentials from .env
+        environment:
+            # These should be defined in your .env file
+            - COUCHDB_USER=${COUCHDB_USER}
+            - COUCHDB_PASSWORD=${COUCHDB_PASSWORD}
+        ports:
+            # Map host port 5984 to container port 5984 (CouchDB default)
+            - "5984:5984"
+        volumes:
+            # Persist CouchDB data using a named volume
+            - couchdb-data:/opt/couchdb/data
+        networks:
+            - vibe-net
 
 networks:
     vibe-net:
         driver: bridge
+
+volumes:
+    couchdb-data: # Define the named volume for CouchDB data persistence
