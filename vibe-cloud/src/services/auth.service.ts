@@ -14,6 +14,9 @@ interface UserDocument {
     type: "user"; // Document type for querying/indexing
 }
 
+// Define the exported User type (excluding sensitive fields)
+export type User = Omit<UserDocument, "hashedPassword">;
+
 const USERS_DB_NAME = "vibe_users";
 
 export class AuthService {
