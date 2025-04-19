@@ -12,8 +12,7 @@ interface DocumentUpdateResponse extends DocumentInsertResponse {}
 
 export class DataService {
     private nanoInstance: nano.ServerScope;
-    private dbName: string = "vibe_data"; // Hardcoded database name for now
-    private db: DocumentScope<VibeDocument>;
+    // No longer storing a single db instance here
 
     constructor() {
         const couchdbUrl = process.env.COUCHDB_URL;
@@ -35,7 +34,7 @@ export class DataService {
                     },
                 },
             });
-            this.db = this.nanoInstance.use<VibeDocument>(this.dbName);
+            // Removed db initialization from constructor
         } catch (error) {
             logger.error("Failed to initialize Nano instance:", error);
             throw new Error("Failed to initialize Nano instance.");
@@ -43,138 +42,136 @@ export class DataService {
     }
 
     /**
-     * Ensures the configured CouchDB database exists. Creates it if it doesn't.
+     * Ensures a specific CouchDB database exists. Creates it if it doesn't.
+     * @param databaseName - The name of the database to ensure exists.
      */
-    async ensureDbExists(): Promise<void> {
+    async ensureDbExists(databaseName: string): Promise<void> {
         try {
             // Check if DB exists by trying to get info about it
-            await this.nanoInstance.db.get(this.dbName);
+            await this.nanoInstance.db.get(databaseName);
+            logger.info(`Database '${databaseName}' already exists.`);
         } catch (error: any) {
             // If error status is 404, database doesn't exist, so create it
             if (error.statusCode === 404) {
                 try {
-                    await this.nanoInstance.db.create(this.dbName);
-                    logger.info(`Database '${this.dbName}' created successfully.`);
-                    this.db = this.nanoInstance.use<VibeDocument>(this.dbName); // Re-assign db scope after creation
+                    await this.nanoInstance.db.create(databaseName);
+                    logger.info(`Database '${databaseName}' created successfully.`);
+                    // No need to assign this.db anymore
                 } catch (createError) {
-                    logger.error(`Error creating database '${this.dbName}':`, createError);
+                    logger.error(`Error creating database '${databaseName}':`, createError);
                     throw createError; // Re-throw creation error
                 }
             } else {
                 // Rethrow other errors (e.g., connection issues)
-                logger.error(`Error checking database '${this.dbName}':`, error);
+                logger.error(`Error checking database '${databaseName}':`, error);
                 throw error;
             }
         }
     }
 
     /**
-     * Creates a new document in the database.
+     * Creates a new document in the specified database.
      * The 'collection' concept is handled by adding a 'type' field to the document.
+     * @param databaseName - The name of the database to operate on.
      * @param collection - The logical collection name (used as the 'type' field).
      * @param data - The document data to store.
      * @returns The CouchDB insert response.
      */
-    async createDocument(collection: string, data: Omit<VibeDocument, "_id" | "_rev" | "type">): Promise<DocumentInsertResponse> {
-        if (!this.db || typeof this.db.insert !== "function") {
-            throw new Error("Database connection not initialized properly.");
-        }
+    async createDocument(databaseName: string, collection: string, data: Omit<VibeDocument, "_id" | "_rev" | "type">): Promise<DocumentInsertResponse> {
         try {
+            const db = this.nanoInstance.use<VibeDocument>(databaseName);
             const docToInsert = { ...data, type: collection };
-            const response = await this.db.insert(docToInsert);
-            logger.info(`Document created in collection '${collection}' with ID: ${response.id}`);
+            const response = await db.insert(docToInsert);
+            logger.info(`Document created in DB '${databaseName}', collection '${collection}' with ID: ${response.id}`);
             return response;
         } catch (error) {
-            logger.error(`Error creating document in collection '${collection}':`, error);
+            logger.error(`Error creating document in DB '${databaseName}', collection '${collection}':`, error);
             throw error;
         }
     }
 
     /**
-     * Retrieves a document by its ID.
+     * Retrieves a document by its ID from the specified database.
+     * @param databaseName - The name of the database to operate on.
      * @param id - The ID of the document to retrieve.
      * @returns The document data.
      */
-    async getDocument(id: string): Promise<VibeDocument & DocumentGetResponse> {
-        if (!this.db || typeof this.db.get !== "function") {
-            throw new Error("Database connection not initialized properly.");
-        }
+    async getDocument(databaseName: string, id: string): Promise<VibeDocument & DocumentGetResponse> {
         try {
-            const document = await this.db.get(id);
-            logger.info(`Document retrieved with ID: ${id}`);
+            const db = this.nanoInstance.use<VibeDocument>(databaseName);
+            const document = await db.get(id);
+            logger.info(`Document retrieved from DB '${databaseName}' with ID: ${id}`);
             return document as VibeDocument & DocumentGetResponse;
         } catch (error: any) {
             if (error.statusCode === 404) {
-                logger.warn(`Document with ID '${id}' not found.`);
-                throw new Error(`Document with ID '${id}' not found.`); // Throwing for now
+                logger.warn(`Document with ID '${id}' not found in DB '${databaseName}'.`);
+                throw new Error(`Document with ID '${id}' not found in DB '${databaseName}'.`); // Throwing for now
             } else {
-                logger.error(`Error retrieving document with ID '${id}':`, error);
+                logger.error(`Error retrieving document with ID '${id}' from DB '${databaseName}':`, error);
                 throw error;
             }
         }
     }
 
     /**
-     * Updates an existing document. Requires the document ID and current revision (_rev).
+     * Updates an existing document in the specified database. Requires the document ID and current revision (_rev).
      * The 'collection' concept is handled by adding/updating a 'type' field.
+     * @param databaseName - The name of the database to operate on.
      * @param collection - The logical collection name (used as the 'type' field).
      * @param id - The ID of the document to update.
      * @param rev - The current revision (_rev) of the document.
      * @param data - The new data for the document.
      * @returns The CouchDB update response.
      */
-    async updateDocument(collection: string, id: string, rev: string, data: Omit<VibeDocument, "_id" | "_rev" | "type">): Promise<DocumentUpdateResponse> {
-        if (!this.db || typeof this.db.insert !== "function") {
-            throw new Error("Database connection not initialized properly.");
-        }
+    async updateDocument(
+        databaseName: string,
+        collection: string,
+        id: string,
+        rev: string,
+        data: Omit<VibeDocument, "_id" | "_rev" | "type">
+    ): Promise<DocumentUpdateResponse> {
         try {
+            const db = this.nanoInstance.use<VibeDocument>(databaseName);
             // Ensure _id and _rev are included for the update
             const docToUpdate = { ...data, _id: id, _rev: rev, type: collection };
-            const response = await this.db.insert(docToUpdate);
-            // Nano throws on error. Removed the check for response.ok and response.reason.
-            logger.info(`Document updated in collection '${collection}' with ID: ${response.id}, new rev: ${response.rev}`);
+            const response = await db.insert(docToUpdate);
+            logger.info(`Document updated in DB '${databaseName}', collection '${collection}' with ID: ${response.id}, new rev: ${response.rev}`);
             return response;
         } catch (error: any) {
             if (error.statusCode === 409) {
-                // Check specific error status code for conflicts
                 // Conflict - likely incorrect _rev
-                logger.error(`Error updating document '${id}' in collection '${collection}': Revision conflict (409).`);
-                throw new Error(`Revision conflict updating document '${id}'. Please provide the latest revision (_rev).`);
+                logger.error(`Error updating document '${id}' in DB '${databaseName}', collection '${collection}': Revision conflict (409).`);
+                throw new Error(`Revision conflict updating document '${id}' in DB '${databaseName}'. Please provide the latest revision (_rev).`);
             } else {
-                logger.error(`Error updating document '${id}' in collection '${collection}':`, error);
+                logger.error(`Error updating document '${id}' in DB '${databaseName}', collection '${collection}':`, error);
                 throw error; // Re-throw other errors
             }
         }
     }
 
     /**
-     * Deletes a document by its ID and revision (_rev).
+     * Deletes a document by its ID and revision (_rev) from the specified database.
+     * @param databaseName - The name of the database to operate on.
      * @param id - The ID of the document to delete.
      * @param rev - The current revision (_rev) of the document.
      * @returns The CouchDB destroy response.
      */
-    async deleteDocument(id: string, rev: string): Promise<DocumentDestroyResponse> {
-        if (!this.db || typeof this.db.destroy !== "function") {
-            throw new Error("Database connection not initialized properly.");
-        }
+    async deleteDocument(databaseName: string, id: string, rev: string): Promise<DocumentDestroyResponse> {
         try {
-            const response = await this.db.destroy(id, rev);
-            // Nano throws on error. Removed the check for response.ok and response.reason.
-            logger.info(`Document deleted with ID: ${id}`);
-            // The response object for destroy might be simple, ensure it matches DocumentDestroyResponse
-            // If nano throws, the catch block handles it.
-            return response as DocumentDestroyResponse; // Cast might be needed if type inference is off
+            const db = this.nanoInstance.use<VibeDocument>(databaseName);
+            const response = await db.destroy(id, rev);
+            logger.info(`Document deleted from DB '${databaseName}' with ID: ${id}`);
+            return response as DocumentDestroyResponse;
         } catch (error: any) {
             if (error.statusCode === 409) {
-                // Check specific error status code for conflicts
                 // Conflict - likely incorrect _rev
-                logger.error(`Error deleting document '${id}': Revision conflict (409).`);
-                throw new Error(`Revision conflict deleting document '${id}'. Please provide the latest revision (_rev).`);
+                logger.error(`Error deleting document '${id}' from DB '${databaseName}': Revision conflict (409).`);
+                throw new Error(`Revision conflict deleting document '${id}' from DB '${databaseName}'. Please provide the latest revision (_rev).`);
             } else if (error.statusCode === 404) {
-                logger.warn(`Document with ID '${id}' not found for deletion.`);
-                throw new Error(`Document with ID '${id}' not found for deletion.`);
+                logger.warn(`Document with ID '${id}' not found for deletion in DB '${databaseName}'.`);
+                throw new Error(`Document with ID '${id}' not found for deletion in DB '${databaseName}'.`);
             } else {
-                logger.error(`Error deleting document '${id}':`, error);
+                logger.error(`Error deleting document '${id}' from DB '${databaseName}':`, error);
                 throw error; // Re-throw other errors
             }
         }

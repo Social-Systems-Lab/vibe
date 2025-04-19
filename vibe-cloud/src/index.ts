@@ -1,9 +1,26 @@
-import { Elysia, t } from "elysia";
+import { Elysia, t, NotFoundError } from "elysia";
+import { jwt } from "@elysiajs/jwt";
 import { dataService } from "./services/data.service";
+import { authService } from "./services/auth.service"; // Import AuthService
 import { logger } from "./utils/logger";
 
-// Define a basic schema for data documents (excluding _id, _rev, type)
-const DataDocumentSchema = t.Object({}, { additionalProperties: true }); // Allow any fields for now
+// --- Schemas ---
+
+// Auth Schemas
+const AuthCredentialsSchema = t.Object({
+    email: t.String({ format: "email", error: "Invalid email format." }),
+    password: t.String({ minLength: 8, error: "Password must be at least 8 characters long." }), // Add password validation
+});
+
+// JWT Payload Schema
+const JWTPayloadSchema = t.Object({
+    userId: t.String(),
+    // Add other non-sensitive claims if needed (e.g., email, roles)
+    // email: t.String({ format: 'email' }) // Example
+});
+
+// Data Schemas
+const DataDocumentSchema = t.Object({}, { additionalProperties: true }); // Allow any fields
 
 // Define schema for update payload, requiring _rev
 const UpdateDataDocumentSchema = t.Intersect([
@@ -18,116 +35,210 @@ const DeleteParamsSchema = t.Object({
     _rev: t.String({ error: "Missing required query parameter: _rev" }),
 });
 
+// --- Environment Variable Validation ---
+const jwtSecret = process.env.JWT_SECRET;
+if (!jwtSecret) {
+    logger.error("CRITICAL: JWT_SECRET environment variable is not set.");
+    throw new Error("JWT_SECRET environment variable not configured.");
+}
+
+// --- App Initialization ---
 export const app = new Elysia()
-    .decorate("dataService", dataService) // Make service available in handlers
+    .decorate("dataService", dataService) // Make services available in handlers
+    .decorate("authService", authService)
+    .use(
+        jwt({
+            name: "jwt", // Namespace for jwt functions (e.g., context.jwt.sign)
+            secret: jwtSecret,
+            schema: JWTPayloadSchema, // Validate JWT payload structure
+            // Optionally configure expiration (e.g., expiresIn: '7d')
+        })
+    )
     .onError(({ code, error, set }) => {
-        // Log the error code
         let isHandled = false; // Flag to track if we handled it
+
+        // --- Handle Specific Auth Errors ---
+        if (error instanceof Error) {
+            if (error.message.includes("Invalid email or password")) {
+                set.status = 401; // Unauthorized
+                isHandled = true;
+                return { error: "Invalid credentials." };
+            }
+            if (error.message.includes("User registration conflict")) {
+                set.status = 409; // Conflict
+                isHandled = true;
+                return { error: "Email already registered." };
+            }
+            // Add other specific auth errors if needed
+        }
 
         // --- Handle Specific DataService Errors ---
         if (error instanceof Error) {
             if (error.message.includes("not found")) {
-                set.status = 404;
-                isHandled = true; // Mark as handled
-                return { error: "Resource not found." };
+                // Use NotFoundError for consistency if desired, or keep custom message
+                // if (error instanceof NotFoundError) { // Example using Elysia's error
+                if (error.message.includes("not found")) {
+                    set.status = 404;
+                    isHandled = true;
+                    return { error: "Resource not found." };
+                }
             }
             if (error.message.includes("Revision conflict")) {
                 set.status = 409;
-                isHandled = true; // Mark as handled
+                isHandled = true;
                 return { error: error.message };
             }
             if (error.message.includes("Database connection not initialized")) {
                 // Log this critical error regardless of environment
                 logger.error(`[${code}] Service Unavailable: ${error.message}`, error.stack);
                 set.status = 503;
-                isHandled = true; // Mark as handled
+                isHandled = true;
                 return { error: "Database service is not available." };
             }
             // Add other specific custom errors from your services here if needed
         }
+
         // --- Handle Specific Elysia Codes ---
         if (code === "VALIDATION") {
             set.status = 400;
             let details = "Invalid request body or parameters.";
+            // Extract specific validation errors if possible (depends on Elysia version/plugins)
+            // Example: if (error.errors) details = error.errors.map(e => e.message).join(', ');
             if (error instanceof Error && error.message) {
-                details = error.message;
+                details = error.message; // Use the error message provided by validation
             }
-            // Log validation errors only at WARN level
-            logger.warn(`[VALIDATION] Failed - Details: ${details}`, error);
-            isHandled = true; // Mark as handled
+            logger.warn(`[VALIDATION] Failed - Details: ${details}`, error); // Log the detailed error
+            isHandled = true;
+            // Return a user-friendly message, potentially including details
             return { error: "Validation failed", details: details };
         }
 
         if (code === "PARSE") {
             logger.warn(`[PARSE] Failed to parse request body.`, error);
             set.status = 400;
-            isHandled = true; // Mark as handled
+            isHandled = true;
             return { error: "Failed to parse request body." };
         }
 
+        // Removed the `if (code === "UNAUTHORIZED")` block as onBeforeHandle handles JWT verification failures.
+
         // --- Log ONLY if Error Was Not Handled Above ---
         if (!isHandled) {
-            // Log truly unexpected errors (like internal server errors, code UNKNOWN for unhandled exceptions)
-            logger.error(`[${code}] Unhandled Error Occurred:`, error);
+            // Log truly unexpected errors
+            logger.error(`[${code}] Unhandled Error Occurred:`, error); // Log the full error object
         }
 
         // --- Set Default Status and Return Generic Response for Unhandled ---
-        // (This part runs even for handled errors, but the response is already returned)
-        // Ensure a status code is set if it wasn't handled specifically
-        if (!set.status || Number(set.status) < 400) {
-            set.status = 500;
-        }
-        // If the error was handled, the specific return above already happened.
-        // If it wasn't handled, this provides a generic fallback response.
         if (!isHandled) {
+            // Ensure a status code is set if it wasn't handled specifically
+            if (!set.status || Number(set.status) < 400) {
+                set.status = 500; // Default to Internal Server Error
+            }
             return { error: "An internal server error occurred." };
         }
+        // If handled, the specific return above already took place.
     })
     .get("/health", () => ({ status: "ok" }))
+    // --- Authentication Routes ---
+    .group("/api/v1/auth", (group) =>
+        group
+            .post(
+                "/register",
+                async ({ authService, body, set }) => {
+                    const { email, password } = body;
+                    // AuthService handles hashing and saving, throws on error
+                    const user = await authService.registerUser(email, password);
+                    set.status = 201; // Created
+                    // Return minimal info, not the full user object from service
+                    return { message: "User registered successfully.", userId: user.userId };
+                },
+                {
+                    body: AuthCredentialsSchema,
+                    detail: { summary: "Register a new instance administrator" },
+                }
+            )
+            .post(
+                "/login",
+                async ({ authService, jwt, body, set }) => {
+                    const { email, password } = body;
+                    // AuthService handles lookup and password verification, throws on error
+                    const user = await authService.loginUser(email, password);
+                    // Generate JWT
+                    const token = await jwt.sign({ userId: user.userId /*, email: user.email */ }); // Add other claims as needed
+                    set.status = 200; // OK
+                    return { message: "Login successful.", token: token };
+                },
+                {
+                    body: AuthCredentialsSchema,
+                    detail: { summary: "Log in as instance administrator" },
+                }
+            )
+    )
+    // --- Protected Data Routes ---
     .group("/api/v1/data", (group) =>
         group
+            // Apply JWT verification middleware to all routes in this group
+            .onBeforeHandle(async ({ jwt, set, request }) => {
+                const profile = await jwt.verify(); // Verifies token from Authorization header
+                if (!profile) {
+                    set.status = 401;
+                    return { error: "Unauthorized: Invalid token." }; // Stop execution
+                }
+                // If valid, the payload (profile) is available via context.jwt
+                // We don't need to explicitly return it here, just let the request proceed
+            })
             // POST /api/v1/data/:collection - Create a document
             .post(
                 "/:collection",
-                async ({ dataService, params, body, set }) => {
+                async ({ dataService, jwt, params, body, set }) => {
                     const { collection } = params;
-                    const response = await dataService.createDocument(collection, body);
+                    // Verify token again here to get the payload (already verified by onBeforeHandle)
+                    const payload = await jwt.verify();
+                    if (!payload) throw new Error("JWT verification failed unexpectedly in handler."); // Should not happen if onBeforeHandle passed
+                    const { userId } = payload;
+                    const userDbName = `userdata-${userId}`;
+                    const response = await dataService.createDocument(userDbName, collection, body);
                     set.status = 201; // Created
                     return { id: response.id, rev: response.rev, ok: response.ok };
                 },
                 {
                     params: t.Object({ collection: t.String() }),
                     body: DataDocumentSchema,
-                    detail: { summary: "Create a document in a collection" },
+                    detail: { summary: "Create a document in a user's collection" },
                 }
             )
             // GET /api/v1/data/:collection/:id - Get a document by ID
             .get(
                 "/:collection/:id",
-                async ({ dataService, params }) => {
+                async ({ dataService, jwt, params }) => {
                     const { id } = params;
-                    // Note: Current dataService.getDocument doesn't use collection, but route includes it for structure
-                    const doc = await dataService.getDocument(id);
-                    // Remove _id and _rev from the main body for cleaner response? Optional.
-                    // const { _id, _rev, ...data } = doc;
-                    // return { id: _id, rev: _rev, data };
-                    return doc; // Return the full document for now
+                    const payload = await jwt.verify();
+                    if (!payload) throw new Error("JWT verification failed unexpectedly in handler.");
+                    const { userId } = payload;
+                    const userDbName = `userdata-${userId}`;
+                    // Collection param might be redundant if ID is globally unique within user DB, but keep for structure
+                    const doc = await dataService.getDocument(userDbName, id);
+                    return doc;
                 },
                 {
                     params: t.Object({
-                        collection: t.String(),
+                        collection: t.String(), // Keep for route structure consistency
                         id: t.String(),
                     }),
-                    detail: { summary: "Get a document by ID" },
+                    detail: { summary: "Get a document by ID from a user's collection" },
                 }
             )
             // PUT /api/v1/data/:collection/:id - Update a document
             .put(
                 "/:collection/:id",
-                async ({ dataService, params, body, set }) => {
+                async ({ dataService, jwt, params, body, set }) => {
                     const { collection, id } = params;
-                    const { _rev, ...dataToUpdate } = body; // Extract _rev from body
-                    const response = await dataService.updateDocument(collection, id, _rev, dataToUpdate);
+                    const payload = await jwt.verify();
+                    if (!payload) throw new Error("JWT verification failed unexpectedly in handler.");
+                    const { userId } = payload;
+                    const userDbName = `userdata-${userId}`;
+                    const { _rev, ...dataToUpdate } = body;
+                    const response = await dataService.updateDocument(userDbName, collection, id, _rev, dataToUpdate);
                     set.status = 200; // OK
                     return { id: response.id, rev: response.rev, ok: response.ok };
                 },
@@ -136,19 +247,22 @@ export const app = new Elysia()
                         collection: t.String(),
                         id: t.String(),
                     }),
-                    body: UpdateDataDocumentSchema, // Use schema that requires _rev
-                    detail: { summary: "Update a document by ID (requires _rev in body)" },
+                    body: UpdateDataDocumentSchema,
+                    detail: { summary: "Update a document by ID in a user's collection (requires _rev in body)" },
                 }
             )
             // DELETE /api/v1/data/:collection/:id?_rev=... - Delete a document
             .delete(
                 "/:collection/:id",
-                async ({ dataService, params, query, set }) => {
+                async ({ dataService, jwt, params, query, set }) => {
                     const { id } = params;
-                    const { _rev } = query; // Get _rev from query parameters
-                    const response = await dataService.deleteDocument(id, _rev);
-                    set.status = 200; // OK (or 204 No Content)
-                    // Return minimal response or just status code
+                    const payload = await jwt.verify();
+                    if (!payload) throw new Error("JWT verification failed unexpectedly in handler.");
+                    const { userId } = payload;
+                    const userDbName = `userdata-${userId}`;
+                    const { _rev } = query;
+                    const response = await dataService.deleteDocument(userDbName, id, _rev);
+                    set.status = 200; // OK
                     return { ok: response.ok };
                 },
                 {
