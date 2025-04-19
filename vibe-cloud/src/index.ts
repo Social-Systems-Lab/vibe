@@ -49,7 +49,7 @@ export const app = new Elysia()
     .use(
         jwt({
             name: "jwt", // Namespace for jwt functions (e.g., context.jwt.sign)
-            secret: jwtSecret,
+            secret: process.env.JWT_SECRET!, // Explicitly read env var here
             schema: JWTPayloadSchema, // Validate JWT payload structure
             // Optionally configure expiration (e.g., expiresIn: '7d')
         })
@@ -164,6 +164,7 @@ export const app = new Elysia()
                     // AuthService handles lookup and password verification, throws on error
                     const user = await authService.loginUser(email, password);
                     // Generate JWT
+                    // logger.log(`Secret used for SIGNING: ${process.env.JWT_SECRET?.substring(0, 5)}...`); // Logging removed
                     const token = await jwt.sign({ userId: user.userId /*, email: user.email */ }); // Add other claims as needed
                     set.status = 200; // OK
                     return { message: "Login successful.", token: token };
@@ -177,25 +178,51 @@ export const app = new Elysia()
     // --- Protected Data Routes ---
     .group("/api/v1/data", (group) =>
         group
-            // Apply JWT verification middleware to all routes in this group
-            .onBeforeHandle(async ({ jwt, set, request }) => {
-                const profile = await jwt.verify(); // Verifies token from Authorization header
-                if (!profile) {
+            .derive(async ({ jwt, request: { headers } }) => {
+                const authHeader = headers.get("authorization");
+                if (!authHeader || !authHeader.startsWith("Bearer ")) {
+                    // No token provided
+                    return { user: null };
+                }
+
+                const token = authHeader.substring(7); // Extract token after "Bearer "
+
+                try {
+                    // Verify the token using the jwt instance
+                    const payload = await jwt.verify(token);
+                    if (!payload) {
+                        // Verification failed (e.g., invalid signature, expired)
+                        return { user: null };
+                    }
+                    // Ensure the payload matches the expected schema (contains userId)
+                    // The jwt plugin already validates against JWTPayloadSchema on verify
+                    // if successful, payload should conform.
+                    return { user: payload as { userId: string } }; // Add payload as 'user' to context
+                } catch (error) {
+                    // Log the error for debugging if needed
+                    // logger.warn("JWT verification error:", error.message);
+                    // Token verification failed (invalid format, expired, etc.)
+                    return { user: null };
+                }
+            })
+            // This onBeforeHandle now correctly checks the 'user' property populated by derive
+            .onBeforeHandle(({ user, set }) => {
+                // Check the derived user property
+                if (!user) {
                     set.status = 401;
+                    // Match the error message expected by the tests
                     return { error: "Unauthorized: Invalid token." }; // Stop execution
                 }
-                // If valid, the payload (profile) is available via context.jwt
-                // We don't need to explicitly return it here, just let the request proceed
+                // If 'user' exists, the request is authorized, proceed to the handler
             })
             // POST /api/v1/data/:collection - Create a document
             .post(
                 "/:collection",
-                async ({ dataService, jwt, params, body, set }) => {
+                async ({ dataService, user, params, body, set }) => {
+                    // Access derived user
                     const { collection } = params;
-                    // Verify token again here to get the payload (already verified by onBeforeHandle)
-                    const payload = await jwt.verify();
-                    if (!payload) throw new Error("JWT verification failed unexpectedly in handler."); // Should not happen if onBeforeHandle passed
-                    const { userId } = payload;
+                    if (!user) throw new Error("User context missing after verification."); // Should not happen if onBeforeHandle passed
+                    const { userId } = user; // Access userId from derived user
                     const userDbName = `userdata-${userId}`;
                     const response = await dataService.createDocument(userDbName, collection, body);
                     set.status = 201; // Created
@@ -210,11 +237,12 @@ export const app = new Elysia()
             // GET /api/v1/data/:collection/:id - Get a document by ID
             .get(
                 "/:collection/:id",
-                async ({ dataService, jwt, params }) => {
+                async ({ dataService, user, params }) => {
+                    // Correctly using 'user' from derive
+                    // Access derived user
                     const { id } = params;
-                    const payload = await jwt.verify();
-                    if (!payload) throw new Error("JWT verification failed unexpectedly in handler.");
-                    const { userId } = payload;
+                    if (!user) throw new Error("User context missing after verification."); // Check derived user
+                    const { userId } = user; // Access userId from derived user
                     const userDbName = `userdata-${userId}`;
                     // Collection param might be redundant if ID is globally unique within user DB, but keep for structure
                     const doc = await dataService.getDocument(userDbName, id);
@@ -231,11 +259,12 @@ export const app = new Elysia()
             // PUT /api/v1/data/:collection/:id - Update a document
             .put(
                 "/:collection/:id",
-                async ({ dataService, jwt, params, body, set }) => {
+                async ({ dataService, user, params, body, set }) => {
+                    // Correctly using 'user' from derive
+                    // Access derived user
                     const { collection, id } = params;
-                    const payload = await jwt.verify();
-                    if (!payload) throw new Error("JWT verification failed unexpectedly in handler.");
-                    const { userId } = payload;
+                    if (!user) throw new Error("User context missing after verification."); // Check derived user
+                    const { userId } = user; // Access userId from derived user
                     const userDbName = `userdata-${userId}`;
                     const { _rev, ...dataToUpdate } = body;
                     const response = await dataService.updateDocument(userDbName, collection, id, _rev, dataToUpdate);
@@ -254,11 +283,12 @@ export const app = new Elysia()
             // DELETE /api/v1/data/:collection/:id?_rev=... - Delete a document
             .delete(
                 "/:collection/:id",
-                async ({ dataService, jwt, params, query, set }) => {
+                async ({ dataService, user, params, query, set }) => {
+                    // Correctly using 'user' from derive
+                    // Access derived user
                     const { id } = params;
-                    const payload = await jwt.verify();
-                    if (!payload) throw new Error("JWT verification failed unexpectedly in handler.");
-                    const { userId } = payload;
+                    if (!user) throw new Error("User context missing after verification."); // Check derived user
+                    const { userId } = user; // Access userId from derived user
                     const userDbName = `userdata-${userId}`;
                     const { _rev } = query;
                     const response = await dataService.deleteDocument(userDbName, id, _rev);

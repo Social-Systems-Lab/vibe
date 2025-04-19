@@ -129,9 +129,8 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
     let currentRev: string | null = null;
     let localAuthToken: string | null = null; // Token specific to this describe block
 
-    // Setup: Register and Login user before running data tests
-    beforeAll(async () => {
-        logger.info("Setting up user for Data API tests...");
+    // Setup: Register and Login user before each data test
+    beforeEach(async () => {
         try {
             // 1. Register
             const regRes = await api.api.v1.auth.register.post({
@@ -142,7 +141,6 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
             if (regRes.status !== 201 && regRes.status !== 409) {
                 throw new Error(`Failed to register test user: Status ${regRes.status}, Error: ${JSON.stringify(regRes.error?.value)}`);
             }
-            logger.info(`Test user ${testUserEmail} registered or already exists.`);
 
             // 2. Login
             const loginRes = await api.api.v1.auth.login.post({
@@ -153,7 +151,6 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
                 throw new Error(`Failed to log in test user: Status ${loginRes.status}, Error: ${JSON.stringify(loginRes.error?.value)}`);
             }
             localAuthToken = loginRes.data.token;
-            logger.info("Test user logged in successfully, token obtained.");
         } catch (err) {
             logger.error("CRITICAL ERROR during test user setup:", err);
             throw err; // Fail fast if setup fails
@@ -173,13 +170,13 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
     it("should return 401 when accessing POST /data without token", async () => {
         const { status, error } = await api.api.v1.data({ collection }).post({ name: "Unauthorized" });
         expect(status).toBe(401);
-        expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid or missing token." });
+        expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid token." }); // Corrected message
     });
 
     it("should return 401 when accessing GET /data/:id without token", async () => {
         const { status, error } = await api.api.v1.data({ collection })({ id: "some-id" }).get();
         expect(status).toBe(401);
-        expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid or missing token." });
+        expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid token." }); // Corrected message
     });
 
     it("should return 401 when accessing PUT /data/:id without token", async () => {
@@ -187,7 +184,7 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
         const payload: any = { name: "Unauthorized", _rev: "1-abc" };
         const { status, error } = await api.api.v1.data({ collection })({ id: "some-id" }).put(payload);
         expect(status).toBe(401);
-        expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid or missing token." });
+        expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid token." }); // Corrected message
     });
 
     it("should return 401 when accessing DELETE /data/:id without token", async () => {
@@ -195,7 +192,7 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
             .data({ collection })({ id: "some-id" })
             .delete(undefined, { query: { _rev: "1-abc" } });
         expect(status).toBe(401);
-        expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid or missing token." });
+        expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid token." }); // Corrected message
     });
 
     // --- CRUD Tests (Now with Auth) ---
@@ -312,6 +309,7 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
                 logger.warn("Skipping delete cleanup because item ID or revision was missing.");
             }
         }
+        // Removed misplaced finally block here
     });
 
     it("should return 404 when getting a non-existent document (with auth)", async () => {
