@@ -12,14 +12,14 @@ const { ctx, cleanup } = await createTestCtx();
 const { api, userId: testUserId, token: authToken } = ctx;
 let testUserPermissionsRev = ctx.permsRev;
 
-beforeAll(async () => {
-    listener = app.listen(0);
-    await Bun.sleep(10);
-});
+// beforeAll(async () => {
+//     listener = app.listen(0);
+//     await Bun.sleep(10);
+// });
 
 afterAll(async () => {
     socket?.close();
-    listener.server?.stop();
+    //listener.server?.stop();
     await cleanup(); // delete this test user
 });
 
@@ -46,7 +46,8 @@ describe("Real‑time sync over WebSockets", () => {
         testUserPermissionsRev = rev;
 
         // open WS once the server is running
-        const wsUrl = `ws://127.0.0.1:${listener.server!.port}/ws?token=${authToken}`;
+        //const wsUrl = `ws://127.0.0.1:${listener.server!.port}/ws?token=${authToken}`;
+        const wsUrl = `ws://127.0.0.1:3000/ws?token=${authToken}`;
         console.log(`Attempting to connect WebSocket to: ${wsUrl}`); // Log URL
         socket = new WebSocket(wsUrl);
 

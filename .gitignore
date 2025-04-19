@@ -5,7 +5,6 @@
 /.pnp
 .pnp.*
 .yarn/*
-bun.lockb # Bun lockfile
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases

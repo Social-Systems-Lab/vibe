@@ -3,7 +3,7 @@
     "module": "src/index.ts",
     "type": "module",
     "scripts": {
-        "start": "bun run src/index.ts",
+        "start": "cross-env NODE_ENV=development COUCHDB_URL=http://127.0.0.1:5984 bun run src/index.ts",
         "test": "cross-env NODE_ENV=test COUCHDB_URL=http://127.0.0.1:5984 bun test"
     },
     "devDependencies": {
