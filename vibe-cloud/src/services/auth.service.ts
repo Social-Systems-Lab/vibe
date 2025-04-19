@@ -17,17 +17,55 @@ interface UserDocument {
 const USERS_DB_NAME = "vibe_users";
 
 export class AuthService {
+    private nanoInstance: nano.ServerScope; // Store nano instance
+
     constructor() {
+        // Initialize nano instance for the service
+        const couchdbUrl = process.env.COUCHDB_URL;
+        const couchdbUser = process.env.COUCHDB_USER;
+        const couchdbPassword = process.env.COUCHDB_PASSWORD;
+
+        if (!couchdbUrl || !couchdbUser || !couchdbPassword) {
+            logger.error("CRITICAL: CouchDB environment variables (COUCHDB_URL, COUCHDB_USER, COUCHDB_PASSWORD) are not set for AuthService.");
+            throw new Error("CouchDB environment variables not configured for AuthService.");
+        }
+
+        try {
+            this.nanoInstance = nano({
+                url: couchdbUrl,
+                requestDefaults: {
+                    auth: {
+                        username: couchdbUser,
+                        password: couchdbPassword,
+                    },
+                },
+            });
+        } catch (error) {
+            logger.error("Failed to initialize Nano instance in AuthService:", error);
+            throw new Error("Failed to initialize Nano instance in AuthService.");
+        }
+
         // Ensure the users database exists when the service is instantiated
         this.ensureUsersDbExists().catch((err) => {
             logger.error("Failed to ensure users DB exists on AuthService startup:", err);
-            // Depending on the desired behavior, we might want to exit the process
-            // process.exit(1);
+            // process.exit(1); // Optional: exit if DB setup fails critically
         });
     }
 
     private async ensureUsersDbExists(): Promise<void> {
-        await dataService.ensureDbExists(USERS_DB_NAME);
+        // Use dataService's method which uses its own nano instance
+        // Or replicate the logic here using this.nanoInstance
+        try {
+            await this.nanoInstance.db.get(USERS_DB_NAME);
+        } catch (error: any) {
+            if (error.statusCode === 404) {
+                await this.nanoInstance.db.create(USERS_DB_NAME);
+                logger.info(`Database '${USERS_DB_NAME}' created by AuthService.`);
+            } else {
+                logger.error(`Error checking database '${USERS_DB_NAME}' in AuthService:`, error);
+                throw error;
+            }
+        }
     }
 
     /**
@@ -43,10 +81,7 @@ export class AuthService {
         // 1. Check if user already exists (by email) - Inefficient, replace with view/query later
         logger.warn("Inefficient user lookup: Fetching all users to check for existing email during registration. Replace with view/query.");
         try {
-            const db = nano({
-                url: process.env.COUCHDB_URL!,
-                requestDefaults: { auth: { username: process.env.COUCHDB_USER!, password: process.env.COUCHDB_PASSWORD! } },
-            }).use<UserDocument>(USERS_DB_NAME);
+            const db = this.nanoInstance.use<UserDocument>(USERS_DB_NAME);
             const allUsersResponse: DocumentListResponse<UserDocument> = await db.list({ include_docs: true });
             const existingUser = allUsersResponse.rows
                 .map((row: { doc?: UserDocument }) => row.doc)
@@ -153,10 +188,7 @@ export class AuthService {
         logger.warn("Inefficient user lookup: Fetching all users to find by email. Replace with view/query.");
         let foundUser: (UserDocument & { _id: string; _rev: string }) | null = null;
         try {
-            const db = nano({
-                url: process.env.COUCHDB_URL!,
-                requestDefaults: { auth: { username: process.env.COUCHDB_USER!, password: process.env.COUCHDB_PASSWORD! } },
-            }).use<UserDocument>(USERS_DB_NAME);
+            const db = this.nanoInstance.use<UserDocument>(USERS_DB_NAME);
             // Explicitly type the response if needed, though nano types should infer it
             const allUsersResponse: DocumentListResponse<UserDocument> = await db.list({ include_docs: true });
             // Add types for row and doc
@@ -194,6 +226,45 @@ export class AuthService {
         // 3. Return user info (excluding password)
         const { hashedPassword, ...userInfo } = foundUser;
         return userInfo;
+    }
+
+    /**
+     * Deletes a user and their associated data database.
+     * Primarily intended for testing/cleanup. Use with caution in production.
+     * @param userId - The application-specific unique ID of the user to delete.
+     */
+    async deleteUser(userId: string): Promise<void> {
+        logger.info(`Attempting to delete user with userId: ${userId}`);
+        const userDocId = `user:${userId}`;
+        const userDbName = `userdata-${userId}`;
+
+        // 1. Delete the user document from USERS_DB_NAME
+        try {
+            const usersDb = this.nanoInstance.use<UserDocument>(USERS_DB_NAME);
+            // Need to get the revision first
+            const userDoc = await usersDb.get(userDocId);
+            await usersDb.destroy(userDocId, userDoc._rev);
+            logger.info(`Successfully deleted user document '${userDocId}' from '${USERS_DB_NAME}'.`);
+        } catch (error: any) {
+            if (error.statusCode === 404) {
+                logger.warn(`User document '${userDocId}' not found in '${USERS_DB_NAME}' during deletion (might already be deleted).`);
+            } else {
+                // Log other errors but proceed to try deleting the data DB
+                logger.error(`Error deleting user document '${userDocId}' from '${USERS_DB_NAME}':`, error.message || error);
+            }
+        }
+
+        // 2. Delete the user's data database
+        try {
+            await this.nanoInstance.db.destroy(userDbName);
+            logger.info(`Successfully deleted user data database '${userDbName}'.`);
+        } catch (error: any) {
+            if (error.statusCode === 404) {
+                logger.warn(`User data database '${userDbName}' not found during deletion (might already be deleted).`);
+            } else {
+                logger.error(`Error deleting user data database '${userDbName}':`, error.message || error);
+            }
+        }
     }
 }
 

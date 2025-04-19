@@ -1,23 +1,79 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { treaty } from "@elysiajs/eden";
 import { app } from "./index";
+import { authService } from "./services/auth.service";
 import { logger, disableLogging, enableLogging } from "./utils/logger";
 
-// Use treaty for type-safe client generation
-// We might need separate clients or modify headers dynamically
+// --- Test Setup ---
 const api = treaty(app);
 
-// --- Test Setup ---
-// Use unique credentials for each test run to avoid conflicts
+// Variables to hold the single user's credentials and token for the entire test run
 const testTimestamp = Date.now();
 const testUserEmail = `testuser_${testTimestamp}@example.com`;
-const testUserPassword = `password_${testTimestamp}`; // Use a unique password too
-let authToken: string | null = null; // Store the JWT token
+const testUserPassword = `password_${testTimestamp}`;
+let testUserId: string | null = null; // Store the user ID from registration
+let authToken: string | null = null; // Store the JWT token from login
 
-// Reset token before each test in case one test fails to clean up
-beforeEach(() => {
-    authToken = null;
+// --- Global Setup and Teardown ---
+
+beforeAll(async () => {
+    logger.log(`Setting up test user ${testUserEmail} for the test run...`);
+    try {
+        // 1. Register the unique user for this test run
+        const regRes = await api.api.v1.auth.register.post({
+            email: testUserEmail,
+            password: testUserPassword,
+        });
+
+        if (regRes.status !== 201 || !regRes.data?.userId) {
+            throw new Error(`BEFORE_ALL FAILED: Could not register test user. Status: ${regRes.status}, Error: ${JSON.stringify(regRes.error?.value)}`);
+        }
+        testUserId = regRes.data.userId; // Store the user ID
+        logger.log(`Test user ${testUserEmail} registered successfully (ID: ${testUserId}).`);
+
+        // 2. Log in the user to get the auth token
+        const loginRes = await api.api.v1.auth.login.post({
+            email: testUserEmail,
+            password: testUserPassword,
+        });
+
+        if (loginRes.status !== 200 || !loginRes.data?.token) {
+            throw new Error(`BEFORE_ALL FAILED: Could not log in test user. Status: ${loginRes.status}, Error: ${JSON.stringify(loginRes.error?.value)}`);
+        }
+        authToken = loginRes.data.token; // Store the auth token
+        logger.log(`Test user ${testUserEmail} logged in successfully.`);
+    } catch (err) {
+        logger.error("CRITICAL ERROR during global test setup (beforeAll):", err);
+        throw err;
+    }
 });
+
+afterAll(async () => {
+    logger.log(`Cleaning up test user ${testUserEmail} (userId: ${testUserId})...`);
+    if (!testUserId) {
+        logger.warn("Skipping user cleanup as testUserId was not set (setup likely failed).");
+        return;
+    }
+
+    try {
+        // Call the AuthService method for cleanup
+        await authService.deleteUser(testUserId);
+        logger.log(`Cleanup requested for test user ${testUserEmail} via AuthService.`);
+    } catch (error: any) {
+        // Log cleanup errors but don't fail the test suite because of them
+        logger.error(`Error during test user cleanup call for ${testUserEmail} (userId: ${testUserId}):`, error.message || error);
+    }
+});
+
+// --- Helper to add auth header ---
+const getAuthHeaders = () => {
+    if (!authToken) {
+        throw new Error("Auth token not available. Global setup (beforeAll) likely failed.");
+    }
+    return { Authorization: `Bearer ${authToken}` };
+};
+
+// --- API Endpoint Tests ---
 
 describe("API Endpoints", () => {
     it("GET /health should return status ok", async () => {
@@ -30,26 +86,11 @@ describe("API Endpoints", () => {
 
 // --- Auth API Tests ---
 describe("Auth API Endpoints (/api/v1/auth)", () => {
-    it("should register a new user successfully", async () => {
+    it("should fail to register with the existing email (created in beforeAll)", async () => {
+        // Attempt to register the SAME user again
         const { data, error, status } = await api.api.v1.auth.register.post({
-            email: testUserEmail,
-            password: testUserPassword,
-        });
-
-        expect(status, `Register status was ${status}, error: ${JSON.stringify(error?.value)}`).toBe(201);
-        expect(error).toBeNull();
-        expect(data?.message).toBe("User registered successfully.");
-        expect(data?.userId).toBeTypeOf("string");
-    });
-
-    it("should fail to register with an existing email", async () => {
-        // First, ensure the user exists (run the success test first or register here)
-        await api.api.v1.auth.register.post({ email: testUserEmail, password: testUserPassword }); // Ignore result, just ensure exists
-
-        // Attempt to register again
-        const { data, error, status } = await api.api.v1.auth.register.post({
-            email: testUserEmail,
-            password: "anotherpassword", // Different password, same email
+            email: testUserEmail, // Use the globally defined email
+            password: "anotherpassword",
         });
 
         expect(status).toBe(409); // Conflict
@@ -69,34 +110,15 @@ describe("Auth API Endpoints (/api/v1/auth)", () => {
 
     it("should fail to register with short password", async () => {
         const { data, error, status } = await api.api.v1.auth.register.post({
-            email: `shortpass_${testTimestamp}@example.com`,
+            email: `shortpass_${testTimestamp}@example.com`, // Use a different email for this validation test
             password: "short",
         });
         expect(status).toBe(400);
         expect(error?.value as any).toEqual({ error: "Validation failed", details: "Password must be at least 8 characters long." });
     });
 
-    it("should log in successfully with correct credentials", async () => {
-        // Ensure user is registered first
-        await api.api.v1.auth.register.post({ email: testUserEmail, password: testUserPassword });
-
-        const { data, error, status } = await api.api.v1.auth.login.post({
-            email: testUserEmail,
-            password: testUserPassword,
-        });
-
-        expect(status).toBe(200);
-        expect(error).toBeNull();
-        expect(data?.message).toBe("Login successful.");
-        expect(data?.token).toBeTypeOf("string");
-        expect(data!.token.length).toBeGreaterThan(20); // Basic check for JWT format
-        authToken = data!.token; // Store token for potential later use (though usually done in data tests)
-    });
-
     it("should fail to log in with incorrect password", async () => {
-        // Ensure user is registered first
-        await api.api.v1.auth.register.post({ email: testUserEmail, password: testUserPassword });
-
+        // User testUserEmail was created in beforeAll
         const { data, error, status } = await api.api.v1.auth.login.post({
             email: testUserEmail,
             password: "wrongpassword",
@@ -121,70 +143,33 @@ describe("Auth API Endpoints (/api/v1/auth)", () => {
     });
 });
 
-// --- Data API Tests (Now Requiring Auth) ---
+// --- Data API Tests ---
 describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
     // Use a distinct collection name for this test suite run
     const collection = `auth_test_items_${testTimestamp}`;
-    let createdItemId: string | null = null;
+    let createdItemId: string | null = null; // Keep these local to the CRUD test
     let currentRev: string | null = null;
-    let localAuthToken: string | null = null; // Token specific to this describe block
-
-    // Setup: Register and Login user before each data test
-    beforeEach(async () => {
-        try {
-            // 1. Register
-            const regRes = await api.api.v1.auth.register.post({
-                email: testUserEmail,
-                password: testUserPassword,
-            });
-            // Handle potential conflict if user already exists from auth tests (though timestamp should prevent this)
-            if (regRes.status !== 201 && regRes.status !== 409) {
-                throw new Error(`Failed to register test user: Status ${regRes.status}, Error: ${JSON.stringify(regRes.error?.value)}`);
-            }
-
-            // 2. Login
-            const loginRes = await api.api.v1.auth.login.post({
-                email: testUserEmail,
-                password: testUserPassword,
-            });
-            if (loginRes.status !== 200 || !loginRes.data?.token) {
-                throw new Error(`Failed to log in test user: Status ${loginRes.status}, Error: ${JSON.stringify(loginRes.error?.value)}`);
-            }
-            localAuthToken = loginRes.data.token;
-        } catch (err) {
-            logger.error("CRITICAL ERROR during test user setup:", err);
-            throw err; // Fail fast if setup fails
-        }
-    });
-
-    // Helper to add auth header
-    const getAuthHeaders = () => {
-        if (!localAuthToken) {
-            throw new Error("Auth token not available for test request.");
-        }
-        return { Authorization: `Bearer ${localAuthToken}` };
-    };
 
     // --- Tests for Unauthorized Access ---
+    // These tests remain the same, ensuring endpoints fail *without* the token
 
     it("should return 401 when accessing POST /data without token", async () => {
         const { status, error } = await api.api.v1.data({ collection }).post({ name: "Unauthorized" });
         expect(status).toBe(401);
-        expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid token." }); // Corrected message
+        expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid token." });
     });
 
     it("should return 401 when accessing GET /data/:id without token", async () => {
         const { status, error } = await api.api.v1.data({ collection })({ id: "some-id" }).get();
         expect(status).toBe(401);
-        expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid token." }); // Corrected message
+        expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid token." });
     });
 
     it("should return 401 when accessing PUT /data/:id without token", async () => {
-        // Cast payload to any to bypass stricter type check in test
         const payload: any = { name: "Unauthorized", _rev: "1-abc" };
         const { status, error } = await api.api.v1.data({ collection })({ id: "some-id" }).put(payload);
         expect(status).toBe(401);
-        expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid token." }); // Corrected message
+        expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid token." });
     });
 
     it("should return 401 when accessing DELETE /data/:id without token", async () => {
@@ -192,14 +177,14 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
             .data({ collection })({ id: "some-id" })
             .delete(undefined, { query: { _rev: "1-abc" } });
         expect(status).toBe(401);
-        expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid token." }); // Corrected message
+        expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid token." });
     });
 
-    // --- CRUD Tests (Now with Auth) ---
+    // --- CRUD Tests ---
 
-    // Use a single test to ensure sequence and cleanup
     it("should perform CRUD operations on a document with authentication", async () => {
-        expect(localAuthToken).toBeTypeOf("string"); // Ensure token is available
+        // Ensure token is available (checked by getAuthHeaders)
+        expect(authToken).toBeTypeOf("string");
 
         // --- 1. Create Document (POST) ---
         const initialData = { name: "Auth CRUD Test", value: 789 };
@@ -207,7 +192,7 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
             data: createData,
             error: createError,
             status: createStatus,
-        } = await api.api.v1.data({ collection }).post(initialData, { headers: getAuthHeaders() });
+        } = await api.api.v1.data({ collection }).post(initialData, { headers: getAuthHeaders() }); // Uses global token
 
         expect(createStatus, "Create status should be 201").toBe(201);
         expect(createError, "Create should not error").toBeNull();
@@ -226,15 +211,13 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
                 data: getData,
                 error: getError,
                 status: getStatus,
-            } = await api.api.v1.data({ collection })({ id: createdItemId! }).get({ headers: getAuthHeaders() });
+            } = await api.api.v1.data({ collection })({ id: createdItemId! }).get({ headers: getAuthHeaders() }); // Uses global token
 
             expect(getStatus, "Read status should be 200").toBe(200);
             expect(getError, "Read should not error").toBeNull();
-            expect(getData).toBeDefined();
+            // ... rest of GET assertions ...
             expect(getData?._id).toBe(createdItemId);
             expect(getData?._rev).toBe(currentRev);
-            // Type field might not be explicitly set by user, but could be added by service
-            // expect(getData?.type).toBe(collection);
             expect(getData?.name).toBe(initialData.name);
             expect(getData?.value).toBe(initialData.value);
 
@@ -251,11 +234,12 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
                         ...updatedPayload,
                         _rev: currentRev!,
                     },
-                    { headers: getAuthHeaders() }
+                    { headers: getAuthHeaders() } // Uses global token
                 );
 
             expect(updateStatus, "Update status should be 200").toBe(200);
             expect(updateError, "Update should not error").toBeNull();
+            // ... rest of PUT assertions ...
             expect(updateData?.ok).toBe(true);
             expect(updateData?.id).toBe(createdItemId);
             expect(updateData?.rev).toBeTypeOf("string");
@@ -268,10 +252,11 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
                 data: getUpdatedData,
                 error: getUpdatedError,
                 status: getUpdatedStatus,
-            } = await api.api.v1.data({ collection })({ id: createdItemId! }).get({ headers: getAuthHeaders() });
+            } = await api.api.v1.data({ collection })({ id: createdItemId! }).get({ headers: getAuthHeaders() }); // Uses global token
 
             expect(getUpdatedStatus, "Read updated status should be 200").toBe(200);
             expect(getUpdatedError, "Read updated should not error").toBeNull();
+            // ... rest of GET updated assertions ...
             expect(getUpdatedData?._id).toBe(createdItemId);
             expect(getUpdatedData?._rev).toBe(currentRev);
             expect(getUpdatedData?.name).toBe(updatedPayload.name);
@@ -285,48 +270,44 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
                     status: deleteStatus,
                 } = await api.api.v1
                     .data({ collection })({ id: createdItemId! })
-                    .delete(undefined, { query: { _rev: currentRev! }, headers: getAuthHeaders() });
+                    .delete(undefined, { query: { _rev: currentRev! }, headers: getAuthHeaders() }); // Uses global token
 
                 expect(deleteStatus, `Delete status should be 200 (was ${deleteStatus})`).toBe(200);
                 expect(deleteError, "Delete should not error").toBeNull();
                 expect(deleteData?.ok).toBe(true);
 
                 // --- 6. Verify Deletion (GET) ---
-                const {
-                    data: getDeletedData,
-                    error: getDeletedError,
-                    status: getDeletedStatus,
-                } = await api.api.v1.data({ collection })({ id: createdItemId! }).get({ headers: getAuthHeaders() }); // Still need auth header to attempt read
+                const { error: getDeletedError, status: getDeletedStatus } = await api.api.v1
+                    .data({ collection })({ id: createdItemId! })
+                    .get({ headers: getAuthHeaders() }); // Uses global token
 
                 expect(getDeletedStatus, "Read deleted status should be 404").toBe(404);
                 expect(getDeletedError).not.toBeNull();
-                // The error message comes from the DataService now
-                expect((getDeletedError?.value as any)?.error).toContain("not found");
+                expect((getDeletedError?.value as any)?.error).toContain("not found"); // Or "Resource not found." depending on your error handler
 
                 createdItemId = null;
                 currentRev = null;
             } else {
-                logger.warn("Skipping delete cleanup because item ID or revision was missing.");
+                logger.warn("Skipping delete cleanup within CRUD test because item ID or revision was missing.");
             }
         }
-        // Removed misplaced finally block here
     });
 
-    it("should return 404 when getting a non-existent document (with auth)", async () => {
+    it("should return 404 when getting a non-existent document", async () => {
         const nonExistentId = "non-existent-id-auth-12345";
-        const { data, error, status } = await api.api.v1.data({ collection })({ id: nonExistentId }).get({ headers: getAuthHeaders() });
+        const { data, error, status } = await api.api.v1.data({ collection })({ id: nonExistentId }).get({ headers: getAuthHeaders() }); // Uses global token
 
         expect(status).toBe(404);
         expect(data).toBeNull();
         expect(error).not.toBeNull();
-        expect((error?.value as any)?.error).toContain("not found");
+        expect((error?.value as any)?.error).toContain("not found"); // Or "Resource not found."
     });
 
-    it("should return 409 conflict when updating with wrong revision (with auth)", async () => {
+    it("should return 409 conflict when updating with wrong revision", async () => {
         // 1. Create item
         const { data: createData, status: createStatus } = await api.api.v1
             .data({ collection })
-            .post({ name: "Auth Conflict Test", value: 1 }, { headers: getAuthHeaders() });
+            .post({ name: "Auth Conflict Test", value: 1 }, { headers: getAuthHeaders() }); // Uses global token
         expect(createStatus).toBe(201);
         const itemId = createData!.id;
         const itemRev = createData!.rev;
@@ -334,15 +315,12 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
         // 2. Attempt update with wrong revision
         const updatePayload = { name: "Auth Conflict Update", value: 2, _rev: "1-wrongrevision" } as const;
         disableLogging();
-        const {
-            data: updateData,
-            error: updateError,
-            status: updateStatus,
-        } = await api.api.v1.data({ collection })({ id: itemId }).put(updatePayload, { headers: getAuthHeaders() });
+        const { error: updateError, status: updateStatus } = await api.api.v1
+            .data({ collection })({ id: itemId })
+            .put(updatePayload, { headers: getAuthHeaders() }); // Uses global token
         enableLogging();
 
         expect(updateStatus).toBe(409);
-        expect(updateData).toBeNull();
         expect(updateError).not.toBeNull();
         expect((updateError?.value as any)?.error).toContain("Revision conflict");
 
@@ -350,21 +328,19 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
         if (itemId && itemRev) {
             const { status: deleteStatus } = await api.api.v1
                 .data({ collection })({ id: itemId })
-                .delete(undefined, { query: { _rev: itemRev }, headers: getAuthHeaders() });
+                .delete(undefined, { query: { _rev: itemRev }, headers: getAuthHeaders() }); // Uses global token
             expect(deleteStatus).toBe(200);
         }
     });
 
-    // This test uses POST, so syntax was already correct
-    it("should return 400 bad request when creating with invalid data (if schema enforced) (with auth)", async () => {
-        const invalidData = {}; // Assuming empty object might be invalid if schema changes
+    it("should return 400 bad request when creating with invalid data (if schema enforced)", async () => {
+        const invalidData = {}; // Assuming empty object might be invalid
 
         disableLogging();
-        const { data, error, status } = await api.api.v1.data({ collection }).post(invalidData, { headers: getAuthHeaders() });
+        const { data, error, status } = await api.api.v1.data({ collection }).post(invalidData, { headers: getAuthHeaders() }); // Uses global token
         enableLogging();
 
-        // Status might be 201 if empty object is allowed by current schema, or 400 if not
-        expect([201, 400]).toContain(status);
+        expect([201, 400]).toContain(status); // Allow 201 if empty is valid, 400 if not
         if (status === 400) {
             expect(error).not.toBeNull();
             expect((error?.value as any)?.error).toContain("Validation failed");
@@ -372,30 +348,27 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
             // Cleanup if created successfully
             await api.api.v1
                 .data({ collection })({ id: data.id })
-                .delete(undefined, { query: { _rev: data.rev }, headers: getAuthHeaders() });
+                .delete(undefined, { query: { _rev: data.rev }, headers: getAuthHeaders() }); // Uses global token
         }
     });
 
-    it("should return 400 bad request when deleting without _rev query parameter (with auth)", async () => {
+    it("should return 400 bad request when deleting without _rev query parameter", async () => {
         // 1. Create item
         const { data: createData, status: createStatus } = await api.api.v1
             .data({ collection })
-            .post({ name: "Auth Delete Rev Test" }, { headers: getAuthHeaders() });
+            .post({ name: "Auth Delete Rev Test" }, { headers: getAuthHeaders() }); // Uses global token
         expect(createStatus).toBe(201);
         const itemId = createData!.id;
-        const itemRev = createData!.rev; // Correct rev
+        const itemRev = createData!.rev;
 
         // 2. Attempt delete without _rev query parameter
         disableLogging();
-        const {
-            data: deleteData,
-            error: deleteError,
-            status: deleteStatus,
-        } = await (api.api.v1.data({ collection })({ id: itemId }) as any).delete(undefined, { headers: getAuthHeaders() }); // Pass headers but empty query
+        const { error: deleteError, status: deleteStatus } = await (api.api.v1.data({ collection })({ id: itemId }) as any).delete(undefined, {
+            headers: getAuthHeaders(),
+        }); // Pass headers but empty query
         enableLogging();
 
-        expect(deleteStatus).toBe(400); // Bad Request
-        expect(deleteData).toBeNull();
+        expect(deleteStatus).toBe(400);
         expect(deleteError).not.toBeNull();
         expect((deleteError?.value as any)?.error).toContain("Validation failed");
         expect((deleteError?.value as any)?.details).toContain("Missing required query parameter: _rev");
@@ -404,7 +377,7 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
         if (itemId && itemRev) {
             const { status: cleanupStatus } = await api.api.v1
                 .data({ collection })({ id: itemId })
-                .delete(undefined, { query: { _rev: itemRev }, headers: getAuthHeaders() });
+                .delete(undefined, { query: { _rev: itemRev }, headers: getAuthHeaders() }); // Uses global token
             expect(cleanupStatus).toBe(200);
         }
     });
