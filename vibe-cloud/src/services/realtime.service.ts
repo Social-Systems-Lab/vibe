@@ -1,112 +1,140 @@
+// src/services/realtime.service.ts
 import type { ServerWebSocket } from "bun";
 import type { DataService } from "./data.service";
 import type { PermissionService } from "./permission.service";
-import type { User } from "./auth.service"; // Assuming User type is exported
 import type Nano from "nano";
 import { logger } from "../utils/logger";
+import type { DatabaseChangesResultItem } from "nano";
 
-// Define the shape of the context data we'll attach to each WebSocket
-export interface WebSocketContextData {
-    user: User; // Store the authenticated user
+// Define the shape of the context data attached to each WebSocket by our auth logic
+export interface WebSocketAuthContext {
+    userId: string;
+}
+
+// Define the shape of the full context data within the RealtimeService
+// We add subscriptions specific to this service's management
+interface WebSocketManagedContext extends WebSocketAuthContext {
     subscriptions: Set<string>; // Collections the user is subscribed to via this specific socket
 }
 
-// Define the shape of incoming WebSocket messages
-interface WebSocketMessage {
+// Define the shape of incoming WebSocket messages (client -> server)
+interface WebSocketClientMessage {
     action: "subscribe" | "unsubscribe";
     collection: string;
 }
 
+// Define the shape of outgoing WebSocket messages (server -> client)
+export type WebSocketServerMessage =
+    | { status: "subscribed" | "unsubscribed" | "denied" | "not_subscribed"; collection: string; reason?: string }
+    | { error: string }
+    | { type: "update" | "delete"; collection: string; data: any }; // 'data' could be the doc or just an ID for delete
+
+type ChangeWithDoc = Nano.DatabaseChangesResultItem & { doc?: any };
 export class RealtimeService {
     private nano: Nano.ServerScope;
     private permissionService: PermissionService;
-    // Map WebSocket instances to their context data (user, subscriptions)
-    private connections = new Map<ServerWebSocket<WebSocketContextData>, WebSocketContextData>();
+    // Map WebSocket instances to their managed context (userId, subscriptions)
+    // Note: ServerWebSocket<T> uses the type T for ws.data
+    private connections = new Map<ServerWebSocket<WebSocketAuthContext>, WebSocketManagedContext>();
     // Map userId to their active CouchDB change listener and reference count
-    private listeners = new Map<string, { listener: Nano.FollowEmitter; refCount: number }>();
+    private listeners = new Map<string, { scope: Nano.ChangesReaderScope; refCount: number }>();
 
     constructor(dataService: DataService, permissionService: PermissionService) {
+        if (!dataService.isInitialized()) {
+            // Throw an error or handle gracefully if nano isn't ready
+            // This prevents trying to use an uninitialized connection
+            logger.error("RealtimeService initialized before DataService connection was ready.");
+            throw new Error("DataService connection not ready for RealtimeService.");
+        }
         this.nano = dataService.getConnection(); // Get the nano instance
         this.permissionService = permissionService;
         logger.info("RealtimeService initialized");
     }
 
     /**
-     * Handles a new WebSocket connection after authentication.
+     * Handles a new WebSocket connection *after* authentication context is attached.
      */
-    handleConnection(ws: ServerWebSocket<WebSocketContextData>) {
-        const user = ws.data.user; // User should be attached by JWT middleware
-        if (!user || !user.id) {
-            logger.error("WebSocket connection attempt without authenticated user.");
-            ws.close(1008, "Authentication required"); // 1008 = Policy Violation
+    handleConnection(ws: ServerWebSocket<WebSocketAuthContext>) {
+        // Auth context (userId) should be attached in ws.data by Elysia's beforeHandle
+        const { userId } = ws.data;
+        if (!userId) {
+            // This case should ideally be prevented by beforeHandle, but double-check
+            logger.error("WebSocket connection opened without userId in context.");
+            ws.close(1008, "Authentication context missing"); // 1008 = Policy Violation
             return;
         }
 
-        const userId = user.id;
-        logger.info(`WebSocket connected for user: ${userId}, socket ID: ${ws.id}`);
+        logger.info(`WebSocket connected for user: ${userId}`);
 
-        // Initialize context data for this connection
-        ws.data.subscriptions = new Set<string>();
-        this.connections.set(ws, ws.data);
+        // Initialize managed context for this connection
+        const managedContext: WebSocketManagedContext = {
+            userId: userId,
+            subscriptions: new Set<string>(),
+        };
+        this.connections.set(ws, managedContext);
 
         // Manage the CouchDB listener for this user's database
-        const listenerInfo = this.listeners.get(userId);
-        const userDbName = `userdata_${userId}`;
+        this.ensureListenerStarted(userId);
+    }
 
-        if (!listenerInfo) {
-            logger.info(`No active listener for ${userDbName}. Starting new listener.`);
+    /**
+     * Ensures a CouchDB changes listener is running for the given user ID.
+     * Increments reference count if already running.
+     */
+    private ensureListenerStarted(userId: string) {
+        const info = this.listeners.get(userId);
+        const userDbName = `userdata-${userId}`;
+
+        if (!info) {
+            logger.info(`No active listener for ${userDbName}. Starting new reader.`);
             try {
-                const follower = this.nano.db.follow(userDbName, {
-                    include_docs: true,
+                // Obtain a document‑scope object once, then…
+                const db = this.nano.db.use<any>(userDbName);
+
+                // 🔑  ChangesReader replaces follow()
+                const scope = db.changesReader; // <-- this has start/stop
+                const emitter = scope.start({
                     since: "now",
-                    feed: "continuous",
-                    heartbeat: 10000, // Keep connection alive
+                    includeDocs: true,
+                    timeout: 60000,
                 });
 
-                follower.on("change", (change: Nano.FollowResponseChange<any>) => {
-                    this.handleChange(change, userId);
+                emitter.on("change", (change: ChangeWithDoc) => this.handleChange(change, userId));
+
+                emitter.on("error", (err: unknown) => {
+                    logger.error(`ChangesReader error for ${userDbName}:`, err);
+                    this.listeners.delete(userId);
                 });
 
-                follower.on("error", (err: any) => {
-                    logger.error(`Error in CouchDB follower for ${userDbName}:`, err);
-                    // Attempt to restart listener? Or rely on new connections to restart?
-                    // For now, just log. Consider removing the listener entry if error is fatal.
-                    this.listeners.delete(userId); // Remove potentially broken listener
-                });
-
-                follower.follow(); // Start listening
-                logger.info(`Started CouchDB listener for ${userDbName}`);
-                this.listeners.set(userId, { listener: follower, refCount: 1 });
-            } catch (error: any) {
-                // This might happen if the database doesn't exist yet for a new user
-                // It should be created on first write via data.service
-                if (error.statusCode === 404) {
-                    logger.warn(`Database ${userDbName} not found. Listener will not start yet.`);
-                    // Don't store a listener entry if it failed to start
+                this.listeners.set(userId, { scope, refCount: 1 });
+                logger.info(`Started ChangesReader for ${userDbName}`);
+            } catch (err: any) {
+                if (err.statusCode === 404) {
+                    logger.warn(`DB ${userDbName} not found. Reader not started yet.`);
                 } else {
-                    logger.error(`Failed to start CouchDB listener for ${userDbName}:`, error);
+                    logger.error(`Failed to start ChangesReader for ${userDbName}:`, err);
                 }
-                // We don't store a listener entry if it failed to start
             }
         } else {
-            listenerInfo.refCount++;
-            logger.debug(`Incremented listener refCount for ${userDbName} to ${listenerInfo.refCount}`);
+            info.refCount++;
+            logger.debug(`Incremented reader refCount for ${userDbName} to ${info.refCount}`);
         }
     }
 
     /**
      * Handles a WebSocket disconnection.
      */
-    handleDisconnection(ws: ServerWebSocket<WebSocketContextData>, code: number, message?: string) {
+    handleDisconnection(ws: ServerWebSocket<WebSocketAuthContext>, code: number, message?: string) {
         const context = this.connections.get(ws);
-        if (!context || !context.user) {
-            logger.warn(`WebSocket disconnected without context or user. Socket ID: ${ws.id}`);
-            return; // Should not happen if handleConnection worked
+        if (!context) {
+            // Could happen if connection failed very early or was already cleaned up
+            logger.warn(`WebSocket disconnected but no context found.`);
+            return;
         }
 
-        const userId = context.user.id;
-        const userDbName = `userdata_${userId}`;
-        logger.info(`WebSocket disconnected for user: ${userId}, socket ID: ${ws.id}. Code: ${code}, Message: ${message}`);
+        const userId = context.userId;
+        const userDbName = `userdata-${userId}`;
+        logger.info(`WebSocket disconnected for user: ${userId}. Code: ${code}, Message: ${message}`);
 
         this.connections.delete(ws); // Remove connection tracking
 
@@ -118,66 +146,79 @@ export class RealtimeService {
             if (listenerInfo.refCount <= 0) {
                 logger.info(`Stopping CouchDB listener for ${userDbName} as refCount reached 0.`);
                 try {
-                    listenerInfo.listener.stop();
+                    listenerInfo.scope.stop();
                 } catch (error) {
                     logger.error(`Error stopping listener for ${userDbName}:`, error);
                 }
                 this.listeners.delete(userId);
             }
         } else {
-            logger.warn(`Listener info not found for user ${userId} during disconnection.`);
+            // This might happen if the listener failed to start initially
+            logger.warn(`Listener info not found for user ${userId} during disconnection (may have failed to start).`);
         }
     }
 
     /**
      * Handles incoming messages from a WebSocket client (subscribe/unsubscribe).
      */
-    async handleMessage(ws: ServerWebSocket<WebSocketContextData>, message: any) {
+    async handleMessage(ws: ServerWebSocket<WebSocketAuthContext>, rawMessage: unknown) {
         const context = this.connections.get(ws);
-        if (!context || !context.user) {
-            logger.warn(`Received message from untracked/unauthenticated socket: ${ws.id}`);
-            ws.send(JSON.stringify({ error: "Invalid state or not authenticated." }));
+        if (!context) {
+            logger.warn(`Received message from untracked socket.`);
+            this.sendJson(ws, { error: "Internal state error." });
             return;
         }
 
-        let parsedMessage: WebSocketMessage;
+        let parsedMessage: WebSocketClientMessage;
         try {
-            parsedMessage = typeof message === "string" ? JSON.parse(message) : message;
-            if (!parsedMessage.action || !parsedMessage.collection || (parsedMessage.action !== "subscribe" && parsedMessage.action !== "unsubscribe")) {
-                throw new Error("Invalid message format.");
+            // Ensure message is parsed correctly, whether it's a string or already an object
+            const messageContent = typeof rawMessage === "string" ? JSON.parse(rawMessage) : rawMessage;
+
+            // Basic validation of the parsed message structure
+            if (
+                !messageContent ||
+                typeof messageContent !== "object" ||
+                !messageContent.action ||
+                !messageContent.collection ||
+                (messageContent.action !== "subscribe" && messageContent.action !== "unsubscribe")
+            ) {
+                throw new Error("Invalid message format or missing fields.");
             }
-        } catch (error) {
-            logger.warn(`Invalid WebSocket message received from user ${context.user.id}:`, message, error);
-            ws.send(JSON.stringify({ error: 'Invalid message format. Expecting {"action": "subscribe"|"unsubscribe", "collection": "string"}' }));
+            parsedMessage = messageContent as WebSocketClientMessage;
+        } catch (error: any) {
+            logger.warn(`Invalid WebSocket message received from user ${context.userId}:`, rawMessage, error.message);
+            this.sendJson(ws, { error: 'Invalid message format. Expecting {"action": "subscribe"|"unsubscribe", "collection": "string"}' });
             return;
         }
 
         const { action, collection } = parsedMessage;
-        const userId = context.user.id;
+        const { userId } = context; // userId from the established context
 
         logger.debug(`Processing action '${action}' for collection '${collection}' from user ${userId}`);
 
         if (action === "subscribe") {
-            // Check permission *before* subscribing
-            const canRead = await this.permissionService.can(userId, `read:${collection}`);
+            // **Crucial Permission Check** before subscribing
+            const requiredPermission = `read:${collection}`;
+            const canRead = await this.permissionService.can(userId, requiredPermission);
+
             if (canRead) {
                 context.subscriptions.add(collection);
-                this.connections.set(ws, context); // Update map with new subscriptions
+                // Note: No need to call this.connections.set again, context is mutable
                 logger.info(`User ${userId} subscribed to collection '${collection}'`);
-                ws.send(JSON.stringify({ status: "subscribed", collection: collection }));
+                this.sendJson(ws, { status: "subscribed", collection: collection });
             } else {
                 logger.warn(`User ${userId} denied subscription to '${collection}' due to permissions.`);
-                ws.send(JSON.stringify({ status: "denied", collection: collection, reason: "Permission denied" }));
+                this.sendJson(ws, { status: "denied", collection: collection, reason: "Permission denied" });
             }
         } else if (action === "unsubscribe") {
             const removed = context.subscriptions.delete(collection);
-            this.connections.set(ws, context); // Update map
             if (removed) {
                 logger.info(`User ${userId} unsubscribed from collection '${collection}'`);
-                ws.send(JSON.stringify({ status: "unsubscribed", collection: collection }));
+                this.sendJson(ws, { status: "unsubscribed", collection: collection });
             } else {
-                logger.warn(`User ${userId} tried to unsubscribe from '${collection}' but was not subscribed.`);
-                ws.send(JSON.stringify({ status: "not_subscribed", collection: collection }));
+                // Inform client they weren't subscribed anyway
+                logger.debug(`User ${userId} tried to unsubscribe from '${collection}' but was not subscribed.`);
+                this.sendJson(ws, { status: "not_subscribed", collection: collection });
             }
         }
     }
@@ -185,48 +226,101 @@ export class RealtimeService {
     /**
      * Processes a change detected by a CouchDB listener.
      */
-    private handleChange(change: Nano.FollowResponseChange<any>, userId: string) {
-        // Basic check for deleted documents or design docs
-        if (change.deleted || !change.doc || change.id.startsWith("_design/")) {
-            // logger.debug(`Ignoring change for user ${userId}: deleted=${change.deleted}, no doc=${!change.doc}, id=${change.id}`);
-            // We might want to push deletion events later
+    private async handleChange(change: ChangeWithDoc, userId: string) {
+        const docId = change.id;
+
+        // Ignore design doc changes
+        if (docId.startsWith("_design/")) {
             return;
         }
 
+        // Handle deletions
+        if (change.deleted === true) {
+            // We need to know the collection *before* deletion.
+            // The 'change' object for deletions doesn't include the old doc by default.
+            // A robust solution might involve fetching the doc *just before* delete
+            // or storing collection info separately.
+            // For now, we can't easily determine the collection for deleted docs via _changes.
+            // We could potentially send a generic delete event with just the ID if needed.
+            logger.debug(`Deletion detected for user ${userId}, doc ID: ${docId}. Collection info unavailable in standard change feed for deletes.`);
+            // Example: Push generic delete event (requires client handling)
+            // this.pushToSubscribedUserConnections(userId, null, { type: 'delete', collection: null, data: { _id: docId } });
+            return;
+        }
+
+        // Handle updates/creations
         const doc = change.doc;
-        const collection = doc.$collection; // Use the $collection field
+        if (!doc) {
+            logger.warn(`Change detected for user ${userId} (ID: ${docId}) but 'doc' field is missing.`);
+            return; // Ignore changes without document data
+        }
 
+        // **Crucial: Identify the collection**
+        // We rely on a convention: documents must have a '$collection' field.
+        const collection = doc.$collection;
         if (!collection || typeof collection !== "string") {
-            logger.warn(`Change detected for user ${userId} in doc ${change.id} without a valid '$collection' field. Ignoring.`);
+            logger.warn(`Change detected for user ${userId} in doc ${docId} without a valid '$collection' field. Cannot route update. Document:`, doc);
             return;
         }
 
-        logger.debug(`Change detected for user ${userId} in collection '${collection}', doc ID: ${change.id}`);
+        logger.debug(`Change detected for user ${userId} in collection '${collection}', doc ID: ${docId}`);
 
-        // Find all connections for this specific user
+        // Prepare the message payload
+        const message: WebSocketServerMessage = {
+            type: "update", // Could differentiate create vs update if needed based on rev history
+            collection: collection,
+            data: doc, // Send the full document
+        };
+
+        // Push the update to relevant connections for this user
+        await this.pushToSubscribedUserConnections(userId, collection, message);
+    }
+
+    /**
+     * Sends a message to all connections for a specific user IF they are subscribed
+     * to the given collection AND have read permission.
+     */
+    private async pushToSubscribedUserConnections(userId: string, collection: string | null, message: WebSocketServerMessage) {
+        // **Crucial Permission Check** before pushing data
+        // If collection is null (e.g., generic delete), we might skip permission check or apply a default policy
+        if (collection) {
+            const requiredPermission = `read:${collection}`;
+            const canRead = await this.permissionService.can(userId, requiredPermission);
+            if (!canRead) {
+                logger.warn(`User ${userId} change detected for collection '${collection}', but user lacks read permission. Update NOT pushed.`);
+                return; // Do not push if permission is missing
+            }
+        } else {
+            // Handle cases without a specific collection (e.g., generic delete)
+            // Decide if these should be pushed or if a different permission applies
+            logger.debug(`Pushing event without specific collection for user ${userId}. Skipping collection-specific permission check.`);
+        }
+
         for (const [ws, context] of this.connections.entries()) {
-            if (context.user.id === userId) {
-                // Check if this specific connection is subscribed to the changed collection
-                if (context.subscriptions.has(collection)) {
-                    // Permission check should have happened at subscription time,
-                    // but a belt-and-suspenders check here *could* be added if permissions
-                    // could change rapidly *after* subscription. For now, trust subscription check.
-                    logger.info(`Pushing update for collection '${collection}' (doc: ${change.id}) to user ${userId}, socket ID: ${ws.id}`);
-                    try {
-                        // Send the full document as requested
-                        ws.send(JSON.stringify({ type: "update", collection: collection, data: doc }));
-                    } catch (error) {
-                        logger.error(`Failed to send update to socket ${ws.id} for user ${userId}:`, error);
-                        // Consider closing the socket if sending fails repeatedly
-                    }
+            if (context.userId === userId) {
+                // Check if this specific connection is subscribed (if collection is known)
+                if (collection === null || context.subscriptions.has(collection)) {
+                    logger.info(
+                        `Pushing update for collection '${collection ?? "N/A"}' (doc: ${
+                            "type" in message && message.type === "update" ? message.data._id : "N/A"
+                        }) to user ${userId}`
+                    );
+                    this.sendJson(ws, message);
                 }
             }
         }
     }
 
-    // Optional: Method to broadcast to all connections of a specific user (if needed later)
-    // broadcastToUser(userId: string, message: any) { ... }
-
-    // Optional: Method to broadcast to all connections subscribed to a collection (if needed later, requires permission check)
-    // broadcastToCollection(collection: string, message: any) { ... }
+    /**
+     * Helper to safely send JSON over WebSocket.
+     */
+    private sendJson(ws: ServerWebSocket<any>, data: WebSocketServerMessage | { error: string }) {
+        try {
+            ws.send(JSON.stringify(data));
+        } catch (error) {
+            logger.error(`Failed to send JSON message to socket:`, error);
+            // Optionally close the socket if sending fails
+            // ws.close(1011, "Internal server error during send");
+        }
+    }
 }

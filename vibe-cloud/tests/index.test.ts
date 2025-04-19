@@ -1,94 +1,15 @@
+// index.test.ts
+import { createTestCtx } from "./test-context";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "bun:test"; // Added beforeEach
-import { treaty } from "@elysiajs/eden";
-import { app } from "./index";
-import { authService } from "./services/auth.service";
-import { permissionService } from "./services/permission.service"; // Import PermissionService
-import { logger, disableLogging, enableLogging } from "./utils/logger";
-
-// --- Test Setup ---
-const api = treaty(app);
+import { permissionService } from "../src/services/permission.service"; // Import PermissionService
+import { logger, disableLogging, enableLogging } from "../src/utils/logger";
 
 // Variables to hold the single user's credentials and token for the entire test run
-const testTimestamp = Date.now();
-const testUserEmail = `testuser_${testTimestamp}@example.com`;
-const testUserPassword = `password_${testTimestamp}`;
-let testUserId: string | null = null; // Store the user ID from registration
-let authToken: string | null = null; // Store the JWT token from login
-let testUserPermissionsRev: string | null = null; // Store revision for permission updates
+const { ctx, cleanup } = await createTestCtx();
+const { api, userId: testUserId, token: authToken, ts, email } = ctx;
+let testUserPermissionsRev: string | null = ctx.permsRev;
 
-// --- Global Setup and Teardown ---
-
-beforeAll(async () => {
-    logger.log(`Setting up test user ${testUserEmail} for the test run...`);
-    try {
-        // 1. Register the unique user for this test run
-        const regRes = await api.api.v1.auth.register.post({
-            email: testUserEmail,
-            password: testUserPassword,
-        });
-
-        if (regRes.status !== 201 || !regRes.data?.userId) {
-            throw new Error(`BEFORE_ALL FAILED: Could not register test user. Status: ${regRes.status}, Error: ${JSON.stringify(regRes.error?.value)}`);
-        }
-        testUserId = regRes.data.userId; // Store the user ID
-        logger.log(`Test user ${testUserEmail} registered successfully (ID: ${testUserId}).`);
-
-        // 2. Log in the user to get the auth token
-        const loginRes = await api.api.v1.auth.login.post({
-            email: testUserEmail,
-            password: testUserPassword,
-        });
-
-        if (loginRes.status !== 200 || !loginRes.data?.token) {
-            throw new Error(`BEFORE_ALL FAILED: Could not log in test user. Status: ${loginRes.status}, Error: ${JSON.stringify(loginRes.error?.value)}`);
-        }
-
-        authToken = loginRes.data.token; // Store the auth token
-        logger.log(`Test user ${testUserEmail} logged in successfully.`);
-
-        // 3. Set initial permissions for the test user (e.g., full access to the test collection)
-        // Use a collection name consistent with the data tests
-        const testCollectionName = `auth_test_items_${testTimestamp}`;
-        const initialPermissions = [`read:${testCollectionName}`, `write:${testCollectionName}`];
-        const permRes = await permissionService.setPermissions(testUserId!, initialPermissions);
-        testUserPermissionsRev = permRes.rev; // Store initial revision
-        logger.log(`Initial permissions set for ${testUserEmail}: ${initialPermissions.join(", ")}`);
-    } catch (err) {
-        logger.error("CRITICAL ERROR during global test setup (beforeAll):", err);
-        // Attempt cleanup even if setup fails partially
-        if (testUserId) {
-            await cleanupTestUser();
-        }
-        throw err; // Re-throw after attempting cleanup
-    }
-});
-
-// Helper function for cleanup to avoid repetition
-const cleanupTestUser = async () => {
-    if (!testUserId) {
-        logger.warn("Skipping user cleanup as testUserId was not set.");
-        return;
-    }
-    logger.log(`Cleaning up test user ${testUserEmail} (userId: ${testUserId})...`);
-    try {
-        // Delete permissions first (if they exist)
-        await permissionService.deletePermissions(testUserId);
-        logger.log(`Permissions cleanup requested for test user ${testUserEmail}.`);
-    } catch (error: any) {
-        logger.error(`Error during permissions cleanup for ${testUserEmail}:`, error.message || error);
-    }
-    try {
-        // Then delete the user and their data DB
-        await authService.deleteUser(testUserId);
-        logger.log(`User cleanup requested for test user ${testUserEmail} via AuthService.`);
-    } catch (error: any) {
-        logger.error(`Error during user cleanup call for ${testUserEmail}:`, error.message || error);
-    }
-};
-
-afterAll(async () => {
-    await cleanupTestUser(); // Use the helper function
-});
+afterAll(cleanup); // Cleanup the test user and permissions
 
 // --- Helper to add auth header ---
 const getAuthHeaders = () => {
@@ -111,10 +32,10 @@ describe("API Endpoints", () => {
 
 // --- Auth API Tests ---
 describe("Auth API Endpoints (/api/v1/auth)", () => {
-    it("should fail to register with the existing email (created in beforeAll)", async () => {
+    it("should fail to register with the existing email", async () => {
         // Attempt to register the SAME user again
         const { data, error, status } = await api.api.v1.auth.register.post({
-            email: testUserEmail, // Use the globally defined email
+            email: email, // Use the globally defined email
             password: "anotherpassword",
         });
 
@@ -135,7 +56,7 @@ describe("Auth API Endpoints (/api/v1/auth)", () => {
 
     it("should fail to register with short password", async () => {
         const { data, error, status } = await api.api.v1.auth.register.post({
-            email: `shortpass_${testTimestamp}@example.com`, // Use a different email for this validation test
+            email: `shortpass_${ts}@example.com`, // Use a different email for this validation test
             password: "short",
         });
         expect(status).toBe(400);
@@ -145,7 +66,7 @@ describe("Auth API Endpoints (/api/v1/auth)", () => {
     it("should fail to log in with incorrect password", async () => {
         // User testUserEmail was created in beforeAll
         const { data, error, status } = await api.api.v1.auth.login.post({
-            email: testUserEmail,
+            email: email,
             password: "wrongpassword",
         });
 
@@ -157,7 +78,7 @@ describe("Auth API Endpoints (/api/v1/auth)", () => {
 
     it("should fail to log in with non-existent email", async () => {
         const { data, error, status } = await api.api.v1.auth.login.post({
-            email: `nonexistent_${testTimestamp}@example.com`,
+            email: `nonexistent_${ts}@example.com`,
             password: "somepassword",
         });
 
@@ -169,17 +90,11 @@ describe("Auth API Endpoints (/api/v1/auth)", () => {
 });
 
 // --- Data API Tests ---
-describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
+describe("Data API Endpoints (/api/v1/data)", () => {
     // Use a distinct collection name for this test suite run
-    const collection = `auth_test_items_${testTimestamp}`; // Keep only one declaration
+    const collection = `auth_test_items_${ts}`; // Keep only one declaration
     let createdItemId: string | null = null;
     let currentRev: string | null = null;
-
-    // Reset permissions before each test in this suite to ensure isolation
-    // Note: This assumes beforeAll set the *initial* permissions correctly.
-    // If tests modify permissions, they should clean up or reset within the test or use beforeEach.
-    // For simplicity now, we assume tests don't modify permissions permanently.
-    // If they do, a beforeEach might be needed to reset to a known state.
 
     // --- Tests for Unauthorized Access (No Token) ---
     // These remain important to ensure JWT check still works
@@ -265,7 +180,7 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
     });
 
     it("should return 403 Forbidden when accessing a collection with no permissions", async () => {
-        const otherCollection = `other_collection_${testTimestamp}`;
+        const otherCollection = `other_collection_${ts}`;
         // User has read/write for `collection`, but not `otherCollection`
 
         // Attempt GET
@@ -288,17 +203,17 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
     // --- CRUD Tests (With Correct Permissions) ---
     // These tests now implicitly verify that operations succeed when permissions ARE granted (set in beforeAll)
 
-    it("should perform CRUD operations on a document with authentication", async () => {
+    it("should perform CRUD operations on a document", async () => {
         // Ensure token is available (checked by getAuthHeaders)
         expect(authToken).toBeTypeOf("string");
 
         // --- 1. Create Document (POST) ---
-        const initialData = { name: "Auth CRUD Test", value: 789 };
+        const initialData = { name: "CRUD Test", value: 789 };
         const {
             data: createData,
             error: createError,
             status: createStatus,
-        } = await api.api.v1.data({ collection }).post(initialData, { headers: getAuthHeaders() }); // Uses global token
+        } = await api.api.v1.data({ collection }).post(initialData, { headers: getAuthHeaders() });
 
         expect(createStatus, "Create status should be 201").toBe(201);
         expect(createError, "Create should not error").toBeNull();
@@ -317,15 +232,15 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
                 data: getData,
                 error: getError,
                 status: getStatus,
-            } = await api.api.v1.data({ collection })({ id: createdItemId! }).get({ headers: getAuthHeaders() }); // Uses global token
+            } = await api.api.v1.data({ collection })({ id: createdItemId! }).get({ headers: getAuthHeaders() });
 
             expect(getStatus, "Read status should be 200").toBe(200);
             expect(getError, "Read should not error").toBeNull();
             // ... rest of GET assertions ...
             expect(getData?._id).toBe(createdItemId);
             expect(getData?._rev).toBe(currentRev);
-            expect(getData?.name).toBe(initialData.name);
-            expect(getData?.value).toBe(initialData.value);
+            expect((getData as any)?.name).toBe(initialData.name);
+            expect((getData as any)?.value).toBe(initialData.value);
 
             // --- 3. Update Document (PUT) ---
             const updatedPayload = { name: "Updated Auth CRUD", value: 987 };
@@ -365,8 +280,8 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
             // ... rest of GET updated assertions ...
             expect(getUpdatedData?._id).toBe(createdItemId);
             expect(getUpdatedData?._rev).toBe(currentRev);
-            expect(getUpdatedData?.name).toBe(updatedPayload.name);
-            expect(getUpdatedData?.value).toBe(updatedPayload.value);
+            expect((getUpdatedData as any)?.name).toBe(updatedPayload.name);
+            expect((getUpdatedData as any)?.value).toBe(updatedPayload.value);
         } finally {
             // --- 5. Delete Document (DELETE) ---
             if (createdItemId && currentRev) {

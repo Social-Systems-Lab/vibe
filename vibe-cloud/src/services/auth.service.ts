@@ -155,7 +155,7 @@ export class AuthService {
 
             // 6. Create the user-specific database
             const userDbName = `userdata-${userId}`;
-            await dataService.ensureDbExists(userDbName);
+            await dataService.ensureDatabaseExists(userDbName);
             logger.info(`User data database created: ${userDbName}`);
 
             // Return user info (excluding password)

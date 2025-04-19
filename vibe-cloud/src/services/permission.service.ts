@@ -29,9 +29,6 @@ export class PermissionService {
             logger.error("CRITICAL: CouchDB environment variables (COUCHDB_URL, COUCHDB_USER, COUCHDB_PASSWORD) are not set for PermissionService.");
             throw new Error("CouchDB environment variables not configured for PermissionService.");
         }
-        if (!process.env.COUCHDB_PERMISSIONS_DB_NAME) {
-            logger.warn(`COUCHDB_PERMISSIONS_DB_NAME not set, using default: '${PERMISSIONS_DB_NAME}'`);
-        }
 
         try {
             this.nanoInstance = nano({

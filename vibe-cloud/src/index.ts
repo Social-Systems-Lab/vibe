@@ -1,9 +1,12 @@
-import { Elysia, t, NotFoundError } from "elysia";
+// index.ts
+import { Elysia, t, NotFoundError, InternalServerError, type Static } from "elysia";
 import { jwt } from "@elysiajs/jwt";
 import { dataService } from "./services/data.service";
 import { authService } from "./services/auth.service";
-import { permissionService } from "./services/permission.service"; // Import PermissionService
+import { permissionService } from "./services/permission.service";
+import { RealtimeService, type WebSocketAuthContext } from "./services/realtime.service";
 import { logger } from "./utils/logger";
+import type { ServerWebSocket } from "bun";
 
 // --- Schemas ---
 
@@ -18,6 +21,17 @@ const JWTPayloadSchema = t.Object({
     userId: t.String(),
     // Add other non-sensitive claims if needed (e.g., email, roles)
     // email: t.String({ format: 'email' }) // Example
+});
+
+// WebSocket Schemas
+const WebSocketClientMessageSchema = t.Object({
+    action: t.Union([t.Literal("subscribe"), t.Literal("unsubscribe")]),
+    collection: t.String({ minLength: 1 }),
+});
+
+// Schema for query parameter authentication (less secure, but common for WS)
+const WebSocketAuthQuerySchema = t.Object({
+    token: t.String({ minLength: 10, error: "Missing or invalid auth token in query." }),
 });
 
 // Data Schemas
@@ -36,6 +50,9 @@ const DeleteParamsSchema = t.Object({
     _rev: t.String({ error: "Missing required query parameter: _rev" }),
 });
 
+type WSQuery = Static<typeof WebSocketAuthQuerySchema>;
+type WSMsg = Static<typeof WebSocketClientMessageSchema>;
+
 // --- Environment Variable Validation ---
 const jwtSecret = process.env.JWT_SECRET;
 if (!jwtSecret) {
@@ -43,11 +60,15 @@ if (!jwtSecret) {
     throw new Error("JWT_SECRET environment variable not configured.");
 }
 
+await dataService.connect();
+const realtimeService = new RealtimeService(dataService, permissionService);
+
 // --- App Initialization ---
 export const app = new Elysia()
     .decorate("dataService", dataService)
     .decorate("authService", authService)
     .decorate("permissionService", permissionService)
+    .decorate("realtimeService", realtimeService)
     .use(
         jwt({
             name: "jwt", // Namespace for jwt functions (e.g., context.jwt.sign)
@@ -122,7 +143,13 @@ export const app = new Elysia()
             return { error: "Failed to parse request body." };
         }
 
-        // Removed the `if (code === "UNAUTHORIZED")` block as onBeforeHandle handles JWT verification failures.
+        // --- Add Handling for InternalServerError ---
+        if (error instanceof InternalServerError) {
+            logger.error(`[${code}] Internal Server Error: ${error.message}`, error.stack);
+            set.status = 500;
+            // Avoid leaking internal details in production
+            return { error: "An internal server error occurred." };
+        }
 
         // --- Log ONLY if Error Was Not Handled Above ---
         if (!isHandled) {
@@ -274,7 +301,6 @@ export const app = new Elysia()
                     if (!user) throw new Error("User context missing after verification."); // Check derived user
                     const { userId } = user; // Access userId from derived user
                     const userDbName = `userdata-${userId}`;
-                    // Collection param might be redundant if ID is globally unique within user DB, but keep for structure
                     const doc = await dataService.getDocument(userDbName, id);
                     return doc;
                 },
@@ -334,7 +360,54 @@ export const app = new Elysia()
                     detail: { summary: "Delete a document by ID (requires _rev query parameter)" },
                 }
             )
-    );
+    )
+    // --- WebSocket Endpoint ---
+    .ws("/ws", {
+        query: WebSocketAuthQuerySchema,
+        body: WebSocketClientMessageSchema,
+
+        // index.ts - TEMPORARY DEBUGGING STEP in .ws("/ws", { ... })
+        beforeHandle({ query, set }) {
+            // Remove async, jwt
+            logger.debug(`WS beforeHandle: Bypassing ALL checks for debugging. Query: ${JSON.stringify(query)}`);
+            const dummyUserId = "debug-user-123";
+            logger.debug(`WS beforeHandle: Returning dummy context for user: ${dummyUserId}`);
+            // Directly return the context object synchronously
+            return { userId: dummyUserId } satisfies WebSocketAuthContext;
+        },
+
+        // async beforeHandle({ query, jwt, set }) {
+        //     logger.debug(`WS beforeHandle: Attempting auth for token: ${query.token?.substring(0, 10)}...`); // Log received token (truncated)
+        //     const payload = await jwt.verify(query.token).catch((err) => {
+        //         // Log the specific verification error
+        //         logger.warn(`WS beforeHandle: JWT verification failed for token "${query.token?.substring(0, 10)}...". Error: ${err.message}`, err);
+        //         return null;
+        //     });
+
+        //     if (!payload || !payload.userId) {
+        //         logger.warn(`WS beforeHandle: Unauthorized - Invalid payload or missing userId. Payload: ${JSON.stringify(payload)}. Rejecting connection.`);
+        //         set.status = 401;
+        //         // You can optionally return an error object, though setting status is key
+        //         return { error: "Unauthorized" }; // Or just return;
+        //     }
+
+        //     logger.debug(`WS beforeHandle: Authorized successfully. User ID: ${payload.userId}`);
+        //     return { userId: payload.userId } satisfies WebSocketAuthContext;
+        // },
+
+        open(ws) {
+            logger.debug(`WebSocket connection opened.`);
+            realtimeService.handleConnection(ws.raw as ServerWebSocket<WebSocketAuthContext>);
+        },
+
+        message(ws, raw) {
+            realtimeService.handleMessage(ws.raw as ServerWebSocket<WebSocketAuthContext>, raw as WSMsg);
+        },
+
+        close(ws, code, reason) {
+            realtimeService.handleDisconnection(ws.raw as ServerWebSocket<WebSocketAuthContext>, code, reason);
+        },
+    });
 
 // Start the server only if the file is run directly
 if (import.meta.main) {
