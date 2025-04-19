@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from "bun:test"; // Added beforeEach
 import { treaty } from "@elysiajs/eden";
 import { app } from "./index";
 import { authService } from "./services/auth.service";
+import { permissionService } from "./services/permission.service"; // Import PermissionService
 import { logger, disableLogging, enableLogging } from "./utils/logger";
 
 // --- Test Setup ---
@@ -13,6 +14,7 @@ const testUserEmail = `testuser_${testTimestamp}@example.com`;
 const testUserPassword = `password_${testTimestamp}`;
 let testUserId: string | null = null; // Store the user ID from registration
 let authToken: string | null = null; // Store the JWT token from login
+let testUserPermissionsRev: string | null = null; // Store revision for permission updates
 
 // --- Global Setup and Teardown ---
 
@@ -40,29 +42,52 @@ beforeAll(async () => {
         if (loginRes.status !== 200 || !loginRes.data?.token) {
             throw new Error(`BEFORE_ALL FAILED: Could not log in test user. Status: ${loginRes.status}, Error: ${JSON.stringify(loginRes.error?.value)}`);
         }
+
         authToken = loginRes.data.token; // Store the auth token
         logger.log(`Test user ${testUserEmail} logged in successfully.`);
+
+        // 3. Set initial permissions for the test user (e.g., full access to the test collection)
+        // Use a collection name consistent with the data tests
+        const testCollectionName = `auth_test_items_${testTimestamp}`;
+        const initialPermissions = [`read:${testCollectionName}`, `write:${testCollectionName}`];
+        const permRes = await permissionService.setPermissions(testUserId!, initialPermissions);
+        testUserPermissionsRev = permRes.rev; // Store initial revision
+        logger.log(`Initial permissions set for ${testUserEmail}: ${initialPermissions.join(", ")}`);
     } catch (err) {
         logger.error("CRITICAL ERROR during global test setup (beforeAll):", err);
-        throw err;
+        // Attempt cleanup even if setup fails partially
+        if (testUserId) {
+            await cleanupTestUser();
+        }
+        throw err; // Re-throw after attempting cleanup
     }
 });
 
-afterAll(async () => {
-    logger.log(`Cleaning up test user ${testUserEmail} (userId: ${testUserId})...`);
+// Helper function for cleanup to avoid repetition
+const cleanupTestUser = async () => {
     if (!testUserId) {
-        logger.warn("Skipping user cleanup as testUserId was not set (setup likely failed).");
+        logger.warn("Skipping user cleanup as testUserId was not set.");
         return;
     }
-
+    logger.log(`Cleaning up test user ${testUserEmail} (userId: ${testUserId})...`);
     try {
-        // Call the AuthService method for cleanup
-        await authService.deleteUser(testUserId);
-        logger.log(`Cleanup requested for test user ${testUserEmail} via AuthService.`);
+        // Delete permissions first (if they exist)
+        await permissionService.deletePermissions(testUserId);
+        logger.log(`Permissions cleanup requested for test user ${testUserEmail}.`);
     } catch (error: any) {
-        // Log cleanup errors but don't fail the test suite because of them
-        logger.error(`Error during test user cleanup call for ${testUserEmail} (userId: ${testUserId}):`, error.message || error);
+        logger.error(`Error during permissions cleanup for ${testUserEmail}:`, error.message || error);
     }
+    try {
+        // Then delete the user and their data DB
+        await authService.deleteUser(testUserId);
+        logger.log(`User cleanup requested for test user ${testUserEmail} via AuthService.`);
+    } catch (error: any) {
+        logger.error(`Error during user cleanup call for ${testUserEmail}:`, error.message || error);
+    }
+};
+
+afterAll(async () => {
+    await cleanupTestUser(); // Use the helper function
 });
 
 // --- Helper to add auth header ---
@@ -146,12 +171,18 @@ describe("Auth API Endpoints (/api/v1/auth)", () => {
 // --- Data API Tests ---
 describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
     // Use a distinct collection name for this test suite run
-    const collection = `auth_test_items_${testTimestamp}`;
-    let createdItemId: string | null = null; // Keep these local to the CRUD test
+    const collection = `auth_test_items_${testTimestamp}`; // Keep only one declaration
+    let createdItemId: string | null = null;
     let currentRev: string | null = null;
 
-    // --- Tests for Unauthorized Access ---
-    // These tests remain the same, ensuring endpoints fail *without* the token
+    // Reset permissions before each test in this suite to ensure isolation
+    // Note: This assumes beforeAll set the *initial* permissions correctly.
+    // If tests modify permissions, they should clean up or reset within the test or use beforeEach.
+    // For simplicity now, we assume tests don't modify permissions permanently.
+    // If they do, a beforeEach might be needed to reset to a known state.
+
+    // --- Tests for Unauthorized Access (No Token) ---
+    // These remain important to ensure JWT check still works
 
     it("should return 401 when accessing POST /data without token", async () => {
         const { status, error } = await api.api.v1.data({ collection }).post({ name: "Unauthorized" });
@@ -180,7 +211,82 @@ describe("Data API Endpoints (/api/v1/data) - Requires Auth", () => {
         expect(error?.value as any).toEqual({ error: "Unauthorized: Invalid token." });
     });
 
-    // --- CRUD Tests ---
+    // --- Permission Tests (With Token, Varying Permissions) ---
+
+    it("should return 403 Forbidden when trying to write with only read permission", async () => {
+        // 1. Update permissions to ONLY allow read
+        const readOnlyPermissions = [`read:${collection}`];
+        const permUpdateRes = await permissionService.setPermissions(testUserId!, readOnlyPermissions, testUserPermissionsRev!);
+        const newRev = permUpdateRes.rev; // Store new rev for potential cleanup/reset
+
+        // 2. Attempt to POST (write operation)
+        const { status: postStatus, error: postError } = await api.api.v1.data({ collection }).post({ name: "Forbidden Write" }, { headers: getAuthHeaders() });
+
+        expect(postStatus).toBe(403);
+        expect((postError?.value as any)?.error).toEqual("Forbidden"); // FIX: Check specific property
+
+        // 3. Attempt to PUT (write operation) - need an existing item ID and rev
+        // For simplicity, skip PUT/DELETE checks here, POST is sufficient to test write denial.
+        // A more thorough test would create an item *before* restricting permissions.
+
+        // 4. Reset permissions back to read/write for subsequent tests (or use beforeEach)
+        const resetPermRes = await permissionService.setPermissions(testUserId!, [`read:${collection}`, `write:${collection}`], newRev);
+        testUserPermissionsRev = resetPermRes.rev; // Update the global rev tracker
+    });
+
+    it("should return 403 Forbidden when trying to read with only write permission", async () => {
+        // 1. Update permissions to ONLY allow write
+        const writeOnlyPermissions = [`write:${collection}`];
+        const permUpdateRes = await permissionService.setPermissions(testUserId!, writeOnlyPermissions, testUserPermissionsRev!);
+        const newRev = permUpdateRes.rev;
+
+        // 2. Create an item (should succeed as we have write permission)
+        const { data: createData, status: createStatus } = await api.api.v1.data({ collection }).post({ name: "Item To Read" }, { headers: getAuthHeaders() });
+        expect(createStatus).toBe(201);
+        const tempItemId = createData!.id;
+        const tempItemRev = createData!.rev;
+
+        // 3. Attempt to GET (read operation)
+        const { status: getStatus, error: getError } = await api.api.v1.data({ collection })({ id: tempItemId }).get({ headers: getAuthHeaders() });
+
+        expect(getStatus).toBe(403);
+        expect((getError?.value as any)?.error).toEqual("Forbidden"); // FIX: Check specific property
+
+        // 4. Cleanup the created item
+        // Need to temporarily grant read/write to delete
+        const tempFullPerms = await permissionService.setPermissions(testUserId!, [`read:${collection}`, `write:${collection}`], newRev);
+        await api.api.v1
+            .data({ collection })({ id: tempItemId })
+            .delete(undefined, { query: { _rev: tempItemRev }, headers: getAuthHeaders() });
+
+        // 5. Reset permissions back to read/write using the latest rev
+        const finalResetRes = await permissionService.setPermissions(testUserId!, [`read:${collection}`, `write:${collection}`], tempFullPerms.rev);
+        testUserPermissionsRev = finalResetRes.rev; // Update the global rev tracker
+    });
+
+    it("should return 403 Forbidden when accessing a collection with no permissions", async () => {
+        const otherCollection = `other_collection_${testTimestamp}`;
+        // User has read/write for `collection`, but not `otherCollection`
+
+        // Attempt GET
+        const { status: getStatus, error: getError } = await api.api.v1
+            .data({ collection: otherCollection })({ id: "any-id" }) // Use the other collection name
+            .get({ headers: getAuthHeaders() });
+
+        expect(getStatus).toBe(403);
+        expect((getError?.value as any)?.error).toEqual("Forbidden"); // FIX: Check specific property
+
+        // Attempt POST
+        const { status: postStatus, error: postError } = await api.api.v1
+            .data({ collection: otherCollection }) // Use the other collection name
+            .post({ name: "Forbidden Post" }, { headers: getAuthHeaders() });
+
+        expect(postStatus).toBe(403);
+        expect((postError?.value as any)?.error).toEqual("Forbidden"); // FIX: Check specific property
+    });
+
+    // --- CRUD Tests (With Correct Permissions) ---
+    // These tests now implicitly verify that operations succeed when permissions ARE granted (set in beforeAll)
 
     it("should perform CRUD operations on a document with authentication", async () => {
         // Ensure token is available (checked by getAuthHeaders)

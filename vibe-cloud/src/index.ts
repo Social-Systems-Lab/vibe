@@ -1,7 +1,8 @@
 import { Elysia, t, NotFoundError } from "elysia";
 import { jwt } from "@elysiajs/jwt";
 import { dataService } from "./services/data.service";
-import { authService } from "./services/auth.service"; // Import AuthService
+import { authService } from "./services/auth.service";
+import { permissionService } from "./services/permission.service"; // Import PermissionService
 import { logger } from "./utils/logger";
 
 // --- Schemas ---
@@ -44,8 +45,9 @@ if (!jwtSecret) {
 
 // --- App Initialization ---
 export const app = new Elysia()
-    .decorate("dataService", dataService) // Make services available in handlers
+    .decorate("dataService", dataService)
     .decorate("authService", authService)
+    .decorate("permissionService", permissionService)
     .use(
         jwt({
             name: "jwt", // Namespace for jwt functions (e.g., context.jwt.sign)
@@ -205,15 +207,43 @@ export const app = new Elysia()
                     return { user: null };
                 }
             })
-            // This onBeforeHandle now correctly checks the 'user' property populated by derive
-            .onBeforeHandle(({ user, set }) => {
-                // Check the derived user property
+            // This onBeforeHandle now checks JWT and then permissions
+            .onBeforeHandle(async ({ user, permissionService, request, params, set }) => {
+                // 1. Check JWT authentication (derived user property)
                 if (!user) {
                     set.status = 401;
-                    // Match the error message expected by the tests
                     return { error: "Unauthorized: Invalid token." }; // Stop execution
                 }
-                // If 'user' exists, the request is authorized, proceed to the handler
+
+                // 2. Determine required permission based on method and collection
+                const { collection } = params as { collection: string }; // Assume collection is always present here
+                let requiredPermission: string;
+                switch (request.method.toUpperCase()) {
+                    case "POST":
+                    case "PUT":
+                    case "DELETE":
+                        requiredPermission = `write:${collection}`;
+                        break;
+                    case "GET":
+                        requiredPermission = `read:${collection}`;
+                        break;
+                    default:
+                        // Should not happen with defined routes, but handle defensively
+                        logger.warn(`Permission check encountered unexpected method: ${request.method}`);
+                        set.status = 405; // Method Not Allowed
+                        return { error: "Method Not Allowed" };
+                }
+
+                // 3. Check permission using the service
+                const { userId } = user;
+                const isAllowed = await permissionService.can(userId, requiredPermission);
+
+                if (!isAllowed) {
+                    set.status = 403; // Forbidden
+                    return { error: "Forbidden" }; // Stop execution
+                }
+
+                // If JWT is valid and permission check passes, proceed to the handler
             })
             // POST /api/v1/data/:collection - Create a document
             .post(
