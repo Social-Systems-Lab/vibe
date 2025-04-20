@@ -40,7 +40,7 @@ describe("Real-time sync over WebSockets", () => {
             );
         });
 
-    // suite‑level before/after
+    // suite-level before/after
     beforeAll(async () => {
         // grant read/write for this collection
         const { rev } = await permissionService.setPermissions(testUserId, [`read:${rtCollection}`, `write:${rtCollection}`], testUserPermissionsRev);
@@ -129,11 +129,14 @@ describe("Real-time sync over WebSockets", () => {
         );
         testUserPermissionsRev = rev;
 
+        // *** FIX: Set up listener *before* sending the message ***
+        const denialPromise = nextMsg();
+
         // Send subscribe message again.
         socket.send(JSON.stringify({ action: "subscribe", collection: rtCollection }));
 
-        // We should expect a "denied" message back from the server
-        const subResponse = await nextMsg(); // Wait for the server's response
+        // Now await the promise we set up earlier
+        const subResponse = await denialPromise; // Wait for the server's response
         expect(subResponse).toMatchObject({
             status: "denied", // Verify the server denied the subscription
             collection: rtCollection,
@@ -143,21 +146,24 @@ describe("Real-time sync over WebSockets", () => {
         // write another doc using the REST API (should succeed due to write perm)
         await api.api.v1.data({ collection: rtCollection }).post({ $collection: rtCollection, bar: 1 }, { headers: { Authorization: `Bearer ${authToken}` } });
 
-        const postResponse = await nextMsg(); // Wait for the server's response
+        // Ensure no update arrives via WebSocket within 1 second.
+        // Add a temporary listener, wait, then check if it fired.
+        let messageReceived: WebSocketServerMessage | null = null;
+        const raceListener = (ev: MessageEvent) => {
+            try {
+                messageReceived = JSON.parse(ev.data);
+                logger.warn(">>> Unexpected WS message received during timeout check:", messageReceived);
+            } catch (e) {
+                logger.error(">>> Error parsing unexpected WS message during timeout check:", e);
+            }
+        };
+        socket.addEventListener("message", raceListener); // Add listener (not {once: true})
 
-        // // Ensure no update arrives via WebSocket within 1 second.
-        // // We race nextMsg against a timeout that resolves to a specific string.
-        // const result = await Promise.race([
-        //     // If a message arrives, resolve the race with the message object
-        //     nextMsg(1000).then((msg) => msg),
-        //     // If 1000ms passes without a message, resolve the race with "timeout"
-        //     Bun.sleep(1000).then(() => "timeout"),
-        // ]);
+        await Bun.sleep(1000); // Wait for 1 second
 
-        console.log("Result", postResponse); // Log the result for debugging
+        socket.removeEventListener("message", raceListener); // Clean up listener
 
-        // Assert that the race resolved to "timeout", meaning nextMsg did NOT resolve.
-        //expect(result).toBe("timeout");
-        expect(true).toBe(true); // Placeholder assertion to avoid test failure
+        // Assert that no message was received during the sleep period
+        expect(messageReceived).toBeNull();
     });
 });
