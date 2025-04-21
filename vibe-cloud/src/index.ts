@@ -84,6 +84,10 @@ const BlobDownloadResponseSchema = t.Object({
     url: t.String({ format: "uri", error: "Invalid URL format." }),
 });
 
+const ErrorResponseSchema = t.Object({
+    error: t.String(),
+});
+
 // --- Constants ---
 export const BLOB_METADATA_DB = "blob_metadata"; // Dedicated DB for blob metadata (Exported)
 
@@ -424,49 +428,69 @@ export const app = new Elysia()
             // POST /api/v1/blob/upload - Upload a file
             .post(
                 "/upload",
+                // Restore 'body', remove 'request'
                 async ({ blobService, dataService, permissionService, user, body, set }) => {
                     if (!user) throw new InternalServerError("User context missing after auth check."); // Should not happen
 
                     // 1. Permission Check
                     const { userId } = user;
+                    logger.info(`User ${userId} attempting upload.`);
+
                     const canWrite = await permissionService.can(userId, "write:blobs");
+                    logger.info(`User ${userId} write permission: ${canWrite}`);
                     if (!canWrite) {
                         set.status = 403;
                         return { error: "Forbidden: Missing 'write:blobs' permission." };
                     }
 
-                    // 2. Process Upload
-                    const { file } = body;
+                    // 2. Process Upload (using body from schema validation)
+                    const { file } = body; // Use file from validated body
+                    if (!file || typeof file.arrayBuffer !== "function") {
+                        logger.error("File object is missing or invalid in request body.");
+                        set.status = 400;
+                        return { error: "Invalid file upload." };
+                    }
+                    logger.info(`Got file: ${file.name}, Size: ${file.size}, Type: ${file.type}`);
+
                     const objectId = randomUUID(); // Generate unique ID for the blob
                     const bucketName = blobService.defaultBucketName; // Use default bucket from service
 
                     try {
+                        logger.info(`Preparing buffer for ${objectId}...`);
                         // 3. Upload to Minio
                         logger.info(`Uploading blob ${objectId} for user ${userId}`);
                         // Convert stream to Buffer for Minio compatibility
-                        const fileBuffer = Buffer.from(await file.arrayBuffer());
+                        const fileBuffer = Buffer.from(await file.arrayBuffer()); // Use file from body
+                        logger.info(`Buffer created for ${objectId}. Size: ${fileBuffer.length}`); // <-- Add
+
+                        logger.info(`Calling blobService.uploadObject for ${objectId}...`);
+
                         await blobService.uploadObject(
                             objectId,
                             fileBuffer, // Pass the Buffer
-                            file.size,
-                            file.type,
+                            file.size, // Use file size from body
+                            file.type, // Use file type from body
                             bucketName
                         );
+
+                        logger.info(`blobService.uploadObject completed for ${objectId}.`);
 
                         // 4. Create Metadata Document
                         const metadata: Omit<BlobMetadata, "_rev"> = {
                             _id: objectId,
-                            originalFilename: file.name || "untitled", // Use file.name
-                            contentType: file.type,
-                            size: file.size,
+                            originalFilename: file.name || "untitled", // Use file.name from body
+                            contentType: file.type, // Use file type from body
+                            size: file.size, // Use file size from body
                             ownerId: userId,
                             uploadTimestamp: new Date().toISOString(),
                             bucket: bucketName,
                         };
 
+                        logger.info(`Calling dataService.createDocument for ${objectId}...`);
                         // 5. Save Metadata to CouchDB
                         // Pass "" as collection name when using a dedicated DB like blob_metadata
                         await dataService.createDocument(BLOB_METADATA_DB, "", metadata);
+                        logger.info(`dataService.createDocument completed for ${objectId}.`);
 
                         logger.info(`Blob ${objectId} metadata saved for user ${userId}`);
                         set.status = 201; // Created
@@ -485,6 +509,7 @@ export const app = new Elysia()
                     }
                 },
                 {
+                    // Restore body schema validation
                     body: BlobUploadBodySchema,
                     detail: { summary: "Upload a blob (requires 'write:blobs' permission)" },
                 }
@@ -493,6 +518,8 @@ export const app = new Elysia()
             .get(
                 "/download/:objectId",
                 async ({ blobService, dataService, permissionService, user, params, set }) => {
+                    logger.debug(`[GET /download/:objectId] Received params: ${JSON.stringify(params)}`);
+
                     if (!user) throw new InternalServerError("User context missing after auth check.");
 
                     const { objectId } = params;
@@ -500,16 +527,20 @@ export const app = new Elysia()
 
                     try {
                         // 1. Fetch Metadata
+                        logger.debug(`Attempting to fetch metadata for objectId: ${objectId} from DB: ${BLOB_METADATA_DB}`);
                         const metadata = (await dataService.getDocument(BLOB_METADATA_DB, objectId)) as BlobMetadata; // Cast to expected type
+                        logger.debug(`Successfully fetched metadata for objectId: ${objectId}`, metadata); // Log successful fetch
 
                         // 2. Permission Check (Owner OR 'read:blobs')
                         const isOwner = metadata.ownerId === userId;
+                        logger.debug(`Permission check: isOwner=${isOwner}, userId=${userId}, metadata.ownerId=${metadata.ownerId}`);
                         const canRead = await permissionService.can(userId, "read:blobs");
+                        logger.debug(`Permission check: canRead=${canRead} for permission 'read:blobs'`);
 
                         if (!isOwner && !canRead) {
                             logger.warn(`Forbidden access attempt for blob ${objectId} by user ${userId}`);
                             set.status = 403; // Set status before throwing
-                            throw new Error("Forbidden: You do not have permission to access this blob."); // Throw error
+                            return { error: "Forbidden: You do not have permission to access this blob." };
                         }
 
                         // 3. Generate Pre-signed URL
@@ -519,6 +550,7 @@ export const app = new Elysia()
                             metadata.bucket // Use bucket from metadata
                             // Optional: Adjust expiry time if needed
                         );
+                        logger.debug(`Successfully generated download URL for objectId: ${objectId}: ${url.substring(0, 100)}...`); // Log success
 
                         set.status = 200;
                         return { url: url };
@@ -538,7 +570,7 @@ export const app = new Elysia()
                 {
                     params: t.Object({ objectId: t.String() }),
                     // Only define the success response schema. Errors are handled by setting status/returning error object or throwing.
-                    response: { 200: BlobDownloadResponseSchema },
+                    response: { 200: BlobDownloadResponseSchema, 403: ErrorResponseSchema },
                     detail: { summary: "Get a pre-signed URL to download a blob (requires ownership or 'read:blobs')" },
                 }
             )

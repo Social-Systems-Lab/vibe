@@ -1,3 +1,4 @@
+// auth.service.ts
 import nano from "nano"; // Added import
 import type { DocumentListResponse } from "nano"; // Added type import
 import { dataService } from "./data.service";
@@ -268,6 +269,11 @@ export class AuthService {
                 logger.error(`Error deleting user data database '${userDbName}':`, error.message || error);
             }
         }
+
+        // TODO: Implement blob cleanup on user deletion if required.
+        // This currently ONLY deletes the user document and their userdata database.
+        // Associated blobs in Minio and metadata in blob_metadata are NOT deleted.
+        // Implementing this would require querying blob_metadata by ownerId and deleting associated resources.
     }
 }
 

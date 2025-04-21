@@ -1,3 +1,4 @@
+// blob.service.ts
 import * as Minio from "minio";
 import { logger } from "../utils/logger";
 import { Readable } from "stream";
@@ -10,7 +11,7 @@ interface UploadedObjectInfo {
 }
 
 // --- Configuration ---
-const minioEndpoint = process.env.MINIO_ENDPOINT || "localhost";
+const minioEndpoint = process.env.MINIO_ENDPOINT || "127.0.0.1";
 const minioPort = parseInt(process.env.MINIO_PORT || "9000", 10);
 const minioUseSSL = process.env.MINIO_USE_SSL === "true";
 const minioAccessKey = process.env.MINIO_ACCESS_KEY || "minioadmin";
@@ -118,6 +119,31 @@ async function getPresignedDownloadUrl(
     }
 }
 
+/**
+ * Deletes an object from the specified Minio bucket.
+ *
+ * @param objectName The unique identifier of the object to delete.
+ * @param bucketName The name of the bucket containing the object (defaults to MINIO_BUCKET_NAME).
+ * @returns A Promise resolving when the deletion attempt is complete.
+ */
+async function deleteObject(objectName: string, bucketName: string = defaultBucketName): Promise<void> {
+    try {
+        logger.info(`Attempting to delete object "${objectName}" from bucket "${bucketName}"...`);
+        await minioClient.removeObject(bucketName, objectName);
+        logger.info(`Successfully deleted object "${objectName}" from bucket "${bucketName}".`);
+    } catch (error: any) {
+        // Log errors, but don't necessarily throw if it's just cleanup
+        // Treat "NoSuchKey" (object already gone) as a warning, not a critical error during cleanup
+        if (error.code === "NoSuchKey") {
+            logger.warn(`Object "${objectName}" not found in bucket "${bucketName}" during deletion (might already be deleted).`);
+        } else {
+            logger.error(`Error deleting object "${objectName}" from Minio bucket "${bucketName}":`, error.message || error);
+            // Decide if you want to re-throw for cleanup failures. Usually logging is sufficient.
+            // throw new Error(`Failed to delete object "${objectName}"`);
+        }
+    }
+}
+
 // --- Service Initialization ---
 // Ensure the default bucket exists when the service loads
 ensureBucketExists().catch((err) => {
@@ -130,6 +156,7 @@ export const BlobService = {
     ensureBucketExists,
     uploadObject,
     getPresignedDownloadUrl,
+    deleteObject,
     // Expose client directly if needed for advanced use cases, but generally prefer abstracted methods
     // client: minioClient
     defaultBucketName, // Export default bucket name for convenience

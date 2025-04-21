@@ -1,3 +1,4 @@
+// data.service.ts
 import nano from "nano";
 import type { DocumentScope, DocumentInsertResponse, DocumentGetResponse, DocumentDestroyResponse, MaybeDocument } from "nano";
 import { logger } from "../utils/logger";
