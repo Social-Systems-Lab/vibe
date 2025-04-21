@@ -17,7 +17,10 @@ services:
         networks:
             - vibe-net
         depends_on:
-            - couchdb # Ensure CouchDB starts before the app
+            couchdb:
+                condition: service_started # Wait for CouchDB to be ready (basic check)
+            minio:
+                condition: service_started # Wait for Minio to be ready (basic check)
 
     couchdb:
         image: couchdb:latest # Use the official CouchDB image
@@ -36,9 +39,31 @@ services:
         networks:
             - vibe-net
 
+    minio:
+        image: minio/minio:latest
+        restart: unless-stopped
+        env_file:
+            - ./vibe-cloud/.env # Load ALL variables from .env
+        environment:
+            # Use variables loaded by env_file for root credentials
+            - MINIO_ROOT_USER=${MINIO_ACCESS_KEY}
+            - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}
+        ports:
+            # Map host port 9000 to container port 9000 (Minio API)
+            - "${MINIO_PORT:-9000}:9000"
+            # Map host port 9001 to container port 9001 (Minio Console)
+            - "9001:9001"
+        volumes:
+            # Persist Minio data using a named volume
+            - minio-data:/data
+        command: server /data --console-address ":9001"
+        networks:
+            - vibe-net
+
 networks:
     vibe-net:
         driver: bridge
 
 volumes:
     couchdb-data: # Define the named volume for CouchDB data persistence
+    minio-data: # Define the named volume for Minio data persistence

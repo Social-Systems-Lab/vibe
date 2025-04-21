@@ -4,8 +4,10 @@ import { jwt } from "@elysiajs/jwt";
 import { dataService } from "./services/data.service";
 import { authService } from "./services/auth.service";
 import { permissionService } from "./services/permission.service";
+import { BlobService } from "./services/blob.service"; // Import BlobService
 import { RealtimeService, type WebSocketAuthContext } from "./services/realtime.service";
 import { logger } from "./utils/logger";
+import { randomUUID } from "crypto"; // For generating unique object IDs
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
 import * as jose from "jose"; // For JWT verification
 
@@ -14,8 +16,9 @@ import * as jose from "jose"; // For JWT verification
 // Auth Schemas
 const AuthCredentialsSchema = t.Object({
     email: t.String({ format: "email", error: "Invalid email format." }),
-    password: t.String({ minLength: 8, error: "Password must be at least 8 characters long." }), // Add password validation
+    password: t.String({ minLength: 8, error: "Password must be at least 8 characters long." }),
 });
+type AuthCredentials = Static<typeof AuthCredentialsSchema>;
 
 // JWT Payload Schema
 const JWTPayloadSchema = t.Object({
@@ -36,7 +39,8 @@ const WebSocketAuthQuerySchema = t.Object({
 });
 
 // Data Schemas
-const DataDocumentSchema = t.Object({}, { additionalProperties: true }); // Allow any fields
+const DataDocumentSchema = t.Object({}, { additionalProperties: true }); // Allow any fields for general data
+type DataDocument = Static<typeof DataDocumentSchema>;
 
 // Define schema for update payload, requiring _rev
 const UpdateDataDocumentSchema = t.Intersect([
@@ -51,6 +55,38 @@ const DeleteParamsSchema = t.Object({
     _rev: t.String({ error: "Missing required query parameter: _rev" }),
 });
 
+// Blob Schemas
+const BlobUploadBodySchema = t.Object({
+    file: t.File({
+        // Expect a single file named 'file'
+        // Optional: Add size/type validation if needed
+        // maxSize: '5m', // Example: 5MB limit
+        // types: ['image/jpeg', 'image/png', 'application/pdf'] // Example: Allowed types
+        error: "File upload is required.",
+    }),
+    // Add other metadata fields if needed, e.g., description: t.Optional(t.String())
+});
+type BlobUploadBody = Static<typeof BlobUploadBodySchema>;
+
+const BlobMetadataSchema = t.Object({
+    _id: t.String(), // objectId
+    _rev: t.Optional(t.String()), // CouchDB revision
+    originalFilename: t.String(),
+    contentType: t.String(),
+    size: t.Number(),
+    ownerId: t.String(), // userId of the uploader
+    uploadTimestamp: t.String({ format: "date-time" }),
+    bucket: t.String(),
+});
+type BlobMetadata = Static<typeof BlobMetadataSchema>;
+
+const BlobDownloadResponseSchema = t.Object({
+    url: t.String({ format: "uri", error: "Invalid URL format." }),
+});
+
+// --- Constants ---
+export const BLOB_METADATA_DB = "blob_metadata"; // Dedicated DB for blob metadata (Exported)
+
 // --- Environment Variable Validation ---
 const jwtSecret = process.env.JWT_SECRET;
 if (!jwtSecret) {
@@ -60,7 +96,9 @@ if (!jwtSecret) {
 
 const secretKey = new TextEncoder().encode(jwtSecret);
 
+// --- Service Initialization & DB Setup ---
 await dataService.connect();
+await dataService.ensureDatabaseExists(BLOB_METADATA_DB); // Ensure metadata DB exists
 const realtimeService = new RealtimeService(dataService, permissionService);
 
 // --- App Initialization ---
@@ -68,6 +106,7 @@ export const app = new Elysia()
     .decorate("dataService", dataService)
     .decorate("authService", authService)
     .decorate("permissionService", permissionService)
+    .decorate("blobService", BlobService) // Decorate with BlobService
     .decorate("realtimeService", realtimeService)
     .use(
         jwt({
@@ -359,18 +398,166 @@ export const app = new Elysia()
                     detail: { summary: "Delete a document by ID (requires _rev query parameter)" },
                 }
             )
+    )
+    // --- Protected Blob Routes ---
+    .group("/api/v1/blob", (group) =>
+        group
+            // Derive JWT user context (same as data routes)
+            .derive(async ({ jwt, request: { headers } }) => {
+                const authHeader = headers.get("authorization");
+                if (!authHeader || !authHeader.startsWith("Bearer ")) return { user: null };
+                const token = authHeader.substring(7);
+                try {
+                    const payload = await jwt.verify(token);
+                    return { user: payload as { userId: string } };
+                } catch (error) {
+                    return { user: null };
+                }
+            })
+            // Generic Auth Check - Specific permissions checked in handlers
+            .onBeforeHandle(({ user, set }) => {
+                if (!user) {
+                    set.status = 401;
+                    return { error: "Unauthorized: Invalid token." };
+                }
+            })
+            // POST /api/v1/blob/upload - Upload a file
+            .post(
+                "/upload",
+                async ({ blobService, dataService, permissionService, user, body, set }) => {
+                    if (!user) throw new InternalServerError("User context missing after auth check."); // Should not happen
+
+                    // 1. Permission Check
+                    const { userId } = user;
+                    const canWrite = await permissionService.can(userId, "write:blobs");
+                    if (!canWrite) {
+                        set.status = 403;
+                        return { error: "Forbidden: Missing 'write:blobs' permission." };
+                    }
+
+                    // 2. Process Upload
+                    const { file } = body;
+                    const objectId = randomUUID(); // Generate unique ID for the blob
+                    const bucketName = blobService.defaultBucketName; // Use default bucket from service
+
+                    try {
+                        // 3. Upload to Minio
+                        logger.info(`Uploading blob ${objectId} for user ${userId}`);
+                        // Convert stream to Buffer for Minio compatibility
+                        const fileBuffer = Buffer.from(await file.arrayBuffer());
+                        await blobService.uploadObject(
+                            objectId,
+                            fileBuffer, // Pass the Buffer
+                            file.size,
+                            file.type,
+                            bucketName
+                        );
+
+                        // 4. Create Metadata Document
+                        const metadata: Omit<BlobMetadata, "_rev"> = {
+                            _id: objectId,
+                            originalFilename: file.name || "untitled", // Use file.name
+                            contentType: file.type,
+                            size: file.size,
+                            ownerId: userId,
+                            uploadTimestamp: new Date().toISOString(),
+                            bucket: bucketName,
+                        };
+
+                        // 5. Save Metadata to CouchDB
+                        // Pass "" as collection name when using a dedicated DB like blob_metadata
+                        await dataService.createDocument(BLOB_METADATA_DB, "", metadata);
+
+                        logger.info(`Blob ${objectId} metadata saved for user ${userId}`);
+                        set.status = 201; // Created
+                        return {
+                            message: "File uploaded successfully.",
+                            objectId: objectId,
+                            filename: metadata.originalFilename,
+                            contentType: metadata.contentType,
+                            size: metadata.size,
+                        };
+                    } catch (error: any) {
+                        logger.error(`Blob upload failed for user ${userId}, objectId ${objectId}:`, error);
+                        // Attempt to clean up Minio object if metadata saving failed? (Complex)
+                        // For now, just return error
+                        throw new InternalServerError("Blob upload failed."); // Let generic handler catch
+                    }
+                },
+                {
+                    body: BlobUploadBodySchema,
+                    detail: { summary: "Upload a blob (requires 'write:blobs' permission)" },
+                }
+            )
+            // GET /api/v1/blob/download/:objectId - Get pre-signed download URL
+            .get(
+                "/download/:objectId",
+                async ({ blobService, dataService, permissionService, user, params, set }) => {
+                    if (!user) throw new InternalServerError("User context missing after auth check.");
+
+                    const { objectId } = params;
+                    const { userId } = user;
+
+                    try {
+                        // 1. Fetch Metadata
+                        const metadata = (await dataService.getDocument(BLOB_METADATA_DB, objectId)) as BlobMetadata; // Cast to expected type
+
+                        // 2. Permission Check (Owner OR 'read:blobs')
+                        const isOwner = metadata.ownerId === userId;
+                        const canRead = await permissionService.can(userId, "read:blobs");
+
+                        if (!isOwner && !canRead) {
+                            logger.warn(`Forbidden access attempt for blob ${objectId} by user ${userId}`);
+                            set.status = 403; // Set status before throwing
+                            throw new Error("Forbidden: You do not have permission to access this blob."); // Throw error
+                        }
+
+                        // 3. Generate Pre-signed URL
+                        logger.info(`Generating download URL for blob ${objectId} requested by user ${userId}`);
+                        const url = await blobService.getPresignedDownloadUrl(
+                            objectId,
+                            metadata.bucket // Use bucket from metadata
+                            // Optional: Adjust expiry time if needed
+                        );
+
+                        set.status = 200;
+                        return { url: url };
+                    } catch (error: any) {
+                        if (error.message.includes("not found")) {
+                            logger.warn(`Download request for non-existent blob ${objectId} by user ${userId}`);
+                            throw new NotFoundError(`Blob metadata not found for ID: ${objectId}`);
+                        }
+                        if (error.message.includes("Object not found")) {
+                            logger.warn(`Download request for blob ${objectId} (metadata found, but object missing in Minio) by user ${userId}`);
+                            throw new NotFoundError(`Blob object not found in storage for ID: ${objectId}`);
+                        }
+                        logger.error(`Failed to generate download URL for blob ${objectId}, user ${userId}:`, error);
+                        throw new InternalServerError("Failed to generate download URL.");
+                    }
+                },
+                {
+                    params: t.Object({ objectId: t.String() }),
+                    // Only define the success response schema. Errors are handled by setting status/returning error object or throwing.
+                    response: { 200: BlobDownloadResponseSchema },
+                    detail: { summary: "Get a pre-signed URL to download a blob (requires ownership or 'read:blobs')" },
+                }
+            )
     );
 
 // Define the pure Bun WebSocket handler logic
-const bunWsHandler: WebSocketHandler<{ userId: string | null }> = {
-    open(ws) {
-        realtimeService.handleConnection(ws as ServerWebSocket<WebSocketAuthContext>);
+const bunWsHandler: WebSocketHandler<WebSocketAuthContext> = {
+    // Use updated type
+    open(ws: ServerWebSocket<WebSocketAuthContext>) {
+        // Add type hint
+        realtimeService.handleConnection(ws);
     },
-    async message(ws, message) {
-        await realtimeService.handleMessage(ws as ServerWebSocket<WebSocketAuthContext>, message);
+    async message(ws: ServerWebSocket<WebSocketAuthContext>, message) {
+        // Add type hint
+        await realtimeService.handleMessage(ws, message);
     },
-    close(ws, code, reason) {
-        realtimeService.handleDisconnection(ws as ServerWebSocket<WebSocketAuthContext>, code, reason);
+    close(ws: ServerWebSocket<WebSocketAuthContext>, code, reason) {
+        // Add type hint
+        realtimeService.handleDisconnection(ws, code, reason);
     },
 };
 
