@@ -13,6 +13,8 @@ interface UserDocument {
     email: string; // User's email (used for login)
     hashedPassword: string; // Hashed password
     type: "user"; // Document type for querying/indexing
+    isAdmin: boolean;
+    publicKey?: string; // Optional public key for user (if applicable)
 }
 
 // Define the exported User type (excluding sensitive fields)
@@ -76,10 +78,13 @@ export class AuthService {
      * Registers a new user.
      * @param email - User's email address.
      * @param password - User's plain text password.
+     * @param email - User's email address.
+     * @param password - User's plain text password.
+     * @param isAdmin - Optional flag to create an admin user. Defaults to false.
      * @returns The newly created user document (excluding password).
      * @throws Error if email already exists or registration fails.
      */
-    async registerUser(email: string, password: string): Promise<Omit<UserDocument, "hashedPassword">> {
+    async registerUser(email: string, password: string, isAdmin: boolean = false): Promise<Omit<UserDocument, "hashedPassword">> {
         const lowerCaseEmail = email.toLowerCase(); // Use consistent casing
 
         // 1. Check if user already exists (by email) - Inefficient, replace with view/query later
@@ -136,6 +141,7 @@ export class AuthService {
             email: lowerCaseEmail, // Use the lowercased email
             hashedPassword: hashedPassword,
             type: "user",
+            isAdmin: isAdmin, // Set the admin flag
         };
 
         // 5. Save user to vibe_users database
@@ -274,6 +280,43 @@ export class AuthService {
         // This currently ONLY deletes the user document and their userdata database.
         // Associated blobs in Minio and metadata in blob_metadata are NOT deleted.
         // Implementing this would require querying blob_metadata by ownerId and deleting associated resources.
+    }
+
+    /**
+     * Finds the first user document with isAdmin set to true.
+     * @returns The admin user document or null if none found.
+     * @throws Error if the query fails for reasons other than not found.
+     */
+    async findAdminUser(): Promise<(UserDocument & { _id: string; _rev: string }) | null> {
+        try {
+            const db = this.nanoInstance.use<UserDocument>(USERS_DB_NAME);
+            const query: nano.MangoQuery = {
+                selector: {
+                    type: "user", // Ensure we only match user documents
+                    isAdmin: true, // The specific condition for admin users
+                },
+                limit: 1, // We only need to know if at least one exists
+            };
+            const response = await db.find(query);
+
+            if (response.docs && response.docs.length > 0) {
+                logger.debug("Admin user found during bootstrap check.");
+                // Nano's find result includes _id and _rev, so the cast is safe here
+                return response.docs[0] as UserDocument & { _id: string; _rev: string };
+            } else {
+                logger.debug("No admin user found during bootstrap check.");
+                return null; // No admin user found
+            }
+        } catch (error: any) {
+            // Don't throw if DB or index doesn't exist yet during initial startup
+            if (error.statusCode === 404) {
+                logger.warn(`Database '${USERS_DB_NAME}' or required index not found during admin check. Assuming no admin exists.`);
+                return null;
+            }
+            logger.error("Error finding admin user:", error);
+            // Re-throw other errors
+            throw new Error("Failed to query for admin user.");
+        }
     }
 }
 

@@ -105,6 +105,39 @@ await dataService.connect();
 await dataService.ensureDatabaseExists(BLOB_METADATA_DB); // Ensure metadata DB exists
 const realtimeService = new RealtimeService(dataService, permissionService);
 
+// --- Admin User Bootstrap ---
+const bootstrapAdmin = async () => {
+    logger.info("Checking for admin user bootstrap...");
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminPassword = process.env.ADMIN_PASSWORD;
+
+    if (!adminEmail || !adminPassword) {
+        logger.info("ADMIN_EMAIL or ADMIN_PASSWORD not set. Skipping admin bootstrap.");
+        return;
+    }
+
+    try {
+        const existingAdmin = await authService.findAdminUser();
+
+        if (existingAdmin) {
+            logger.info(`Admin user '${existingAdmin.email}' already exists. Skipping bootstrap.`);
+        } else {
+            logger.info(`No existing admin user found. Attempting to create admin: ${adminEmail}`);
+            // Use the updated registerUser method with isAdmin = true
+            await authService.registerUser(adminEmail, adminPassword, true);
+            logger.info(`Admin user '${adminEmail}' created successfully.`);
+        }
+    } catch (error) {
+        logger.error("Error during admin user bootstrap:", error);
+        // Decide if this should prevent startup? For now, just log the error.
+        // throw new Error("Admin bootstrap failed."); // Uncomment to make it fatal
+    }
+};
+
+// Execute the bootstrap logic
+await bootstrapAdmin();
+// --- End Admin User Bootstrap ---
+
 // --- App Initialization ---
 export const app = new Elysia()
     .decorate("dataService", dataService)
