@@ -220,6 +220,31 @@ export class DataService {
             throw new InternalServerError("Failed to delete document.");
         }
     }
+
+    /**
+     * Executes a Mango query against a specified database.
+     * @param dbName - The name of the database to query.
+     * @param query - The Mango query object (selector, fields, sort, limit, etc.).
+     * @returns A promise that resolves with the query result containing matching documents.
+     * @throws Error if the query fails or the database connection is not initialized.
+     */
+    async findDocuments<T extends MaybeDocument>(dbName: string, query: nano.MangoQuery): Promise<nano.MangoResponse<T>> {
+        if (!this.nano) throw new Error("Database connection not initialized.");
+
+        try {
+            const db = await this.ensureDatabaseExists(dbName);
+            logger.debug(`Executing Mango query in db "${dbName}":`, JSON.stringify(query));
+            const response = await db.find(query);
+            logger.debug(`Mango query completed in db "${dbName}", found ${response.docs?.length ?? 0} documents.`);
+            // Ensure the response structure matches what's expected, potentially casting docs
+            return response as nano.MangoResponse<T>;
+        } catch (error: any) {
+            logger.error(`Error executing Mango query in db "${dbName}":`, error.message || error);
+            // Handle specific errors like invalid query syntax if possible
+            // For now, throw a generic internal server error
+            throw new InternalServerError("Failed to execute query.");
+        }
+    }
 }
 
 // Export a singleton instance

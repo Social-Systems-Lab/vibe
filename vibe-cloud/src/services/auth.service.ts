@@ -5,6 +5,12 @@ import { dataService } from "./data.service";
 import { logger } from "../utils/logger";
 import { v4 as uuidv4 } from "uuid"; // Using uuid for user IDs
 
+// --- Constants ---
+const USERS_DB_NAME = "vibe_users";
+const CLAIM_CODES_DB = "claim_codes"; // New database for claim codes
+
+// --- Interfaces ---
+
 // Define the structure for user documents
 interface UserDocument {
     _id?: string; // CouchDB ID (assigned on creation)
@@ -17,10 +23,20 @@ interface UserDocument {
     publicKey?: string; // Optional public key for user (if applicable)
 }
 
+// Define the structure for claim code documents
+interface ClaimCodeDocument {
+    _id: string; // e.g., "INITIAL_ADMIN" or UUID
+    _rev?: string;
+    code: string; // The actual claim code
+    expiresAt: string | null; // ISO string or null
+    forDid: string | null; // Optional DID lock
+    spentAt: string | null; // ISO string when spent
+    claimedByDid?: string; // Record which DID claimed it
+    type: "claim_code"; // Document type
+}
+
 // Define the exported User type (excluding sensitive fields)
 export type User = Omit<UserDocument, "hashedPassword">;
-
-const USERS_DB_NAME = "vibe_users";
 
 export class AuthService {
     private nanoInstance: nano.ServerScope; // Store nano instance
@@ -56,6 +72,11 @@ export class AuthService {
             logger.error("Failed to ensure users DB exists on AuthService startup:", err);
             // process.exit(1); // Optional: exit if DB setup fails critically
         });
+
+        // Ensure the claim codes database exists when the service is instantiated
+        this.ensureClaimCodesDbExists().catch((err) => {
+            logger.error("Failed to ensure claim_codes DB exists on AuthService startup:", err);
+        });
     }
 
     private async ensureUsersDbExists(): Promise<void> {
@@ -69,6 +90,21 @@ export class AuthService {
                 logger.info(`Database '${USERS_DB_NAME}' created by AuthService.`);
             } else {
                 logger.error(`Error checking database '${USERS_DB_NAME}' in AuthService:`, error);
+                throw error;
+            }
+        }
+    }
+
+    // Added method to ensure claim_codes DB exists
+    private async ensureClaimCodesDbExists(): Promise<void> {
+        try {
+            await this.nanoInstance.db.get(CLAIM_CODES_DB);
+        } catch (error: any) {
+            if (error.statusCode === 404) {
+                await this.nanoInstance.db.create(CLAIM_CODES_DB);
+                logger.info(`Database '${CLAIM_CODES_DB}' created by AuthService.`);
+            } else {
+                logger.error(`Error checking database '${CLAIM_CODES_DB}' in AuthService:`, error);
                 throw error;
             }
         }
@@ -283,41 +319,124 @@ export class AuthService {
     }
 
     /**
-     * Finds the first user document with isAdmin set to true.
-     * @returns The admin user document or null if none found.
-     * @throws Error if the query fails for reasons other than not found.
+     * Ensures the initial admin claim code document exists in the claim_codes database.
+     * Reads the code from the ADMIN_CLAIM_CODE environment variable.
      */
-    async findAdminUser(): Promise<(UserDocument & { _id: string; _rev: string }) | null> {
-        try {
-            const db = this.nanoInstance.use<UserDocument>(USERS_DB_NAME);
-            const query: nano.MangoQuery = {
-                selector: {
-                    type: "user", // Ensure we only match user documents
-                    isAdmin: true, // The specific condition for admin users
-                },
-                limit: 1, // We only need to know if at least one exists
-            };
-            const response = await db.find(query);
+    async ensureInitialAdminClaimCode(): Promise<void> {
+        const adminClaimCode = process.env.ADMIN_CLAIM_CODE;
+        if (!adminClaimCode) {
+            logger.warn("ADMIN_CLAIM_CODE environment variable is not set. Cannot ensure initial admin claim code.");
+            return; // Or throw an error if this is considered critical
+        }
 
-            if (response.docs && response.docs.length > 0) {
-                logger.debug("Admin user found during bootstrap check.");
-                // Nano's find result includes _id and _rev, so the cast is safe here
-                return response.docs[0] as UserDocument & { _id: string; _rev: string };
-            } else {
-                logger.debug("No admin user found during bootstrap check.");
-                return null; // No admin user found
-            }
+        const initialAdminDocId = "INITIAL_ADMIN";
+
+        try {
+            // Check if the document already exists using dataService
+            await dataService.getDocument(CLAIM_CODES_DB, initialAdminDocId);
+            logger.info(`Initial admin claim code document '${initialAdminDocId}' already exists.`);
         } catch (error: any) {
-            // Don't throw if DB or index doesn't exist yet during initial startup
-            if (error.statusCode === 404) {
-                logger.warn(`Database '${USERS_DB_NAME}' or required index not found during admin check. Assuming no admin exists.`);
-                return null;
+            if (error.message?.includes("not found") || error.statusCode === 404) {
+                // Document doesn't exist, create it
+                logger.info(`Initial admin claim code document '${initialAdminDocId}' not found. Creating...`);
+                const newClaimCodeDoc: Omit<ClaimCodeDocument, "_rev"> = {
+                    _id: initialAdminDocId,
+                    code: adminClaimCode,
+                    expiresAt: null, // Never expires
+                    forDid: null, // Not locked to a specific DID
+                    spentAt: null, // Not spent yet
+                    type: "claim_code",
+                };
+                try {
+                    // Use dataService to create the document (collection name "" for dedicated DB)
+                    await dataService.createDocument(CLAIM_CODES_DB, "", newClaimCodeDoc);
+                    logger.info(`Successfully created initial admin claim code document '${initialAdminDocId}'.`);
+                } catch (createError: any) {
+                    logger.error(`Failed to create initial admin claim code document '${initialAdminDocId}':`, createError);
+                    // Rethrow or handle as appropriate for application startup
+                    throw new Error(`Failed to create initial admin claim code: ${createError.message}`);
+                }
+            } else {
+                // Different error occurred during the check
+                logger.error(`Error checking for initial admin claim code document '${initialAdminDocId}':`, error);
+                throw new Error(`Error checking initial admin claim code: ${error.message}`);
             }
-            logger.error("Error finding admin user:", error);
-            // Re-throw other errors
-            throw new Error("Failed to query for admin user.");
         }
     }
+
+    /**
+     * Creates a new admin user directly from a DID.
+     * This is used by the claim code flow.
+     * @param did - The user's did:vibe identifier.
+     * @returns The newly created user document (excluding sensitive fields).
+     * @throws Error if user creation fails (e.g., conflict).
+     */
+    async createAdminUserFromDid(did: string): Promise<Omit<UserDocument, "hashedPassword">> {
+        // We need a way to uniquely identify the user document. Using the DID itself
+        // might be okay if DIDs are guaranteed unique and don't change, but a separate
+        // internal userId (UUID) is generally safer. Let's stick with the existing pattern.
+        const userId = uuidv4();
+        const userDocId = `user:${userId}`; // Use the UUID-based ID
+
+        // Prepare user document - No email/password needed for DID-based auth
+        const newUser: Omit<UserDocument, "_id" | "_rev" | "email" | "hashedPassword"> & { email?: string; hashedPassword?: string } = {
+            userId: userId,
+            // email: `${userId}@vibe.local`, // Placeholder email if schema requires it? Or make email optional?
+            // hashedPassword: '', // Placeholder if schema requires it? Or make optional?
+            // Let's assume email/password are NOT strictly required for DID users for now.
+            // If the schema enforces them, we might need placeholders or schema adjustments.
+            // For now, omitting them.
+            type: "user",
+            isAdmin: true, // This user is an admin
+            // We could store the DID itself or the extracted public key here if needed later
+            // publicKey: ed25519FromDid(did).toString('hex') // Example if storing hex pubkey
+        };
+
+        // 1. Save user to vibe_users database
+        try {
+            const createResponse = await dataService.createDocument(USERS_DB_NAME, "user", {
+                _id: userDocId, // Explicitly set _id
+                ...newUser,
+                // Add placeholder email/password if schema requires non-empty strings
+                email: `${userId}@vibe.local`, // Using placeholder
+                hashedPassword: "N/A", // Using placeholder
+            });
+
+            if (!createResponse.ok) {
+                throw new Error("Failed to save admin user document from DID.");
+            }
+
+            logger.info(`Admin user created successfully from DID: ${did}, userId: ${userId}`);
+
+            // 2. Create the user-specific database (using the internal userId)
+            const userDbName = `userdata-${userId}`; // Use the internal userId
+            await dataService.ensureDatabaseExists(userDbName);
+            logger.info(`User data database created for admin (from DID): ${userDbName}`);
+
+            // Return user info (excluding password)
+            const { hashedPassword: _, ...userInfo } = newUser;
+            // Ensure the returned object matches the User type structure
+            return {
+                ...userInfo,
+                _id: createResponse.id,
+                _rev: createResponse.rev,
+                email: `${userId}@vibe.local`, // Include placeholder email
+                isAdmin: true, // Explicitly return isAdmin
+            };
+        } catch (error: any) {
+            if (error.statusCode === 409) {
+                logger.error(`Admin creation from DID failed: Document conflict for ID ${userDocId} (DID: ${did})`, error);
+                throw new Error(`Admin user creation failed due to document ID conflict.`);
+            }
+            logger.error(`Error saving admin user document from DID ${did}:`, error);
+            throw new Error(`Admin user creation failed for DID: ${did}.`);
+        }
+    }
+
+    /**
+     * Finds the first user document with isAdmin set to true. (REMOVED - Use claim codes now)
+     */
+    // async findAdminUser(): Promise<(UserDocument & { _id: string; _rev: string }) | null> { ... } // Method removed
 }
 
 // Export a singleton instance

@@ -9,7 +9,26 @@ import { RealtimeService, type WebSocketAuthContext } from "./services/realtime.
 import { logger } from "./utils/logger";
 import { randomUUID } from "crypto"; // For generating unique object IDs
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
+import type * as nano from "nano"; // Import nano types
 import * as jose from "jose"; // For JWT verification
+import { ed25519FromDid } from "./utils/did.utils"; // Import DID utility
+import { verify } from "@noble/ed25519"; // Import Ed25519 verify
+import { Buffer } from "buffer"; // Import Buffer for base64 decoding
+
+// --- Schemas ---
+
+// --- Types (Duplicated from auth.service.ts for claim endpoint use) ---
+// Define the structure for claim code documents
+interface ClaimCodeDocument {
+    _id: string; // e.g., "INITIAL_ADMIN" or UUID
+    _rev?: string;
+    code: string; // The actual claim code
+    expiresAt: string | null; // ISO string or null
+    forDid: string | null; // Optional DID lock
+    spentAt: string | null; // ISO string when spent
+    claimedByDid?: string; // Record which DID claimed it
+    type: "claim_code"; // Document type
+}
 
 // --- Schemas ---
 
@@ -26,6 +45,14 @@ const JWTPayloadSchema = t.Object({
     // Add other non-sensitive claims if needed (e.g., email, roles)
     // email: t.String({ format: 'email' }) // Example
 });
+
+// Admin Claim Schema
+const AdminClaimSchema = t.Object({
+    did: t.String({ error: "Missing required field: did" }), // e.g., "did:vibe:z..."
+    claimCode: t.String({ error: "Missing required field: claimCode" }),
+    signature: t.String({ error: "Missing required field: signature (Base64)" }), // Base64 encoded signature
+});
+type AdminClaimBody = Static<typeof AdminClaimSchema>;
 
 // WebSocket Schemas
 const WebSocketClientMessageSchema = t.Object({
@@ -90,6 +117,7 @@ const ErrorResponseSchema = t.Object({
 
 // --- Constants ---
 export const BLOB_METADATA_DB = "blob_metadata"; // Dedicated DB for blob metadata (Exported)
+const CLAIM_CODES_DB = "claim_codes"; // Define locally as it's not exported from authService
 
 // --- Environment Variable Validation ---
 const jwtSecret = process.env.JWT_SECRET;
@@ -105,41 +133,20 @@ await dataService.connect();
 await dataService.ensureDatabaseExists(BLOB_METADATA_DB); // Ensure metadata DB exists
 const realtimeService = new RealtimeService(dataService, permissionService);
 
-// --- Admin User Bootstrap ---
-const bootstrapAdmin = async () => {
-    logger.info("Checking for admin user bootstrap...");
-    const adminEmail = process.env.ADMIN_EMAIL;
-    const adminPassword = process.env.ADMIN_PASSWORD;
-
-    if (!adminEmail || !adminPassword) {
-        logger.info("ADMIN_EMAIL or ADMIN_PASSWORD not set. Skipping admin bootstrap.");
-        return;
-    }
-
-    try {
-        const existingAdmin = await authService.findAdminUser();
-
-        if (existingAdmin) {
-            logger.info(`Admin user '${existingAdmin.email}' already exists. Skipping bootstrap.`);
-        } else {
-            logger.info(`No existing admin user found. Attempting to create admin: ${adminEmail}`);
-            // Use the updated registerUser method with isAdmin = true
-            await authService.registerUser(adminEmail, adminPassword, true);
-            logger.info(`Admin user '${adminEmail}' created successfully.`);
-        }
-    } catch (error) {
-        logger.error("Error during admin user bootstrap:", error);
-        // Decide if this should prevent startup? For now, just log the error.
-        // throw new Error("Admin bootstrap failed."); // Uncomment to make it fatal
-    }
-};
-
-// Execute the bootstrap logic
-await bootstrapAdmin();
-// --- End Admin User Bootstrap ---
+// --- Initial Admin Claim Code Bootstrap ---
+logger.info("Ensuring initial admin claim code exists...");
+try {
+    await authService.ensureInitialAdminClaimCode();
+    logger.info("Initial admin claim code check complete.");
+} catch (error) {
+    logger.error("CRITICAL: Failed to ensure initial admin claim code:", error);
+    // Decide if this should prevent startup. For now, log and continue.
+    // process.exit(1); // Uncomment to make it fatal
+}
+// --- End Initial Admin Claim Code Bootstrap ---
 
 // --- App Initialization ---
-export const app = new Elysia()
+const app = new Elysia()
     .decorate("dataService", dataService)
     .decorate("authService", authService)
     .decorate("permissionService", permissionService)
@@ -278,6 +285,165 @@ export const app = new Elysia()
                     detail: { summary: "Log in as instance administrator" },
                 }
             )
+    )
+    // --- Admin Claim Route (Unauthenticated) ---
+    .group("/api/v1/admin", (group) =>
+        group.post(
+            "/claim",
+            async ({ dataService, authService, jwt, body, set }) => {
+                const { did, claimCode, signature } = body;
+                logger.info(`Admin claim attempt received for DID: ${did}`);
+
+                // 1. Find the claim code document
+                let claimDoc: (ClaimCodeDocument & { _id: string; _rev: string }) | null = null;
+                try {
+                    const query: nano.MangoQuery = {
+                        selector: {
+                            type: "claim_code",
+                            code: claimCode,
+                        },
+                        limit: 1, // Expect only one matching code
+                    };
+                    const response = await dataService.findDocuments<ClaimCodeDocument>(CLAIM_CODES_DB, query);
+
+                    if (!response.docs || response.docs.length === 0) {
+                        logger.warn(`Claim attempt failed: No claim code found matching '${claimCode}'`);
+                        set.status = 400;
+                        return { error: "Invalid or unknown claim code." };
+                    }
+                    if (response.docs.length > 1) {
+                        // Should not happen if codes are unique, but handle defensively
+                        logger.error(`CRITICAL: Multiple claim documents found for code '${claimCode}'!`);
+                        set.status = 500;
+                        return { error: "Internal server error: Duplicate claim code detected." };
+                    }
+                    // Nano's find result includes _id and _rev
+                    claimDoc = response.docs[0] as ClaimCodeDocument & { _id: string; _rev: string };
+                    logger.debug(`Found claim document: ${claimDoc._id}`);
+                } catch (error: any) {
+                    logger.error(`Error finding claim code '${claimCode}':`, error);
+                    // Distinguish between not found and other errors if possible
+                    if (error instanceof NotFoundError || error.message?.includes("not found")) {
+                        set.status = 400; // Treat DB errors during find as bad request for claim code
+                        return { error: "Invalid or unknown claim code." };
+                    }
+                    set.status = 500;
+                    return { error: "Internal server error while verifying claim code." };
+                }
+
+                // Ensure claimDoc is not null (should be caught above, but belts and suspenders)
+                if (!claimDoc) {
+                    set.status = 400;
+                    return { error: "Invalid or unknown claim code." };
+                }
+
+                // 2. Validate the claim code document
+                if (claimDoc.spentAt) {
+                    logger.warn(`Claim attempt failed: Claim code '${claimDoc._id}' already spent at ${claimDoc.spentAt}`);
+                    set.status = 400;
+                    return { error: "Claim code has already been used." };
+                }
+                if (claimDoc.expiresAt && new Date(claimDoc.expiresAt) < new Date()) {
+                    logger.warn(`Claim attempt failed: Claim code '${claimDoc._id}' expired at ${claimDoc.expiresAt}`);
+                    set.status = 400;
+                    return { error: "Claim code has expired." };
+                }
+                if (claimDoc.forDid && claimDoc.forDid !== did) {
+                    logger.warn(`Claim attempt failed: Claim code '${claimDoc._id}' is locked to DID ${claimDoc.forDid}, but provided DID was ${did}`);
+                    set.status = 400;
+                    return { error: "Claim code is not valid for the provided DID." };
+                }
+
+                // 3. Verify the signature
+                try {
+                    const publicKeyBytes = ed25519FromDid(did); // Extract public key from DID
+                    const signatureBytes = Buffer.from(signature, "base64"); // Decode base64 signature
+                    const messageBytes = new TextEncoder().encode(claimCode); // Encode the message (claimCode)
+
+                    const isSignatureValid = await verify(signatureBytes, messageBytes, publicKeyBytes);
+
+                    if (!isSignatureValid) {
+                        logger.warn(`Claim attempt failed: Invalid signature for claim code '${claimDoc._id}' and DID ${did}`);
+                        set.status = 400;
+                        return { error: "Invalid signature." };
+                    }
+                    logger.debug(`Signature verified successfully for claim code '${claimDoc._id}' and DID ${did}`);
+                } catch (error: any) {
+                    logger.error(`Error during signature verification for claim code '${claimDoc._id}', DID ${did}:`, error);
+                    // Errors could be from ed25519FromDid (invalid DID) or Buffer.from (invalid base64)
+                    set.status = 400;
+                    return { error: `Signature verification failed: ${error.message}` };
+                }
+
+                // 4. Mark claim code as spent
+                const nowISO = new Date().toISOString();
+                const updatedClaimData = {
+                    ...claimDoc, // Keep existing fields
+                    spentAt: nowISO,
+                    claimedByDid: did,
+                };
+                // Remove internal CouchDB fields before update if necessary, though nano might handle it
+                // delete updatedClaimData._id; // Keep _id
+                // delete updatedClaimData._rev; // Keep _rev for update
+
+                try {
+                    logger.debug(`Attempting to mark claim code '${claimDoc._id}' as spent...`);
+                    // Use updateDocument - requires _rev. Collection name "" for dedicated DB.
+                    await dataService.updateDocument(CLAIM_CODES_DB, "", claimDoc._id, claimDoc._rev, updatedClaimData);
+                    logger.info(`Claim code '${claimDoc._id}' successfully marked as spent by DID ${did}.`);
+                } catch (error: any) {
+                    logger.error(`Failed to mark claim code '${claimDoc._id}' as spent:`, error);
+                    // Handle potential conflict if someone else claimed it simultaneously
+                    if (error.message?.includes("Revision conflict") || error.statusCode === 409) {
+                        set.status = 409; // Conflict
+                        return { error: "Claim code was spent by another request. Please try again if you have another code." };
+                    }
+                    set.status = 500;
+                    return { error: "Internal server error while updating claim code status." };
+                }
+
+                // 5. Create the admin user
+                let newUser;
+                try {
+                    logger.debug(`Creating admin user for DID ${did}...`);
+                    newUser = await authService.createAdminUserFromDid(did);
+                    logger.info(`Admin user created for DID ${did}, internal userId: ${newUser.userId}`);
+                } catch (error: any) {
+                    logger.error(`Failed to create admin user for DID ${did} after successful claim:`, error);
+                    // This is problematic - the claim is spent, but user creation failed.
+                    // Manual intervention might be needed. Log critical error.
+                    // TODO: Consider a compensation mechanism? (Difficult)
+                    set.status = 500;
+                    return { error: "Claim successful, but failed to create admin user account. Please contact support." };
+                }
+
+                // 6. Generate JWT for the new admin user
+                let token;
+                try {
+                    token = await jwt.sign({ userId: newUser.userId });
+                    logger.debug(`JWT generated for new admin user ${newUser.userId}`);
+                } catch (error: any) {
+                    logger.error(`Failed to sign JWT for new admin user ${newUser.userId}:`, error);
+                    set.status = 500;
+                    // User exists, claim spent, but no token. User needs to login via a future mechanism?
+                    return { error: "Admin account created, but failed to generate session token. Please try logging in." };
+                }
+
+                // 7. Return success response
+                set.status = 201; // Created
+                return {
+                    message: "Admin account claimed successfully.",
+                    userId: newUser.userId,
+                    email: newUser.email, // Return placeholder email
+                    isAdmin: newUser.isAdmin,
+                    token: token,
+                };
+            },
+            {
+                body: AdminClaimSchema,
+                detail: { summary: "Claim an admin account using a DID, claim code, and signature." },
+            }
+        )
     )
     // --- Protected Data Routes ---
     .group("/api/v1/data", (group) =>
@@ -710,3 +876,5 @@ logger.log(`🦊 Vibe Cloud is running at ${server.hostname}:${server.port}`);
 //     app.listen(3000);
 //     logger.log(`🦊 Vibe Cloud is running at ${app.server?.hostname}:${app.server?.port}`);
 // }
+
+export type App = typeof app; // Export the app type for Eden client

@@ -9,6 +9,7 @@
     "devDependencies": {
         "@elysiajs/eden": "^1.2.0",
         "@types/bun": "latest",
+        "@types/varint": "^6.0.3",
         "cross-env": "^7.0.3"
     },
     "peerDependencies": {
@@ -16,11 +17,14 @@
     },
     "dependencies": {
         "@elysiajs/jwt": "^1.2.0",
+        "@noble/ed25519": "^2.2.3",
         "@types/uuid": "^10.0.0",
         "elysia": "^1.2.25",
         "jose": "^6.0.10",
         "minio": "^8.0.5",
+        "multibase": "^4.0.6",
         "nano": "^10.1.4",
-        "uuid": "^11.1.0"
+        "uuid": "^11.1.0",
+        "varint": "^6.0.0"
     }
 }
