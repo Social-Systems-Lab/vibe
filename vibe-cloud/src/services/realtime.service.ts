@@ -47,8 +47,6 @@ export class RealtimeService {
             subscriptions: new Set<string>(),
         };
         this.connections.set(ws, managedContext);
-
-        // Manage the CouchDB listener for this user's database
         this.ensureListenerStarted(userDid);
     }
 
@@ -167,23 +165,21 @@ export class RealtimeService {
         }
 
         const { action, collection } = parsedMessage;
-        const { userDid } = context; // userDid from the established context
+        const { userDid, appId } = context;
 
-        logger.debug(`Processing action '${action}' for collection '${collection}' from user ${userDid}`);
+        logger.debug(`Processing action '${action}' for collection '${collection}' from user ${userDid}, app ${appId}`);
 
         if (action === "subscribe") {
             // **Crucial Permission Check** before subscribing
             const requiredPermission = `read:${collection}`;
-            const canRead = await this.permissionService.can(userDid, requiredPermission);
-
-            if (canRead) {
+            const isAllowed = await this.permissionService.canAppActForUser(userDid, appId, requiredPermission);
+            if (isAllowed) {
                 context.subscriptions.add(collection);
-                // Note: No need to call this.connections.set again, context is mutable
-                logger.info(`User ${userDid} subscribed to collection '${collection}'`);
+                logger.info(`User ${userDid} (via app ${appId}) subscribed to collection '${collection}'`);
                 this.sendJson(ws, { status: "subscribed", collection: collection });
             } else {
-                logger.warn(`User ${userDid} denied subscription to '${collection}' due to permissions.`);
-                this.sendJson(ws, { status: "denied", collection: collection, reason: "Permission denied" });
+                logger.warn(`App ${appId} denied subscription to '${collection}' for user ${userDid} due to permissions.`);
+                this.sendJson(ws, { status: "denied", collection: collection, reason: `App does not have '${requiredPermission}' permission.` });
             }
         } else if (action === "unsubscribe") {
             const removed = context.subscriptions.delete(collection);

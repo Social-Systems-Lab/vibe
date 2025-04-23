@@ -4,13 +4,16 @@ import { DataService, dataService } from "./data.service";
 import { logger } from "../utils/logger";
 import { SYSTEM_DB, USER_DB_PREFIX } from "../utils/constants";
 import { CLAIM_CODES_COLLECTION, USERS_COLLECTION, type ClaimCode, type User } from "../models/models";
-import { NotFoundError } from "elysia";
+import { InternalServerError, NotFoundError } from "elysia";
+import type { PermissionService } from "./permission.service";
 
 export class AuthService {
     private dataService: DataService;
+    private permissionService: PermissionService;
 
-    constructor(dataService: DataService) {
+    constructor(dataService: DataService, permissionService: PermissionService) {
         this.dataService = dataService;
+        this.permissionService = permissionService;
         logger.info("AuthService initialized.");
     }
 
@@ -57,7 +60,15 @@ export class AuthService {
             }
         }
 
-        // 3. TODO: Blob Cleanup (Requires querying BlobMetadata and calling blobService.deleteObject)
+        // 3. Delete the user's permission document
+        try {
+            await this.permissionService.deletePermissionsDoc(userDid);
+            logger.info(`Attempted deletion of permission document for userDid '${userDid}'.`);
+        } catch (error: any) {
+            logger.error(`Error during permission document deletion for userDid '${userDid}':`, error.message || error);
+        }
+
+        // 4. TODO: Blob Cleanup (Requires querying BlobMetadata and calling blobService.deleteObject)
         //logger.warn(`Blob cleanup for user ${userDid} is not yet implemented.`);
     }
 
@@ -124,9 +135,11 @@ export class AuthService {
             collection: USERS_COLLECTION,
         };
 
+        let createResponse: any;
+
         // 1. Save user to database
         try {
-            const createResponse = await dataService.createDocument(SYSTEM_DB, USERS_COLLECTION, {
+            createResponse = await dataService.createDocument(SYSTEM_DB, USERS_COLLECTION, {
                 _id: userDocId,
                 ...newUser,
             });
@@ -134,21 +147,7 @@ export class AuthService {
             if (!createResponse.ok) {
                 throw new Error("Failed to save admin user document from DID.");
             }
-
             logger.info(`Admin user created successfully from DID: ${userDid}, userDid: ${userDid}`);
-
-            // 2. Create the user-specific database
-            const userDbName = `${USER_DB_PREFIX}${userDid}`;
-            await dataService.ensureDatabaseExists(userDbName);
-            logger.info(`User data database created for admin (from DID): ${userDbName}`);
-
-            // Ensure the returned object matches the User type structure
-            return {
-                ...newUser,
-                _id: createResponse.id,
-                _rev: createResponse.rev,
-                isAdmin: true, // Explicitly return isAdmin
-            };
         } catch (error: any) {
             if (error.statusCode === 409) {
                 logger.error(`Admin creation from DID failed: Document conflict for ID ${userDocId} (DID: ${userDid})`, error);
@@ -157,5 +156,47 @@ export class AuthService {
             logger.error(`Error saving admin user document from DID ${userDid}:`, error);
             throw new Error(`Admin user creation failed for DID: ${userDid}.`);
         }
+
+        // 2. Create the user-specific database
+        try {
+            const userDbName = `${USER_DB_PREFIX}${userDid}`;
+            await this.dataService.ensureDatabaseExists(userDbName);
+            logger.info(`User data database created for admin (from DID): ${userDbName}`);
+        } catch (error: any) {
+            logger.error(`Failed to create database for admin user ${userDid}:`, error);
+            // This is problematic. User doc exists, but DB doesn't. Should we compensate?
+            // For now, log critical error and throw. Manual cleanup might be needed.
+            // Consider deleting the user document created in step 1?
+            throw new InternalServerError(`Failed to create database for admin user ${userDid}.`);
+        }
+
+        // 3. Grant default direct permissions to the new admin user
+        const defaultAdminPermissions = [
+            "read:*", // Read anything (including other users' data if needed, system data)
+            "write:*", // Write anything (including system data)
+            "manage:permissions", // Ability to grant/revoke permissions
+            "manage:users", // Ability to manage users (if such endpoints exist)
+            "read:$blobs", // Explicit read access to shared blobs
+            "write:$blobs", // Explicit write access to shared blobs
+        ];
+        try {
+            await this.permissionService.setUserDirectPermissions(userDid, defaultAdminPermissions);
+            logger.info(`Default admin direct permissions granted to user ${userDid}.`);
+        } catch (error: any) {
+            logger.error(`Failed to set default direct permissions for admin user ${userDid}:`, error);
+            // Critical failure. User exists, DB exists, but permissions failed.
+            // Manual intervention likely required. Log and throw.
+            throw new InternalServerError(`Failed to set default permissions for admin user ${userDid}.`);
+        }
+
+        // 4. Return the created user object
+        const createdUser: User = {
+            _id: createResponse.id,
+            _rev: createResponse.rev,
+            userDid: userDid,
+            isAdmin: true,
+            collection: USERS_COLLECTION,
+        };
+        return createdUser;
     }
 }

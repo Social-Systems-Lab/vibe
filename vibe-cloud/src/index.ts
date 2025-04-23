@@ -44,7 +44,7 @@ const secretKey = new TextEncoder().encode(jwtSecret);
 await dataService.connect();
 await dataService.ensureDatabaseExists(SYSTEM_DB);
 await blobService.initialize();
-const authService = new AuthService(dataService);
+const authService = new AuthService(dataService, permissionService);
 const realtimeService = new RealtimeService(dataService, permissionService);
 
 // --- Initial Admin Claim Code Bootstrap ---
@@ -708,20 +708,22 @@ const server = Bun.serve({
         if (url.pathname === "/ws") {
             logger.debug("Request received for /ws path");
             const token = url.searchParams.get("token");
+            const appId = url.searchParams.get("appId");
 
             if (!token) {
                 logger.warn("Fetch WS: No token provided in query string.");
-                // Reject the request before attempting upgrade
                 return new Response("Missing authentication token", { status: 401 });
             }
+            if (!appId) {
+                logger.warn("Fetch WS: Missing 'appId' query parameter.");
+                return new Response("Missing application identifier", { status: 400 });
+            }
+
             // --- MANUAL JWT Verification ---
             try {
-                const { payload } = await jose.jwtVerify(token, secretKey, {
-                    // Specify expected algorithms if needed, e.g., algorithms: ['HS256']
-                });
-
+                const { payload } = await jose.jwtVerify(token, secretKey);
                 if (!payload || typeof payload.userDid !== "string") {
-                    logger.warn("Fetch WS: Token payload invalid or missing 'userDid' string field.");
+                    logger.warn("Fetch WS: Token payload invalid or missing 'userDid'.");
                     return new Response("Invalid token payload", { status: 401 });
                 }
 
@@ -731,8 +733,7 @@ const server = Bun.serve({
                 // --- Attempt Upgrade ---
                 const success = server.upgrade(req, {
                     // Attach the verified userDid to the WebSocket context
-                    data: { userDid: userDid },
-                    // headers: {} // Optional: Add custom headers to the 101 response
+                    data: { userDid: userDid, appId: appId } satisfies WebSocketAuthContext,
                 });
 
                 if (success) {

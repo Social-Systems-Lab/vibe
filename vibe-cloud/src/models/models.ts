@@ -176,6 +176,7 @@ export type ErrorResponse = Static<typeof ErrorResponseSchema>;
 
 export interface WebSocketAuthContext {
     userDid: string;
+    appId: string; // App ID (URL or DID) that initiated the WebSocket connection
 }
 
 export interface WebSocketManagedContext extends WebSocketAuthContext {
