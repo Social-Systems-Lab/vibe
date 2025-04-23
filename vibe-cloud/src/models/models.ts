@@ -3,14 +3,16 @@ import { t, type Static } from "elysia";
 import type nano from "nano";
 import type { DocumentInsertResponse, MaybeDocument } from "nano";
 
-// --- Collection Constants ---
+//#region --- Collection Constants ---
 
 export const PERMISSIONS_COLLECTION = "$permissions" as const;
 export const USERS_COLLECTION = "$users" as const;
 export const BLOBS_COLLECTION = "$blobs" as const;
 export const CLAIM_CODES_COLLECTION = "$claimCodes" as const;
 
-// --- Core Database Document Schemas & Types ---
+//#endregion
+
+//#region --- Core Database Document Schemas & Types ---
 
 export const PermissionSchema = t.Object({
     _id: t.Optional(t.String()), // userDid, optional before creation
@@ -68,15 +70,34 @@ export const GenericDataDocumentSchema = t.Object(
 );
 export type GenericDataDocument = Static<typeof GenericDataDocumentSchema>;
 
-// --- API Data Transfer Objects (DTOs) / View Models ---
-// Types used for API responses, often derived but potentially modified.
+//#endregion
 
-// Exported User type excluding sensitive fields, derived from the User type
-export type UserPublicProfile = Omit<User, "hashedPassword" | "_rev" | "collection">;
+//#region --- API Data Transfer Objects (DTOs) / View Models ---
+
+// Schema for the /data/read endpoint body
+export const ReadPayloadSchema = t.Object({
+    collection: t.String({ minLength: 1, error: "Collection name is required." }),
+    filter: t.Optional(
+        t.Record(t.String(), t.Unknown(), {
+            error: "Filter must be an object.",
+        })
+    ),
+});
+export type ReadPayload = Static<typeof ReadPayloadSchema>;
+
+// Schema for the /data/write endpoint body
+// Allows either a single object or an array of objects for the 'data' field
+const WriteDataItemSchema = t.Object({}, { additionalProperties: true }); // Allow any structure for docs
+export const WritePayloadSchema = t.Object({
+    collection: t.String({ minLength: 1, error: "Collection name is required." }),
+    data: t.Union([WriteDataItemSchema, t.Array(WriteDataItemSchema)], {
+        error: "Data must be a single object or an array of objects.",
+    }),
+});
+export type WritePayload = Static<typeof WritePayloadSchema>;
 
 // Response type for successful updates/inserts (can be reused)
 export interface CouchDbModificationResponse extends DocumentInsertResponse {}
-// Specific alias for clarity
 export interface PermissionUpdateResponse extends CouchDbModificationResponse {}
 
 // --- Elysia Validation Schemas & Derived Types (for API Payloads/Params) ---
@@ -86,7 +107,7 @@ export interface PermissionUpdateResponse extends CouchDbModificationResponse {}
 export const GenericDataPayloadSchema = t.Object({}, { additionalProperties: true });
 export type GenericDataPayload = Static<typeof GenericDataPayloadSchema>;
 
-// Schema for updating generic documents (requires _rev, allows any other data)
+// Schema for updating generic documents
 export const UpdateDataPayloadSchema = t.Intersect([
     t.Object({
         _rev: t.String({ error: "Missing required field: _rev" }),
@@ -137,7 +158,9 @@ export const ErrorResponseSchema = t.Object({
 });
 export type ErrorResponse = Static<typeof ErrorResponseSchema>;
 
-// --- WebSocket Types ---
+//#endregion
+
+//#region --- WebSocket Types ---
 
 export interface WebSocketAuthContext {
     userDid: string;
@@ -157,9 +180,13 @@ export type WebSocketServerMessage =
     | { error: string }
     | { type: "update" | "delete"; collection: string; data: any }; // Consider typing 'data' more strictly
 
-// --- Base & External Types ---
+//#endregion
+
+//#region --- Base & External Types ---
 
 export type { DocumentInsertResponse, MaybeDocument };
 export type ChangeWithDoc<TDocSchema extends t.TLiteralObject | t.TObject<any>> = nano.DatabaseChangesResultItem & {
     doc?: Static<TDocSchema> & MaybeDocument; // Ensure _id/_rev might be present
 };
+
+//#endregion

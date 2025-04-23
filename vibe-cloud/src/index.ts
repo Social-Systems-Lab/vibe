@@ -2,9 +2,8 @@
 import { Elysia, t, NotFoundError, InternalServerError, type Static } from "elysia";
 import { jwt } from "@elysiajs/jwt";
 import { dataService } from "./services/data.service";
-import { authService } from "./services/auth.service";
 import { permissionService } from "./services/permission.service";
-import { BlobService } from "./services/blob.service";
+import { blobService, BlobService } from "./services/blob.service";
 import { RealtimeService } from "./services/realtime.service";
 import { logger } from "./utils/logger";
 import { randomUUID } from "crypto";
@@ -16,7 +15,6 @@ import { verify } from "@noble/ed25519";
 import { Buffer } from "buffer";
 import {
     AdminClaimSchema,
-    AuthCredentialsSchema,
     BlobDownloadResponseSchema,
     BlobUploadBodySchema,
     CLAIM_CODES_COLLECTION,
@@ -30,6 +28,7 @@ import {
     type WebSocketAuthContext,
 } from "./models/models";
 import { SYSTEM_DB, USER_DB_PREFIX } from "./utils/constants";
+import { AuthService } from "./services/auth.service";
 
 // --- Environment Variable Validation ---
 const jwtSecret = process.env.JWT_SECRET;
@@ -37,12 +36,13 @@ if (!jwtSecret) {
     logger.error("CRITICAL: JWT_SECRET environment variable is not set.");
     throw new Error("JWT_SECRET environment variable not configured.");
 }
-
 const secretKey = new TextEncoder().encode(jwtSecret);
 
 // --- Service Initialization & DB Setup ---
 await dataService.connect();
 await dataService.ensureDatabaseExists(SYSTEM_DB);
+await blobService.initialize();
+const authService = new AuthService(dataService);
 const realtimeService = new RealtimeService(dataService, permissionService);
 
 // --- Initial Admin Claim Code Bootstrap ---
@@ -56,21 +56,71 @@ try {
 // --- End Initial Admin Claim Code Bootstrap ---
 
 // --- App Initialization ---
-export const app = new Elysia() // Re-export the instance
+export const app = new Elysia()
     .decorate("dataService", dataService)
     .decorate("authService", authService)
     .decorate("permissionService", permissionService)
-    .decorate("blobService", BlobService)
+    .decorate("blobService", blobService)
     .decorate("realtimeService", realtimeService)
     .use(
         jwt({
             name: "jwt",
-            secret: process.env.JWT_SECRET!,
+            secret: jwtSecret,
             schema: JWTPayloadSchema,
         })
     )
     .onError(({ code, error, set }) => {
         let isHandled = false; // Flag to track if we handled it
+
+        // Handle specific errors thrown by services or Elysia
+        if (error instanceof NotFoundError) {
+            set.status = 404;
+            isHandled = true;
+            return { error: error.message || "Resource not found." };
+        }
+        if (error instanceof InternalServerError) {
+            logger.error(`[${code}] Internal Server Error: ${error.message}`, error.stack);
+            set.status = 500;
+            isHandled = true;
+            return { error: "An internal server error occurred." };
+        }
+
+        if (error instanceof Error) {
+            // Specific string matching (keep if useful, but prefer specific error types)
+            if (error.message.includes("Invalid credentials")) {
+                set.status = 401;
+                isHandled = true;
+                return { error: "Invalid credentials." };
+            }
+            if (error.message.includes("Email already registered")) {
+                set.status = 409;
+                isHandled = true;
+                return { error: "Email already registered." };
+            }
+            if (error.message.includes("User DID already exists")) {
+                // From AuthService
+                set.status = 409;
+                isHandled = true;
+                return { error: "User DID already exists." };
+            }
+            if (error.message.includes("Revision conflict")) {
+                set.status = 409;
+                isHandled = true;
+                return { error: error.message };
+            }
+            if (error.message.includes("Database connection not initialized")) {
+                logger.error(`[${code}] Service Unavailable: ${error.message}`, error.stack);
+                set.status = 503;
+                isHandled = true;
+                return { error: "Database service is not available." };
+            }
+            if (error.message.includes("Object not found in storage")) {
+                // From BlobService
+                set.status = 404;
+                isHandled = true;
+                return { error: "Object not found in storage." };
+            }
+        }
 
         // --- Handle Specific Auth Errors ---
         if (error instanceof Error) {
@@ -113,21 +163,14 @@ export const app = new Elysia() // Re-export the instance
             // Add other specific custom errors from your services here if needed
         }
 
-        // --- Handle Specific Elysia Codes ---
+        // Elysia specific codes
         if (code === "VALIDATION") {
             set.status = 400;
-            let details = "Invalid request body or parameters.";
-            // Extract specific validation errors if possible (depends on Elysia version/plugins)
-            // Example: if (error.errors) details = error.errors.map(e => e.message).join(', ');
-            if (error instanceof Error && error.message) {
-                details = error.message; // Use the error message provided by validation
-            }
-            logger.warn(`[VALIDATION] Failed - Details: ${details}`, error); // Log the detailed error
+            let details = error instanceof Error ? error.message : "Invalid request body or parameters.";
+            logger.warn(`[VALIDATION] Failed - Details: ${details}`, error);
             isHandled = true;
-            // Return a user-friendly message, potentially including details
             return { error: "Validation failed", details: details };
         }
-
         if (code === "PARSE") {
             logger.warn(`[PARSE] Failed to parse request body.`, error);
             set.status = 400;
@@ -135,29 +178,14 @@ export const app = new Elysia() // Re-export the instance
             return { error: "Failed to parse request body." };
         }
 
-        // --- Add Handling for InternalServerError ---
-        if (error instanceof InternalServerError) {
-            logger.error(`[${code}] Internal Server Error: ${error.message}`, error.stack);
-            set.status = 500;
-            // Avoid leaking internal details in production
-            return { error: "An internal server error occurred." };
-        }
-
-        // --- Log ONLY if Error Was Not Handled Above ---
+        // Fallback for unhandled errors
         if (!isHandled) {
-            // Log truly unexpected errors
-            logger.error(`[${code}] Unhandled Error Occurred:`, error); // Log the full error object
-        }
-
-        // --- Set Default Status and Return Generic Response for Unhandled ---
-        if (!isHandled) {
-            // Ensure a status code is set if it wasn't handled specifically
+            logger.error(`[${code}] Unhandled Error Occurred:`, error);
             if (!set.status || Number(set.status) < 400) {
-                set.status = 500; // Default to Internal Server Error
+                set.status = 500;
             }
             return { error: "An internal server error occurred." };
         }
-        // If handled, the specific return above already took place.
     })
     .get("/health", () => ({ status: "ok" }))
     // --- Admin Claim Route (Unauthenticated) ---
@@ -235,7 +263,6 @@ export const app = new Elysia() // Re-export the instance
                     const messageBytes = new TextEncoder().encode(claimCode); // Encode the message (claimCode)
 
                     const isSignatureValid = await verify(signatureBytes, messageBytes, publicKeyBytes);
-
                     if (!isSignatureValid) {
                         logger.warn(`Claim attempt failed: Invalid signature for claim code '${claimDoc._id}' and DID ${did}`);
                         set.status = 400;

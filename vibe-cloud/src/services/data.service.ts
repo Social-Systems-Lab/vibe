@@ -1,8 +1,14 @@
 // data.service.ts
 import nano from "nano";
-import type { DocumentScope, DocumentInsertResponse, DocumentGetResponse, DocumentDestroyResponse, MaybeDocument } from "nano";
+import type { DocumentScope, MaybeDocument } from "nano";
 import { logger } from "../utils/logger";
 import { InternalServerError, NotFoundError } from "elysia";
+import { randomUUIDv7 } from "bun";
+
+export interface ReadResult<T = any> {
+    docs: (T & MaybeDocument)[];
+    doc?: T & MaybeDocument;
+}
 
 export class DataService {
     private nano: nano.ServerScope | null = null;
@@ -10,11 +16,8 @@ export class DataService {
     private isConnecting = false;
     private connectionPromise: Promise<void> | null = null;
 
-    constructor() {
-        // Delay connection until needed or explicitly called
-    }
+    constructor() {}
 
-    // Add this method
     isInitialized(): boolean {
         return !!this.nano;
     }
@@ -68,7 +71,6 @@ export class DataService {
 
     getConnection(): nano.ServerScope {
         if (!this.nano) {
-            // This should ideally not happen if connect() is called and awaited properly at startup
             logger.error("Attempted to get CouchDB connection before initialization.");
             throw new Error("Database connection not initialized. Call connect() first.");
         }
@@ -111,13 +113,127 @@ export class DataService {
     }
 
     /**
+     * Reads documents matching a filter within a specific collection in a user's database.
+     * @param dbName The user-specific database name (e.g., 'userdata-did:...').
+     * @param collection The name of the collection ($collection field).
+     * @param filter Optional Mango selector fields (excluding $collection).
+     * @returns ReadResult containing the documents.
+     */
+    async readOnce<T = any>(dbName: string, collection: string, filter: Record<string, any> = {}): Promise<ReadResult<T>> {
+        if (!collection) {
+            throw new Error("Collection name must be provided for readOnce.");
+        }
+        const query: nano.MangoQuery = {
+            selector: {
+                ...filter,
+                $collection: collection, // Add collection to selector
+            },
+            // Add other options like fields, sort, limit if needed later
+        };
+
+        try {
+            const response = await this.findDocuments<T & MaybeDocument>(dbName, query);
+            const result: ReadResult<T> = {
+                docs: response.docs || [],
+                doc: response.docs?.[0], // First document or undefined
+            };
+            return result;
+        } catch (error) {
+            // Logged in findDocuments, rethrow or handle
+            logger.error(`readOnce failed for db "${dbName}", collection "${collection}":`, error);
+            // Rethrow specific errors if needed, otherwise let the generic handler catch
+            if (error instanceof Error) throw error;
+            throw new InternalServerError("Failed to read documents.");
+        }
+    }
+
+    /**
+     * Writes one or more documents to a specific collection in a user's database.
+     * Handles ID generation and updates (_rev).
+     * @param dbName The user-specific database name.
+     * @param collection The name of the collection ($collection field).
+     * @param docOrDocs A single document or an array of documents.
+     * @returns The CouchDB response (single insert or bulk response).
+     */
+    async write<T extends Record<string, any>>(
+        dbName: string,
+        collection: string,
+        docOrDocs: T | T[]
+    ): Promise<nano.DocumentInsertResponse | nano.DocumentBulkResponse[]> {
+        if (!collection) {
+            throw new Error("Collection name must be provided for write.");
+        }
+        const db = await this.ensureDatabaseExists(dbName);
+
+        const processDoc = (doc: T): T & { _id?: string; $collection: string } => {
+            let processedDoc = { ...doc } as any;
+            // Add $collection field
+            processedDoc.$collection = collection;
+            // Generate _id if missing, using UUID for better uniqueness
+            if (!processedDoc._id) {
+                processedDoc._id = `${collection}/${randomUUIDv7()}`; // Use UUID
+                logger.debug(`Generated _id "${processedDoc._id}" for new document.`);
+            } else if (!processedDoc._id.startsWith(`${collection}/`)) {
+                logger.warn(`Document ID "${processedDoc._id}" does not follow the standard "${collection}/" prefix.`);
+                throw new Error(`Document ID "${processedDoc._id}" does not follow the standard "${collection}/" prefix.`);
+            }
+            return processedDoc as T & { _id: string; $collection: string };
+        };
+
+        try {
+            if (Array.isArray(docOrDocs)) {
+                // --- Bulk Write ---
+                if (docOrDocs.length === 0) {
+                    logger.info("Write called with empty array, nothing to do.");
+                    // Return an empty-like bulk response structure
+                    return [] as nano.DocumentBulkResponse[];
+                }
+
+                const docsToInsert = docOrDocs.map(processDoc);
+                logger.debug(`Performing bulk write for ${docsToInsert.length} documents in db "${dbName}", collection "${collection}"`);
+
+                // Nano's bulk handles fetching _revs automatically if IDs exist
+                const response = await db.bulk({ docs: docsToInsert });
+
+                // Check response items for errors
+                const errors = response.filter((item) => item.error);
+                if (errors.length > 0) {
+                    logger.error(`Bulk write encountered errors in db "${dbName}", collection "${collection}":`, errors);
+                    // Consider throwing a custom error or returning the partial success response
+                    // throw new Error(`Bulk write failed for ${errors.length} documents.`);
+                } else {
+                    logger.debug(`Bulk write successful for ${docsToInsert.length} documents in db "${dbName}", collection "${collection}"`);
+                }
+                return response;
+            } else {
+                // --- Single Write ---
+                const docToInsert = processDoc(docOrDocs);
+                logger.debug(`Performing single write for document id "${docToInsert._id}" in db "${dbName}", collection "${collection}"`);
+
+                // db.insert handles create or update based on _id/_rev presence
+                // It fetches _rev automatically if _id exists and _rev is missing
+                const response = await db.insert(docToInsert);
+                if (!response.ok) {
+                    logger.error(`Single write reported not OK for db ${dbName}, id ${docToInsert._id}:`, response);
+                    throw new InternalServerError("Failed to write document, unexpected response from database.");
+                }
+                logger.debug(`Single write successful for document id "${response.id}", new rev: ${response.rev}`);
+                return response;
+            }
+        } catch (error: any) {
+            logger.error(`Write operation failed for db "${dbName}", collection "${collection}":`, error.message || error);
+            if (error instanceof Error) throw error; // Rethrow known errors
+            throw new InternalServerError("Failed to write document(s).");
+        }
+    }
+
+    /**
      * Creates a new document in the specified database.
      * The 'collection' concept is handled by adding a '$collection' field to the document.
      */
     async createDocument(dbName: string, collection: string, data: Record<string, any>): Promise<nano.DocumentInsertResponse> {
         try {
             const db = await this.ensureDatabaseExists(dbName);
-            // **Add the $collection field**
             const docToInsert = { ...data, $collection: collection };
             const response = await db.insert(docToInsert);
             if (!response.ok) {
@@ -156,12 +272,10 @@ export class DataService {
 
     /**
      * Updates an existing document in the specified database. Requires the document ID and current revision (_rev).
-     * The 'collection' concept is handled by adding/updating a 'type' field.
      */
     async updateDocument(dbName: string, collection: string, docId: string, rev: string, data: Record<string, any>): Promise<nano.DocumentInsertResponse> {
         try {
             const db = await this.ensureDatabaseExists(dbName);
-            // **Ensure $collection field is present/updated**
             const docToUpdate = { ...data, _id: docId, _rev: rev, $collection: collection };
             const response = await db.insert(docToUpdate);
             if (!response.ok) {
@@ -215,16 +329,25 @@ export class DataService {
 
     /**
      * Executes a Mango query against a specified database.
-     * @param dbName - The name of the database to query.
-     * @param query - The Mango query object (selector, fields, sort, limit, etc.).
-     * @returns A promise that resolves with the query result containing matching documents.
-     * @throws Error if the query fails or the database connection is not initialized.
      */
     async findDocuments<T extends MaybeDocument>(dbName: string, query: nano.MangoQuery): Promise<nano.MangoResponse<T>> {
         if (!this.nano) throw new Error("Database connection not initialized.");
 
         try {
             const db = await this.ensureDatabaseExists(dbName);
+
+            // Ensure the index exists (might be redundant if ensureDatabaseExists handles it, but safe)
+            if (query.selector && query.selector.$collection) {
+                try {
+                    await db.createIndex({ index: { fields: ["$collection"] }, name: "idx-collection" });
+                } catch (indexError: any) {
+                    // Ignore if index already exists, log other errors
+                    if (!indexError.message?.includes("exists")) {
+                        logger.error(`Failed to ensure index on '$collection' in db "${dbName}" before find:`, indexError.message || indexError);
+                    }
+                }
+            }
+
             logger.debug(`Executing Mango query in db "${dbName}":`, JSON.stringify(query));
             const response = await db.find(query);
             logger.debug(`Mango query completed in db "${dbName}", found ${response.docs?.length ?? 0} documents.`);

@@ -1,60 +1,17 @@
 // auth.service.ts
 import nano from "nano"; // Added import
-import type { DocumentListResponse } from "nano"; // Added type import
-import { dataService } from "./data.service";
+import { DataService, dataService } from "./data.service";
 import { logger } from "../utils/logger";
-import { v4 as uuidv4 } from "uuid"; // Using uuid for user IDs
 import { SYSTEM_DB, USER_DB_PREFIX } from "../utils/constants";
 import { CLAIM_CODES_COLLECTION, USERS_COLLECTION, type ClaimCode, type User } from "../models/models";
+import { NotFoundError } from "elysia";
 
 export class AuthService {
-    private nanoInstance: nano.ServerScope; // Store nano instance
+    private dataService: DataService;
 
-    constructor() {
-        // Initialize nano instance for the service
-        const couchdbUrl = process.env.COUCHDB_URL;
-        const couchdbUser = process.env.COUCHDB_USER;
-        const couchdbPassword = process.env.COUCHDB_PASSWORD;
-
-        if (!couchdbUrl || !couchdbUser || !couchdbPassword) {
-            logger.error("CRITICAL: CouchDB environment variables (COUCHDB_URL, COUCHDB_USER, COUCHDB_PASSWORD) are not set for AuthService.");
-            throw new Error("CouchDB environment variables not configured for AuthService.");
-        }
-
-        try {
-            this.nanoInstance = nano({
-                url: couchdbUrl,
-                requestDefaults: {
-                    auth: {
-                        username: couchdbUser,
-                        password: couchdbPassword,
-                    },
-                },
-            });
-        } catch (error) {
-            logger.error("Failed to initialize Nano instance in AuthService:", error);
-            throw new Error("Failed to initialize Nano instance in AuthService.");
-        }
-
-        // Ensure the system database exists when the service is instantiated
-        this.ensureSystemDbExists().catch((err) => {
-            logger.error("Failed to ensure system DB exists on AuthService startup:", err);
-            // process.exit(1); // Optional: exit if DB setup fails critically
-        });
-    }
-
-    private async ensureSystemDbExists(): Promise<void> {
-        try {
-            await this.nanoInstance.db.get(SYSTEM_DB);
-        } catch (error: any) {
-            if (error.statusCode === 404) {
-                await this.nanoInstance.db.create(SYSTEM_DB);
-                logger.info(`Database '${SYSTEM_DB}' created by AuthService.`);
-            } else {
-                logger.error(`Error checking database '${SYSTEM_DB}' in AuthService:`, error);
-                throw error;
-            }
-        }
+    constructor(dataService: DataService) {
+        this.dataService = dataService;
+        logger.info("AuthService initialized.");
     }
 
     /**
@@ -63,42 +20,45 @@ export class AuthService {
      * @param userDid - The application-specific unique ID of the user to delete.
      */
     async deleteUser(userDid: string): Promise<void> {
-        logger.info(`Attempting to delete user with userDid: ${userDid}`);
+        logger.info(`Attempting to delete user and data for userDid: ${userDid}`);
+
         const userDocId = `${USERS_COLLECTION}/${userDid}`;
         const userDbName = `${USER_DB_PREFIX}${userDid}`;
 
         // 1. Delete the user document from SYSTEM_DB
         try {
-            const usersDb = this.nanoInstance.use<User>(SYSTEM_DB);
-            // Need to get the revision first
-            const userDoc = await usersDb.get(userDocId);
-            await usersDb.destroy(userDocId, userDoc._rev);
+            // Check if the user exists in the database
+            const userDoc = await this.dataService.getDocument<User>(SYSTEM_DB, userDocId);
+            if (!userDoc) {
+                logger.warn(`User document '${userDid}' not found in '${SYSTEM_DB}' during deletion (might already be deleted).`);
+                return;
+            }
+            await this.dataService.deleteDocument(SYSTEM_DB, userDocId, userDoc._rev!);
             logger.info(`Successfully deleted user document '${userDocId}' from '${SYSTEM_DB}'.`);
         } catch (error: any) {
-            if (error.statusCode === 404) {
-                logger.warn(`User document '${userDocId}' not found in '${SYSTEM_DB}' during deletion (might already be deleted).`);
+            if (error instanceof NotFoundError) {
+                logger.warn(`User document '${userDocId}' not found in '${SYSTEM_DB}' during deletion.`);
             } else {
-                // Log other errors but proceed to try deleting the data DB
                 logger.error(`Error deleting user document '${userDocId}' from '${SYSTEM_DB}':`, error.message || error);
             }
         }
 
         // 2. Delete the user's data database
         try {
-            await this.nanoInstance.db.destroy(userDbName);
+            // Use dataService's connection to destroy DB
+            await this.dataService.getConnection().db.destroy(userDbName);
             logger.info(`Successfully deleted user data database '${userDbName}'.`);
         } catch (error: any) {
-            if (error.statusCode === 404) {
-                logger.warn(`User data database '${userDbName}' not found during deletion (might already be deleted).`);
+            if (error.statusCode === 404 || error.message?.includes("not_found")) {
+                logger.warn(`User data database '${userDbName}' not found during deletion.`);
             } else {
                 logger.error(`Error deleting user data database '${userDbName}':`, error.message || error);
+                // Optional: throw error if DB deletion failure is critical
             }
         }
 
-        // TODO: Implement blob cleanup on user deletion if required.
-        // This currently ONLY deletes the user document and their userdata database.
-        // Associated blobs in Minio and metadata in blob_metadata are NOT deleted.
-        // Implementing this would require querying blob_metadata by ownerId and deleting associated resources.
+        // 3. TODO: Blob Cleanup (Requires querying BlobMetadata and calling blobService.deleteObject)
+        //logger.warn(`Blob cleanup for user ${userDid} is not yet implemented.`);
     }
 
     /**
@@ -131,8 +91,8 @@ export class AuthService {
                     collection: CLAIM_CODES_COLLECTION,
                 };
                 try {
-                    // Use dataService to create the document (collection name "" for dedicated DB)
-                    await dataService.createDocument(SYSTEM_DB, "", newClaimCodeDoc); // TODO FIX use specific collection
+                    // Use dataService to create the document
+                    await dataService.createDocument(SYSTEM_DB, CLAIM_CODES_COLLECTION, newClaimCodeDoc);
                     logger.info(`Successfully created initial admin claim code document '${initialAdminDocId}'.`);
                 } catch (createError: any) {
                     logger.error(`Failed to create initial admin claim code document '${initialAdminDocId}':`, createError);
@@ -164,7 +124,7 @@ export class AuthService {
             collection: USERS_COLLECTION,
         };
 
-        // 1. Save user to vibe_users database
+        // 1. Save user to database
         try {
             const createResponse = await dataService.createDocument(SYSTEM_DB, USERS_COLLECTION, {
                 _id: userDocId,
@@ -198,12 +158,4 @@ export class AuthService {
             throw new Error(`Admin user creation failed for DID: ${userDid}.`);
         }
     }
-
-    /**
-     * Finds the first user document with isAdmin set to true. (REMOVED - Use claim codes now)
-     */
-    // async findAdminUser(): Promise<(UserDocument & { _id: string; _rev: string }) | null> { ... } // Method removed
 }
-
-// Export a singleton instance
-export const authService = new AuthService();
