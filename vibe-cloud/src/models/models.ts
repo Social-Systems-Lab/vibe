@@ -14,14 +14,26 @@ export const CLAIM_CODES_COLLECTION = "$claimCodes" as const;
 
 //#region --- Core Database Document Schemas & Types ---
 
+// Schema for storing app grants within a user's permission document
+export const AppGrantSchema = t.Record(
+    t.String(), // Key: appId (URL or DID)
+    t.Array(t.String(), { minItems: 1 }), // Value: Array of granted permission strings (scopes)
+    { description: "Map of application IDs to their granted permissions for this user." }
+);
+
+// Revised Permission Schema
 export const PermissionSchema = t.Object({
-    _id: t.Optional(t.String()), // userDid, optional before creation
+    _id: t.Optional(t.String()), // Should be userDid
     _rev: t.Optional(t.String()),
-    userDid: t.String(),
-    allowedActions: t.Array(t.String()), // e.g., ["read:notes", "write:notes"]
+    userDid: t.String({ description: "The user who owns these permissions/grants." }),
     collection: t.Literal(PERMISSIONS_COLLECTION),
+    appGrants: t.Optional(AppGrantSchema), // Map of appId -> granted scopes
+    directPermissions: t.Optional(
+        t.Array(t.String(), { minItems: 1 }) // User's own direct permissions (e.g., read:$blobs)
+    ),
 });
 export type Permission = Static<typeof PermissionSchema>;
+export interface PermissionUpdateResponse extends CouchDbModificationResponse {} // Alias for CouchDB response
 
 export const UserSchema = t.Object({
     _id: t.Optional(t.String()),

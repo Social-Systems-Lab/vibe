@@ -1,7 +1,7 @@
 // index.ts
 import { Elysia, t, NotFoundError, InternalServerError, type Static } from "elysia";
 import { jwt } from "@elysiajs/jwt";
-import { dataService } from "./services/data.service";
+import { dataService, type ReadResult } from "./services/data.service";
 import { permissionService } from "./services/permission.service";
 import { blobService, BlobService } from "./services/blob.service";
 import { RealtimeService } from "./services/realtime.service";
@@ -22,7 +22,9 @@ import {
     ErrorResponseSchema,
     GenericDataDocumentSchema,
     JWTPayloadSchema,
+    ReadPayloadSchema,
     UpdateDataPayloadSchema,
+    WritePayloadSchema,
     type BlobMetadata,
     type ClaimCode,
     type WebSocketAuthContext,
@@ -287,7 +289,7 @@ export const app = new Elysia()
                 try {
                     logger.debug(`Attempting to mark claim code '${claimDoc._id}' as spent...`);
                     // Use updateDocument - requires _rev. Collection name "" for dedicated DB.
-                    await dataService.updateDocument(SYSTEM_DB, "", claimDoc._id, claimDoc._rev, updatedClaimData);
+                    await dataService.updateDocument(SYSTEM_DB, "", claimDoc._id, claimDoc._rev!, updatedClaimData);
                     logger.info(`Claim code '${claimDoc._id}' successfully marked as spent by DID ${did}.`);
                 } catch (error: any) {
                     logger.error(`Failed to mark claim code '${claimDoc._id}' as spent:`, error);
@@ -345,157 +347,163 @@ export const app = new Elysia()
     // --- Protected Data Routes ---
     .group("/api/v1/data", (group) =>
         group
+            // 1. Derive User AND App Context
             .derive(async ({ jwt, request: { headers } }) => {
                 const authHeader = headers.get("authorization");
-                if (!authHeader || !authHeader.startsWith("Bearer ")) {
-                    // No token provided
-                    return { user: null };
-                }
+                const appIdHeader = headers.get("x-vibe-app-id"); // Get App ID header
 
-                const token = authHeader.substring(7); // Extract token after "Bearer "
+                let user: { userDid: string } | null = null;
+                let appId: string | null = appIdHeader || null;
 
-                try {
-                    // Verify the token using the jwt instance
-                    const payload = await jwt.verify(token);
-                    if (!payload) {
-                        // Verification failed (e.g., invalid signature, expired)
-                        return { user: null };
+                // Verify JWT
+                if (authHeader && authHeader.startsWith("Bearer ")) {
+                    const token = authHeader.substring(7);
+                    try {
+                        // Use the injected jwt instance for verification
+                        const payload = await jwt.verify(token);
+                        if (payload) {
+                            // Ensure payload is valid
+                            user = payload as { userDid: string };
+                        }
+                    } catch (error) {
+                        logger.debug("JWT verification failed in derive");
+                        user = null; // Invalid JWT
                     }
-                    // Ensure the payload matches the expected schema (contains userDid)
-                    // The jwt plugin already validates against JWTPayloadSchema on verify
-                    // if successful, payload should conform.
-                    return { user: payload as { userDid: string } }; // Add payload as 'user' to context
-                } catch (error) {
-                    // Log the error for debugging if needed
-                    // logger.warn("JWT verification error:", error.message);
-                    // Token verification failed (invalid format, expired, etc.)
-                    return { user: null };
                 }
+                return { user, appId }; // Return both derived values
             })
-            // This onBeforeHandle now checks JWT and then permissions
-            .onBeforeHandle(async ({ user, permissionService, request, params, set }) => {
-                // 1. Check JWT authentication (derived user property)
+            // 2. Authentication & Permission Check Middleware
+            .onBeforeHandle(async ({ user, appId, permissionService, request, body, set }) => {
+                // Check User JWT authentication
                 if (!user) {
                     set.status = 401;
-                    return { error: "Unauthorized: Invalid token." }; // Stop execution
+                    logger.warn("Data API access denied: Missing or invalid user token.");
+                    return { error: "Unauthorized: Invalid or missing user token." };
                 }
 
-                // 2. Determine required permission based on method and collection
-                const { collection } = params as { collection: string }; // Assume collection is always present here
-                let requiredPermission: string;
-                switch (request.method.toUpperCase()) {
-                    case "POST":
-                    case "PUT":
-                    case "DELETE":
-                        requiredPermission = `write:${collection}`;
-                        break;
-                    case "GET":
-                        requiredPermission = `read:${collection}`;
-                        break;
-                    default:
-                        // Should not happen with defined routes, but handle defensively
-                        logger.warn(`Permission check encountered unexpected method: ${request.method}`);
-                        set.status = 405; // Method Not Allowed
-                        return { error: "Method Not Allowed" };
+                // Check if App ID was provided (required for data access via Agent)
+                if (!appId) {
+                    set.status = 400; // Bad Request
+                    logger.warn(`Data API access denied for user ${user.userDid}: Missing X-Vibe-App-ID header.`);
+                    return { error: "Bad Request: Missing X-Vibe-App-ID header." };
                 }
 
-                // 3. Check permission using the service
-                const { userDid } = user;
-                const isAllowed = await permissionService.can(userDid, requiredPermission);
+                // Determine required permission based on action/collection
+                let requiredPermission: string | null = null;
+                const path = new URL(request.url).pathname;
+
+                // Body might not be parsed/validated yet in onBeforeHandle, safer to parse manually if needed
+                // For now, assume body will be validated by the route handler, but we need collection for permission check.
+                // This is tricky. A better approach might be to put permission check *after* body validation.
+                // Let's try extracting collection from body *if possible* but handle failure.
+                let collection: string | null = null;
+                try {
+                    // Attempt to access collection from body if it's an object
+                    if (typeof body === "object" && body !== null && "collection" in body && typeof body.collection === "string") {
+                        collection = body.collection;
+                    }
+                } catch (e) {
+                    logger.warn("Could not access collection from body in onBeforeHandle");
+                }
+
+                if (!collection) {
+                    // If collection isn't available here, we cannot check permission yet.
+                    // Let the route handler proceed, validation will fail if collection is missing there.
+                    // This means permission check effectively happens *after* validation.
+                    // Alternative: Move permission check into the route handler itself.
+                    // Let's proceed for now, assuming validation handles missing collection.
+                    logger.debug(`Collection not available in onBeforeHandle for user ${user.userDid}, app ${appId}. Deferring permission check.`);
+                    return; // Proceed to handler
+                }
+
+                // Determine required permission string
+                if (path.endsWith("/read")) {
+                    requiredPermission = `read:${collection}`;
+                } else if (path.endsWith("/write")) {
+                    requiredPermission = `write:${collection}`;
+                } else {
+                    set.status = 400; // Or 404?
+                    logger.warn(`Data API access denied for user ${user.userDid}, app ${appId}: Invalid endpoint path ${path}`);
+                    return { error: "Invalid data operation endpoint." };
+                }
+
+                // *** Perform the App Permission Check ***
+                const isAllowed = await permissionService.canAppActForUser(user.userDid, appId, requiredPermission);
 
                 if (!isAllowed) {
+                    logger.warn(`Permission denied for app '${appId}' acting for user '${user.userDid}' on action '${requiredPermission}'`);
                     set.status = 403; // Forbidden
-                    return { error: "Forbidden" }; // Stop execution
+                    return { error: `Forbidden: Application does not have permission '${requiredPermission}' for this user.` };
                 }
 
-                // If JWT is valid and permission check passes, proceed to the handler
+                logger.debug(`Permission granted for app '${appId}' acting for user '${user.userDid}' on action '${requiredPermission}'`);
+                // Proceed to the handler
             })
-            // POST /api/v1/data/:collection - Create a document
+            // POST /api/v1/data/read - Read documents from a collection
             .post(
-                "/:collection",
-                async ({ dataService, user, params, body, set }) => {
-                    // Access derived user
-                    const { collection } = params;
-                    if (!user) throw new Error("User context missing after verification."); // Should not happen if onBeforeHandle passed
-                    const { userDid } = user; // Access userDid from derived user
-                    const userDbName = `${USER_DB_PREFIX}${userDid}`; // TODO use constant for user DB name
-                    const response = await dataService.createDocument(userDbName, collection, body);
-                    set.status = 201; // Created
-                    return { id: response.id, rev: response.rev, ok: response.ok };
+                "/read",
+                async ({ dataService, user, body }) => {
+                    // user is guaranteed non-null by onBeforeHandle
+                    const { userDid } = user!;
+                    const { collection, filter } = body;
+                    const userDbName = `${USER_DB_PREFIX}${userDid}`;
+
+                    logger.debug(`Executing readOnce for user ${userDid}, db: ${userDbName}, collection: ${collection}, filter: ${JSON.stringify(filter)}`);
+
+                    // Use dataService.readOnce
+                    const results: ReadResult = await dataService.readOnce(userDbName, collection, filter);
+
+                    // Return the ReadResult structure
+                    return results;
                 },
                 {
-                    params: t.Object({ collection: t.String() }),
-                    body: GenericDataDocumentSchema,
-                    detail: { summary: "Create a document in a user's collection" },
+                    body: ReadPayloadSchema,
+                    detail: {
+                        summary: "Read documents from a user's collection based on a filter.",
+                        description: "Requires 'read:<collection>' permission.",
+                    },
                 }
             )
-            // GET /api/v1/data/:collection/:id - Get a document by ID
-            .get(
-                "/:collection/:id",
-                async ({ dataService, user, params }) => {
-                    // Correctly using 'user' from derive
-                    // Access derived user
-                    const { id } = params;
-                    if (!user) throw new Error("User context missing after verification.");
-                    const { userDid } = user;
+            // POST /api/v1/data/write - Write (create/update) documents to a collection
+            .post(
+                "/write",
+                async ({ dataService, user, body, set }) => {
+                    // user is guaranteed non-null by onBeforeHandle
+                    const { userDid } = user!;
+                    const { collection, data } = body;
                     const userDbName = `${USER_DB_PREFIX}${userDid}`;
-                    const doc = await dataService.getDocument(userDbName, id);
-                    return doc;
+
+                    logger.debug(
+                        `Executing write for user ${userDid}, db: ${userDbName}, collection: ${collection}, data: ${
+                            Array.isArray(data) ? `Array[${data.length}]` : "Object"
+                        }`
+                    );
+
+                    // Use dataService.write
+                    const response = await dataService.write(userDbName, collection, data);
+
+                    // Determine status code based on response type (single vs bulk)
+                    // Nano bulk response is an array, single insert is an object
+                    if (Array.isArray(response)) {
+                        // Bulk response - check for errors within the array
+                        const hasErrors = response.some((item) => item.error);
+                        set.status = hasErrors ? 207 : 200; // 207 Multi-Status if errors, 200 OK otherwise
+                    } else {
+                        // Single insert response
+                        set.status = response.ok ? 200 : 500; // 200 OK or 500 if !ok (should be caught by service)
+                    }
+
+                    // Return the raw CouchDB response(s)
+                    return response;
                 },
                 {
-                    params: t.Object({
-                        collection: t.String(), // Keep for route structure consistency
-                        id: t.String(),
-                    }),
-                    detail: { summary: "Get a document by ID from a user's collection" },
-                }
-            )
-            // PUT /api/v1/data/:collection/:id - Update a document
-            .put(
-                "/:collection/:id",
-                async ({ dataService, user, params, body, set }) => {
-                    // Correctly using 'user' from derive
-                    // Access derived user
-                    const { collection, id } = params;
-                    if (!user) throw new Error("User context missing after verification."); // Check derived user
-                    const { userDid } = user; // Access userDid from derived user
-                    const userDbName = `${USER_DB_PREFIX}${userDid}`;
-                    const { _rev, ...dataToUpdate } = body;
-                    const response = await dataService.updateDocument(userDbName, collection, id, _rev, dataToUpdate);
-                    set.status = 200; // OK
-                    return { id: response.id, rev: response.rev, ok: response.ok };
-                },
-                {
-                    params: t.Object({
-                        collection: t.String(),
-                        id: t.String(),
-                    }),
-                    body: UpdateDataPayloadSchema,
-                    detail: { summary: "Update a document by ID in a user's collection (requires _rev in body)" },
-                }
-            )
-            // DELETE /api/v1/data/:collection/:id?_rev=... - Delete a document
-            .delete(
-                "/:collection/:id",
-                async ({ dataService, user, params, query, set }) => {
-                    // Correctly using 'user' from derive
-                    // Access derived user
-                    const { id } = params;
-                    if (!user) throw new Error("User context missing after verification."); // Check derived user
-                    const { userDid } = user; // Access userDid from derived user
-                    const userDbName = `${USER_DB_PREFIX}${userDid}`;
-                    const { _rev } = query;
-                    const response = await dataService.deleteDocument(userDbName, id, _rev);
-                    set.status = 200; // OK
-                    return { ok: response.ok };
-                },
-                {
-                    params: t.Object({
-                        collection: t.String(),
-                        id: t.String(),
-                    }),
-                    query: DeleteParamsSchema, // Validate query parameter _rev
-                    detail: { summary: "Delete a document by ID (requires _rev query parameter)" },
+                    body: WritePayloadSchema,
+                    detail: {
+                        summary: "Write (create or update) one or more documents in a user's collection.",
+                        description: "Handles ID generation and updates. Requires 'write:<collection>' permission.",
+                    },
+                    // Define response type if needed
+                    // response: { 200: t.Union([t.Any(), t.Array(t.Any())]), 207: t.Array(t.Any()) }
                 }
             )
     )
