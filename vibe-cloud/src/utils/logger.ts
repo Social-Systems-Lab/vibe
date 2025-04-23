@@ -18,7 +18,7 @@ const LogLevel = {
 let currentLogLevel = LogLevel.INFO;
 let loggingDisabled = false; // Flag to disable logging
 if (isTest && !isVerboseTest) {
-    currentLogLevel = LogLevel.ERROR;
+    currentLogLevel = LogLevel.DEBUG;
 }
 // Allow overriding with environment variable (e.g., LOG_LEVEL=debug bun run src/index.ts)
 const envLogLevel = process.env.LOG_LEVEL?.toLowerCase();

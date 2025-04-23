@@ -4,9 +4,8 @@ import type { DataService } from "./data.service";
 import type { PermissionService } from "./permission.service";
 import type Nano from "nano";
 import { logger } from "../utils/logger";
-import type { DatabaseChangesResultItem } from "nano";
 import type { ChangeWithDoc, WebSocketAuthContext, WebSocketClientMessage, WebSocketManagedContext, WebSocketServerMessage } from "../models/models";
-import { USER_DB_PREFIX } from "../utils/constants";
+import { getUserDbName } from "../utils/did.utils";
 
 export class RealtimeService {
     private nano: Nano.ServerScope;
@@ -56,7 +55,7 @@ export class RealtimeService {
      */
     private ensureListenerStarted(userDid: string) {
         const info = this.listeners.get(userDid);
-        const userDbName = `${USER_DB_PREFIX}${userDid}`;
+        const userDbName = getUserDbName(userDid);
 
         if (!info) {
             logger.info(`No active listener for ${userDbName}. Starting new reader.`);
@@ -106,7 +105,7 @@ export class RealtimeService {
         }
 
         const userDid = context.userDid;
-        const userDbName = `${USER_DB_PREFIX}${userDid}`;
+        const userDbName = getUserDbName(userDid);
         logger.info(`WebSocket disconnected for user: ${userDid}. Code: ${code}, Message: ${message}`);
 
         this.connections.delete(ws); // Remove connection tracking

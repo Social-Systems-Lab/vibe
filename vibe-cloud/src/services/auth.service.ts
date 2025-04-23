@@ -1,11 +1,13 @@
 // auth.service.ts
-import nano from "nano"; // Added import
 import { DataService, dataService } from "./data.service";
 import { logger } from "../utils/logger";
-import { SYSTEM_DB, USER_DB_PREFIX } from "../utils/constants";
+import { SYSTEM_DB } from "../utils/constants";
 import { CLAIM_CODES_COLLECTION, USERS_COLLECTION, type ClaimCode, type User } from "../models/models";
 import { InternalServerError, NotFoundError } from "elysia";
 import type { PermissionService } from "./permission.service";
+import * as jose from "jose";
+import { randomUUIDv7 } from "bun";
+import { getUserDbName } from "../utils/did.utils";
 
 export class AuthService {
     private dataService: DataService;
@@ -26,7 +28,7 @@ export class AuthService {
         logger.info(`Attempting to delete user and data for userDid: ${userDid}`);
 
         const userDocId = `${USERS_COLLECTION}/${userDid}`;
-        const userDbName = `${USER_DB_PREFIX}${userDid}`;
+        const userDbName = getUserDbName(userDid);
 
         // 1. Delete the user document from SYSTEM_DB
         try {
@@ -159,7 +161,7 @@ export class AuthService {
 
         // 2. Create the user-specific database
         try {
-            const userDbName = `${USER_DB_PREFIX}${userDid}`;
+            const userDbName = getUserDbName(userDid);
             await this.dataService.ensureDatabaseExists(userDbName);
             logger.info(`User data database created for admin (from DID): ${userDbName}`);
         } catch (error: any) {
@@ -198,5 +200,113 @@ export class AuthService {
             collection: USERS_COLLECTION,
         };
         return createdUser;
+    }
+
+    /**
+     * Creates a user directly for testing purposes and generates a JWT.
+     * WARNING: Use only in test environments. Does not involve standard auth flows.
+     * @param userDid - Optional: Specify a DID. If not provided, a test DID is generated.
+     * @param directPermissions - Optional: Grant initial direct permissions.
+     * @param isAdmin - Optional: Create the user as an admin. Defaults to false.
+     * @param jwtExpiresIn - Optional: JWT expiry time (e.g., '1h', '10m'). Defaults to '1h'.
+     * @returns { userDid: string, token: string, userRev: string, permsRev: string | null }
+     */
+    async createTestUserAndToken(
+        userDid?: string,
+        directPermissions: string[] = [],
+        isAdmin: boolean = false,
+        jwtExpiresIn: string = "1h"
+    ): Promise<{ userDid: string; token: string; userRev: string; permsRev: string | null }> {
+        logger.warn(`Executing createTestUserAndToken helper. Use only in testing!`);
+
+        const jwtSecret = process.env.JWT_SECRET;
+        if (!jwtSecret) {
+            logger.error("CRITICAL: JWT_SECRET environment variable is not set.");
+            throw new Error("JWT_SECRET environment variable not configured.");
+        }
+        const secretKey = new TextEncoder().encode(jwtSecret);
+        const jwtAlgorithm = "HS256";
+
+        const testUserDid = userDid || `did:vibe:test:${randomUUIDv7()}`;
+        const userDocId = testUserDid; // Use DID directly as User doc ID
+
+        // 1. Prepare User Document
+        const newUserDocData: Omit<User, "_id" | "_rev"> = {
+            userDid: testUserDid,
+            isAdmin: isAdmin,
+            collection: USERS_COLLECTION,
+        };
+
+        let userCreateResponse: any;
+        let userRev: string;
+
+        // 2. Create User Document
+        try {
+            logger.debug(`[Test Helper] Creating user document: ${userDocId}`);
+            userCreateResponse = await this.dataService.createDocument(SYSTEM_DB, USERS_COLLECTION, { _id: userDocId, ...newUserDocData });
+            if (!userCreateResponse.ok || !userCreateResponse.rev) {
+                throw new Error("Failed to save test user document.");
+            }
+            userRev = userCreateResponse.rev;
+            logger.info(`[Test Helper] User document created for ${testUserDid}, rev: ${userRev}`);
+        } catch (error: any) {
+            logger.error(`[Test Helper] Error creating user document for ${testUserDid}:`, error);
+            if (error.message?.includes("conflict")) {
+                throw new Error(`[Test Helper] User document conflict for ${testUserDid}. Cannot create test user.`);
+            }
+            throw new InternalServerError(`[Test Helper] User document creation failed for ${testUserDid}.`);
+        }
+
+        // 3. Create User Database
+        try {
+            const userDbName = getUserDbName(testUserDid);
+            logger.debug(`[Test Helper] Ensuring database exists: ${userDbName}`);
+            await this.dataService.ensureDatabaseExists(userDbName);
+            logger.info(`[Test Helper] User database ensured for ${testUserDid}`);
+        } catch (error: any) {
+            logger.error(`[Test Helper] Failed to create database for test user ${testUserDid}:`, error);
+            // Attempt to clean up the created user document before failing
+            await this.dataService.deleteDocument(SYSTEM_DB, userDocId, userRev).catch((e) => logger.error("Cleanup failed:", e));
+            throw new InternalServerError(`[Test Helper] Failed to create database for test user ${testUserDid}.`);
+        }
+
+        // 4. Grant Direct Permissions (if any)
+        let permsRev: string | null = null;
+        if (directPermissions.length > 0) {
+            try {
+                logger.debug(`[Test Helper] Setting direct permissions for ${testUserDid}: [${directPermissions.join(", ")}]`);
+                const permRes = await this.permissionService.setUserDirectPermissions(testUserDid, directPermissions);
+                permsRev = permRes.rev;
+                logger.info(`[Test Helper] Direct permissions set for ${testUserDid}, rev: ${permsRev}`);
+            } catch (error: any) {
+                logger.error(`[Test Helper] Failed to set direct permissions for test user ${testUserDid}:`, error);
+                // Attempt cleanup before failing
+                await this.deleteUser(testUserDid).catch((e) => logger.error("Cleanup failed:", e)); // deleteUser handles DB and user doc
+                throw new InternalServerError(`[Test Helper] Failed to set direct permissions for test user ${testUserDid}.`);
+            }
+        }
+
+        // 5. Generate JWT
+        let token: string;
+        try {
+            logger.debug(`[Test Helper] Generating JWT for ${testUserDid} (expires: ${jwtExpiresIn})`);
+            const jwtPayload: jose.JWTPayload = { userDid: testUserDid };
+            token = await new jose.SignJWT(jwtPayload)
+                .setProtectedHeader({ alg: jwtAlgorithm })
+                // .setIssuedAt()
+                // .setIssuer('urn:example:issuer') // Optional
+                // .setAudience('urn:example:audience') // Optional
+                // .setExpirationTime(jwtExpiresIn)
+                .sign(secretKey);
+            logger.info(`[Test Helper] JWT generated for ${testUserDid}`);
+        } catch (error: any) {
+            logger.error(`[Test Helper] Failed to generate JWT for test user ${testUserDid}:`, error);
+            // Attempt cleanup before failing
+            await this.deleteUser(testUserDid).catch((e) => logger.error("Cleanup failed:", e));
+            throw new InternalServerError(`[Test Helper] Failed to generate JWT for test user ${testUserDid}.`);
+        }
+
+        // 6. Return results
+        return { userDid: testUserDid, token, userRev, permsRev };
     }
 }

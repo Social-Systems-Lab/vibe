@@ -1,5 +1,6 @@
 import multibase from "multibase";
 import varint from "varint";
+import { USER_DB_PREFIX } from "./constants";
 
 // Multicodec code for Ed25519 public key
 const ED25519_CODEC = 0xed01; // "ed25519-pub" per multicodec table
@@ -69,4 +70,45 @@ export function ed25519FromDid(did: string): Uint8Array {
     }
 
     return rawPublicKey;
+}
+
+/**
+ * Derives a valid CouchDB database name from a user DID.
+ * - Prepends USER_DB_PREFIX.
+ * - Converts to lowercase.
+ * - Replaces invalid characters (like ':') with hyphens.
+ * - Ensures it starts with a letter (handled by the prefix).
+ *
+ * @param userDid - The user's Decentralized Identifier.
+ * @returns A valid CouchDB database name string.
+ */
+export function getUserDbName(userDid: string): string {
+    if (!userDid) {
+        throw new Error("Cannot generate database name from empty userDid.");
+    }
+
+    // 1. Remove potential protocol prefix if not needed or problematic (optional)
+    // Example: if userDid is always "did:vibe:...", maybe remove "did:"
+    // let baseId = userDid.startsWith("did:") ? userDid.substring(4) : userDid;
+    let baseId = userDid; // Keep full DID for uniqueness for now
+
+    // 2. Replace invalid characters (anything not a-z, 0-9, _, $, (, ), +, -, /) with '-'
+    // We specifically target ':' commonly found in DIDs. Add others if needed.
+    const sanitizedId = baseId.replace(/:/g, "-").replace(/[^a-z0-9_$( )+-/]/g, "-");
+
+    // 3. Convert to lowercase
+    const lowerCaseId = sanitizedId.toLowerCase();
+
+    // 4. Prepend prefix (ensure prefix itself is valid and ends appropriately)
+    // The prefix 'userdata-' ensures it starts with a letter.
+    const dbName = `${USER_DB_PREFIX}${lowerCaseId}`;
+
+    // 5. Optional: Truncate if exceeding CouchDB length limits (usually ~238 chars, check CouchDB docs)
+    // const maxLength = 238;
+    // if (dbName.length > maxLength) {
+    //     // Consider hashing or a more robust truncation strategy
+    //     return dbName.substring(0, maxLength);
+    // }
+
+    return dbName;
 }

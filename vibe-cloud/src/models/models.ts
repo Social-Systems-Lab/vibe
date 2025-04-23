@@ -140,9 +140,16 @@ export const AuthCredentialsSchema = t.Object({
 });
 export type AuthCredentials = Static<typeof AuthCredentialsSchema>;
 
-export const JWTPayloadSchema = t.Object({
-    userDid: t.String(),
-});
+export const JWTPayloadSchema = t.Object(
+    {
+        userDid: t.String(),
+    },
+    {
+        // Allow standard JWT claims like iat, exp, aud, iss etc.
+        additionalProperties: true,
+        description: "Schema for JWT payload, requires userDid, allows standard claims.",
+    }
+);
 export type JWTPayload = Static<typeof JWTPayloadSchema>;
 
 // Admin Claim Schema
