@@ -6,7 +6,7 @@ import { logger, disableLogging, enableLogging } from "../src/utils/logger";
 
 // Variables to hold the single user's credentials and token for the entire test run
 const { ctx, cleanup } = await createTestCtx();
-const { api, userId: testUserId, token: authToken, ts, email } = ctx;
+const { api, userDid: testUserDid, token: authToken, ts, email } = ctx;
 let testUserPermissionsRev: string | null = ctx.permsRev;
 
 afterAll(cleanup); // Cleanup the test user and permissions
@@ -131,7 +131,7 @@ describe("Data API Endpoints (/api/v1/data)", () => {
     it("should return 403 Forbidden when trying to write with only read permission", async () => {
         // 1. Update permissions to ONLY allow read
         const readOnlyPermissions = [`read:${collection}`];
-        const permUpdateRes = await permissionService.setPermissions(testUserId!, readOnlyPermissions, testUserPermissionsRev!);
+        const permUpdateRes = await permissionService.setPermissions(testUserDid!, readOnlyPermissions, testUserPermissionsRev!);
         const newRev = permUpdateRes.rev; // Store new rev for potential cleanup/reset
 
         // 2. Attempt to POST (write operation)
@@ -145,14 +145,14 @@ describe("Data API Endpoints (/api/v1/data)", () => {
         // A more thorough test would create an item *before* restricting permissions.
 
         // 4. Reset permissions back to read/write for subsequent tests (or use beforeEach)
-        const resetPermRes = await permissionService.setPermissions(testUserId!, [`read:${collection}`, `write:${collection}`], newRev);
+        const resetPermRes = await permissionService.setPermissions(testUserDid!, [`read:${collection}`, `write:${collection}`], newRev);
         testUserPermissionsRev = resetPermRes.rev; // Update the global rev tracker
     });
 
     it("should return 403 Forbidden when trying to read with only write permission", async () => {
         // 1. Update permissions to ONLY allow write
         const writeOnlyPermissions = [`write:${collection}`];
-        const permUpdateRes = await permissionService.setPermissions(testUserId!, writeOnlyPermissions, testUserPermissionsRev!);
+        const permUpdateRes = await permissionService.setPermissions(testUserDid!, writeOnlyPermissions, testUserPermissionsRev!);
         const newRev = permUpdateRes.rev;
 
         // 2. Create an item (should succeed as we have write permission)
@@ -169,13 +169,13 @@ describe("Data API Endpoints (/api/v1/data)", () => {
 
         // 4. Cleanup the created item
         // Need to temporarily grant read/write to delete
-        const tempFullPerms = await permissionService.setPermissions(testUserId!, [`read:${collection}`, `write:${collection}`], newRev);
+        const tempFullPerms = await permissionService.setPermissions(testUserDid!, [`read:${collection}`, `write:${collection}`], newRev);
         await api.api.v1
             .data({ collection })({ id: tempItemId })
             .delete(undefined, { query: { _rev: tempItemRev }, headers: getAuthHeaders() });
 
         // 5. Reset permissions back to read/write using the latest rev
-        const finalResetRes = await permissionService.setPermissions(testUserId!, [`read:${collection}`, `write:${collection}`], tempFullPerms.rev);
+        const finalResetRes = await permissionService.setPermissions(testUserDid!, [`read:${collection}`, `write:${collection}`], tempFullPerms.rev);
         testUserPermissionsRev = finalResetRes.rev; // Update the global rev tracker
     });
 

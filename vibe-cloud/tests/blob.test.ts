@@ -15,27 +15,27 @@ const expectedMinioUrlRegex = new RegExp(`^http://${escapedEndpoint}:${minioPort
 // Set up three test users with different permissions
 // User 1: Has read and write permissions
 const { ctx: ctx1, cleanup: cleanup1 } = await createTestCtx();
-const { userId: userId1, token: token1 } = ctx1;
+const { userDid: userDid1, token: token1 } = ctx1;
 let user1Rev = ctx1.permsRev;
 
 // User 2: Has only read permissions (for testing download by non-owner)
 const { ctx: ctx2, cleanup: cleanup2 } = await createTestCtx();
-const { userId: userId2, token: token2 } = ctx2;
+const { userDid: userDid2, token: token2 } = ctx2;
 let user2Rev = ctx2.permsRev;
 
 // User 3: Has no blob permissions (for testing forbidden access)
 const { ctx: ctx3, cleanup: cleanup3 } = await createTestCtx();
-const { userId: userId3, token: token3 } = ctx3;
+const { userDid: userDid3, token: token3 } = ctx3;
 
 describe("Blob API (/api/v1/blob)", () => {
     // --- Setup ---
     beforeAll(async () => {
         // User 1: Has read and write permissions
-        const { rev } = await permissionService.setPermissions(userId1, ["read:blobs", "write:blobs"], user1Rev);
+        const { rev } = await permissionService.setPermissions(userDid1, ["read:blobs", "write:blobs"], user1Rev);
         user1Rev = rev;
 
         // User 2: Has only read permissions (for testing download by non-owner)
-        const { rev: rev2 } = await permissionService.setPermissions(userId2, ["read:blobs"], user2Rev);
+        const { rev: rev2 } = await permissionService.setPermissions(userDid2, ["read:blobs"], user2Rev);
         user2Rev = rev2;
     });
 
@@ -144,7 +144,7 @@ describe("Blob API (/api/v1/blob)", () => {
             originalFilename: testFileName,
             contentType: expect.stringContaining(testFileType),
             size: testFileContent.length,
-            ownerId: userId1,
+            ownerId: userDid1,
             bucket: BlobService.defaultBucketName,
         });
         expect(metadata).toHaveProperty("uploadTimestamp");
@@ -180,7 +180,7 @@ describe("Blob API (/api/v1/blob)", () => {
         expect(uploadedObjectId).toBeDefined();
 
         // Temporarily remove read permission from owner to test ownership bypass
-        const { rev: tempRev } = await permissionService.setPermissions(userId1, ["write:blobs"], user1Rev); // Only write
+        const { rev: tempRev } = await permissionService.setPermissions(userDid1, ["write:blobs"], user1Rev); // Only write
         user1Rev = tempRev; // Update the stored rev
 
         const response = await ctx1.api.api.v1.blob.download({ objectId: uploadedObjectId! }).get({
@@ -199,7 +199,7 @@ describe("Blob API (/api/v1/blob)", () => {
             expect(response.data?.url).toContain("X-Amz-Signature=");
         } finally {
             // Ensure permissions are restored even if assertions fail
-            const { rev: tempRev2 } = await permissionService.setPermissions(userId1, ["read:blobs", "write:blobs"], user1Rev);
+            const { rev: tempRev2 } = await permissionService.setPermissions(userDid1, ["read:blobs", "write:blobs"], user1Rev);
             user1Rev = tempRev2; // Update the stored rev
         }
     });

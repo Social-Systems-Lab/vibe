@@ -6,7 +6,7 @@ import { permissionService } from "../src/services/permission.service";
 
 export interface TestCtx {
     api: ReturnType<typeof treaty>;
-    userId: string;
+    userDid: string;
     token: string;
     permsRev: string;
     ts: number;
@@ -28,11 +28,11 @@ export async function createTestCtx(): Promise<{
     const reg = await api.api.v1.auth.register.post({ email, password });
     const login = await api.api.v1.auth.login.post({ email, password });
 
-    const { rev } = await permissionService.setPermissions(reg.data!.userId, []);
+    const { rev } = await permissionService.setPermissions(reg.data!.userDid, []);
 
     const ctx: TestCtx = {
         api,
-        userId: reg.data!.userId,
+        userDid: reg.data!.userDid,
         token: login.data!.token,
         permsRev: rev,
         ts,
@@ -41,8 +41,8 @@ export async function createTestCtx(): Promise<{
     };
 
     async function cleanup() {
-        await permissionService.deletePermissions(ctx.userId);
-        await authService.deleteUser(ctx.userId);
+        await permissionService.deletePermissions(ctx.userDid);
+        await authService.deleteUser(ctx.userDid);
     }
 
     return { ctx, cleanup };

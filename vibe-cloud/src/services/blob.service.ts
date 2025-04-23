@@ -79,7 +79,7 @@ async function uploadObject(
     try {
         const metaData = {
             "Content-Type": contentType,
-            // Add any other custom metadata if needed, e.g., 'X-Amz-Meta-Uploader-Id': userId
+            // Add any other custom metadata if needed, e.g., 'X-Amz-Meta-Uploader-Id': userDid
         };
         logger.info(`Uploading object "${objectName}" to bucket "${bucketName}" (Size: ${size}, Type: ${contentType})`);
         const result = await minioClient.putObject(bucketName, objectName, data, size, metaData);

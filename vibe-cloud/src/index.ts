@@ -4,120 +4,32 @@ import { jwt } from "@elysiajs/jwt";
 import { dataService } from "./services/data.service";
 import { authService } from "./services/auth.service";
 import { permissionService } from "./services/permission.service";
-import { BlobService } from "./services/blob.service"; // Import BlobService
-import { RealtimeService, type WebSocketAuthContext } from "./services/realtime.service";
+import { BlobService } from "./services/blob.service";
+import { RealtimeService } from "./services/realtime.service";
 import { logger } from "./utils/logger";
-import { randomUUID } from "crypto"; // For generating unique object IDs
+import { randomUUID } from "crypto";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
-import type * as nano from "nano"; // Import nano types
-import * as jose from "jose"; // For JWT verification
-import { ed25519FromDid } from "./utils/did.utils"; // Import DID utility
-import { verify } from "@noble/ed25519"; // Import Ed25519 verify
-import { Buffer } from "buffer"; // Import Buffer for base64 decoding
-
-// --- Schemas ---
-
-// --- Types (Duplicated from auth.service.ts for claim endpoint use) ---
-// Define the structure for claim code documents
-interface ClaimCodeDocument {
-    _id: string; // e.g., "INITIAL_ADMIN" or UUID
-    _rev?: string;
-    code: string; // The actual claim code
-    expiresAt: string | null; // ISO string or null
-    forDid: string | null; // Optional DID lock
-    spentAt: string | null; // ISO string when spent
-    claimedByDid?: string; // Record which DID claimed it
-    type: "claim_code"; // Document type
-}
-
-// --- Schemas ---
-
-// Auth Schemas
-const AuthCredentialsSchema = t.Object({
-    email: t.String({ format: "email", error: "Invalid email format." }),
-    password: t.String({ minLength: 8, error: "Password must be at least 8 characters long." }),
-});
-type AuthCredentials = Static<typeof AuthCredentialsSchema>;
-
-// JWT Payload Schema
-const JWTPayloadSchema = t.Object({
-    userId: t.String(),
-    // Add other non-sensitive claims if needed (e.g., email, roles)
-    // email: t.String({ format: 'email' }) // Example
-});
-
-// Admin Claim Schema
-const AdminClaimSchema = t.Object({
-    did: t.String({ error: "Missing required field: did" }), // e.g., "did:vibe:z..."
-    claimCode: t.String({ error: "Missing required field: claimCode" }),
-    signature: t.String({ error: "Missing required field: signature (Base64)" }), // Base64 encoded signature
-});
-type AdminClaimBody = Static<typeof AdminClaimSchema>;
-
-// WebSocket Schemas
-const WebSocketClientMessageSchema = t.Object({
-    action: t.Union([t.Literal("subscribe"), t.Literal("unsubscribe")]),
-    collection: t.String({ minLength: 1 }),
-});
-
-// Schema for query parameter authentication (less secure, but common for WS)
-const WebSocketAuthQuerySchema = t.Object({
-    token: t.String({ minLength: 10, error: "Missing or invalid auth token in query." }),
-});
-
-// Data Schemas
-const DataDocumentSchema = t.Object({}, { additionalProperties: true }); // Allow any fields for general data
-type DataDocument = Static<typeof DataDocumentSchema>;
-
-// Define schema for update payload, requiring _rev
-const UpdateDataDocumentSchema = t.Intersect([
-    t.Object({
-        _rev: t.String({ error: "Missing required field: _rev" }),
-    }),
-    DataDocumentSchema,
-]);
-
-// Define schema for delete query parameters, requiring _rev
-const DeleteParamsSchema = t.Object({
-    _rev: t.String({ error: "Missing required query parameter: _rev" }),
-});
-
-// Blob Schemas
-const BlobUploadBodySchema = t.Object({
-    file: t.File({
-        // Expect a single file named 'file'
-        // Optional: Add size/type validation if needed
-        // maxSize: '5m', // Example: 5MB limit
-        // types: ['image/jpeg', 'image/png', 'application/pdf'] // Example: Allowed types
-        error: "File upload is required.",
-    }),
-    // Add other metadata fields if needed, e.g., description: t.Optional(t.String())
-});
-type BlobUploadBody = Static<typeof BlobUploadBodySchema>;
-
-const BlobMetadataSchema = t.Object({
-    _id: t.String(), // objectId
-    _rev: t.Optional(t.String()), // CouchDB revision
-    originalFilename: t.String(),
-    contentType: t.String(),
-    size: t.Number(),
-    ownerId: t.String(), // userId of the uploader
-    uploadTimestamp: t.String({ format: "date-time" }),
-    bucket: t.String(),
-});
-type BlobMetadata = Static<typeof BlobMetadataSchema>;
-
-const BlobDownloadResponseSchema = t.Object({
-    url: t.String({ format: "uri", error: "Invalid URL format." }),
-});
-
-const ErrorResponseSchema = t.Object({
-    error: t.String(),
-});
-
-// --- Constants ---
-export const BLOB_METADATA_DB = "blob_metadata"; // Dedicated DB for blob metadata (Exported)
-const CLAIM_CODES_DB = "claim_codes"; // Define locally as it's not exported from authService
+import type * as nano from "nano";
+import * as jose from "jose";
+import { ed25519FromDid } from "./utils/did.utils";
+import { verify } from "@noble/ed25519";
+import { Buffer } from "buffer";
+import {
+    AdminClaimSchema,
+    AuthCredentialsSchema,
+    BlobDownloadResponseSchema,
+    BlobUploadBodySchema,
+    CLAIM_CODES_COLLECTION,
+    DeleteParamsSchema,
+    ErrorResponseSchema,
+    GenericDataDocumentSchema,
+    JWTPayloadSchema,
+    UpdateDataPayloadSchema,
+    type BlobMetadata,
+    type ClaimCode,
+    type WebSocketAuthContext,
+} from "./models/models";
+import { SYSTEM_DB, USER_DB_PREFIX } from "./utils/constants";
 
 // --- Environment Variable Validation ---
 const jwtSecret = process.env.JWT_SECRET;
@@ -130,7 +42,7 @@ const secretKey = new TextEncoder().encode(jwtSecret);
 
 // --- Service Initialization & DB Setup ---
 await dataService.connect();
-await dataService.ensureDatabaseExists(BLOB_METADATA_DB); // Ensure metadata DB exists
+await dataService.ensureDatabaseExists(SYSTEM_DB);
 const realtimeService = new RealtimeService(dataService, permissionService);
 
 // --- Initial Admin Claim Code Bootstrap ---
@@ -140,17 +52,15 @@ try {
     logger.info("Initial admin claim code check complete.");
 } catch (error) {
     logger.error("CRITICAL: Failed to ensure initial admin claim code:", error);
-    // Decide if this should prevent startup. For now, log and continue.
-    // process.exit(1); // Uncomment to make it fatal
 }
 // --- End Initial Admin Claim Code Bootstrap ---
 
 // --- App Initialization ---
-const app = new Elysia()
+export const app = new Elysia() // Re-export the instance
     .decorate("dataService", dataService)
     .decorate("authService", authService)
     .decorate("permissionService", permissionService)
-    .decorate("blobService", BlobService) // Decorate with BlobService
+    .decorate("blobService", BlobService)
     .decorate("realtimeService", realtimeService)
     .use(
         jwt({
@@ -250,42 +160,6 @@ const app = new Elysia()
         // If handled, the specific return above already took place.
     })
     .get("/health", () => ({ status: "ok" }))
-    // --- Authentication Routes ---
-    .group("/api/v1/auth", (group) =>
-        group
-            .post(
-                "/register",
-                async ({ authService, body, set }) => {
-                    const { email, password } = body;
-                    // AuthService handles hashing and saving, throws on error
-                    const user = await authService.registerUser(email, password);
-                    set.status = 201; // Created
-                    // Return minimal info, not the full user object from service
-                    return { message: "User registered successfully.", userId: user.userId };
-                },
-                {
-                    body: AuthCredentialsSchema,
-                    detail: { summary: "Register a new instance administrator" },
-                }
-            )
-            .post(
-                "/login",
-                async ({ authService, jwt, body, set }) => {
-                    const { email, password } = body;
-                    // AuthService handles lookup and password verification, throws on error
-                    const user = await authService.loginUser(email, password);
-                    // Generate JWT
-                    // logger.log(`Secret used for SIGNING: ${process.env.JWT_SECRET?.substring(0, 5)}...`); // Logging removed
-                    const token = await jwt.sign({ userId: user.userId /*, email: user.email */ }); // Add other claims as needed
-                    set.status = 200; // OK
-                    return { message: "Login successful.", token: token };
-                },
-                {
-                    body: AuthCredentialsSchema,
-                    detail: { summary: "Log in as instance administrator" },
-                }
-            )
-    )
     // --- Admin Claim Route (Unauthenticated) ---
     .group("/api/v1/admin", (group) =>
         group.post(
@@ -295,16 +169,16 @@ const app = new Elysia()
                 logger.info(`Admin claim attempt received for DID: ${did}`);
 
                 // 1. Find the claim code document
-                let claimDoc: (ClaimCodeDocument & { _id: string; _rev: string }) | null = null;
+                let claimDoc: ClaimCode | null = null;
                 try {
                     const query: nano.MangoQuery = {
                         selector: {
-                            type: "claim_code",
+                            collection: CLAIM_CODES_COLLECTION,
                             code: claimCode,
                         },
                         limit: 1, // Expect only one matching code
                     };
-                    const response = await dataService.findDocuments<ClaimCodeDocument>(CLAIM_CODES_DB, query);
+                    const response = await dataService.findDocuments<ClaimCode>(SYSTEM_DB, query);
 
                     if (!response.docs || response.docs.length === 0) {
                         logger.warn(`Claim attempt failed: No claim code found matching '${claimCode}'`);
@@ -318,7 +192,7 @@ const app = new Elysia()
                         return { error: "Internal server error: Duplicate claim code detected." };
                     }
                     // Nano's find result includes _id and _rev
-                    claimDoc = response.docs[0] as ClaimCodeDocument & { _id: string; _rev: string };
+                    claimDoc = response.docs[0] as ClaimCode;
                     logger.debug(`Found claim document: ${claimDoc._id}`);
                 } catch (error: any) {
                     logger.error(`Error finding claim code '${claimCode}':`, error);
@@ -382,14 +256,11 @@ const app = new Elysia()
                     spentAt: nowISO,
                     claimedByDid: did,
                 };
-                // Remove internal CouchDB fields before update if necessary, though nano might handle it
-                // delete updatedClaimData._id; // Keep _id
-                // delete updatedClaimData._rev; // Keep _rev for update
 
                 try {
                     logger.debug(`Attempting to mark claim code '${claimDoc._id}' as spent...`);
                     // Use updateDocument - requires _rev. Collection name "" for dedicated DB.
-                    await dataService.updateDocument(CLAIM_CODES_DB, "", claimDoc._id, claimDoc._rev, updatedClaimData);
+                    await dataService.updateDocument(SYSTEM_DB, "", claimDoc._id, claimDoc._rev, updatedClaimData);
                     logger.info(`Claim code '${claimDoc._id}' successfully marked as spent by DID ${did}.`);
                 } catch (error: any) {
                     logger.error(`Failed to mark claim code '${claimDoc._id}' as spent:`, error);
@@ -407,7 +278,7 @@ const app = new Elysia()
                 try {
                     logger.debug(`Creating admin user for DID ${did}...`);
                     newUser = await authService.createAdminUserFromDid(did);
-                    logger.info(`Admin user created for DID ${did}, internal userId: ${newUser.userId}`);
+                    logger.info(`Admin user created for DID ${did}, internal userDid: ${newUser.userDid}`);
                 } catch (error: any) {
                     logger.error(`Failed to create admin user for DID ${did} after successful claim:`, error);
                     // This is problematic - the claim is spent, but user creation failed.
@@ -420,10 +291,10 @@ const app = new Elysia()
                 // 6. Generate JWT for the new admin user
                 let token;
                 try {
-                    token = await jwt.sign({ userId: newUser.userId });
-                    logger.debug(`JWT generated for new admin user ${newUser.userId}`);
+                    token = await jwt.sign({ userDid: newUser.userDid });
+                    logger.debug(`JWT generated for new admin user ${newUser.userDid}`);
                 } catch (error: any) {
-                    logger.error(`Failed to sign JWT for new admin user ${newUser.userId}:`, error);
+                    logger.error(`Failed to sign JWT for new admin user ${newUser.userDid}:`, error);
                     set.status = 500;
                     // User exists, claim spent, but no token. User needs to login via a future mechanism?
                     return { error: "Admin account created, but failed to generate session token. Please try logging in." };
@@ -433,8 +304,7 @@ const app = new Elysia()
                 set.status = 201; // Created
                 return {
                     message: "Admin account claimed successfully.",
-                    userId: newUser.userId,
-                    email: newUser.email, // Return placeholder email
+                    userDid: newUser.userDid,
                     isAdmin: newUser.isAdmin,
                     token: token,
                 };
@@ -464,10 +334,10 @@ const app = new Elysia()
                         // Verification failed (e.g., invalid signature, expired)
                         return { user: null };
                     }
-                    // Ensure the payload matches the expected schema (contains userId)
+                    // Ensure the payload matches the expected schema (contains userDid)
                     // The jwt plugin already validates against JWTPayloadSchema on verify
                     // if successful, payload should conform.
-                    return { user: payload as { userId: string } }; // Add payload as 'user' to context
+                    return { user: payload as { userDid: string } }; // Add payload as 'user' to context
                 } catch (error) {
                     // Log the error for debugging if needed
                     // logger.warn("JWT verification error:", error.message);
@@ -503,8 +373,8 @@ const app = new Elysia()
                 }
 
                 // 3. Check permission using the service
-                const { userId } = user;
-                const isAllowed = await permissionService.can(userId, requiredPermission);
+                const { userDid } = user;
+                const isAllowed = await permissionService.can(userDid, requiredPermission);
 
                 if (!isAllowed) {
                     set.status = 403; // Forbidden
@@ -520,15 +390,15 @@ const app = new Elysia()
                     // Access derived user
                     const { collection } = params;
                     if (!user) throw new Error("User context missing after verification."); // Should not happen if onBeforeHandle passed
-                    const { userId } = user; // Access userId from derived user
-                    const userDbName = `userdata-${userId}`;
+                    const { userDid } = user; // Access userDid from derived user
+                    const userDbName = `${USER_DB_PREFIX}${userDid}`; // TODO use constant for user DB name
                     const response = await dataService.createDocument(userDbName, collection, body);
                     set.status = 201; // Created
                     return { id: response.id, rev: response.rev, ok: response.ok };
                 },
                 {
                     params: t.Object({ collection: t.String() }),
-                    body: DataDocumentSchema,
+                    body: GenericDataDocumentSchema,
                     detail: { summary: "Create a document in a user's collection" },
                 }
             )
@@ -539,9 +409,9 @@ const app = new Elysia()
                     // Correctly using 'user' from derive
                     // Access derived user
                     const { id } = params;
-                    if (!user) throw new Error("User context missing after verification."); // Check derived user
-                    const { userId } = user; // Access userId from derived user
-                    const userDbName = `userdata-${userId}`;
+                    if (!user) throw new Error("User context missing after verification.");
+                    const { userDid } = user;
+                    const userDbName = `${USER_DB_PREFIX}${userDid}`;
                     const doc = await dataService.getDocument(userDbName, id);
                     return doc;
                 },
@@ -561,8 +431,8 @@ const app = new Elysia()
                     // Access derived user
                     const { collection, id } = params;
                     if (!user) throw new Error("User context missing after verification."); // Check derived user
-                    const { userId } = user; // Access userId from derived user
-                    const userDbName = `userdata-${userId}`;
+                    const { userDid } = user; // Access userDid from derived user
+                    const userDbName = `${USER_DB_PREFIX}${userDid}`;
                     const { _rev, ...dataToUpdate } = body;
                     const response = await dataService.updateDocument(userDbName, collection, id, _rev, dataToUpdate);
                     set.status = 200; // OK
@@ -573,7 +443,7 @@ const app = new Elysia()
                         collection: t.String(),
                         id: t.String(),
                     }),
-                    body: UpdateDataDocumentSchema,
+                    body: UpdateDataPayloadSchema,
                     detail: { summary: "Update a document by ID in a user's collection (requires _rev in body)" },
                 }
             )
@@ -585,8 +455,8 @@ const app = new Elysia()
                     // Access derived user
                     const { id } = params;
                     if (!user) throw new Error("User context missing after verification."); // Check derived user
-                    const { userId } = user; // Access userId from derived user
-                    const userDbName = `userdata-${userId}`;
+                    const { userDid } = user; // Access userDid from derived user
+                    const userDbName = `${USER_DB_PREFIX}${userDid}`;
                     const { _rev } = query;
                     const response = await dataService.deleteDocument(userDbName, id, _rev);
                     set.status = 200; // OK
@@ -612,7 +482,7 @@ const app = new Elysia()
                 const token = authHeader.substring(7);
                 try {
                     const payload = await jwt.verify(token);
-                    return { user: payload as { userId: string } };
+                    return { user: payload as { userDid: string } };
                 } catch (error) {
                     return { user: null };
                 }
@@ -632,11 +502,11 @@ const app = new Elysia()
                     if (!user) throw new InternalServerError("User context missing after auth check."); // Should not happen
 
                     // 1. Permission Check
-                    const { userId } = user;
-                    logger.info(`User ${userId} attempting upload.`);
+                    const { userDid } = user;
+                    logger.info(`User ${userDid} attempting upload.`);
 
-                    const canWrite = await permissionService.can(userId, "write:blobs");
-                    logger.info(`User ${userId} write permission: ${canWrite}`);
+                    const canWrite = await permissionService.can(userDid, "write:blobs");
+                    logger.info(`User ${userDid} write permission: ${canWrite}`);
                     if (!canWrite) {
                         set.status = 403;
                         return { error: "Forbidden: Missing 'write:blobs' permission." };
@@ -657,7 +527,7 @@ const app = new Elysia()
                     try {
                         logger.info(`Preparing buffer for ${objectId}...`);
                         // 3. Upload to Minio
-                        logger.info(`Uploading blob ${objectId} for user ${userId}`);
+                        logger.info(`Uploading blob ${objectId} for user ${userDid}`);
                         // Convert stream to Buffer for Minio compatibility
                         const fileBuffer = Buffer.from(await file.arrayBuffer()); // Use file from body
                         logger.info(`Buffer created for ${objectId}. Size: ${fileBuffer.length}`); // <-- Add
@@ -676,22 +546,22 @@ const app = new Elysia()
 
                         // 4. Create Metadata Document
                         const metadata: Omit<BlobMetadata, "_rev"> = {
-                            _id: objectId,
+                            _id: objectId, // TODO the object id might need to be defined outside _id
                             originalFilename: file.name || "untitled", // Use file.name from body
                             contentType: file.type, // Use file type from body
                             size: file.size, // Use file size from body
-                            ownerId: userId,
+                            ownerDid: userDid,
                             uploadTimestamp: new Date().toISOString(),
                             bucket: bucketName,
+                            collection: "$blobs", // TODO use constant for collection name
                         };
 
                         logger.info(`Calling dataService.createDocument for ${objectId}...`);
                         // 5. Save Metadata to CouchDB
-                        // Pass "" as collection name when using a dedicated DB like blob_metadata
-                        await dataService.createDocument(BLOB_METADATA_DB, "", metadata);
+                        await dataService.createDocument(SYSTEM_DB, "", metadata);
                         logger.info(`dataService.createDocument completed for ${objectId}.`);
 
-                        logger.info(`Blob ${objectId} metadata saved for user ${userId}`);
+                        logger.info(`Blob ${objectId} metadata saved for user ${userDid}`);
                         set.status = 201; // Created
                         return {
                             message: "File uploaded successfully.",
@@ -701,7 +571,7 @@ const app = new Elysia()
                             size: metadata.size,
                         };
                     } catch (error: any) {
-                        logger.error(`Blob upload failed for user ${userId}, objectId ${objectId}:`, error);
+                        logger.error(`Blob upload failed for user ${userDid}, objectId ${objectId}:`, error);
                         // Attempt to clean up Minio object if metadata saving failed? (Complex)
                         // For now, just return error
                         throw new InternalServerError("Blob upload failed."); // Let generic handler catch
@@ -722,28 +592,28 @@ const app = new Elysia()
                     if (!user) throw new InternalServerError("User context missing after auth check.");
 
                     const { objectId } = params;
-                    const { userId } = user;
+                    const { userDid } = user;
 
                     try {
                         // 1. Fetch Metadata
-                        logger.debug(`Attempting to fetch metadata for objectId: ${objectId} from DB: ${BLOB_METADATA_DB}`);
-                        const metadata = (await dataService.getDocument(BLOB_METADATA_DB, objectId)) as BlobMetadata; // Cast to expected type
+                        logger.debug(`Attempting to fetch metadata for objectId: ${objectId} from DB: ${SYSTEM_DB}`);
+                        const metadata = (await dataService.getDocument(SYSTEM_DB, objectId)) as BlobMetadata; // Cast to expected type
                         logger.debug(`Successfully fetched metadata for objectId: ${objectId}`, metadata); // Log successful fetch
 
                         // 2. Permission Check (Owner OR 'read:blobs')
-                        const isOwner = metadata.ownerId === userId;
-                        logger.debug(`Permission check: isOwner=${isOwner}, userId=${userId}, metadata.ownerId=${metadata.ownerId}`);
-                        const canRead = await permissionService.can(userId, "read:blobs");
+                        const isOwner = metadata.ownerDid === userDid;
+                        logger.debug(`Permission check: isOwner=${isOwner}, userDid=${userDid}, metadata.ownerId=${metadata.ownerDid}`);
+                        const canRead = await permissionService.can(userDid, "read:blobs");
                         logger.debug(`Permission check: canRead=${canRead} for permission 'read:blobs'`);
 
                         if (!isOwner && !canRead) {
-                            logger.warn(`Forbidden access attempt for blob ${objectId} by user ${userId}`);
+                            logger.warn(`Forbidden access attempt for blob ${objectId} by user ${userDid}`);
                             set.status = 403; // Set status before throwing
                             return { error: "Forbidden: You do not have permission to access this blob." };
                         }
 
                         // 3. Generate Pre-signed URL
-                        logger.info(`Generating download URL for blob ${objectId} requested by user ${userId}`);
+                        logger.info(`Generating download URL for blob ${objectId} requested by user ${userDid}`);
                         const url = await blobService.getPresignedDownloadUrl(
                             objectId,
                             metadata.bucket // Use bucket from metadata
@@ -755,14 +625,14 @@ const app = new Elysia()
                         return { url: url };
                     } catch (error: any) {
                         if (error.message.includes("not found")) {
-                            logger.warn(`Download request for non-existent blob ${objectId} by user ${userId}`);
+                            logger.warn(`Download request for non-existent blob ${objectId} by user ${userDid}`);
                             throw new NotFoundError(`Blob metadata not found for ID: ${objectId}`);
                         }
                         if (error.message.includes("Object not found")) {
-                            logger.warn(`Download request for blob ${objectId} (metadata found, but object missing in Minio) by user ${userId}`);
+                            logger.warn(`Download request for blob ${objectId} (metadata found, but object missing in Minio) by user ${userDid}`);
                             throw new NotFoundError(`Blob object not found in storage for ID: ${objectId}`);
                         }
-                        logger.error(`Failed to generate download URL for blob ${objectId}, user ${userId}:`, error);
+                        logger.error(`Failed to generate download URL for blob ${objectId}, user ${userDid}:`, error);
                         throw new InternalServerError("Failed to generate download URL.");
                     }
                 },
@@ -803,7 +673,6 @@ const server = Bun.serve({
         if (url.pathname === "/ws") {
             logger.debug("Request received for /ws path");
             const token = url.searchParams.get("token");
-            let userId: string | null = null;
 
             if (!token) {
                 logger.warn("Fetch WS: No token provided in query string.");
@@ -816,18 +685,18 @@ const server = Bun.serve({
                     // Specify expected algorithms if needed, e.g., algorithms: ['HS256']
                 });
 
-                if (!payload || typeof payload.userId !== "string") {
-                    logger.warn("Fetch WS: Token payload invalid or missing 'userId' string field.");
+                if (!payload || typeof payload.userDid !== "string") {
+                    logger.warn("Fetch WS: Token payload invalid or missing 'userDid' string field.");
                     return new Response("Invalid token payload", { status: 401 });
                 }
 
-                const userId = payload.userId;
-                logger.debug(`Fetch WS: Token verified successfully for user: ${userId}`);
+                const userDid = payload.userDid;
+                logger.debug(`Fetch WS: Token verified successfully for user: ${userDid}`);
 
                 // --- Attempt Upgrade ---
                 const success = server.upgrade(req, {
-                    // Attach the verified userId to the WebSocket context
-                    data: { userId: userId },
+                    // Attach the verified userDid to the WebSocket context
+                    data: { userDid: userDid },
                     // headers: {} // Optional: Add custom headers to the 101 response
                 });
 

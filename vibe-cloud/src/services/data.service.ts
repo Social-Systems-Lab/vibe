@@ -4,14 +4,6 @@ import type { DocumentScope, DocumentInsertResponse, DocumentGetResponse, Docume
 import { logger } from "../utils/logger";
 import { InternalServerError, NotFoundError } from "elysia";
 
-// Define the structure of documents we might store (optional but good practice)
-interface VibeDocument extends MaybeDocument {
-    [key: string]: any; // Allow arbitrary fields
-}
-
-// Define the structure for update responses
-interface DocumentUpdateResponse extends DocumentInsertResponse {}
-
 export class DataService {
     private nano: nano.ServerScope | null = null;
     private dbConnections = new Map<string, DocumentScope<any>>();

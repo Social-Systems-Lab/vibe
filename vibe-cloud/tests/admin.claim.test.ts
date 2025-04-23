@@ -3,14 +3,12 @@ import { treaty } from "@elysiajs/eden";
 import { dataService } from "../src/services/data.service";
 import { authService } from "../src/services/auth.service";
 import { logger } from "../src/utils/logger";
+import { utils, getPublicKeyAsync, sign } from "@noble/ed25519"; // Correct imports
 import { Buffer } from "buffer";
 import { didFromEd25519 } from "../src/utils/did.utils";
 
 // --- Test Setup ---
-
-// Use the existing test context if it provides the app instance
-// Otherwise, import the app directly
-import { app } from "../src/index"; // Assuming app is exported for testing
+import { type App, app } from "../src/index"; // Import App type and app instance
 
 const CLAIM_CODES_DB = "claim_codes"; // Match constant in index.ts
 const USERS_DB_NAME = "vibe_users"; // Match constant in auth.service.ts
@@ -20,8 +18,8 @@ const api = treaty(app);
 
 // --- Helper Functions ---
 async function generateTestDid(): Promise<{ did: string; publicKey: Uint8Array; privateKey: Uint8Array }> {
-    const privateKey = generateKeyPair(); // Generates a random private key
-    const publicKey = await generateKeyPair.getPublicKeyAsync(privateKey); // Derive public key
+    const privateKey = utils.randomPrivateKey(); // Use utils.randomPrivateKey()
+    const publicKey = await getPublicKeyAsync(privateKey); // Use getPublicKeyAsync()
     const did = didFromEd25519(publicKey);
     return { did, publicKey, privateKey };
 }
@@ -53,12 +51,12 @@ async function cleanupClaimCodeDoc(docId: string): Promise<void> {
     }
 }
 
-async function cleanupUser(userId: string): Promise<void> {
+async function cleanupUser(userDid: string): Promise<void> {
     try {
-        // AuthService deleteUser handles deleting user doc and userdata- db
-        await authService.deleteUser(userId);
+        // AuthService deleteUser handles deleting user doc and user db
+        await authService.deleteUser(userDid);
     } catch (e: any) {
-        logger.error(`Test cleanup error deleting user ${userId}:`, e);
+        logger.error(`Test cleanup error deleting user ${userDid}:`, e);
     }
 }
 
@@ -68,7 +66,7 @@ describe("POST /api/v1/admin/claim", () => {
     let testDidData: { did: string; publicKey: Uint8Array; privateKey: Uint8Array };
     const validClaimCode = "VALID_TEST_CODE_123";
     const claimDocId = "TEST_CLAIM_VALID";
-    let createdUserId: string | null = null; // To track created user for cleanup
+    let createdUserDid: string | null = null; // To track created user for cleanup
 
     beforeAll(async () => {
         // Ensure services are connected (app startup should handle this, but belt-and-suspenders)
@@ -84,7 +82,7 @@ describe("POST /api/v1/admin/claim", () => {
 
     beforeEach(async () => {
         // Reset state before each test
-        createdUserId = null;
+        createdUserDid = null;
         await cleanupClaimCodeDoc(claimDocId); // Clean up potential leftovers
         // Create a fresh, valid claim code document for most tests
         await createClaimCodeDoc({
@@ -100,8 +98,8 @@ describe("POST /api/v1/admin/claim", () => {
     afterEach(async () => {
         // Cleanup after each test
         await cleanupClaimCodeDoc(claimDocId);
-        if (createdUserId) {
-            await cleanupUser(createdUserId);
+        if (createdUserDid) {
+            await cleanupUser(createdUserDid);
         }
         // Clean up other specific claim docs created in tests
         await cleanupClaimCodeDoc("TEST_CLAIM_SPENT");
@@ -124,12 +122,12 @@ describe("POST /api/v1/admin/claim", () => {
         expect(error).toBeNull();
         expect(data).toBeDefined();
         expect(data?.message).toBe("Admin account claimed successfully.");
-        expect(data?.userId).toBeTypeOf("string");
+        expect(data?.userDid).toBeTypeOf("string");
         expect(data?.isAdmin).toBe(true);
         expect(data?.token).toBeTypeOf("string");
 
-        // Store userId for cleanup
-        createdUserId = data?.userId ?? null;
+        // Store userDid for cleanup
+        createdUserDid = data?.userDid ?? null;
 
         // Verify claim code is marked as spent in DB
         const spentClaimDoc = await dataService.getDocument<any>(CLAIM_CODES_DB, claimDocId);

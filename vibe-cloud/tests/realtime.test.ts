@@ -10,7 +10,7 @@ let listener: ReturnType<typeof app.listen>; // the Elysia instance
 let socket: WebSocket;
 
 const { ctx, cleanup } = await createTestCtx();
-const { api, userId: testUserId, token: authToken } = ctx;
+const { api, userDid: testUserDid, token: authToken } = ctx;
 let testUserPermissionsRev = ctx.permsRev;
 
 // beforeAll(async () => {
@@ -43,7 +43,7 @@ describe("Real-time sync over WebSockets", () => {
     // suite-level before/after
     beforeAll(async () => {
         // grant read/write for this collection
-        const { rev } = await permissionService.setPermissions(testUserId, [`read:${rtCollection}`, `write:${rtCollection}`], testUserPermissionsRev);
+        const { rev } = await permissionService.setPermissions(testUserDid, [`read:${rtCollection}`, `write:${rtCollection}`], testUserPermissionsRev);
         testUserPermissionsRev = rev;
 
         // open WS once the server is running
@@ -123,7 +123,7 @@ describe("Real-time sync over WebSockets", () => {
     it("does NOT push when read permission is revoked", async () => {
         // revoke read permission
         const { rev } = await permissionService.setPermissions(
-            testUserId!,
+            testUserDid!,
             [`write:${rtCollection}`], // write‑only
             testUserPermissionsRev!
         );
