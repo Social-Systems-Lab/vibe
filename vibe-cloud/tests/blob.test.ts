@@ -1,251 +1,293 @@
-// import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-// import { createTestCtx, type TestCtx } from "./test-context";
-// import { permissionService } from "../src/services/permission.service";
-// import { dataService } from "../src/services/data.service"; // To check metadata
-// import { BlobService } from "../src/services/blob.service"; // To potentially clean up
-// import { BLOB_METADATA_DB } from "../src/index"; // Import constant
-// import { logger } from "../src/utils/logger";
+// tests/blob.test.ts
+import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import { createTestCtx, type TestCtx } from "./test-context";
+// Import singletons from index.ts
+import { permissionService, dataService, blobService } from "../src/index";
+import { SYSTEM_DB } from "../src/utils/constants"; // Import constants
+import { logger } from "../src/utils/logger";
+import { BLOBS_COLLECTION, type BlobMetadata } from "../src/models/models"; // Import type
 
-// const minioEndpointForTest = process.env.MINIO_ENDPOINT || "127.0.0.1";
-// const minioPortForTest = parseInt(process.env.MINIO_PORT || "9000", 10);
-// const defaultBucketName = process.env.MINIO_BUCKET_NAME || "vibe-storage";
-// const escapedEndpoint = minioEndpointForTest.replace(/\./g, "\\.");
-// const expectedMinioUrlRegex = new RegExp(`^http://${escapedEndpoint}:${minioPortForTest}/${defaultBucketName}/`);
+// --- Test Setup ---
 
-// // Set up three test users with different permissions
-// // User 1: Has read and write permissions
-// const { ctx: ctx1, cleanup: cleanup1 } = await createTestCtx();
-// const { userDid: userDid1, token: token1 } = ctx1;
-// let user1Rev = ctx1.permsRev;
+// User 1: Will have read/write blob permissions
+let ctx1: TestCtx, cleanup1: () => Promise<void>;
+let userDid1: string, token1: string, appId1: string;
+let user1PermsRev: string | null;
 
-// // User 2: Has only read permissions (for testing download by non-owner)
-// const { ctx: ctx2, cleanup: cleanup2 } = await createTestCtx();
-// const { userDid: userDid2, token: token2 } = ctx2;
-// let user2Rev = ctx2.permsRev;
+// User 2: Will have only read blob permissions
+let ctx2: TestCtx, cleanup2: () => Promise<void>;
+let userDid2: string, token2: string, appId2: string;
+let user2PermsRev: string | null;
 
-// // User 3: Has no blob permissions (for testing forbidden access)
-// const { ctx: ctx3, cleanup: cleanup3 } = await createTestCtx();
-// const { userDid: userDid3, token: token3 } = ctx3;
+// User 3: Will have no blob permissions
+let ctx3: TestCtx, cleanup3: () => Promise<void>;
+let userDid3: string, token3: string, appId3: string;
+let user3PermsRev: string | null;
 
-// describe("Blob API (/api/v1/blob)", () => {
-//     // --- Setup ---
-//     beforeAll(async () => {
-//         // User 1: Has read and write permissions
-//         const { rev } = await permissionService.setPermissions(userDid1, ["read:blobs", "write:blobs"], user1Rev);
-//         user1Rev = rev;
+// Global variable for the uploaded blob ID in this test suite
+type UUID = `${string}-${string}-${string}-${string}-${string}`;
+let uploadedObjectId: UUID | null = null;
 
-//         // User 2: Has only read permissions (for testing download by non-owner)
-//         const { rev: rev2 } = await permissionService.setPermissions(userDid2, ["read:blobs"], user2Rev);
-//         user2Rev = rev2;
-//     });
+// Regex for validating Minio presigned URL structure
+const minioEndpointForTest = process.env.MINIO_ENDPOINT || "127.0.0.1";
+const minioPortForTest = parseInt(process.env.MINIO_PORT || "9000", 10);
+const defaultBucketName = process.env.MINIO_BUCKET_NAME || "vibe-storage";
+const escapedEndpoint = minioEndpointForTest.replace(/\./g, "\\.");
+const expectedMinioUrlRegex = new RegExp(`^http://${escapedEndpoint}:${minioPortForTest}/${defaultBucketName}/`);
 
-//     // --- Teardown ---
-//     afterAll(async () => {
-//         // Clean up blob storage
-//         // 1. Clean up the uploaded blob (if it exists)
-//         if (uploadedObjectId) {
-//             let metadataRev: string | undefined = undefined;
+describe("Blob API (/api/v1/blob)", () => {
+    beforeAll(async () => {
+        logger.info("Setting up Blob test contexts...");
+        // Create contexts
+        ({ ctx: ctx1, cleanup: cleanup1 } = await createTestCtx());
+        userDid1 = ctx1.userDid;
+        token1 = ctx1.token;
+        appId1 = ctx1.appId;
+        user1PermsRev = ctx1.permsRev;
 
-//             // a) Get metadata revision for deletion
-//             try {
-//                 const metadata = await dataService.getDocument(BLOB_METADATA_DB, uploadedObjectId);
-//                 metadataRev = metadata._rev;
-//             } catch (error: any) {
-//                 // If metadata is already gone, just log and proceed
-//                 if (error.message?.includes("not found")) {
-//                     logger.warn(`Metadata document ${uploadedObjectId} not found in ${BLOB_METADATA_DB} during cleanup (already deleted?).`);
-//                 } else {
-//                     logger.error(`Error fetching metadata ${uploadedObjectId} during cleanup:`, error.message || error);
-//                 }
-//             }
+        ({ ctx: ctx2, cleanup: cleanup2 } = await createTestCtx());
+        userDid2 = ctx2.userDid;
+        token2 = ctx2.token;
+        appId2 = ctx2.appId;
+        user2PermsRev = ctx2.permsRev;
 
-//             // b) Delete metadata document (if revision was found)
-//             if (metadataRev) {
-//                 try {
-//                     await dataService.deleteDocument(BLOB_METADATA_DB, uploadedObjectId, metadataRev);
-//                 } catch (error: any) {
-//                     if (error.message?.includes("not found") || error.message?.includes("Revision conflict")) {
-//                         logger.warn(`Metadata document ${uploadedObjectId} deletion failed during cleanup (already deleted or conflict?): ${error.message}`);
-//                     } else {
-//                         logger.error(`Error deleting metadata document ${uploadedObjectId} during cleanup:`, error.message || error);
-//                     }
-//                 }
-//             }
+        ({ ctx: ctx3, cleanup: cleanup3 } = await createTestCtx());
+        userDid3 = ctx3.userDid;
+        token3 = ctx3.token;
+        appId3 = ctx3.appId;
+        user3PermsRev = ctx3.permsRev;
 
-//             // c) Delete Minio object
-//             try {
-//                 await BlobService.deleteObject(uploadedObjectId); // Uses default bucket
-//                 // Logger messages are inside BlobService.deleteObject now
-//             } catch (error: any) {
-//                 // BlobService.deleteObject handles its own logging now
-//                 logger.error(`Error occurred calling BlobService.deleteObject for ${uploadedObjectId} during cleanup:`, error.message || error);
-//             }
-//         } else {
-//             logger.warn("No uploadedObjectId found, skipping blob cleanup.");
-//         }
+        // Adjust direct permissions using the imported singleton service
+        // User 1: Should already have read/write from createTestCtx, verify or set explicitly
+        logger.debug(`Setting User 1 (${userDid1}) direct permissions: read/write`);
+        const res1 = await permissionService.setUserDirectPermissions(userDid1, [`read:${BLOBS_COLLECTION}`, `write:${BLOBS_COLLECTION}`]);
+        user1PermsRev = res1.rev;
 
-//         // Clean up test users
-//         await cleanup1();
-//         await cleanup2();
-//         await cleanup3();
-//     });
+        // User 2: Grant only read
+        logger.debug(`Setting User 2 (${userDid2}) direct permissions: read-only`);
+        const res2 = await permissionService.setUserDirectPermissions(userDid2, [`read:${BLOBS_COLLECTION}`]);
+        user2PermsRev = res2.rev;
 
-//     // --- Tests ---
-//     let uploadedObjectId: string | null = null;
-//     const testFileName = "test-blob.txt";
-//     const testFileContent = "This is the content of the test blob.";
-//     const testFileType = "text/plain";
+        // User 3: Grant no blob permissions (ensure empty array)
+        logger.debug(`Setting User 3 (${userDid3}) direct permissions: none`);
+        const res3 = await permissionService.setUserDirectPermissions(userDid3, []);
+        user3PermsRev = res3.rev;
 
-//     const testFile = new File([testFileContent], testFileName, { type: testFileType });
+        logger.info("Blob test contexts setup complete.");
+    });
 
-//     it("should reject blob upload without 'write:blobs' permission (403)", async () => {
-//         const response = await ctx2.api.api.v1.blob.upload.post(
-//             { file: testFile },
-//             {
-//                 headers: {
-//                     Authorization: `Bearer ${token2}`,
-//                 },
-//             }
-//         );
+    afterAll(async () => {
+        logger.info("Cleaning up Blob test contexts and resources...");
+        // Clean up blob storage first
+        if (uploadedObjectId) {
+            logger.debug(`Cleaning up blob ${uploadedObjectId}...`);
+            let metadataRev: string | undefined = undefined;
+            try {
+                const metadata = await dataService.getDocument<BlobMetadata>(SYSTEM_DB, uploadedObjectId);
+                metadataRev = metadata._rev;
+            } catch (error: any) {
+                if (!error.message?.includes("not found")) {
+                    // Log only unexpected errors
+                    logger.error(`Error fetching metadata ${uploadedObjectId} during cleanup:`, error.message || error);
+                }
+            }
 
-//         expect(response.status).toBe(403);
-//         expect(response.error?.value).toEqual({ error: "Forbidden: Missing 'write:blobs' permission." });
-//     });
+            if (metadataRev) {
+                try {
+                    await dataService.deleteDocument(SYSTEM_DB, uploadedObjectId, metadataRev);
+                    logger.debug(`Deleted metadata document ${uploadedObjectId}`);
+                } catch (error: any) {
+                    if (!error.message?.includes("not found") && !error.message?.includes("conflict")) {
+                        logger.error(`Error deleting metadata document ${uploadedObjectId} during cleanup:`, error.message || error);
+                    }
+                }
+            }
 
-//     it("should upload a blob successfully with 'write:blobs' permission (201)", async () => {
-//         const response = await ctx1.api.api.v1.blob.upload.post(
-//             { file: testFile },
-//             {
-//                 headers: {
-//                     Authorization: `Bearer ${token1}`, // User with write permission
-//                 },
-//             }
-//         );
+            try {
+                // Use the imported singleton blobService
+                await blobService.deleteObject(uploadedObjectId);
+                logger.debug(`Deleted blob object ${uploadedObjectId} from storage.`);
+            } catch (error: any) {
+                logger.error(`Error calling blobService.deleteObject for ${uploadedObjectId} during cleanup:`, error.message || error);
+            }
+        } else {
+            logger.warn("No uploadedObjectId found, skipping blob resource cleanup.");
+        }
 
-//         expect(response.status).toBe(201);
-//         expect(response.data).toHaveProperty("message", "File uploaded successfully.");
-//         expect(response.data).toHaveProperty("objectId");
-//         expect(response.data).toHaveProperty("filename", testFileName);
-//         expect(response.data?.contentType).toEqual(expect.stringContaining(testFileType));
-//         expect(response.data).toHaveProperty("size", testFileContent.length);
+        // Clean up test users (calls authService.deleteUser which handles user, db, perms)
+        await Promise.all([
+            cleanup1().catch((e) => logger.error(`Cleanup failed for user 1: ${e}`)),
+            cleanup2().catch((e) => logger.error(`Cleanup failed for user 2: ${e}`)),
+            cleanup3().catch((e) => logger.error(`Cleanup failed for user 3: ${e}`)),
+        ]);
+        logger.info("Blob test cleanup complete.");
+    });
 
-//         if (response.data?.objectId) {
-//             uploadedObjectId = response.data.objectId;
-//         } else {
-//             // Fail fast if the objectId is missing after a 201 response
-//             throw new Error(`Upload returned 201 but objectId was missing: ${JSON.stringify(response.data)}`);
-//         }
+    // Helper to create headers for authenticated requests
+    // Note: App ID doesn't strictly matter for blob permissions (checked against user's direct perms),
+    // but we include it for consistency with the API middleware requirements.
+    const getHeaders = (token: string, appId: string) => {
+        return {
+            Authorization: `Bearer ${token}`,
+            "X-Vibe-App-ID": appId,
+        };
+    };
 
-//         // Verify metadata in CouchDB
-//         const metadata = await dataService.getDocument(BLOB_METADATA_DB, uploadedObjectId!);
-//         expect(metadata).toBeDefined();
-//         expect(metadata).toMatchObject({
-//             _id: uploadedObjectId,
-//             originalFilename: testFileName,
-//             contentType: expect.stringContaining(testFileType),
-//             size: testFileContent.length,
-//             ownerId: userDid1,
-//             bucket: BlobService.defaultBucketName,
-//         });
-//         expect(metadata).toHaveProperty("uploadTimestamp");
-//         expect(metadata).toHaveProperty("_rev");
-//     }, 15000); // <-- Increased timeout to 15 seconds (adjust if needed)
+    // --- Test Data ---
+    const testFileName = "test-blob.txt";
+    const testFileContent = "This is the content of the test blob.";
+    const testFileType = "text/plain";
+    const testFile = new File([testFileContent], testFileName, { type: testFileType });
 
-//     it("should reject getting download URL for non-existent blob (404)", async () => {
-//         const nonExistentId = "non-existent-blob-id";
-//         const response = await ctx1.api.api.v1.blob.download({ objectId: nonExistentId }).get({
-//             headers: { Authorization: `Bearer ${token1}` }, // Owner's token
-//         });
+    // --- Upload Tests ---
 
-//         expect(response.status).toBe(404);
-//         // The exact error message comes from the NotFoundError thrown in the handler
-//         expect(response.error?.value).toEqual({ error: "Resource not found." });
-//     });
+    it("POST /upload: should reject blob upload without 'write:blobs' direct permission (403)", async () => {
+        // Use User 3 (no permissions)
+        const { data, error, status } = await ctx3.api.api.v1.blob.upload.post({ file: testFile }, { headers: getHeaders(token3, appId3) });
 
-//     it("should reject getting download URL without 'read:blobs' permission and not being owner (403)", async () => {
-//         expect(uploadedObjectId).toBeDefined(); // Ensure upload succeeded
+        expect(status).toBe(403);
+        expect(error?.value as any).toEqual({ error: `Forbidden: Missing 'write:${BLOBS_COLLECTION}' permission.` });
+    });
 
-//         const response = await ctx3.api.api.v1.blob.download({ objectId: uploadedObjectId! }).get({
-//             headers: {
-//                 Authorization: `Bearer ${token3}`, // Use user without read permission
-//             },
-//         });
+    it("POST /upload: should reject blob upload with only 'read:blobs' direct permission (403)", async () => {
+        // Use User 2 (read-only)
+        const { data, error, status } = await ctx2.api.api.v1.blob.upload.post({ file: testFile }, { headers: getHeaders(token2, appId2) });
 
-//         expect(response.status).toBe(403);
-//         // This error message comes from the Error thrown in the handler
-//         expect(response.error?.value).toEqual({ error: "Forbidden: You do not have permission to access this blob." });
-//     });
+        expect(status).toBe(403);
+        expect(error?.value as any).toEqual({ error: `Forbidden: Missing 'write:${BLOBS_COLLECTION}' permission.` });
+    });
 
-//     it("should get a pre-signed download URL successfully as the owner (200)", async () => {
-//         expect(uploadedObjectId).toBeDefined();
+    it("POST /upload: should upload a blob successfully with 'write:blobs' direct permission (201)", async () => {
+        // Use User 1 (read/write)
+        const { data, error, status } = await ctx1.api.api.v1.blob.upload.post({ file: testFile }, { headers: getHeaders(token1, appId1) });
 
-//         // Temporarily remove read permission from owner to test ownership bypass
-//         const { rev: tempRev } = await permissionService.setPermissions(userDid1, ["write:blobs"], user1Rev); // Only write
-//         user1Rev = tempRev; // Update the stored rev
+        expect(status).toBe(201);
+        expect(error).toBeNull();
+        expect(data).toBeDefined();
+        expect(data?.message).toBe("File uploaded successfully.");
+        expect(data?.objectId).toBeTypeOf("string");
+        expect(data?.filename).toBe(testFileName);
+        expect(data?.contentType).toContain(testFileType); // Use toContain for flexibility
+        expect(data?.size).toBe(testFileContent.length);
 
-//         const response = await ctx1.api.api.v1.blob.download({ objectId: uploadedObjectId! }).get({
-//             headers: { Authorization: `Bearer ${token1}` }, // Owner's token
-//         });
+        uploadedObjectId = data!.objectId ?? null; // Store for subsequent tests and cleanup
+        expect(uploadedObjectId).toBeDefined();
 
-//         try {
-//             expect(response.status).toBe(200);
-//             expect(response.data).toHaveProperty("url");
-//             expect(response.data?.url).toMatch(expectedMinioUrlRegex);
-//             expect(response.data?.url).toContain(uploadedObjectId);
-//             expect(response.data?.url).toContain("X-Amz-Algorithm=AWS4-HMAC-SHA256");
-//             expect(response.data?.url).toContain("X-Amz-Credential=");
-//             expect(response.data?.url).toContain("X-Amz-Expires=");
-//             expect(response.data?.url).toContain("X-Amz-SignedHeaders=host");
-//             expect(response.data?.url).toContain("X-Amz-Signature=");
-//         } finally {
-//             // Ensure permissions are restored even if assertions fail
-//             const { rev: tempRev2 } = await permissionService.setPermissions(userDid1, ["read:blobs", "write:blobs"], user1Rev);
-//             user1Rev = tempRev2; // Update the stored rev
-//         }
-//     });
+        // Verify metadata in CouchDB (SYSTEM_DB)
+        const metadata = await dataService.getDocument<BlobMetadata>(SYSTEM_DB, uploadedObjectId!);
+        expect(metadata).toBeDefined();
+        expect(metadata).toMatchObject({
+            _id: uploadedObjectId,
+            originalFilename: testFileName,
+            contentType: expect.stringContaining(testFileType),
+            size: testFileContent.length,
+            ownerDid: userDid1, // Check owner is the uploading user
+            bucket: blobService.defaultBucketName, // Check bucket name
+            collection: BLOBS_COLLECTION, // Check collection field
+        });
+        expect(metadata).toHaveProperty("uploadTimestamp");
+        expect(metadata).toHaveProperty("_rev");
+    }, 15000); // Increased timeout for potential upload delay
 
-//     it("should get a pre-signed download URL successfully with 'read:blobs' permission (non-owner) (200)", async () => {
-//         expect(uploadedObjectId).toBeDefined();
+    // --- Download Tests ---
 
-//         // Use the user who only has 'read:blobs' permission
-//         const response = await ctx2.api.api.v1.blob.download({ objectId: uploadedObjectId }).get({
-//             headers: { Authorization: `Bearer ${token2}` }, // User with read permission
-//         });
+    it("GET /download/:objectId: should reject getting download URL for non-existent blob (404)", async () => {
+        const nonExistentId = "non-existent-blob-id-123";
+        // Use any authenticated user
+        const { data, error, status } = await ctx1.api.api.v1.blob.download({ objectId: nonExistentId }).get({
+            headers: getHeaders(token1, appId1),
+        });
 
-//         expect(response.status).toBe(200);
-//         expect(response.data).toHaveProperty("url");
-//         expect(response.data?.url).toMatch(expectedMinioUrlRegex);
-//         expect(response.data?.url).toContain(uploadedObjectId);
-//     });
+        expect(status).toBe(404);
+        expect(error?.value).toEqual({ error: `Blob metadata not found for ID: ${nonExistentId}` });
+    });
 
-//     it("should allow downloading the blob content using the pre-signed URL", async () => {
-//         expect(uploadedObjectId).toBeDefined();
+    it("GET /download/:objectId: should reject getting download URL without ownership or 'read:blobs' direct permission (403)", async () => {
+        expect(uploadedObjectId).toBeDefined(); // Ensure upload succeeded
 
-//         // Get the URL first (as owner)
-//         const urlResponse = await ctx1.api.api.v1.blob.download({ objectId: uploadedObjectId }).get({
-//             headers: { Authorization: `Bearer ${token1}` },
-//         });
-//         expect(urlResponse.status).toBe(200);
+        // Use User 3 (no permissions)
+        const { data, error, status } = await ctx3.api.api.v1.blob.download({ objectId: uploadedObjectId! }).get({
+            headers: getHeaders(token3, appId3),
+        });
 
-//         const downloadUrl = urlResponse.data?.url;
-//         expect(downloadUrl).toBeDefined();
+        expect(status).toBe(403);
+        expect(error?.value).toEqual({ error: "Forbidden: You do not have permission to access this blob." });
+    });
 
-//         // Fetch the content from the pre-signed URL
-//         // Note: This fetch goes directly to Minio, bypassing our API/auth after URL generation
-//         try {
-//             const contentResponse = await fetch(downloadUrl!);
-//             expect(contentResponse.ok).toBe(true); // Check if the request was successful (2xx status)
-//             expect(contentResponse.status).toBe(200);
-//             const downloadedContent = await contentResponse.text();
-//             expect(downloadedContent).toBe(testFileContent);
-//             expect(contentResponse.headers.get("content-type")).toContain(testFileType);
-//             expect(contentResponse.headers.get("content-length")).toBe(String(testFileContent.length));
-//         } catch (error) {
-//             console.error("Error fetching pre-signed URL:", error);
-//             // Fail the test if fetch fails
-//             throw new Error("Fetching the pre-signed URL failed.");
-//         }
-//     });
+    it("GET /download/:objectId: should get URL successfully as the owner (even without explicit read perm) (200)", async () => {
+        expect(uploadedObjectId).toBeDefined();
 
-//     // TODO: Add test for attempting to download after URL expiry? (Requires mocking time or waiting)
-// });
+        // Temporarily remove direct read permission from owner to test ownership bypass
+        logger.debug(`Temporarily removing read perm for owner ${userDid1}, rev ${user1PermsRev}`);
+        const tempRes = await permissionService.setUserDirectPermissions(userDid1, [`write:${BLOBS_COLLECTION}`]); // Only write
+        const tempRev = tempRes.rev;
+        logger.debug(`Read perm removed, new rev ${tempRev}`);
+
+        try {
+            // Use User 1 (owner)
+            const { data, error, status } = await ctx1.api.api.v1.blob.download({ objectId: uploadedObjectId! }).get({
+                headers: getHeaders(token1, appId1),
+            });
+
+            expect(status).toBe(200);
+            expect(error).toBeNull();
+            expect(data).toHaveProperty("url");
+            expect(data?.url).toMatch(expectedMinioUrlRegex);
+            expect(data?.url).toContain(uploadedObjectId);
+            // Check for common presigned URL components
+            expect(data?.url).toContain("X-Amz-Algorithm=");
+            expect(data?.url).toContain("X-Amz-Credential=");
+            expect(data?.url).toContain("X-Amz-Expires=");
+            expect(data?.url).toContain("X-Amz-Signature=");
+        } finally {
+            // Ensure permissions are restored
+            logger.debug(`Restoring read perm for owner ${userDid1}, rev ${tempRev}`);
+            const finalRes = await permissionService.setUserDirectPermissions(userDid1, [`read:${BLOBS_COLLECTION}`, `write:${BLOBS_COLLECTION}`]);
+            user1PermsRev = finalRes.rev; // Update global rev tracker
+            logger.debug(`Read perm restored, new rev ${user1PermsRev}`);
+        }
+    });
+
+    it("GET /download/:objectId: should get URL successfully with 'read:blobs' direct permission (non-owner) (200)", async () => {
+        expect(uploadedObjectId).toBeDefined();
+
+        // Use User 2 (non-owner, but has read:blobs)
+        const { data, error, status } = await ctx2.api.api.v1.blob.download({ objectId: uploadedObjectId! }).get({
+            headers: getHeaders(token2, appId2),
+        });
+
+        expect(status).toBe(200);
+        expect(error).toBeNull();
+        expect(data).toHaveProperty("url");
+        expect(data?.url).toMatch(expectedMinioUrlRegex);
+        expect(data?.url).toContain(uploadedObjectId);
+    });
+
+    it("GET /download/:objectId: should allow downloading content using the pre-signed URL", async () => {
+        expect(uploadedObjectId).toBeDefined();
+
+        // Get the URL first (as owner)
+        const urlResponse = await ctx1.api.api.v1.blob.download({ objectId: uploadedObjectId! }).get({
+            headers: getHeaders(token1, appId1),
+        });
+        expect(urlResponse.status).toBe(200);
+        const downloadUrl = urlResponse.data?.url;
+        expect(downloadUrl).toBeTypeOf("string");
+
+        // Fetch the content directly from Minio using the URL
+        try {
+            logger.debug(`Attempting to fetch pre-signed URL: ${downloadUrl!.substring(0, 100)}...`);
+            const contentResponse = await fetch(downloadUrl!);
+            expect(contentResponse.ok).toBe(true);
+            expect(contentResponse.status).toBe(200);
+            const downloadedContent = await contentResponse.text();
+            expect(downloadedContent).toBe(testFileContent);
+            expect(contentResponse.headers.get("content-type")).toContain(testFileType);
+            expect(contentResponse.headers.get("content-length")).toBe(String(testFileContent.length));
+            logger.debug(`Successfully fetched content from pre-signed URL.`);
+        } catch (error) {
+            logger.error("Error fetching pre-signed URL:", error);
+            throw new Error(`Fetching the pre-signed URL failed: ${error}`);
+        }
+    }, 10000); // Timeout for the fetch call
+});

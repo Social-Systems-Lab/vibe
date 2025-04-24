@@ -194,8 +194,6 @@ describe("Data API Endpoints (/api/v1/data)", () => {
         // Verify directly in DB using imported dataService
         const createdDoc = await dataService.getDocument(userDbName, docId);
 
-        logger.debug(`************* Created document: ${JSON.stringify(createdDoc)}`);
-
         expect(createdDoc).toBeDefined();
         expect((createdDoc as any)?.collection).toBe(testCollection);
         expect((createdDoc as any)?.name).toBe(docData.name);

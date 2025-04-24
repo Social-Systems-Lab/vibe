@@ -15,6 +15,7 @@ import { Buffer } from "buffer";
 import {
     AdminClaimSchema,
     BlobDownloadResponseSchema,
+    BLOBS_COLLECTION,
     BlobUploadBodySchema,
     CLAIM_CODES_COLLECTION,
     ErrorResponseSchema,
@@ -287,7 +288,7 @@ export const app = new Elysia()
                 try {
                     logger.debug(`Attempting to mark claim code '${claimDoc._id}' as spent...`);
                     // Use updateDocument - requires _rev. Collection name "" for dedicated DB.
-                    await dataService.updateDocument(SYSTEM_DB, "", claimDoc._id, claimDoc._rev!, updatedClaimData);
+                    await dataService.updateDocument(SYSTEM_DB, CLAIM_CODES_COLLECTION, claimDoc._id, claimDoc._rev!, updatedClaimData);
                     logger.info(`Claim code '${claimDoc._id}' successfully marked as spent by DID ${did}.`);
                 } catch (error: any) {
                     logger.error(`Failed to mark claim code '${claimDoc._id}' as spent:`, error);
@@ -444,22 +445,43 @@ export const app = new Elysia()
                             Array.isArray(data) ? `Array[${data.length}]` : "Object"
                         }`
                     );
-                    logger.debug(`Data to be written: ${JSON.stringify(data)}`); // Log the data being written
-                    const response = await dataService.write(userDbName, collection, data);
 
-                    // Determine status code based on response type (single vs bulk)
-                    // Nano bulk response is an array, single insert is an object
-                    if (Array.isArray(response)) {
-                        // Bulk response - check for errors within the array
-                        const hasErrors = response.some((item) => item.error);
-                        set.status = hasErrors ? 207 : 200; // 207 Multi-Status if errors, 200 OK otherwise
-                    } else {
-                        // Single insert response
-                        set.status = response.ok ? 200 : 500; // 200 OK or 500 if !ok (should be caught by service)
+                    try {
+                        // Call dataService.write
+                        const response = await dataService.write(userDbName, collection, data);
+
+                        // *** Inspect Response and Set Status ***
+                        if (Array.isArray(response)) {
+                            // Bulk response: Check if any item reported an error (including conflicts)
+                            const hasErrors = response.some((item) => !!item.error);
+                            if (hasErrors) {
+                                logger.warn(`Write completed with errors/conflicts for user ${userDid}, collection ${collection}. Returning 207.`);
+                                set.status = 207; // Multi-Status
+                            } else {
+                                logger.debug(`Bulk write successful for user ${userDid}, collection ${collection}. Returning 200.`);
+                                set.status = 200; // OK
+                            }
+                            // Return the detailed array response from CouchDB
+                            return response;
+                        } else {
+                            // Single insert response (guaranteed ok:true if no error thrown)
+                            logger.debug(`Single write successful for user ${userDid}, collection ${collection}. Returning 200.`);
+                            set.status = 200; // OK
+                            // Return the single response object
+                            return response;
+                        }
+                    } catch (error: any) {
+                        // *** Catch Specific Errors (now primarily for SINGLE writes) ***
+                        if (error.message?.includes("Revision conflict")) {
+                            logger.warn(`Conflict detected during single write for user ${userDid}, collection ${collection}. Returning 409.`);
+                            set.status = 409; // Conflict
+                            return { error: "Revision conflict", details: error.message };
+                        } else {
+                            // Let other errors fall through to the global onError handler
+                            logger.error(`Unexpected error during write for user ${userDid}, collection ${collection}:`, error);
+                            throw error;
+                        }
                     }
-
-                    // Return the raw CouchDB response(s)
-                    return response;
                 },
                 {
                     body: WritePayloadSchema,
@@ -546,19 +568,19 @@ export const app = new Elysia()
 
                         // 4. Create Metadata Document
                         const metadata: Omit<BlobMetadata, "_rev"> = {
-                            _id: objectId, // TODO the object id might need to be defined outside _id
+                            _id: `${BLOBS_COLLECTION}/${objectId}`, // TODO the object id might need to be defined outside _id
                             originalFilename: file.name || "untitled", // Use file.name from body
                             contentType: file.type, // Use file type from body
                             size: file.size, // Use file size from body
                             ownerDid: userDid,
                             uploadTimestamp: new Date().toISOString(),
                             bucket: bucketName,
-                            collection: "$blobs", // TODO use constant for collection name
+                            collection: BLOBS_COLLECTION,
                         };
 
                         logger.info(`Calling dataService.createDocument for ${objectId}...`);
                         // 5. Save Metadata to CouchDB
-                        await dataService.createDocument(SYSTEM_DB, "", metadata);
+                        await dataService.createDocument(SYSTEM_DB, BLOBS_COLLECTION, metadata);
                         logger.info(`dataService.createDocument completed for ${objectId}.`);
 
                         logger.info(`Blob ${objectId} metadata saved for user ${userDid}`);
@@ -597,7 +619,7 @@ export const app = new Elysia()
                     try {
                         // 1. Fetch Metadata
                         logger.debug(`Attempting to fetch metadata for objectId: ${objectId} from DB: ${SYSTEM_DB}`);
-                        const metadata = (await dataService.getDocument(SYSTEM_DB, objectId)) as BlobMetadata; // Cast to expected type
+                        const metadata = (await dataService.getDocument(SYSTEM_DB, `${BLOBS_COLLECTION}/${objectId}`)) as BlobMetadata; // Cast to expected type
                         logger.debug(`Successfully fetched metadata for objectId: ${objectId}`, metadata); // Log successful fetch
 
                         // 2. Permission Check (Owner OR 'read:blobs')

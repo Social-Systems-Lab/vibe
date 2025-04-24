@@ -44,7 +44,7 @@
 //     //         adminDid = createDidFromPubKey(adminPublicKey);
 
 //     //         // 2. Create a claim code document directly for testing
-//     //         claimCodeDocId = `test-claim-${randomUUID()}`;
+//     //         claimCodeDocId = `claimCodes/test-claim-${randomUUID()}`;
 //     //         claimCodeValue = `TESTCODE-${randomUUID()}`;
 //     //         const newClaimCodeDoc: Omit<ClaimCode, "_rev"> = {
 //     //             _id: claimCodeDocId,

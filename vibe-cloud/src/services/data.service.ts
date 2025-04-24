@@ -165,8 +165,6 @@ export class DataService {
         }
         const db = await this.ensureDatabaseExists(dbName);
 
-        logger.debug(`******Writing doc to db`, JSON.stringify(docOrDocs), "******");
-
         const processDoc = (doc: T): T & { _id?: string; collection: string } => {
             let processedDoc = { ...doc } as any;
             // Add collection field
@@ -198,11 +196,9 @@ export class DataService {
                 const response = await db.bulk({ docs: docsToInsert });
 
                 // Check response items for errors
-                const errors = response.filter((item) => item.error);
+                const errors = response.filter((item) => !!item.error);
                 if (errors.length > 0) {
-                    logger.error(`Bulk write encountered errors in db "${dbName}", collection "${collection}":`, errors);
-                    // Consider throwing a custom error or returning the partial success response
-                    // throw new Error(`Bulk write failed for ${errors.length} documents.`);
+                    logger.warn(`Bulk write completed with ${errors.length} errors/conflicts in db "${dbName}", collection "${collection}". Details:`, errors);
                 } else {
                     logger.debug(`Bulk write successful for ${docsToInsert.length} documents in db "${dbName}", collection "${collection}"`);
                 }
@@ -212,21 +208,25 @@ export class DataService {
                 const docToInsert = processDoc(docOrDocs);
                 logger.debug(`Performing single write for document id "${docToInsert._id}" in db "${dbName}", collection "${collection}"`);
 
-                logger.debug(`******Processed doc`, JSON.stringify(docToInsert), "******");
-
                 // db.insert handles create or update based on _id/_rev presence
                 // It fetches _rev automatically if _id exists and _rev is missing
                 const response = await db.insert(docToInsert);
                 if (!response.ok) {
-                    logger.error(`Single write reported not OK for db ${dbName}, id ${docToInsert._id}:`, response);
-                    throw new InternalServerError("Failed to write document, unexpected response from database.");
+                    throw new InternalServerError("Failed to write document");
                 }
-                logger.debug(`Single write successful for document id "${response.id}", new rev: ${response.rev}`);
+                logger.debug(`Single write successful for doc ID "${response.id}", rev: ${response.rev}`);
                 return response;
             }
         } catch (error: any) {
+            // Catch conflicts ONLY from single insert OR critical bulk errors
+            if (error.statusCode === 409 || error.message?.toLowerCase().includes("conflict")) {
+                logger.warn(`Write operation conflict for db "${dbName}", collection "${collection}":`, error.message || error);
+                // Throw specific error for the handler to catch
+                throw new Error("Revision conflict");
+            }
+            // Handle other errors (e.g., connection issues during bulk/single)
             logger.error(`Write operation failed for db "${dbName}", collection "${collection}":`, error.message || error);
-            if (error instanceof Error) throw error; // Rethrow known errors
+            if (error instanceof Error) throw error;
             throw new InternalServerError("Failed to write document(s).");
         }
     }
@@ -237,6 +237,15 @@ export class DataService {
      */
     async createDocument(dbName: string, collection: string, data: Record<string, any>): Promise<nano.DocumentInsertResponse> {
         try {
+            // if data._id is not set, generate a new one
+            if (!data._id) {
+                data._id = `${collection}/${randomUUIDv7()}`; // Use UUID for uniqueness
+                logger.debug(`Generated _id "${data._id}" for new document.`);
+            } else if (!data._id.startsWith(`${collection}/`)) {
+                logger.warn(`Document ID "${data._id}" does not follow the standard "${collection}/" prefix.`);
+                throw new Error(`Document ID "${data._id}" does not follow the standard "${collection}/" prefix.`);
+            }
+
             const db = await this.ensureDatabaseExists(dbName);
             const docToInsert = { ...data, collection: collection };
             const response = await db.insert(docToInsert);
@@ -279,6 +288,12 @@ export class DataService {
      */
     async updateDocument(dbName: string, collection: string, docId: string, rev: string, data: Record<string, any>): Promise<nano.DocumentInsertResponse> {
         try {
+            // make sure docId is prefixed with collection name
+            if (!docId.startsWith(`${collection}/`)) {
+                logger.warn(`Document ID "${docId}" does not follow the standard "${collection}/" prefix.`);
+                throw new Error(`Document ID "${docId}" does not follow the standard "${collection}/" prefix.`);
+            }
+
             const db = await this.ensureDatabaseExists(dbName);
             const docToUpdate = { ...data, _id: docId, _rev: rev, collection: collection };
             const response = await db.insert(docToUpdate);

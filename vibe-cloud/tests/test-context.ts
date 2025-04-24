@@ -40,7 +40,7 @@ export async function createTestCtx(): Promise<{
     try {
         // 1. Create Test User and get Token using AuthService helper
         // Grant basic blob permissions directly to the user for testing blob endpoints later
-        const directPermissions = [`read:$blobs`, `write:$blobs`];
+        const directPermissions = [`read:blobs`, `write:blobs`];
         logger.debug(`Creating test user ${testUserDid} with direct permissions [${directPermissions.join(", ")}]...`);
         const userCreationResult = await authService.createTestUserAndToken(
             testUserDid,

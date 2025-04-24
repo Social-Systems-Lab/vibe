@@ -1,6 +1,6 @@
 // permission.service.ts
 import { logger } from "../utils/logger";
-import { PERMISSIONS_COLLECTION, type Permission, type PermissionUpdateResponse } from "../models/models";
+import { BLOBS_COLLECTION, PERMISSIONS_COLLECTION, type Permission, type PermissionUpdateResponse } from "../models/models";
 import { SYSTEM_DB } from "../utils/constants";
 import type { DataService } from "./data.service";
 import { InternalServerError, NotFoundError } from "elysia";
@@ -21,7 +21,7 @@ export class PermissionService {
         if (!userDid) return null;
         try {
             // User's permission doc _id is their userDid
-            const doc = await this.dataService.getDocument<Permission>(SYSTEM_DB, userDid);
+            const doc = await this.dataService.getDocument<Permission>(SYSTEM_DB, `${PERMISSIONS_COLLECTION}/${userDid}`);
             // Ensure _id and _rev are present, although getDocument should guarantee this if found
             if (!doc._id || !doc._rev) {
                 logger.error(`Permission document for ${userDid} fetched but missing _id or _rev.`);
@@ -67,7 +67,7 @@ export class PermissionService {
 
         const newDocState: Permission = {
             ...(currentDoc || {}), // Start with existing doc or empty object
-            _id: userDid,
+            _id: `${PERMISSIONS_COLLECTION}/${userDid}`,
             userDid: userDid,
             collection: PERMISSIONS_COLLECTION,
             directPermissions: permissions, // Overwrite direct permissions
@@ -79,7 +79,13 @@ export class PermissionService {
             let response: PermissionUpdateResponse;
             if (docRev) {
                 // Update existing document
-                response = await this.dataService.updateDocument(SYSTEM_DB, PERMISSIONS_COLLECTION, userDid, docRev, newDocState);
+                response = await this.dataService.updateDocument(
+                    SYSTEM_DB,
+                    PERMISSIONS_COLLECTION,
+                    `${PERMISSIONS_COLLECTION}/${userDid}`,
+                    docRev,
+                    newDocState
+                );
             } else {
                 // Create new document
                 response = await this.dataService.createDocument(SYSTEM_DB, PERMISSIONS_COLLECTION, newDocState);
@@ -112,7 +118,7 @@ export class PermissionService {
 
         const newDocState: Permission = {
             ...(currentDoc || {}),
-            _id: userDid,
+            _id: `${PERMISSIONS_COLLECTION}/${userDid}`,
             userDid: userDid,
             collection: PERMISSIONS_COLLECTION,
             appGrants: updatedAppGrants, // Set the updated grants map
@@ -123,7 +129,13 @@ export class PermissionService {
         try {
             let response: PermissionUpdateResponse;
             if (docRev) {
-                response = await this.dataService.updateDocument(SYSTEM_DB, PERMISSIONS_COLLECTION, userDid, docRev, newDocState);
+                response = await this.dataService.updateDocument(
+                    SYSTEM_DB,
+                    PERMISSIONS_COLLECTION,
+                    `${PERMISSIONS_COLLECTION}/${userDid}`,
+                    docRev,
+                    newDocState
+                );
             } else {
                 response = await this.dataService.createDocument(SYSTEM_DB, PERMISSIONS_COLLECTION, newDocState);
             }
@@ -175,7 +187,13 @@ export class PermissionService {
 
         try {
             // Always an update here since currentDoc exists
-            const response = await this.dataService.updateDocument(SYSTEM_DB, PERMISSIONS_COLLECTION, userDid, docRev, newDocState);
+            const response = await this.dataService.updateDocument(
+                SYSTEM_DB,
+                PERMISSIONS_COLLECTION,
+                `${PERMISSIONS_COLLECTION}/${userDid}`,
+                docRev,
+                newDocState
+            );
             logger.info(`Permissions revoked for app '${appId}' for user '${userDid}' (new rev: ${response.rev})`);
             return response;
         } catch (error: any) {
@@ -202,7 +220,13 @@ export class PermissionService {
         const newDocState: Permission = { ...currentDoc, appGrants: updatedAppGrants };
 
         try {
-            const response = await this.dataService.updateDocument(SYSTEM_DB, PERMISSIONS_COLLECTION, userDid, docRev, newDocState);
+            const response = await this.dataService.updateDocument(
+                SYSTEM_DB,
+                PERMISSIONS_COLLECTION,
+                `${PERMISSIONS_COLLECTION}/${userDid}`,
+                docRev,
+                newDocState
+            );
             logger.info(`All permissions revoked for app '${appId}' for user '${userDid}' (new rev: ${response.rev})`);
             return response;
         } catch (error: any) {
@@ -263,7 +287,7 @@ export class PermissionService {
                 logger.warn(`Permission document for userDid '${userDid}' not found during deletion.`);
                 return; // Nothing to delete
             }
-            await this.dataService.deleteDocument(SYSTEM_DB, userDid, permDoc._rev);
+            await this.dataService.deleteDocument(SYSTEM_DB, `${PERMISSIONS_COLLECTION}/${userDid}`, permDoc._rev);
             logger.info(`Successfully deleted permission document for userDid '${userDid}'.`);
         } catch (error: any) {
             // Catch specific errors from dataService if needed (e.g., conflict)

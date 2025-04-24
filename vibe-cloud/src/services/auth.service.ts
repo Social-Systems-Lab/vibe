@@ -85,7 +85,7 @@ export class AuthService {
             return;
         }
 
-        const initialAdminDocId = "INITIAL_ADMIN";
+        const initialAdminDocId = "claimCodes/INITIAL_ADMIN";
 
         try {
             // Check if the document already exists using dataService
@@ -178,8 +178,8 @@ export class AuthService {
             "write:*", // Write anything (including system data)
             "manage:permissions", // Ability to grant/revoke permissions
             "manage:users", // Ability to manage users (if such endpoints exist)
-            "read:$blobs", // Explicit read access to shared blobs
-            "write:$blobs", // Explicit write access to shared blobs
+            "read:blobs", // Explicit read access to shared blobs
+            "write:blobs", // Explicit write access to shared blobs
         ];
         try {
             await this.permissionService.setUserDirectPermissions(userDid, defaultAdminPermissions);
@@ -228,7 +228,8 @@ export class AuthService {
         const jwtAlgorithm = "HS256";
 
         const testUserDid = userDid || `did:vibe:test:${randomUUIDv7()}`;
-        const userDocId = testUserDid; // Use DID directly as User doc ID
+        const userDocId = `${USERS_COLLECTION}/${testUserDid}`; // Use DID directly as User doc ID
+        // TODO we need to sanitize user doc ID perhaps? Remove comment if test goes through
 
         // 1. Prepare User Document
         const newUserDocData: Omit<User, "_id" | "_rev"> = {

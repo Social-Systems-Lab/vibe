@@ -5,10 +5,10 @@ import type { DocumentInsertResponse, MaybeDocument } from "nano";
 
 //#region --- Collection Constants ---
 
-export const PERMISSIONS_COLLECTION = "$permissions" as const;
-export const USERS_COLLECTION = "$users" as const;
-export const BLOBS_COLLECTION = "$blobs" as const;
-export const CLAIM_CODES_COLLECTION = "$claimCodes" as const;
+export const PERMISSIONS_COLLECTION = "permissions" as const;
+export const USERS_COLLECTION = "users" as const;
+export const BLOBS_COLLECTION = "blobs" as const;
+export const CLAIM_CODES_COLLECTION = "claimCodes" as const;
 
 //#endregion
 
@@ -29,7 +29,7 @@ export const PermissionSchema = t.Object({
     collection: t.Literal(PERMISSIONS_COLLECTION),
     appGrants: t.Optional(AppGrantSchema), // Map of appId -> granted scopes
     directPermissions: t.Optional(
-        t.Array(t.String(), { minItems: 1 }) // User's own direct permissions (e.g., read:$blobs)
+        t.Array(t.String(), { minItems: 1 }) // User's own direct permissions (e.g., read:blobs)
     ),
 });
 export type Permission = Static<typeof PermissionSchema>;
