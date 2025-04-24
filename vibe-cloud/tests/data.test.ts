@@ -4,7 +4,7 @@ import { createTestCtx, type TestCtx } from "./test-context";
 import { permissionService, dataService } from "../src/index";
 import { logger, disableLogging, enableLogging } from "../src/utils/logger";
 import type { ReadResult } from "../src/services/data.service";
-import { getUserDbName } from "../src/utils/did.utils";
+import { getUserDbName } from "../src/utils/identity.utils";
 
 describe("Data API Endpoints (/api/v1/data)", () => {
     let testCtx: TestCtx;

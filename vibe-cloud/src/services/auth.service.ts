@@ -7,7 +7,7 @@ import { InternalServerError, NotFoundError } from "elysia";
 import type { PermissionService } from "./permission.service";
 import * as jose from "jose";
 import { randomUUIDv7 } from "bun";
-import { getUserDbName } from "../utils/did.utils";
+import { getUserDbName } from "../utils/identity.utils";
 
 export class AuthService {
     private dataService: DataService;

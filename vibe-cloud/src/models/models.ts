@@ -1,5 +1,5 @@
 // models.ts - Vibe Cloud Models, Types, and Schemas
-import { t, type Static } from "elysia";
+import { t, type Static, type TSchema } from "elysia";
 import type nano from "nano";
 import type { DocumentInsertResponse, MaybeDocument } from "nano";
 
@@ -205,7 +205,7 @@ export type WebSocketServerMessage =
 //#region --- Base & External Types ---
 
 export type { DocumentInsertResponse, MaybeDocument };
-export type ChangeWithDoc<TDocSchema extends t.TLiteralObject | t.TObject<any>> = nano.DatabaseChangesResultItem & {
+export type ChangeWithDoc<TDocSchema extends TSchema> = nano.DatabaseChangesResultItem & {
     doc?: Static<TDocSchema> & MaybeDocument; // Ensure _id/_rev might be present
 };
 

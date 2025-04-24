@@ -9,7 +9,7 @@ import { randomUUID } from "crypto";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
 import type * as nano from "nano";
 import * as jose from "jose";
-import { ed25519FromDid, getUserDbName } from "./utils/did.utils";
+import { ed25519FromDid, getUserDbName } from "./utils/identity.utils";
 import { verify } from "@noble/ed25519";
 import { Buffer } from "buffer";
 import {
@@ -664,85 +664,68 @@ const bunWsHandler: WebSocketHandler<WebSocketAuthContext> = {
     },
 };
 
+// --- Define the Fetch Handler (including WS Upgrade) ---
+// This uses the initialized app singleton for HTTP requests
+async function fetchHandler(req: Request, server: Server): Promise<Response | undefined> {
+    const url = new URL(req.url);
+
+    // WebSocket Upgrade Handling
+    if (url.pathname === "/ws") {
+        // ... (WS upgrade logic remains the same, using secretKey) ...
+        logger.debug("Request received for /ws path");
+        const token = url.searchParams.get("token");
+        const appId = url.searchParams.get("appId");
+        if (!token) return new Response("Missing authentication token", { status: 401 });
+        if (!appId) return new Response("Missing application identifier", { status: 400 });
+        try {
+            const { payload } = await jose.jwtVerify(token, secretKey);
+            if (!payload || typeof payload.userDid !== "string") return new Response("Invalid token payload", { status: 401 });
+            const userDid = payload.userDid;
+            const success = server.upgrade(req, { data: { userDid, appId } });
+            if (success) return undefined;
+            else return new Response("WebSocket upgrade failed", { status: 400 });
+        } catch (err: any) {
+            /* ... JWT error handling ... */
+            logger.warn(`Fetch WS: Token verification failed: ${err.message}`);
+            let status = 401;
+            let message = "Authentication failed";
+            if (err.code === "ERR_JWT_EXPIRED") message = "Token expired";
+            else if (err.code === "ERR_JWS_SIGNATURE_VERIFICATION_FAILED") message = "Invalid token signature";
+            else if (err.code === "ERR_JWS_INVALID" || err.code === "ERR_JWT_MALFORMED") message = "Malformed token";
+            return new Response(message, { status: status });
+        }
+    }
+
+    // Fallback to Elysia for HTTP requests
+    try {
+        return await app.fetch(req); // Use the exported app instance
+    } catch (e: any) {
+        logger.error(`Fetch: Error during Elysia fetch delegation for ${url.pathname}:`, e);
+        return new Response("Internal Server Error during request delegation", { status: 500 });
+    }
+}
+
+// --- Exportable Server Start Function ---
+// This function encapsulates the Bun.serve call
+export function startServer(port: number = 3000): Server {
+    logger.info(`Attempting to start Vibe Cloud server on port ${port}...`);
+    try {
+        const server = Bun.serve({
+            port: port,
+            websocket: bunWsHandler, // Use the defined WS handler
+            fetch: fetchHandler, // Use the defined fetch handler
+        });
+        logger.info(`🚀 Vibe Cloud server started at http://${server.hostname}:${server.port}`);
+        return server;
+    } catch (error) {
+        logger.error(`Failed to start server on port ${port}:`, error);
+        throw error; // Re-throw to indicate failure
+    }
+}
+
 // Start the server combining Elysia fetch and Bun WS
 if (import.meta.main) {
-    const server = Bun.serve({
-        port: 3000, // Or process.env.PORT
-        websocket: bunWsHandler, // Required by type definition even though we handle upgrade manually
-        async fetch(req: Request, server: Server) {
-            const url = new URL(req.url);
-
-            // --- WebSocket Upgrade Handling ---
-            if (url.pathname === "/ws") {
-                logger.debug("Request received for /ws path");
-                const token = url.searchParams.get("token");
-                const appId = url.searchParams.get("appId");
-
-                if (!token) {
-                    logger.warn("Fetch WS: No token provided in query string.");
-                    return new Response("Missing authentication token", { status: 401 });
-                }
-                if (!appId) {
-                    logger.warn("Fetch WS: Missing 'appId' query parameter.");
-                    return new Response("Missing application identifier", { status: 400 });
-                }
-
-                // --- MANUAL JWT Verification ---
-                try {
-                    const { payload } = await jose.jwtVerify(token, secretKey);
-                    if (!payload || typeof payload.userDid !== "string") {
-                        logger.warn("Fetch WS: Token payload invalid or missing 'userDid'.");
-                        return new Response("Invalid token payload", { status: 401 });
-                    }
-
-                    const userDid = payload.userDid;
-                    logger.debug(`Fetch WS: Token verified successfully for user: ${userDid}`);
-
-                    // --- Attempt Upgrade ---
-                    const success = server.upgrade(req, {
-                        // Attach the verified userDid to the WebSocket context
-                        data: { userDid: userDid, appId: appId } satisfies WebSocketAuthContext,
-                    });
-
-                    if (success) {
-                        logger.debug("Fetch WS: server.upgrade call successful.");
-                        // Return undefined signifies successful upgrade handled by Bun
-                        return undefined;
-                    } else {
-                        // This usually means the request wasn't a valid WebSocket upgrade request
-                        logger.error("Fetch WS: server.upgrade call failed (invalid WS request headers?).");
-                        return new Response("WebSocket upgrade failed", { status: 400 }); // Bad Request
-                    }
-                } catch (err: any) {
-                    // Handle jose verification errors (expired, invalid signature, malformed)
-                    logger.warn(`Fetch WS: Token verification failed: ${err.message}`);
-                    let status = 401;
-                    let message = "Authentication failed";
-                    if (err.code === "ERR_JWT_EXPIRED") {
-                        message = "Token expired";
-                    } else if (err.code === "ERR_JWS_SIGNATURE_VERIFICATION_FAILED") {
-                        message = "Invalid token signature";
-                    } else if (err.code === "ERR_JWS_INVALID" || err.code === "ERR_JWT_MALFORMED") {
-                        message = "Malformed token";
-                    }
-                    return new Response(message, { status: status });
-                }
-            }
-
-            // --- Fallback to Elysia for all other HTTP requests ---
-            try {
-                return await app.fetch(req);
-            } catch (e: any) {
-                logger.error(`Fetch: Error during Elysia fetch delegation for ${url.pathname}:`, e);
-                return new Response("Internal Server Error during request delegation", { status: 500 });
-            }
-        },
-        // Note: The top-level 'websocket' property is NOT used here
-        // because we handle the upgrade manually in fetch()
-        // websocket: bunWsHandler // <-- DO NOT PUT THIS HERE
-    });
-
-    logger.log(`🦊 Vibe Cloud is running at ${server.hostname}:${server.port}`);
+    startServer(Number(process.env.PORT) || 3000);
 }
 
 export type App = typeof app; // Export the app type for Eden client

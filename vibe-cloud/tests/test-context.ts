@@ -4,7 +4,7 @@ import { app, authService, permissionService, dataService, blobService, realtime
 import { logger } from "../src/utils/logger";
 import type { App } from "../src/index"; // Import App type for treaty
 import { randomUUIDv7 } from "bun";
-import { getUserDbName } from "../src/utils/did.utils";
+import { getUserDbName } from "../src/utils/identity.utils";
 
 // Define a mock App ID for testing purposes
 export const TEST_APP_ID = `https://test-app-${randomUUIDv7()}.dev`; // Make App ID unique per run
