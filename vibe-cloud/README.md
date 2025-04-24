@@ -21,7 +21,12 @@ bun start
 -   **User-Specific Data Storage:** Each authenticated user (`userDid`) gets their own dedicated CouchDB database (`userdata-<sanitized_userDid>`) ensuring strong data isolation by default.
 -   **Shared Blob Storage:** Provides MinIO (or S3-compatible) object storage for binary data (images, files, etc.) in a shared bucket, with access controlled via metadata and permissions.
 -   **Real-time Synchronization:** Leverages WebSockets to push data changes from a user's database to connected Vibe Agents subscribing on behalf of applications.
--   **DID-Based Identity:** User identity is primarily based on Decentralized Identifiers (DIDs). Includes an admin claim flow for initial administrative user setup using DIDs and signed messages.
+-   **DID-Based Identity (Ed25519):**
+    -   User identity is fundamentally based on **Ed25519 key pairs**. Users (or their Agents) manage these keys securely.
+    -   A user's primary identifier is a `did:vibe:` Decentralized Identifier (DID), cryptographically derived from their Ed25519 public key.
+    -   The derivation follows the pattern: `did:vibe:<multibase(base58btc, 0xed01 + raw_public_key)>`, resulting in DIDs like `did:vibe:z...`. (Uses `0xed01` multicodec for Ed25519 public keys and `base58btc` multibase encoding).
+    -   Possession of the corresponding Ed25519 private key allows the user (or their Agent) to prove control over the DID, typically by signing messages or challenges.
+    -   Includes an admin claim flow for initial setup, requiring a signature generated with the admin's Ed25519 private key.
 -   **Permission Management:**
     -   Stores user consent for applications (`appGrants`).
     -   Stores user's direct permissions for accessing shared resources (`directPermissions`).
@@ -30,11 +35,11 @@ bun start
 
 Vibe Cloud is designed to work in tandem with a **Vibe Agent**:
 
-1.  **User Authentication:** The User authenticates directly with the Vibe Agent (e.g., using wallet signatures, claim codes). The Agent obtains a short-lived JWT representing the user's session (`userDid`).
+1.  **User Authentication:** The User authenticates directly with the Vibe Agent. This initial authentication typically involves proving control over their DID, for example, by **signing a challenge with the Ed25519 private key** associated with their DID. Upon successful authentication, the Agent obtains a short-lived JWT representing the user's session (`userDid`) from Vibe Cloud or an associated auth service.
 2.  **Application Authorization:** Third-party applications request permissions (scopes) from the user via the Vibe Agent. The Agent handles the user consent flow.
 3.  **Permission Storage:** The user's decisions (which apps get which permissions) are stored securely within Vibe Cloud associated with the user's DID. This ensures consistency across multiple Agent instances (devices).
 4.  **Request Proxying:** The Vibe Agent acts as a trusted proxy. When an application makes a request:
-    -   The Agent verifies the application's identity (e.g., via registered URL origin or DID signature challenge).
+    -   The Agent verifies the application's identity (e.g., via registered URL origin or potentially a DID signature challenge).
     -   The Agent checks _locally_ (potentially using cached permissions synced from Vibe Cloud) if the application has the necessary grant from the user for the requested action.
     -   If authorized locally, the Agent forwards the request to the Vibe Cloud API.
 5.  **Vibe Cloud Enforcement:** Vibe Cloud receives the request from the Agent, containing:
@@ -52,8 +57,8 @@ sequenceDiagram
     participant SystemDB as System CouchDB
     participant BlobStore as Minio/S3
 
-    User->>+Agent: Authenticate (e.g., DID sig)
-    Agent->>+Cloud: (If needed) Obtain User JWT
+    User->>+Agent: Authenticate (e.g., Sign challenge with Ed25519 key)
+    Agent->>+Cloud: (If needed) Request User JWT based on verified DID
     Cloud-->>-Agent: User JWT (contains userDid)
 
     App->>+Agent: Request Permission (e.g., read:notes)
@@ -99,22 +104,28 @@ sequenceDiagram
 
 # Authentication & Authorization
 
-Vibe Cloud uses a layered approach:
+Vibe Cloud uses a layered approach built upon cryptographic identity:
 
-1.  **User Authentication (JWT):**
+1.  **Cryptographic Foundation (Ed25519 & DIDs):**
 
-    -   **Method:** Bearer Token authentication via the `Authorization` header.
-    -   **Token Source:** Obtained by the Vibe Agent after successful user authentication.
+    -   **Keys:** Users possess Ed25519 key pairs. The private key MUST be kept secret and is used for signing. The public key is used for verification and deriving the DID.
+    -   **DID:** The `did:vibe:z...` identifier is derived from the public key (see Core Functionality). It acts as the user's persistent, self-sovereign identifier.
+    -   **Proof of Control:** Actions requiring proof of identity (like initial Agent login or the admin claim) involve the user signing specific data with their private key. Vibe Cloud (or the Agent) can then verify this signature against the public key associated with the user's DID.
+
+2.  **User Authentication (JWT):**
+
+    -   **Method:** Bearer Token authentication via the `Authorization` header for most API calls.
+    -   **Token Source:** Typically obtained by the Vibe Agent _after_ successful user authentication (which involves the user proving control over their DID, often via a signature with their Ed25519 private key).
     -   **Payload:** Contains the user's `userDid` (validated against `JWTPayloadSchema`).
-    -   **Purpose:** Establishes the user context for the request.
+    -   **Purpose:** Establishes the authenticated user context for subsequent requests during a session.
 
-2.  **Application Identification:**
+3.  **Application Identification:**
 
     -   **Method:** Custom `X-Vibe-App-ID` HTTP header sent by the Vibe Agent.
-    -   **Value:** The verified identifier of the application making the request (can be a canonical URL or a DID). The _Agent_ is responsible for verifying the app's identity before sending this header.
+    -   **Value:** The verified identifier of the application making the request (can be a canonical URL or potentially a DID). The _Agent_ is responsible for verifying the app's identity before sending this header.
     -   **Purpose:** Identifies which application is acting on the user's behalf.
 
-3.  **Authorization Logic:**
+4.  **Authorization Logic:**
 
     -   **User Data (`/api/v1/data/read`, `/api/v1/data/write`):**
         -   Requires valid User JWT and `X-Vibe-App-ID` header.
@@ -127,15 +138,19 @@ Vibe Cloud uses a layered approach:
     -   **WebSocket Subscriptions (`/ws`):**
         -   Connection requires valid User JWT and `appId` query parameter.
         -   `subscribe` messages require Vibe Cloud to verify that the user (`userDid`) has granted the application (`appId` from WS context) the `read:<collection>` permission using `PermissionService.canAppActForUser`.
+    -   **Admin Claim (`/api/v1/admin/claim`):**
+        -   This endpoint is unauthenticated (no JWT required).
+        -   Authorization relies on verifying an **Ed25519 signature**. The request must include the user's DID, a valid claim code, and a signature.
+        -   Vibe Cloud extracts the public key from the provided DID, encodes the claim code, and verifies the provided signature against the public key using `Ed25519.verify`.
 
-4.  **Permission Storage (`permissions` collection in `SYSTEM_DB`):**
+5.  **Permission Storage (`permissions` collection in `SYSTEM_DB`):**
     -   `appGrants`: An object mapping `appId` (URL or DID) to an array of granted permission strings (scopes) for that app by that user.
     -   `directPermissions`: An array of permission strings granted directly to the user for accessing shared resources (e.g., `read:blobs`, `write:blobs`).
 
 ## API Endpoints Summary
 
 -   **`/health` (GET):** Public endpoint to check service status.
--   **`/api/v1/admin/claim` (POST):** Unauthenticated endpoint for initial admin user creation via DID, claim code, and signature.
+-   **`/api/v1/admin/claim` (POST):** Unauthenticated endpoint for initial admin user creation. Requires the admin's DID (`did:vibe:...`), a valid `claimCode`, and a base64-encoded Ed25519 `signature` of the `claimCode` generated using the private key corresponding to the provided DID.
 -   **`/api/v1/data/read` (POST):** Authenticated (User JWT + App ID Header). Reads data from the user's database based on collection and filter. Requires `read:<collection>` grant for the app from the user.
 -   **`/api/v1/data/write` (POST):** Authenticated (User JWT + App ID Header). Writes/updates single or multiple documents in the user's database. Requires `write:<collection>` grant for the app from the user.
 -   **`/api/v1/blob/upload` (POST):** Authenticated (User JWT). Uploads a file. Requires user to have `write:blobs` direct permission.
@@ -149,8 +164,8 @@ Vibe Cloud uses a layered approach:
 -   Language: TypeScript
 -   Database: CouchDB (via Nano client)
 -   Blob Storage: MinIO (or S3-compatible)
--   Authentication: JWT (via `@elysiajs/jwt` and `jose`)
--   Identity: Decentralized Identifiers (DIDs)
+-   Authentication: JWT (via `@elysiajs/jwt` and `jose`), Ed25519 Signatures
+-   Identity: Decentralized Identifiers (DIDs), Ed25519 Keys (via `@noble/ed25519`), Multibase/Multicodec (via `multibase`, `varint`)
 
 ## Setup and Running
 
@@ -181,4 +196,5 @@ Vibe Cloud uses a layered approach:
 ## Running Tests
 
 -   Ensure CouchDB and Minio are running and accessible with credentials configured in `.env`.
--   Run tests: `bun test`
+-   Run tests: `bun run test`
+-   Run specific tests: `bun run test <test_file_pattern>` (e.g., `bun run test auth`)
