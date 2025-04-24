@@ -109,7 +109,7 @@
 //         // create a doc via REST
 //         const { data: doc } = await api.api.v1
 //             .data({ collection: rtCollection })
-//             .post({ $collection: rtCollection, foo: 42 }, { headers: { Authorization: `Bearer ${authToken}` } });
+//             .post({ collection: rtCollection, foo: 42 }, { headers: { Authorization: `Bearer ${authToken}` } });
 
 //         // expect a realtime message
 //         const msg = await nextMsg();
@@ -144,7 +144,7 @@
 //         });
 
 //         // write another doc using the REST API (should succeed due to write perm)
-//         await api.api.v1.data({ collection: rtCollection }).post({ $collection: rtCollection, bar: 1 }, { headers: { Authorization: `Bearer ${authToken}` } });
+//         await api.api.v1.data({ collection: rtCollection }).post({ collection: rtCollection, bar: 1 }, { headers: { Authorization: `Bearer ${authToken}` } });
 
 //         // Ensure no update arrives via WebSocket within 1 second.
 //         // Add a temporary listener, wait, then check if it fired.

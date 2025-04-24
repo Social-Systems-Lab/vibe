@@ -367,7 +367,7 @@ export const app = new Elysia()
                         user = null; // Invalid JWT
                     }
                 }
-                return { user, appId }; // Return both derived values
+                return { user, appId };
             })
             // 2. Authentication & Permission Check Middleware
             .onBeforeHandle(async ({ user, appId, permissionService, request, body, set }) => {
@@ -384,69 +384,28 @@ export const app = new Elysia()
                     logger.warn(`Data API access denied for user ${user.userDid}: Missing X-Vibe-App-ID header.`);
                     return { error: "Bad Request: Missing X-Vibe-App-ID header." };
                 }
-
-                // Determine required permission based on action/collection
-                let requiredPermission: string | null = null;
-                const path = new URL(request.url).pathname;
-
-                // Body might not be parsed/validated yet in onBeforeHandle, safer to parse manually if needed
-                // For now, assume body will be validated by the route handler, but we need collection for permission check.
-                // This is tricky. A better approach might be to put permission check *after* body validation.
-                // Let's try extracting collection from body *if possible* but handle failure.
-                let collection: string | null = null;
-                try {
-                    // Attempt to access collection from body if it's an object
-                    if (typeof body === "object" && body !== null && "collection" in body && typeof body.collection === "string") {
-                        collection = body.collection;
-                    }
-                } catch (e) {
-                    logger.warn("Could not access collection from body in onBeforeHandle");
-                }
-
-                if (!collection) {
-                    // If collection isn't available here, we cannot check permission yet.
-                    // Let the route handler proceed, validation will fail if collection is missing there.
-                    // This means permission check effectively happens *after* validation.
-                    // Alternative: Move permission check into the route handler itself.
-                    // Let's proceed for now, assuming validation handles missing collection.
-                    logger.debug(`Collection not available in onBeforeHandle for user ${user.userDid}, app ${appId}. Deferring permission check.`);
-                    return; // Proceed to handler
-                }
-
-                // Determine required permission string
-                if (path.endsWith("/read")) {
-                    requiredPermission = `read:${collection}`;
-                } else if (path.endsWith("/write")) {
-                    requiredPermission = `write:${collection}`;
-                } else {
-                    set.status = 400; // Or 404?
-                    logger.warn(`Data API access denied for user ${user.userDid}, app ${appId}: Invalid endpoint path ${path}`);
-                    return { error: "Invalid data operation endpoint." };
-                }
-
-                // *** Perform the App Permission Check ***
-                const isAllowed = await permissionService.canAppActForUser(user.userDid, appId, requiredPermission);
-
-                if (!isAllowed) {
-                    logger.warn(`Permission denied for app '${appId}' acting for user '${user.userDid}' on action '${requiredPermission}'`);
-                    set.status = 403; // Forbidden
-                    return { error: `Forbidden: Application does not have permission '${requiredPermission}' for this user.` };
-                }
-
-                logger.debug(`Permission granted for app '${appId}' acting for user '${user.userDid}' on action '${requiredPermission}'`);
-                // Proceed to the handler
             })
             // POST /api/v1/data/read - Read documents from a collection
             .post(
                 "/read",
-                async ({ dataService, user, body }) => {
+                async ({ dataService, user, appId, body, set }) => {
                     // user is guaranteed non-null by onBeforeHandle
                     const { userDid } = user!;
                     const { collection, filter } = body;
+
+                    // permission check
+                    const requiredPermission = `read:${collection}`;
+                    const isAllowed = await permissionService.canAppActForUser(userDid, appId!, requiredPermission);
+                    if (!isAllowed) {
+                        logger.warn(`Permission denied for app '${appId}' acting for user '${userDid}' on action '${requiredPermission}'`);
+                        set.status = 403;
+                        return { error: `Forbidden: Application does not have permission '${requiredPermission}' for this user.` };
+                    }
+                    logger.debug(`Permission granted for app '${appId}' acting for user '${userDid}' on action '${requiredPermission}'`);
+
+                    // call readOnce
                     const userDbName = getUserDbName(userDid);
                     logger.debug(`Executing readOnce for user ${userDid}, db: ${userDbName}, collection: ${collection}, filter: ${JSON.stringify(filter)}`);
-
-                    // Use dataService.readOnce
                     const results: ReadResult = await dataService.readOnce(userDbName, collection, filter);
 
                     // Return the ReadResult structure
@@ -463,19 +422,29 @@ export const app = new Elysia()
             // POST /api/v1/data/write - Write (create/update) documents to a collection
             .post(
                 "/write",
-                async ({ dataService, user, body, set }) => {
+                async ({ dataService, user, appId, body, set }) => {
                     // user is guaranteed non-null by onBeforeHandle
                     const { userDid } = user!;
                     const { collection, data } = body;
-                    const userDbName = getUserDbName(userDid);
 
+                    // permission check
+                    const requiredPermission = `write:${collection}`;
+                    const isAllowed = await permissionService.canAppActForUser(userDid, appId!, requiredPermission);
+                    if (!isAllowed) {
+                        logger.warn(`Permission denied for app '${appId}' acting for user '${userDid}' on action '${requiredPermission}'`);
+                        set.status = 403;
+                        return { error: `Forbidden: Application does not have permission '${requiredPermission}' for this user.` };
+                    }
+                    logger.debug(`Permission granted for app '${appId}' acting for user '${userDid}' on action '${requiredPermission}'`);
+
+                    // call write
+                    const userDbName = getUserDbName(userDid);
                     logger.debug(
                         `Executing write for user ${userDid}, db: ${userDbName}, collection: ${collection}, data: ${
                             Array.isArray(data) ? `Array[${data.length}]` : "Object"
                         }`
                     );
-
-                    // Use dataService.write
+                    logger.debug(`Data to be written: ${JSON.stringify(data)}`); // Log the data being written
                     const response = await dataService.write(userDbName, collection, data);
 
                     // Determine status code based on response type (single vs bulk)

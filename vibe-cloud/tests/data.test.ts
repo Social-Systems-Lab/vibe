@@ -193,8 +193,11 @@ describe("Data API Endpoints (/api/v1/data)", () => {
 
         // Verify directly in DB using imported dataService
         const createdDoc = await dataService.getDocument(userDbName, docId);
+
+        logger.debug(`************* Created document: ${JSON.stringify(createdDoc)}`);
+
         expect(createdDoc).toBeDefined();
-        expect((createdDoc as any)?.$collection).toBe(testCollection);
+        expect((createdDoc as any)?.collection).toBe(testCollection);
         expect((createdDoc as any)?.name).toBe(docData.name);
     });
 
@@ -223,7 +226,7 @@ describe("Data API Endpoints (/api/v1/data)", () => {
         // Verify one doc directly
         const createdDoc = await dataService.getDocument(userDbName, createdIds[0]);
         expect(createdDoc).toBeDefined();
-        expect((createdDoc as any)?.$collection).toBe(testCollection);
+        expect((createdDoc as any)?.collection).toBe(testCollection);
         expect((createdDoc as any)?.name).toBe(docsData[0].name);
     });
 
@@ -277,7 +280,7 @@ describe("Data API Endpoints (/api/v1/data)", () => {
         expect(readResult.docs.length).toBeGreaterThanOrEqual(2); // Allow for other test runs
         // Verify all returned docs match the filter
         for (const doc of readResult.docs) {
-            expect(doc.$collection).toBe(testCollection);
+            expect(doc.collection).toBe(testCollection);
             expect(doc.type).toBe("A");
         }
         expect(readResult.doc).toEqual(readResult.docs[0]); // doc should be the first doc

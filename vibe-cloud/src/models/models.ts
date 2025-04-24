@@ -99,10 +99,10 @@ export type ReadPayload = Static<typeof ReadPayloadSchema>;
 
 // Schema for the /data/write endpoint body
 // Allows either a single object or an array of objects for the 'data' field
-const WriteDataItemSchema = t.Object({}, { additionalProperties: true }); // Allow any structure for docs
+const ArbitraryObjectSchema = t.Record(t.String(), t.Unknown(), { description: "Represents an object with any properties." });
 export const WritePayloadSchema = t.Object({
     collection: t.String({ minLength: 1, error: "Collection name is required." }),
-    data: t.Union([WriteDataItemSchema, t.Array(WriteDataItemSchema)], {
+    data: t.Union([ArbitraryObjectSchema, t.Array(ArbitraryObjectSchema)], {
         error: "Data must be a single object or an array of objects.",
     }),
 });

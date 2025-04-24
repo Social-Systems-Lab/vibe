@@ -226,10 +226,10 @@ export class RealtimeService {
         }
 
         // **Crucial: Identify the collection**
-        // We rely on a convention: documents must have a '$collection' field.
-        const collection = doc.$collection;
+        // We rely on a convention: documents must have a 'collection' field.
+        const collection = doc.collection;
         if (!collection || typeof collection !== "string") {
-            logger.warn(`Change detected for user ${userDid} in doc ${docId} without a valid '$collection' field. Cannot route update. Document:`, doc);
+            logger.warn(`Change detected for user ${userDid} in doc ${docId} without a valid 'collection' field. Cannot route update. Document:`, doc);
             return;
         }
 

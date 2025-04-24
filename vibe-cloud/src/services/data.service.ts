@@ -115,8 +115,8 @@ export class DataService {
     /**
      * Reads documents matching a filter within a specific collection in a user's database.
      * @param dbName The user-specific database name (e.g., 'userdata-did:...').
-     * @param collection The name of the collection ($collection field).
-     * @param filter Optional Mango selector fields (excluding $collection).
+     * @param collection The name of the collection (collection field).
+     * @param filter Optional Mango selector fields (excluding collection).
      * @returns ReadResult containing the documents.
      */
     async readOnce<T = any>(dbName: string, collection: string, filter: Record<string, any> = {}): Promise<ReadResult<T>> {
@@ -126,7 +126,7 @@ export class DataService {
         const query: nano.MangoQuery = {
             selector: {
                 ...filter,
-                $collection: collection, // Add collection to selector
+                collection: collection, // Add collection to selector
             },
             // Add other options like fields, sort, limit if needed later
         };
@@ -151,7 +151,7 @@ export class DataService {
      * Writes one or more documents to a specific collection in a user's database.
      * Handles ID generation and updates (_rev).
      * @param dbName The user-specific database name.
-     * @param collection The name of the collection ($collection field).
+     * @param collection The name of the collection (collection field).
      * @param docOrDocs A single document or an array of documents.
      * @returns The CouchDB response (single insert or bulk response).
      */
@@ -165,10 +165,12 @@ export class DataService {
         }
         const db = await this.ensureDatabaseExists(dbName);
 
-        const processDoc = (doc: T): T & { _id?: string; $collection: string } => {
+        logger.debug(`******Writing doc to db`, JSON.stringify(docOrDocs), "******");
+
+        const processDoc = (doc: T): T & { _id?: string; collection: string } => {
             let processedDoc = { ...doc } as any;
-            // Add $collection field
-            processedDoc.$collection = collection;
+            // Add collection field
+            processedDoc.collection = collection;
             // Generate _id if missing, using UUID for better uniqueness
             if (!processedDoc._id) {
                 processedDoc._id = `${collection}/${randomUUIDv7()}`; // Use UUID
@@ -177,7 +179,7 @@ export class DataService {
                 logger.warn(`Document ID "${processedDoc._id}" does not follow the standard "${collection}/" prefix.`);
                 throw new Error(`Document ID "${processedDoc._id}" does not follow the standard "${collection}/" prefix.`);
             }
-            return processedDoc as T & { _id: string; $collection: string };
+            return processedDoc as T & { _id: string; collection: string };
         };
 
         try {
@@ -210,6 +212,8 @@ export class DataService {
                 const docToInsert = processDoc(docOrDocs);
                 logger.debug(`Performing single write for document id "${docToInsert._id}" in db "${dbName}", collection "${collection}"`);
 
+                logger.debug(`******Processed doc`, JSON.stringify(docToInsert), "******");
+
                 // db.insert handles create or update based on _id/_rev presence
                 // It fetches _rev automatically if _id exists and _rev is missing
                 const response = await db.insert(docToInsert);
@@ -229,12 +233,12 @@ export class DataService {
 
     /**
      * Creates a new document in the specified database.
-     * The 'collection' concept is handled by adding a '$collection' field to the document.
+     * The 'collection' concept is handled by adding a 'collection' field to the document.
      */
     async createDocument(dbName: string, collection: string, data: Record<string, any>): Promise<nano.DocumentInsertResponse> {
         try {
             const db = await this.ensureDatabaseExists(dbName);
-            const docToInsert = { ...data, $collection: collection };
+            const docToInsert = { ...data, collection: collection };
             const response = await db.insert(docToInsert);
             if (!response.ok) {
                 // This case might indicate an unexpected issue post-insert attempt
@@ -276,7 +280,7 @@ export class DataService {
     async updateDocument(dbName: string, collection: string, docId: string, rev: string, data: Record<string, any>): Promise<nano.DocumentInsertResponse> {
         try {
             const db = await this.ensureDatabaseExists(dbName);
-            const docToUpdate = { ...data, _id: docId, _rev: rev, $collection: collection };
+            const docToUpdate = { ...data, _id: docId, _rev: rev, collection: collection };
             const response = await db.insert(docToUpdate);
             if (!response.ok) {
                 // This case might indicate an unexpected issue post-insert attempt
@@ -337,13 +341,13 @@ export class DataService {
             const db = await this.ensureDatabaseExists(dbName);
 
             // Ensure the index exists (might be redundant if ensureDatabaseExists handles it, but safe)
-            if (query.selector && query.selector.$collection) {
+            if (query.selector && query.selector.collection) {
                 try {
-                    await db.createIndex({ index: { fields: ["$collection"] }, name: "idx-collection" });
+                    await db.createIndex({ index: { fields: ["collection"] }, name: "idx-collection" });
                 } catch (indexError: any) {
                     // Ignore if index already exists, log other errors
                     if (!indexError.message?.includes("exists")) {
-                        logger.error(`Failed to ensure index on '$collection' in db "${dbName}" before find:`, indexError.message || indexError);
+                        logger.error(`Failed to ensure index on 'collection' in db "${dbName}" before find:`, indexError.message || indexError);
                     }
                 }
             }
