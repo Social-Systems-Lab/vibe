@@ -8,19 +8,34 @@
 import { createRoot } from "react-dom/client";
 import { StrictMode } from "react";
 import { App } from "./App";
+import { VibeProvider } from "./vibe/react"; // Import the provider
+import type { AppManifest } from "./vibe/types"; // Import the type
+
+// Define the manifest for this test application
+const testAppManifest: AppManifest = {
+    id: "test-app-local",
+    name: "Vibe Test App (Local Mock)",
+    description: "An application for testing the mock Vibe SDK integration.",
+    // Request permissions based on mock agent data
+    permissions: ["read:notes", "write:notes", "read:tasks", "write:tasks"],
+};
 
 const elem = document.getElementById("root")!;
 const app = (
-  <StrictMode>
-    <App />
-  </StrictMode>
+    <StrictMode>
+        <VibeProvider manifest={testAppManifest}>
+            {" "}
+            {/* Wrap App with VibeProvider */}
+            <App />
+        </VibeProvider>
+    </StrictMode>
 );
 
 if (import.meta.hot) {
-  // With hot module reloading, `import.meta.hot.data` is persisted.
-  const root = (import.meta.hot.data.root ??= createRoot(elem));
-  root.render(app);
+    // With hot module reloading, `import.meta.hot.data` is persisted.
+    const root = (import.meta.hot.data.root ??= createRoot(elem));
+    root.render(app);
 } else {
-  // The hot module reloading API is not available in production.
-  createRoot(elem).render(app);
+    // The hot module reloading API is not available in production.
+    createRoot(elem).render(app);
 }
