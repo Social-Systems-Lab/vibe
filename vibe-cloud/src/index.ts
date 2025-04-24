@@ -504,87 +504,61 @@ export const app = new Elysia()
                 const token = authHeader.substring(7);
                 try {
                     const payload = await jwt.verify(token);
-                    return { user: payload as { userDid: string } };
+                    // Add appId as null or undefined if needed by other parts,
+                    // but it's not used for direct permission checks here.
+                    return { user: payload as { userDid: string }, appId: null };
                 } catch (error) {
-                    return { user: null };
+                    return { user: null, appId: null };
                 }
             })
-            // Generic Auth Check - Specific permissions checked in handlers
+            // Middleware: Just check User JWT exists
             .onBeforeHandle(({ user, set }) => {
                 if (!user) {
                     set.status = 401;
-                    return { error: "Unauthorized: Invalid token." };
+                    return { error: "Unauthorized: Invalid or missing user token." };
                 }
             })
             // POST /api/v1/blob/upload - Upload a file
             .post(
                 "/upload",
-                // Restore 'body', remove 'request'
                 async ({ blobService, dataService, permissionService, user, body, set }) => {
-                    if (!user) throw new InternalServerError("User context missing after auth check."); // Should not happen
-
-                    // 1. Permission Check
+                    if (!user) throw new InternalServerError("User context missing");
                     const { userDid } = user;
-                    logger.info(`User ${userDid} attempting upload.`);
+                    const requiredPermission = `write:${BLOBS_COLLECTION}`;
+                    logger.info(`User ${userDid} attempting upload. Checking permission: ${requiredPermission}`);
 
-                    const canWrite = await permissionService.can(userDid, "write:blobs");
-                    logger.info(`User ${userDid} write permission: ${canWrite}`);
+                    const canWrite = await permissionService.userHasDirectPermission(userDid, requiredPermission);
+                    logger.info(`User ${userDid} direct write permission for ${BLOBS_COLLECTION}: ${canWrite}`);
                     if (!canWrite) {
                         set.status = 403;
-                        return { error: "Forbidden: Missing 'write:blobs' permission." };
+                        return { error: `Forbidden: Missing '${requiredPermission}' permission.` };
                     }
 
-                    // 2. Process Upload (using body from schema validation)
-                    const { file } = body; // Use file from validated body
+                    const { file } = body;
                     if (!file || typeof file.arrayBuffer !== "function") {
                         logger.error("File object is missing or invalid in request body.");
                         set.status = 400;
                         return { error: "Invalid file upload." };
                     }
-                    logger.info(`Got file: ${file.name}, Size: ${file.size}, Type: ${file.type}`);
-
-                    const objectId = randomUUID(); // Generate unique ID for the blob
-                    const bucketName = blobService.defaultBucketName; // Use default bucket from service
-
+                    const objectId = randomUUID();
+                    const bucketName = blobService.defaultBucketName;
                     try {
-                        logger.info(`Preparing buffer for ${objectId}...`);
-                        // 3. Upload to Minio
-                        logger.info(`Uploading blob ${objectId} for user ${userDid}`);
-                        // Convert stream to Buffer for Minio compatibility
-                        const fileBuffer = Buffer.from(await file.arrayBuffer()); // Use file from body
-                        logger.info(`Buffer created for ${objectId}. Size: ${fileBuffer.length}`); // <-- Add
+                        const fileBuffer = Buffer.from(await file.arrayBuffer());
+                        await blobService.uploadObject(objectId, fileBuffer, file.size, file.type, bucketName);
 
-                        logger.info(`Calling blobService.uploadObject for ${objectId}...`);
-
-                        await blobService.uploadObject(
-                            objectId,
-                            fileBuffer, // Pass the Buffer
-                            file.size, // Use file size from body
-                            file.type, // Use file type from body
-                            bucketName
-                        );
-
-                        logger.info(`blobService.uploadObject completed for ${objectId}.`);
-
-                        // 4. Create Metadata Document
                         const metadata: Omit<BlobMetadata, "_rev"> = {
-                            _id: `${BLOBS_COLLECTION}/${objectId}`, // TODO the object id might need to be defined outside _id
-                            originalFilename: file.name || "untitled", // Use file.name from body
-                            contentType: file.type, // Use file type from body
-                            size: file.size, // Use file size from body
+                            _id: `${BLOBS_COLLECTION}/${objectId}`,
+                            originalFilename: file.name || "untitled",
+                            contentType: file.type,
+                            size: file.size,
                             ownerDid: userDid,
                             uploadTimestamp: new Date().toISOString(),
                             bucket: bucketName,
                             collection: BLOBS_COLLECTION,
                         };
-
-                        logger.info(`Calling dataService.createDocument for ${objectId}...`);
-                        // 5. Save Metadata to CouchDB
                         await dataService.createDocument(SYSTEM_DB, BLOBS_COLLECTION, metadata);
-                        logger.info(`dataService.createDocument completed for ${objectId}.`);
-
                         logger.info(`Blob ${objectId} metadata saved for user ${userDid}`);
-                        set.status = 201; // Created
+                        set.status = 201;
                         return {
                             message: "File uploaded successfully.",
                             objectId: objectId,
@@ -600,9 +574,8 @@ export const app = new Elysia()
                     }
                 },
                 {
-                    // Restore body schema validation
                     body: BlobUploadBodySchema,
-                    detail: { summary: "Upload a blob (requires 'write:blobs' permission)" },
+                    detail: { summary: `Upload a blob (requires user direct permission 'write:${BLOBS_COLLECTION}')` },
                 }
             )
             // GET /api/v1/blob/download/:objectId - Get pre-signed download URL
@@ -610,25 +583,25 @@ export const app = new Elysia()
                 "/download/:objectId",
                 async ({ blobService, dataService, permissionService, user, params, set }) => {
                     logger.debug(`[GET /download/:objectId] Received params: ${JSON.stringify(params)}`);
-
                     if (!user) throw new InternalServerError("User context missing after auth check.");
 
                     const { objectId } = params;
                     const { userDid } = user;
+                    const requiredPermission = `read:${BLOBS_COLLECTION}`;
 
                     try {
                         // 1. Fetch Metadata
                         logger.debug(`Attempting to fetch metadata for objectId: ${objectId} from DB: ${SYSTEM_DB}`);
-                        const metadata = (await dataService.getDocument(SYSTEM_DB, `${BLOBS_COLLECTION}/${objectId}`)) as BlobMetadata; // Cast to expected type
+                        const metadata = (await dataService.getDocument(SYSTEM_DB, `${BLOBS_COLLECTION}/${objectId}`)) as BlobMetadata;
                         logger.debug(`Successfully fetched metadata for objectId: ${objectId}`, metadata); // Log successful fetch
 
                         // 2. Permission Check (Owner OR 'read:blobs')
                         const isOwner = metadata.ownerDid === userDid;
                         logger.debug(`Permission check: isOwner=${isOwner}, userDid=${userDid}, metadata.ownerId=${metadata.ownerDid}`);
-                        const canRead = await permissionService.can(userDid, "read:blobs");
-                        logger.debug(`Permission check: canRead=${canRead} for permission 'read:blobs'`);
+                        const canReadDirectly = await permissionService.userHasDirectPermission(userDid, requiredPermission);
+                        logger.debug(`Permission check: isOwner=${isOwner}, userHasDirectRead=${canReadDirectly}`);
 
-                        if (!isOwner && !canRead) {
+                        if (!isOwner && !canReadDirectly) {
                             logger.warn(`Forbidden access attempt for blob ${objectId} by user ${userDid}`);
                             set.status = 403; // Set status before throwing
                             return { error: "Forbidden: You do not have permission to access this blob." };
@@ -646,13 +619,17 @@ export const app = new Elysia()
                         set.status = 200;
                         return { url: url };
                     } catch (error: any) {
-                        if (error.message.includes("not found")) {
+                        if (error instanceof NotFoundError) {
                             logger.warn(`Download request for non-existent blob ${objectId} by user ${userDid}`);
-                            throw new NotFoundError(`Blob metadata not found for ID: ${objectId}`);
+                            // Use the error message from NotFoundError
+                            set.status = 404;
+                            return { error: error.message };
                         }
-                        if (error.message.includes("Object not found")) {
-                            logger.warn(`Download request for blob ${objectId} (metadata found, but object missing in Minio) by user ${userDid}`);
-                            throw new NotFoundError(`Blob object not found in storage for ID: ${objectId}`);
+                        // Keep Minio object not found check
+                        if (error.message?.includes("Object not found in storage")) {
+                            logger.warn(`Download request for blob ${objectId} (metadata found, but object missing) by user ${userDid}`);
+                            set.status = 404;
+                            return { error: error.message };
                         }
                         logger.error(`Failed to generate download URL for blob ${objectId}, user ${userDid}:`, error);
                         throw new InternalServerError("Failed to generate download URL.");
@@ -661,7 +638,7 @@ export const app = new Elysia()
                 {
                     params: t.Object({ objectId: t.String() }),
                     // Only define the success response schema. Errors are handled by setting status/returning error object or throwing.
-                    response: { 200: BlobDownloadResponseSchema, 403: ErrorResponseSchema },
+                    response: { 200: BlobDownloadResponseSchema, 403: ErrorResponseSchema, 404: ErrorResponseSchema },
                     detail: { summary: "Get a pre-signed URL to download a blob (requires ownership or 'read:blobs')" },
                 }
             )

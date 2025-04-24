@@ -12,17 +12,14 @@ import { BLOBS_COLLECTION, type BlobMetadata } from "../src/models/models"; // I
 // User 1: Will have read/write blob permissions
 let ctx1: TestCtx, cleanup1: () => Promise<void>;
 let userDid1: string, token1: string, appId1: string;
-let user1PermsRev: string | null;
 
 // User 2: Will have only read blob permissions
 let ctx2: TestCtx, cleanup2: () => Promise<void>;
 let userDid2: string, token2: string, appId2: string;
-let user2PermsRev: string | null;
 
 // User 3: Will have no blob permissions
 let ctx3: TestCtx, cleanup3: () => Promise<void>;
 let userDid3: string, token3: string, appId3: string;
-let user3PermsRev: string | null;
 
 // Global variable for the uploaded blob ID in this test suite
 type UUID = `${string}-${string}-${string}-${string}-${string}`;
@@ -43,35 +40,29 @@ describe("Blob API (/api/v1/blob)", () => {
         userDid1 = ctx1.userDid;
         token1 = ctx1.token;
         appId1 = ctx1.appId;
-        user1PermsRev = ctx1.permsRev;
 
         ({ ctx: ctx2, cleanup: cleanup2 } = await createTestCtx());
         userDid2 = ctx2.userDid;
         token2 = ctx2.token;
         appId2 = ctx2.appId;
-        user2PermsRev = ctx2.permsRev;
 
         ({ ctx: ctx3, cleanup: cleanup3 } = await createTestCtx());
         userDid3 = ctx3.userDid;
         token3 = ctx3.token;
         appId3 = ctx3.appId;
-        user3PermsRev = ctx3.permsRev;
 
         // Adjust direct permissions using the imported singleton service
         // User 1: Should already have read/write from createTestCtx, verify or set explicitly
         logger.debug(`Setting User 1 (${userDid1}) direct permissions: read/write`);
-        const res1 = await permissionService.setUserDirectPermissions(userDid1, [`read:${BLOBS_COLLECTION}`, `write:${BLOBS_COLLECTION}`]);
-        user1PermsRev = res1.rev;
+        await permissionService.setUserDirectPermissions(userDid1, [`read:${BLOBS_COLLECTION}`, `write:${BLOBS_COLLECTION}`]);
 
         // User 2: Grant only read
         logger.debug(`Setting User 2 (${userDid2}) direct permissions: read-only`);
-        const res2 = await permissionService.setUserDirectPermissions(userDid2, [`read:${BLOBS_COLLECTION}`]);
-        user2PermsRev = res2.rev;
+        await permissionService.setUserDirectPermissions(userDid2, [`read:${BLOBS_COLLECTION}`]);
 
         // User 3: Grant no blob permissions (ensure empty array)
         logger.debug(`Setting User 3 (${userDid3}) direct permissions: none`);
-        const res3 = await permissionService.setUserDirectPermissions(userDid3, []);
-        user3PermsRev = res3.rev;
+        await permissionService.setUserDirectPermissions(userDid3, []);
 
         logger.info("Blob test contexts setup complete.");
     });
@@ -81,10 +72,9 @@ describe("Blob API (/api/v1/blob)", () => {
         // Clean up blob storage first
         if (uploadedObjectId) {
             logger.debug(`Cleaning up blob ${uploadedObjectId}...`);
-            let metadataRev: string | undefined = undefined;
+            let metadata: BlobMetadata | undefined = undefined;
             try {
-                const metadata = await dataService.getDocument<BlobMetadata>(SYSTEM_DB, uploadedObjectId);
-                metadataRev = metadata._rev;
+                metadata = await dataService.getDocument<BlobMetadata>(SYSTEM_DB, uploadedObjectId);
             } catch (error: any) {
                 if (!error.message?.includes("not found")) {
                     // Log only unexpected errors
@@ -92,9 +82,9 @@ describe("Blob API (/api/v1/blob)", () => {
                 }
             }
 
-            if (metadataRev) {
+            if (metadata?._rev) {
                 try {
-                    await dataService.deleteDocument(SYSTEM_DB, uploadedObjectId, metadataRev);
+                    await dataService.deleteDocument(SYSTEM_DB, metadata._id, metadata._rev);
                     logger.debug(`Deleted metadata document ${uploadedObjectId}`);
                 } catch (error: any) {
                     if (!error.message?.includes("not found") && !error.message?.includes("conflict")) {
@@ -172,12 +162,13 @@ describe("Blob API (/api/v1/blob)", () => {
 
         uploadedObjectId = data!.objectId ?? null; // Store for subsequent tests and cleanup
         expect(uploadedObjectId).toBeDefined();
+        let metadataDocId = `${BLOBS_COLLECTION}/${uploadedObjectId!}`;
 
         // Verify metadata in CouchDB (SYSTEM_DB)
-        const metadata = await dataService.getDocument<BlobMetadata>(SYSTEM_DB, uploadedObjectId!);
+        const metadata = await dataService.getDocument<BlobMetadata>(SYSTEM_DB, metadataDocId);
         expect(metadata).toBeDefined();
         expect(metadata).toMatchObject({
-            _id: uploadedObjectId,
+            _id: metadataDocId,
             originalFilename: testFileName,
             contentType: expect.stringContaining(testFileType),
             size: testFileContent.length,
@@ -199,7 +190,7 @@ describe("Blob API (/api/v1/blob)", () => {
         });
 
         expect(status).toBe(404);
-        expect(error?.value).toEqual({ error: `Blob metadata not found for ID: ${nonExistentId}` });
+        expect(error?.value).toEqual({ error: `Document with id "blobs/${nonExistentId}" not found.` });
     });
 
     it("GET /download/:objectId: should reject getting download URL without ownership or 'read:blobs' direct permission (403)", async () => {
@@ -218,7 +209,7 @@ describe("Blob API (/api/v1/blob)", () => {
         expect(uploadedObjectId).toBeDefined();
 
         // Temporarily remove direct read permission from owner to test ownership bypass
-        logger.debug(`Temporarily removing read perm for owner ${userDid1}, rev ${user1PermsRev}`);
+        logger.debug(`Temporarily removing read perm for owner ${userDid1}`);
         const tempRes = await permissionService.setUserDirectPermissions(userDid1, [`write:${BLOBS_COLLECTION}`]); // Only write
         const tempRev = tempRes.rev;
         logger.debug(`Read perm removed, new rev ${tempRev}`);
@@ -242,9 +233,8 @@ describe("Blob API (/api/v1/blob)", () => {
         } finally {
             // Ensure permissions are restored
             logger.debug(`Restoring read perm for owner ${userDid1}, rev ${tempRev}`);
-            const finalRes = await permissionService.setUserDirectPermissions(userDid1, [`read:${BLOBS_COLLECTION}`, `write:${BLOBS_COLLECTION}`]);
-            user1PermsRev = finalRes.rev; // Update global rev tracker
-            logger.debug(`Read perm restored, new rev ${user1PermsRev}`);
+            await permissionService.setUserDirectPermissions(userDid1, [`read:${BLOBS_COLLECTION}`, `write:${BLOBS_COLLECTION}`]);
+            logger.debug(`Read perm restored`);
         }
     });
 
