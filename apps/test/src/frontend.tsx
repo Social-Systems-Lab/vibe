@@ -13,7 +13,7 @@ import type { AppManifest } from "./vibe/types"; // Import the type
 
 // Define the manifest for this test application
 const testAppManifest: AppManifest = {
-    id: "test-app-local",
+    appId: "test-app-local", // Changed from id to appId
     name: "Vibe Test App (Local Mock)",
     description: "An application for testing the mock Vibe SDK integration.",
     // Request permissions based on mock agent data

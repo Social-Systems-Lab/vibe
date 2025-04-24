@@ -4,7 +4,7 @@
  * Defines the permissions an application requests.
  */
 export interface AppManifest {
-    id: string; // Unique identifier for the app
+    appId: string; // Unique identifier for the app (matches X-Vibe-App-ID header)
     name: string; // Display name of the app
     description?: string; // Optional description
     pictureUrl?: string; // Optional URL for an app icon/logo
@@ -36,6 +36,33 @@ export interface VibeState {
     // Add other state properties like connection status, errors, etc.
 }
 
+// --- Agent Interface & Related Types ---
+
+/**
+ * Parameters for read operations.
+ */
+export interface ReadParams {
+    collection: string;
+    filter?: {
+        ids?: string[];
+        // Add other filter options like query, limit, sort etc. as needed
+    };
+}
+
+/**
+ * Parameters for write operations.
+ */
+export interface WriteParams<T = any> {
+    collection: string;
+    data: T | T[]; // Single document or array of documents
+}
+
+/**
+ * Callback function type for subscriptions.
+ * Receives error (if any) and data (if successful).
+ */
+export type SubscriptionCallback<T = any> = (error: Error | null, data: T[] | null) => void;
+
 /**
  * Type for the unsubscribe function returned by subscription methods like `read`.
  */
@@ -43,10 +70,12 @@ export type Unsubscribe = () => void;
 
 /**
  * Represents the result of a read operation (readOnce or read subscription update).
+ * Made generic to type the data array.
  */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-export interface ReadResult {
-    docs: any[]; // Array of documents matching the query
+export interface ReadResult<T = any> {
+    ok: boolean; // Indicates success or failure
+    data: T[]; // Array of documents matching the query
+    error?: string; // Error message if ok is false
     // Potentially add metadata like count, cursor, etc.
 }
 
@@ -54,8 +83,19 @@ export interface ReadResult {
  * Represents the result of a write operation.
  */
 export interface WriteResult {
-    ok: boolean; // Indicates if the write was successful
-    ids?: string[]; // IDs of the created/updated documents
-    errors?: any[]; // Any errors encountered during the write
+    ok: boolean; // Indicates if the overall operation was successful (might be false even with partial success in bulk)
+    ids: string[]; // IDs of the successfully created/updated documents
+    errors?: { id?: string; error: string; reason: string }[]; // Detailed errors for specific documents if any occurred
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/**
+ * Interface defining the expected methods of a Vibe Agent.
+ * This is implemented by MockVibeAgent or a real agent connection module.
+ */
+export interface VibeAgent {
+    init(manifest: AppManifest): Promise<void>;
+    readOnce<T>(params: ReadParams): Promise<ReadResult<T>>;
+    read<T>(params: ReadParams, callback: SubscriptionCallback<T>): Promise<Unsubscribe>;
+    unsubscribe(unsubscribeFn: Unsubscribe): Promise<void>; // Changed to accept the function itself
+    write<T extends { _id?: string }>(params: WriteParams<T>): Promise<WriteResult>;
+}
