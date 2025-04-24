@@ -71,10 +71,11 @@ describe("Blob API (/api/v1/blob)", () => {
         logger.info("Cleaning up Blob test contexts and resources...");
         // Clean up blob storage first
         if (uploadedObjectId) {
+            let blobDocId = `${BLOBS_COLLECTION}/${uploadedObjectId}`;
             logger.debug(`Cleaning up blob ${uploadedObjectId}...`);
             let metadata: BlobMetadata | undefined = undefined;
             try {
-                metadata = await dataService.getDocument<BlobMetadata>(SYSTEM_DB, uploadedObjectId);
+                metadata = await dataService.getDocument<BlobMetadata>(SYSTEM_DB, blobDocId);
             } catch (error: any) {
                 if (!error.message?.includes("not found")) {
                     // Log only unexpected errors
