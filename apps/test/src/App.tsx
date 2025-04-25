@@ -20,8 +20,14 @@ export function App() {
     // --- Handlers ---
 
     const handleReadNotesOnce = useCallback(async () => {
+        if (!account) {
+            setStatus("Account not initialized. Cannot read notes.");
+            console.warn("[App] Attempted to read notes before account was ready.");
+            return;
+        }
         setStatus("Reading notes...");
         try {
+            // Use readOnce from useVibe context
             const result = await readOnce("notes");
             setNotes(result.docs || []);
             setStatus("Notes read successfully.");
@@ -31,9 +37,14 @@ export function App() {
             setStatus(`Error reading notes: ${error instanceof Error ? error.message : String(error)}`);
             setNotes([]);
         }
-    }, [readOnce]);
+    }, [readOnce, account]); // Add account to dependency array
 
     const handleWriteNote = useCallback(async () => {
+        if (!account) {
+            setStatus("Account not initialized. Cannot write note.");
+            console.warn("[App] Attempted to write note before account was ready.");
+            return;
+        }
         setStatus("Writing new note...");
         const newNote = {
             text: `New note added at ${new Date().toLocaleTimeString()}`,
@@ -49,7 +60,7 @@ export function App() {
             console.error("[App] Error writing note:", error);
             setStatus(`Error writing note: ${error instanceof Error ? error.message : String(error)}`);
         }
-    }, [write]); // Removed handleReadNotesOnce from dependency array to avoid potential loops if re-read is added
+    }, [write, account]); // Add account to dependency array
 
     // --- Subscription Effect ---
 
@@ -131,8 +142,10 @@ export function App() {
                     </CardHeader>
                     <CardContent>
                         <div className="flex gap-2 mb-4">
-                            <Button onClick={handleReadNotesOnce}>Read Notes Once</Button>
-                            <Button onClick={handleWriteNote} variant="secondary">
+                            <Button onClick={handleReadNotesOnce} disabled={!account}>
+                                Read Notes Once
+                            </Button>
+                            <Button onClick={handleWriteNote} variant="secondary" disabled={!account}>
                                 Write New Note
                             </Button>
                         </div>

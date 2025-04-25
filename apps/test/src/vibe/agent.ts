@@ -5,7 +5,7 @@ import { Buffer } from "buffer"; // Needed for base64 encoding
 import * as ed from "@noble/ed25519";
 
 // --- Constants ---
-const VIBE_CLOUD_BASE_URL = "http://localhost:3000"; // From docker-compose/env
+const VIBE_CLOUD_BASE_URL = "http://127.0.0.1:3000"; // From docker-compose/env
 const ADMIN_CLAIM_CODE = "ABC1-XYZ9"; // From vibe-cloud/.env
 const LOCAL_STORAGE_KEY_PREFIX = "vibe_agent_";
 
@@ -90,10 +90,13 @@ export class MockVibeAgent implements VibeAgent {
 
     // --- Core Agent Methods ---
 
-    async init(manifest: AppManifest): Promise<Account> {
+    async init(manifest: AppManifest): Promise<Account | null> {
         if (this.isInitialized || this.isInitializing) {
-            console.warn(`MockVibeAgent already ${this.isInitializing ? "initializing" : "initialized"}.`);
-            return;
+            console.warn(`MockVibeAgent already ${this.isInitializing ? "initializing" : "initialized"}. Returning current account state.`);
+            // If already initialized, return the existing account object
+            // If initializing, let the ongoing process complete (or return null/undefined if preferred)
+            // For simplicity, returning the current state. Consider if null is better during initialization.
+            return this.account;
         }
         this.isInitializing = true;
         console.log("MockVibeAgent: Initializing with manifest:", manifest);
@@ -125,13 +128,26 @@ export class MockVibeAgent implements VibeAgent {
             // 3. Save identity and JWT if successful
             this.saveIdentityToStorage();
 
+            // 4. Construct the account object (assuming userDid is now guaranteed)
+            if (this.userDid) {
+                this.account = { userDid: this.userDid };
+                console.log("MockVibeAgent: Account object constructed:", this.account);
+            } else {
+                // This case should ideally not happen if logic above is correct
+                console.error("MockVibeAgent: userDid is null after identity check. Cannot construct account.");
+                this.account = null;
+            }
+
             this.isInitialized = true;
             console.log("MockVibeAgent: Initialization complete.");
+            return this.account; // Return the constructed account object
         } catch (error) {
             console.error("MockVibeAgent: Initialization failed:", error);
             this.isInitialized = false; // Ensure state reflects failure
+            this.account = null; // Clear account on failure
             this.clearIdentityFromStorage(); // Clear potentially partial/invalid state
-            throw error; // Re-throw error to signal failure to SDK
+            // Don't re-throw, let the SDK handle the null return
+            return null; // Indicate failure by returning null
         } finally {
             this.isInitializing = false;
         }

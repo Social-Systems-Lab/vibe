@@ -1,7 +1,8 @@
 // apps/test/src/vibe/sdk.ts
 
 import { MockVibeAgent } from "./agent";
-import type { Account, AppManifest, PermissionSetting, ReadResult, Unsubscribe, VibeAgent, VibeState, WriteResult } from "./types";
+// Ensure ReadParams is imported here
+import type { Account, AppManifest, PermissionSetting, ReadParams, ReadResult, Unsubscribe, VibeAgent, VibeState, WriteResult } from "./types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
@@ -46,15 +47,25 @@ class MockVibeSDK implements IVibeSDK {
         // Initialize the agent
         this.agent
             .init(manifest)
-            .then((account) => {
-                console.log("[MockVibeSDK] Mock agent initialized successfully.");
-                // Update state and notify listener
-                this.updateState({ account, permissions });
-                this.isInitialized = true;
+            .then((account: Account | null) => {
+                // Explicitly type the received account
+                if (account) {
+                    console.log("[MockVibeSDK] Mock agent initialized successfully with account:", account);
+                    // Update state and notify listener
+                    this.updateState({ account, permissions });
+                    this.isInitialized = true;
+                } else {
+                    console.error("[MockVibeSDK] Mock agent initialization failed (returned null account).");
+                    // Optionally update state to reflect the error, e.g., set an error flag
+                    this.updateState({ account: null, permissions }); // Update state with null account
+                    this.isInitialized = false; // Ensure SDK is not marked as initialized
+                }
             })
             .catch((error) => {
-                console.error("[MockVibeSDK] Error initializing mock agent:", error);
+                // This catch might be redundant if agent.init now returns null instead of throwing
+                console.error("[MockVibeSDK] Error during agent initialization promise:", error);
                 // Handle error state if necessary
+                this.updateState({ account: null, permissions }); // Ensure account is null on error
             });
 
         // Return a function to clean up this SDK instance
@@ -96,10 +107,19 @@ class MockVibeSDK implements IVibeSDK {
         // Generate a unique ID for this subscription request
         const requestId = `sub_${collection}_${Date.now()}`;
 
+        // Construct ReadParams object
+        const readParams: ReadParams = { collection, filter };
+
         // Forward to agent, storing the agent's unsubscribe function
-        const agentUnsubscribe = await this.agent.read(collection, filter, (result) => {
-            console.log(`[MockVibeSDK] Received subscription update for ${requestId}:`, result);
+        const agentUnsubscribe = await this.agent.read(readParams, (error, data) => {
+            console.log(`[MockVibeSDK] Received subscription update for ${requestId}:`, { error, data });
             if (callback) {
+                // Adapt the agent callback (error, data) to the SDK callback (ReadResult)
+                const result: ReadResult = {
+                    ok: !error,
+                    data: data || [],
+                    error: error ? error.message : undefined,
+                };
                 callback(result);
             }
         });
@@ -188,7 +208,7 @@ class MockVibeSDK implements IVibeSDK {
         this.activeSubscriptions = {};
         this.isInitialized = false;
         this.onStateChange = null;
-        this.manifest = null;
+        // this.manifest = null; // Removed: manifest is not a class property
         this.updateState({ account: undefined, permissions: undefined }); // Clear state
         console.log("[MockVibeSDK] Cleanup complete.");
     }

@@ -10,7 +10,7 @@ import type { Account, AppManifest, Unsubscribe, VibeState } from "./types";
 
 // Define the shape of the context value
 interface VibeContextValue {
-    account: Account | undefined;
+    account: Account | null | undefined; // Updated type to include null
     init: () => void; // Expose init in case manual re-init is needed (though unlikely with mock)
     readOnce: (collection: string, filter?: any) => Promise<any>;
     read: (collection: string, filter?: any, callback?: (result: any) => void) => Promise<Unsubscribe>; // read returns Promise<Unsubscribe>
