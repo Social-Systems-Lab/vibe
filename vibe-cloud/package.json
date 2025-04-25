@@ -16,6 +16,7 @@
         "typescript": "^5.0.0"
     },
     "dependencies": {
+        "@elysiajs/cors": "^1.2.0",
         "@elysiajs/jwt": "^1.2.0",
         "@noble/ed25519": "^2.2.3",
         "@noble/hashes": "^1.8.0",

@@ -28,10 +28,10 @@ export function App() {
         setStatus("Reading notes...");
         try {
             // Use readOnce from useVibe context
-            const result = await readOnce("notes");
-            setNotes(result.docs || []);
+            const result = await readOnce("notes"); // result is of type ReadResult<any>
+            setNotes(result.data || []); // Access result.data instead of result.docs
             setStatus("Notes read successfully.");
-            console.log("[App] Notes read:", result.docs);
+            console.log("[App] Notes read:", result.data); // Log result.data
         } catch (error) {
             console.error("[App] Error reading notes:", error);
             setStatus(`Error reading notes: ${error instanceof Error ? error.message : String(error)}`);
@@ -78,14 +78,15 @@ export function App() {
             try {
                 // Ensure previous subscription is cleaned up if effect re-runs
                 if (taskSubscription.current) {
-                    taskSubscription.current();
+                    await taskSubscription.current(); // Ensure unsubscribe completes if async
                     taskSubscription.current = null;
                 }
 
                 taskSubscription.current = await read("tasks", undefined, (result) => {
+                    // result is ReadResult<any>
                     if (isMounted) {
-                        console.log("[App] Task subscription update:", result.docs);
-                        setTasks(result.docs || []);
+                        console.log("[App] Task subscription update:", result.data); // Access result.data
+                        setTasks(result.data || []); // Access result.data
                         setStatus("Task subscription active.");
                     }
                 });

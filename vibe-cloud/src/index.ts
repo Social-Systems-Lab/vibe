@@ -1,6 +1,7 @@
 // index.ts
 import { Elysia, t, NotFoundError, InternalServerError, type Static } from "elysia";
 import { jwt } from "@elysiajs/jwt";
+import { cors } from "@elysiajs/cors";
 import { dataService, type ReadResult } from "./services/data.service";
 import { blobService } from "./services/blob.service";
 import { RealtimeService } from "./services/realtime.service";
@@ -63,6 +64,17 @@ export const app = new Elysia()
     .decorate("permissionService", permissionService)
     .decorate("blobService", blobService)
     .decorate("realtimeService", realtimeService)
+    // --- Add CORS Middleware ---
+    .use(
+        cors({
+            origin: ["http://localhost:5000", "http://127.0.0.1:5000"], // Allow requests from the test app
+            methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Allow common methods
+            allowedHeaders: ["Content-Type", "Authorization", "X-Vibe-App-ID"], // Allow necessary headers
+            credentials: true, // Allow cookies/auth headers
+            preflight: true, // Handle preflight requests
+        })
+    )
+    // --- End CORS Middleware ---
     .use(
         jwt({
             name: "jwt",
