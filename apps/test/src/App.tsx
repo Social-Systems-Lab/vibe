@@ -55,10 +55,31 @@ export function App() {
             setStatus(`Note written successfully. ID: ${result.ids?.[0] ?? "N/A"}`);
             console.log("[App] Note written:", result);
             // Optionally re-read notes after write
-            // handleReadNotesOnce();
+            handleReadNotesOnce();
         } catch (error) {
             console.error("[App] Error writing note:", error);
             setStatus(`Error writing note: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }, [write, account]);
+
+    const handleWriteTask = useCallback(async () => {
+        if (!account) {
+            setStatus("Account not initialized. Cannot write task.");
+            console.warn("[App] Attempted to write task before account was ready.");
+            return;
+        }
+        setStatus("Writing new task...");
+        const newTask = {
+            text: `New task added at ${new Date().toLocaleTimeString()}`,
+            createdAt: new Date().toISOString(),
+        };
+        try {
+            const result = await write("tasks", newTask);
+            setStatus(`Task written successfully. ID: ${result.ids?.[0] ?? "N/A"}`);
+            console.log("[App] Task written:", result);
+        } catch (error) {
+            console.error("[App] Error writing task:", error);
+            setStatus(`Error writing task: ${error instanceof Error ? error.message : String(error)}`);
         }
     }, [write, account]); // Add account to dependency array
 
@@ -148,6 +169,9 @@ export function App() {
                             </Button>
                             <Button onClick={handleWriteNote} variant="secondary" disabled={!account}>
                                 Write New Note
+                            </Button>
+                            <Button onClick={handleWriteTask} variant="secondary" disabled={!account}>
+                                Write New Task
                             </Button>
                         </div>
                         <h3 className="font-semibold mb-2">Notes Data:</h3>
