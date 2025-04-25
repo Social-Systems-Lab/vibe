@@ -9,6 +9,7 @@ export const PERMISSIONS_COLLECTION = "permissions" as const;
 export const USERS_COLLECTION = "users" as const;
 export const BLOBS_COLLECTION = "blobs" as const;
 export const CLAIM_CODES_COLLECTION = "claimCodes" as const;
+export const APPS_COLLECTION = "apps" as const; // New collection constant
 
 //#endregion
 
@@ -69,6 +70,21 @@ export const ClaimCodeSchema = t.Object({
     collection: t.Literal(CLAIM_CODES_COLLECTION),
 });
 export type ClaimCode = Static<typeof ClaimCodeSchema>;
+
+// Schema for storing App details in the database
+export const AppSchema = t.Object({
+    _id: t.String(), // appId from the manifest
+    _rev: t.Optional(t.String()),
+    appId: t.String(), // Redundant with _id but useful for queries
+    name: t.String(),
+    description: t.Optional(t.String()),
+    pictureUrl: t.Optional(t.String({ format: "uri" })),
+    permissions: t.Array(t.String()), // Requested permissions
+    ownerDid: t.String(), // DID of the user who registered the app
+    createdAt: t.String({ format: "date-time" }),
+    collection: t.Literal(APPS_COLLECTION),
+});
+export type App = Static<typeof AppSchema>;
 
 // Generic schema for user data documents (non-system collections)
 export const GenericDataDocumentSchema = t.Object(
@@ -170,6 +186,22 @@ export const BlobDownloadResponseSchema = t.Object({
     url: t.String({ format: "uri", error: "Invalid URL format." }),
 });
 export type BlobDownloadResponse = Static<typeof BlobDownloadResponseSchema>;
+
+// App Registration Schemas (for API interaction)
+export const AppManifestSchema = t.Object({
+    appId: t.String({ minLength: 1, description: "Unique identifier for the app (e.g., URL or reverse domain)" }),
+    name: t.String({ minLength: 1, description: "Display name of the app" }),
+    description: t.Optional(t.String()),
+    pictureUrl: t.Optional(t.String({ format: "uri" })),
+    permissions: t.Array(t.String(), { description: "Array of permission strings requested (e.g., 'read:notes')" }),
+});
+export type AppManifestPayload = Static<typeof AppManifestSchema>; // Type for request body
+
+export const AppRegistrationResponseSchema = t.Object({
+    message: t.String(),
+    appId: t.String(),
+});
+export type AppRegistrationResponse = Static<typeof AppRegistrationResponseSchema>;
 
 // Error Schema
 export const ErrorResponseSchema = t.Object({

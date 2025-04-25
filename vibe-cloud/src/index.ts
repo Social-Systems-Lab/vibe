@@ -26,6 +26,10 @@ import {
     type BlobMetadata,
     type ClaimCode,
     type WebSocketAuthContext,
+    AppManifestSchema, // Import new schemas
+    AppRegistrationResponseSchema,
+    APPS_COLLECTION,
+    type App as AppModel, // Rename imported App type
 } from "./models/models";
 import { SYSTEM_DB } from "./utils/constants";
 import { AuthService } from "./services/auth.service";
@@ -289,7 +293,7 @@ export const app = new Elysia()
                     return { error: `Signature verification failed: ${error.message}` };
                 }
 
-                // 4. Mark claim code as spent
+                // 4. Mark claim code as spent (conditionally based on environment)
                 const nowISO = new Date().toISOString();
                 const updatedClaimData = {
                     ...claimDoc, // Keep existing fields
@@ -297,21 +301,28 @@ export const app = new Elysia()
                     claimedByDid: did,
                 };
 
-                try {
-                    logger.debug(`Attempting to mark claim code '${claimDoc._id}' as spent...`);
-                    // Use updateDocument - requires _rev. Collection name "" for dedicated DB.
-                    await dataService.updateDocument(SYSTEM_DB, CLAIM_CODES_COLLECTION, claimDoc._id, claimDoc._rev!, updatedClaimData);
-                    logger.info(`Claim code '${claimDoc._id}' successfully marked as spent by DID ${did}.`);
-                } catch (error: any) {
-                    logger.error(`Failed to mark claim code '${claimDoc._id}' as spent:`, error);
-                    // Handle potential conflict if someone else claimed it simultaneously
-                    if (error.message?.includes("Revision conflict") || error.statusCode === 409) {
-                        set.status = 409; // Conflict
-                        return { error: "Claim code was spent by another request. Please try again if you have another code." };
+                // --- Conditional Claim Spending ---
+                if (process.env.NODE_ENV === "production") {
+                    logger.info(`Production environment detected. Marking claim code '${claimDoc._id}' as spent.`);
+                    try {
+                        await dataService.updateDocument(SYSTEM_DB, CLAIM_CODES_COLLECTION, claimDoc._id, claimDoc._rev!, updatedClaimData);
+                        logger.info(`Claim code '${claimDoc._id}' successfully marked as spent by DID ${did}.`);
+                    } catch (error: any) {
+                        logger.error(`Failed to mark claim code '${claimDoc._id}' as spent in production:`, error);
+                        // Handle potential conflict if someone else claimed it simultaneously
+                        if (error.message?.includes("Revision conflict") || error.statusCode === 409) {
+                            set.status = 409; // Conflict
+                            return { error: "Claim code was spent by another request. Please try again if you have another code." };
+                        }
+                        set.status = 500;
+                        return { error: "Internal server error while updating claim code status." };
                     }
-                    set.status = 500;
-                    return { error: "Internal server error while updating claim code status." };
+                } else {
+                    logger.warn(`NODE_ENV is not 'production' (value: ${process.env.NODE_ENV}). Skipping marking claim code '${claimDoc._id}' as spent.`);
+                    // Optionally, update the _rev in memory if needed for subsequent operations, though unlikely here.
+                    // updatedClaimData._rev = 'simulated-rev-update'; // Example if needed
                 }
+                // --- End Conditional Claim Spending ---
 
                 // 5. Create the admin user
                 let newUser;
@@ -503,6 +514,78 @@ export const app = new Elysia()
                     },
                     // Define response type if needed
                     // response: { 200: t.Union([t.Any(), t.Array(t.Any())]), 207: t.Array(t.Any()) }
+                }
+            )
+    )
+    // --- Protected App Routes ---
+    .group("/api/v1/apps", (group) =>
+        group
+            // Derive JWT user context (same as data routes)
+            .derive(async ({ jwt, request: { headers } }) => {
+                const authHeader = headers.get("authorization");
+                if (!authHeader || !authHeader.startsWith("Bearer ")) return { user: null };
+                const token = authHeader.substring(7);
+                try {
+                    const payload = await jwt.verify(token);
+                    return { user: payload as { userDid: string } };
+                } catch (error) {
+                    return { user: null };
+                }
+            })
+            // Middleware: Just check User JWT exists
+            .onBeforeHandle(({ user, set }) => {
+                if (!user) {
+                    set.status = 401;
+                    return { error: "Unauthorized: Invalid or missing user token." };
+                }
+            })
+            // POST /api/v1/apps/register - Register an application
+            .post(
+                "/register",
+                async ({ dataService, user, body, set }) => {
+                    if (!user) throw new InternalServerError("User context missing after auth check."); // Should not happen
+                    const { userDid } = user;
+                    const manifest = body; // body is validated against AppManifestSchema
+
+                    logger.info(`App registration attempt by user ${userDid} for appId ${manifest.appId}`);
+
+                    // Construct the App document to save
+                    const appDocument: Omit<AppModel, "_rev"> = {
+                        // Use renamed type AppModel
+                        _id: `${APPS_COLLECTION}/${manifest.appId}`, // Use appId as part of the document ID
+                        appId: manifest.appId,
+                        name: manifest.name,
+                        description: manifest.description,
+                        pictureUrl: manifest.pictureUrl,
+                        permissions: manifest.permissions,
+                        ownerDid: userDid,
+                        createdAt: new Date().toISOString(),
+                        collection: APPS_COLLECTION,
+                    };
+
+                    try {
+                        // Attempt to create the document in the SYSTEM_DB
+                        // Using createDocument which handles potential conflicts (app already registered)
+                        await dataService.createDocument(SYSTEM_DB, APPS_COLLECTION, appDocument);
+                        logger.info(`App '${manifest.appId}' registered successfully by user ${userDid}.`);
+                        set.status = 201; // Created
+                        return { message: "Application registered successfully.", appId: manifest.appId };
+                    } catch (error: any) {
+                        if (error.message?.includes("Document update conflict") || error.statusCode === 409) {
+                            logger.warn(`App registration conflict for appId '${manifest.appId}' by user ${userDid}. App might already exist.`);
+                            // Check if the existing app belongs to the same user? For now, just return conflict.
+                            set.status = 409; // Conflict
+                            return { error: `Application with ID '${manifest.appId}' already exists.` };
+                        } else {
+                            logger.error(`Failed to register app '${manifest.appId}' for user ${userDid}:`, error);
+                            throw new InternalServerError("Failed to register application."); // Let global handler catch
+                        }
+                    }
+                },
+                {
+                    body: AppManifestSchema,
+                    response: { 201: AppRegistrationResponseSchema, 409: ErrorResponseSchema },
+                    detail: { summary: "Register an application manifest." },
                 }
             )
     )
