@@ -1,8 +1,7 @@
 // apps/test/src/vibe/sdk.ts
 
 import { MockVibeAgent } from "./agent";
-import type { VibeAgent } from "./agent";
-import type { Account, AppManifest, PermissionSetting, ReadResult, Unsubscribe, VibeState, WriteResult } from "./types";
+import type { Account, AppManifest, PermissionSetting, ReadResult, Unsubscribe, VibeAgent, VibeState, WriteResult } from "./types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
@@ -19,7 +18,6 @@ interface IVibeSDK {
 class MockVibeSDK implements IVibeSDK {
     private agent: VibeAgent;
     private state: VibeState = {};
-    private manifest: AppManifest | null = null;
     private onStateChange: ((state: VibeState) => void) | null = null;
     private isInitialized = false;
     private activeSubscriptions: Record<string, Unsubscribe> = {}; // Store agent unsubscribe functions
@@ -40,20 +38,15 @@ class MockVibeSDK implements IVibeSDK {
         }
 
         console.log("[MockVibeSDK] init called with manifest:", manifest);
-        this.manifest = manifest;
         this.onStateChange = onStateChange;
-
-        // Simulate agent initialization and getting account info
-        const mockUserDid = "did:mock:user123";
-        const account: Account = { userDid: mockUserDid };
 
         // Determine initial permissions based on manifest (simple logic for now)
         const permissions = this.determineInitialPermissions(manifest.permissions);
 
         // Initialize the agent
         this.agent
-            .init(mockUserDid)
-            .then(() => {
+            .init(manifest)
+            .then((account) => {
                 console.log("[MockVibeSDK] Mock agent initialized successfully.");
                 // Update state and notify listener
                 this.updateState({ account, permissions });
@@ -83,7 +76,7 @@ class MockVibeSDK implements IVibeSDK {
         }
 
         // Forward to agent
-        return this.agent.readOnce(collection, filter);
+        return this.agent.readOnce({ collection, filter });
     }
 
     async read(collection: string, filter?: any, callback?: (result: ReadResult) => void): Promise<Unsubscribe> {
@@ -140,7 +133,7 @@ class MockVibeSDK implements IVibeSDK {
         }
 
         // Forward to agent
-        return this.agent.write(collection, data);
+        return this.agent.write({ collection, data });
     }
 
     // --- Internal Methods ---

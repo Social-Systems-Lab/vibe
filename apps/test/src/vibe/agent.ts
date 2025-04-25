@@ -1,7 +1,8 @@
 // apps/test/src/vibe/agent.ts
-import type { VibeAgent, AppManifest, ReadResult, WriteResult, ReadParams, WriteParams, SubscriptionCallback, Unsubscribe } from "./types";
+import type { VibeAgent, AppManifest, ReadResult, WriteResult, ReadParams, WriteParams, SubscriptionCallback, Unsubscribe, Account } from "./types";
 import { generateEd25519KeyPair, signEd25519, didFromEd25519, uint8ArrayToHex, type Ed25519KeyPair } from "../lib/identity"; // Use frontend identity utils
 import { Buffer } from "buffer"; // Needed for base64 encoding
+import * as ed from "@noble/ed25519";
 
 // --- Constants ---
 const VIBE_CLOUD_BASE_URL = "http://localhost:3000"; // From docker-compose/env
@@ -15,6 +16,7 @@ export class MockVibeAgent implements VibeAgent {
     private manifest: AppManifest | null = null;
     private keyPair: Ed25519KeyPair | null = null;
     private userDid: string | null = null;
+    private account: Account | null = null;
     private jwt: string | null = null;
     private subscriptions: Map<string, SubscriptionCallback<any>> = new Map();
     private isInitialized = false;
@@ -88,7 +90,7 @@ export class MockVibeAgent implements VibeAgent {
 
     // --- Core Agent Methods ---
 
-    async init(manifest: AppManifest): Promise<void> {
+    async init(manifest: AppManifest): Promise<Account> {
         if (this.isInitialized || this.isInitializing) {
             console.warn(`MockVibeAgent already ${this.isInitializing ? "initializing" : "initialized"}.`);
             return;

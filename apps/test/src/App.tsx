@@ -54,6 +54,12 @@ export function App() {
     // --- Subscription Effect ---
 
     useEffect(() => {
+        if (!account) {
+            setStatus("No account found. Waiting for account initialization...");
+            return;
+        }
+        console.log("[App] Account found.", JSON.stringify(account));
+
         setStatus("Subscribing to tasks...");
         let isMounted = true; // Flag to prevent state updates after unmount
 
@@ -95,7 +101,7 @@ export function App() {
             }
             setStatus("Task subscription stopped.");
         };
-    }, [read]); // Dependency array includes 'read' from useVibe
+    }, [read, account]); // Dependency array includes 'read' from useVibe
 
     return (
         <div className="container mx-auto p-8 text-left relative z-10">
