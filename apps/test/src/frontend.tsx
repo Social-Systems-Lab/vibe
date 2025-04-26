@@ -6,9 +6,10 @@
  */
 
 import { createRoot } from "react-dom/client";
-import { StrictMode } from "react";
+// import { StrictMode } from "react"; // StrictMode commented out below
 import { App } from "./App";
-import { VibeProvider } from "./vibe/react"; // Import the provider
+import { VibeProvider } from "./vibe/react"; // Import the Vibe provider
+import { AgentUIProvider } from "./vibe/ui-context"; // Import the Agent UI provider
 import type { AppManifest } from "./vibe/types"; // Import the type
 
 // Define the manifest for this test application
@@ -23,10 +24,13 @@ const testAppManifest: AppManifest = {
 const elem = document.getElementById("root")!;
 const app = (
     // <StrictMode>
-    <VibeProvider manifest={testAppManifest}>
-        {/* Wrap App with VibeProvider */}
-        <App />
-    </VibeProvider>
+    <AgentUIProvider>
+        {" "}
+        {/* Wrap VibeProvider with AgentUIProvider */}
+        <VibeProvider manifest={testAppManifest}>
+            <App />
+        </VibeProvider>
+    </AgentUIProvider>
     // </StrictMode>
 );
 

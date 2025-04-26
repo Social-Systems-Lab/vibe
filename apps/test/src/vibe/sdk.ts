@@ -1,11 +1,24 @@
 // apps/test/src/vibe/sdk.ts
 
 import { MockVibeAgent } from "./agent";
-// Ensure ReadParams is imported here
-import type { Account, AppManifest, PermissionSetting, ReadParams, ReadResult, Unsubscribe, VibeAgent, VibeState, WriteResult } from "./types";
+// Import necessary types, including new ones
+import type {
+    Account,
+    AppManifest,
+    PermissionSetting,
+    ReadParams,
+    ReadResult,
+    Unsubscribe,
+    VibeAgent,
+    VibeState,
+    WriteResult,
+    Identity, // Added
+    ActionRequest, // Added (Potentially needed if SDK orchestrates prompts)
+    ActionResponse, // Added (Potentially needed if SDK orchestrates prompts)
+} from "./types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-unused-vars */ // Keep this if some imports aren't used yet
 
 // Interface for the SDK's public API
 interface IVibeSDK {
@@ -18,9 +31,10 @@ interface IVibeSDK {
 
 class MockVibeSDK implements IVibeSDK {
     private agent: VibeAgent;
-    private state: VibeState = {};
+    private state: VibeState = { identities: [], activeIdentity: null }; // Initialize with defaults
     private onStateChange: ((state: VibeState) => void) | null = null;
     private isInitialized = false;
+    private currentManifest: AppManifest | null = null; // Store manifest for context
     private activeSubscriptions: Record<string, Unsubscribe> = {}; // Store agent unsubscribe functions
 
     constructor() {
@@ -40,121 +54,106 @@ class MockVibeSDK implements IVibeSDK {
 
         console.log("[MockVibeSDK] init called with manifest:", manifest);
         this.onStateChange = onStateChange;
+        this.currentManifest = manifest; // Store manifest
 
-        // Determine initial permissions based on manifest (simple logic for now)
-        const permissions = this.determineInitialPermissions(manifest.permissions);
-
-        // Initialize the agent
+        // Initialize the agent - it now handles identity creation, claims, and initial consent simulation/check
         this.agent
             .init(manifest)
-            .then(({ account, permissions: grantedPermissions }) => {
-                // Destructure the response
-                // Explicitly type the received account and permissions
-                if (account && grantedPermissions) {
-                    console.log("[MockVibeSDK] Mock agent initialized successfully with account and permissions:", account, grantedPermissions);
-                    // Update state and notify listener
-                    // Note: We use the 'permissions' key in VibeState for granted permissions
-                    this.updateState({ account, permissions: grantedPermissions });
-                    this.isInitialized = true;
-                } else {
-                    console.error("[MockVibeSDK] Mock agent initialization failed (returned null account or permissions).");
-                    // Optionally update state to reflect the error, e.g., set an error flag
-                    this.updateState({ account: null, permissions: null }); // Update state with nulls
-                    this.isInitialized = false; // Ensure SDK is not marked as initialized
-                }
+            .then(({ account, permissions, activeIdentity, identities }) => {
+                // Agent init now returns the full initial state
+                console.log("[MockVibeSDK] Mock agent initialized successfully. State:", { account, permissions, activeIdentity, identities });
+                // Update SDK state with everything received from the agent
+                this.updateState({
+                    account: account ?? undefined, // Use ?? to handle null explicitly
+                    permissions: permissions ?? undefined,
+                    activeIdentity: activeIdentity ?? undefined,
+                    identities: identities ?? [],
+                });
+                this.isInitialized = true;
             })
             .catch((error) => {
-                console.error("[MockVibeSDK] Error during agent initialization promise:", error);
-                // Handle error state if necessary
-                this.updateState({ account: null, permissions: null }); // Ensure state is null on error
+                console.error("[MockVibeSDK] Error during agent initialization:", error);
+                // Update state to reflect failure
+                this.updateState({ account: undefined, permissions: undefined, activeIdentity: undefined, identities: [] });
+                this.isInitialized = false;
             });
 
-        // Return a function to clean up this SDK instance
+        // Return a function to clean up this SDK instance (unsubscribeAll)
         return this.unsubscribeAll.bind(this);
     }
 
     async readOnce(collection: string, filter?: any): Promise<ReadResult> {
         console.log(`[MockVibeSDK] readOnce called for collection: ${collection}`, { filter });
-        this.ensureInitialized();
+        this.ensureInitialized(); // Checks if SDK is initialized and has active identity
 
-        const permission = this.checkPermission("read", collection);
-        if (permission === "never") {
-            console.log(`[MockVibeSDK] Permission denied for read:${collection}`);
-            throw new Error(`Permission denied to read collection: ${collection}`);
+        // Agent's readOnce will handle permission checks (local) and trigger UI prompts if needed
+        try {
+            const result = await this.agent.readOnce({ collection, filter });
+            console.log(`[MockVibeSDK] readOnce result for ${collection}:`, result);
+            return result;
+        } catch (error) {
+            console.error(`[MockVibeSDK] Error during agent.readOnce for ${collection}:`, error);
+            // Re-throw permission errors or other agent errors
+            throw error;
         }
-        if (permission === "ask") {
-            console.log(`[MockVibeSDK] Permission 'ask' for read:${collection}. Simulating grant.`);
-            // In a real SDK, this would trigger a UI prompt via the agent
-        }
-
-        // Forward to agent
-        return this.agent.readOnce({ collection, filter });
     }
 
     async read(collection: string, filter?: any, callback?: (result: ReadResult) => void): Promise<Unsubscribe> {
         console.log(`[MockVibeSDK] read (subscription) called for collection: ${collection}`, { filter });
         this.ensureInitialized();
 
-        const permission = this.checkPermission("read", collection);
-        if (permission === "never") {
-            console.log(`[MockVibeSDK] Permission denied for read:${collection}`);
-            throw new Error(`Permission denied to read collection: ${collection}`);
+        // Agent's read will handle permission checks and UI prompts
+        try {
+            const readParams: ReadParams = { collection, filter };
+            // The agent's read method now directly handles the callback adaptation if needed,
+            // or the SDK adapts it here. Let's assume agent handles it for simplicity now.
+            // We need to store the unsubscribe function returned by the agent.
+            const agentUnsubscribe = await this.agent.read(readParams, (error, data) => {
+                // This callback receives raw data/error from the agent (e.g., WebSocket)
+                console.log(`[MockVibeSDK] Agent subscription update for ${collection}:`, { error, data });
+                if (callback) {
+                    // Adapt to the ReadResult format expected by the app's callback
+                    const result: ReadResult = {
+                        ok: !error,
+                        data: data || [],
+                        error: error ? error.message : undefined,
+                    };
+                    callback(result);
+                }
+            });
+
+            // Store the unsubscribe function returned by the agent, maybe keyed differently if needed
+            const subId = `sub_${collection}_${Date.now()}`; // Simple unique ID
+            this.activeSubscriptions[subId] = agentUnsubscribe;
+
+            // Return an SDK-specific unsubscribe function
+            const sdkUnsubscribe = async () => {
+                console.log(`[MockVibeSDK] SDK Unsubscribing from ${subId} (${collection})`);
+                if (this.activeSubscriptions[subId]) {
+                    await this.agent.unsubscribe(this.activeSubscriptions[subId]); // Call agent's specific unsubscribe method
+                    delete this.activeSubscriptions[subId];
+                }
+            };
+            return sdkUnsubscribe;
+        } catch (error) {
+            console.error(`[MockVibeSDK] Error during agent.read for ${collection}:`, error);
+            throw error;
         }
-        if (permission === "ask") {
-            console.log(`[MockVibeSDK] Permission 'ask' for read:${collection}. Simulating grant.`);
-            // Trigger UI prompt simulation if needed
-        }
-
-        // Generate a unique ID for this subscription request
-        const requestId = `sub_${collection}_${Date.now()}`;
-
-        // Construct ReadParams object
-        const readParams: ReadParams = { collection, filter };
-
-        // Forward to agent, storing the agent's unsubscribe function
-        const agentUnsubscribe = await this.agent.read(readParams, (error, data) => {
-            console.log(`[MockVibeSDK] Received subscription update for ${requestId}:`, { error, data });
-            if (callback) {
-                // Adapt the agent callback (error, data) to the SDK callback (ReadResult)
-                const result: ReadResult = {
-                    ok: !error,
-                    data: data || [],
-                    error: error ? error.message : undefined,
-                };
-                callback(result);
-            }
-        });
-
-        this.activeSubscriptions[requestId] = agentUnsubscribe;
-
-        // Return an unsubscribe function specific to this request
-        const sdkUnsubscribe = () => {
-            console.log(`[MockVibeSDK] Unsubscribing from ${requestId}`);
-            if (this.activeSubscriptions[requestId]) {
-                this.activeSubscriptions[requestId](); // Call agent's unsubscribe
-                delete this.activeSubscriptions[requestId];
-            }
-        };
-
-        return Promise.resolve(sdkUnsubscribe);
     }
 
     async write(collection: string, data: any | any[]): Promise<WriteResult> {
         console.log(`[MockVibeSDK] write called for collection: ${collection}`, { data });
         this.ensureInitialized();
 
-        const permission = this.checkPermission("write", collection);
-        if (permission === "never") {
-            console.log(`[MockVibeSDK] Permission denied for write:${collection}`);
-            throw new Error(`Permission denied to write collection: ${collection}`);
+        // Agent's write will handle permission checks and UI prompts
+        try {
+            const result = await this.agent.write({ collection, data });
+            console.log(`[MockVibeSDK] write result for ${collection}:`, result);
+            return result;
+        } catch (error) {
+            console.error(`[MockVibeSDK] Error during agent.write for ${collection}:`, error);
+            throw error;
         }
-        if (permission === "ask") {
-            console.log(`[MockVibeSDK] Permission 'ask' for write:${collection}. Simulating grant.`);
-            // Trigger UI prompt simulation if needed
-        }
-
-        // Forward to agent
-        return this.agent.write({ collection, data });
     }
 
     // --- Internal Methods ---
@@ -168,52 +167,34 @@ class MockVibeSDK implements IVibeSDK {
         }
     }
 
-    private determineInitialPermissions(requestedPermissions: string[]): Record<string, PermissionSetting> {
-        const permissions: Record<string, PermissionSetting> = {};
-        requestedPermissions.forEach((permString) => {
-            // Simple default: allow reads, ask for writes
-            if (permString.startsWith("read:")) {
-                permissions[permString] = "always";
-            } else if (permString.startsWith("write:")) {
-                permissions[permString] = "ask";
-            } else {
-                permissions[permString] = "ask"; // Default to ask for unknown types
-            }
-        });
-        console.log("[MockVibeSDK] Determined initial permissions:", permissions);
-        return permissions;
-    }
-
-    private checkPermission(action: "read" | "write", collection: string): PermissionSetting {
-        this.ensureInitialized();
-        const permString = `${action}:${collection}`;
-        const setting = this.state.permissions?.[permString];
-
-        if (!setting) {
-            console.warn(`[MockVibeSDK] No permission found for '${permString}'. Defaulting to 'never'.`);
-            return "never"; // Or 'ask' depending on desired default behavior
-        }
-        console.log(`[MockVibeSDK] Permission check for '${permString}': ${setting}`);
-        return setting;
-    }
+    // Removed determineInitialPermissions - Agent handles this now
+    // Removed checkPermission - Agent handles this now
 
     private ensureInitialized() {
-        // Check permissions map exists in state now, not just account
-        if (!this.isInitialized || !this.state.account || !this.state.permissions) {
-            throw new Error("Vibe SDK not initialized or missing permissions. Call init() first.");
+        // Updated check: Ensure SDK is initialized and has an active identity
+        if (!this.isInitialized || !this.state.activeIdentity) {
+            throw new Error("Vibe SDK not initialized or no active identity. Call init() first.");
         }
     }
 
     private unsubscribeAll(): void {
-        console.log("[MockVibeSDK] Unsubscribing from all active subscriptions.");
-        Object.values(this.activeSubscriptions).forEach((unsub) => unsub());
+        console.log("[MockVibeSDK] Unsubscribing from all active SDK subscriptions.");
+        // Call the specific unsubscribe method on the agent for each stored function
+        Object.values(this.activeSubscriptions).forEach((agentUnsubscribe) => {
+            this.agent.unsubscribe(agentUnsubscribe).catch((err) => console.error("Error during agent unsubscribe:", err));
+        });
         this.activeSubscriptions = {};
         this.isInitialized = false;
         this.onStateChange = null;
-        // this.manifest = null; // Removed: manifest is not a class property
-        this.updateState({ account: undefined, permissions: undefined }); // Clear state
+        this.currentManifest = null;
+        // Clear the state more thoroughly
+        this.updateState({ account: undefined, permissions: undefined, activeIdentity: undefined, identities: [] });
         console.log("[MockVibeSDK] Cleanup complete.");
     }
+
+    // --- TODO: Add methods to interact with agent's identity/permission management if needed ---
+    // e.g., switchIdentity(did), createIdentity(label), etc.
+    // These would call corresponding agent methods and likely trigger state updates.
 }
 
 // Export a singleton instance

@@ -10,8 +10,13 @@ import type {
     Unsubscribe,
     Account,
     PermissionSetting,
-} from "./types"; // Added PermissionSetting
-import { generateEd25519KeyPair, signEd25519, didFromEd25519, uint8ArrayToHex, type Ed25519KeyPair } from "../lib/identity"; // Use frontend identity utils
+    Identity, // Added
+    ConsentRequest, // Added
+    ActionRequest, // Added
+    ActionResponse, // Added
+    VibeState, // Added
+} from "./types";
+import { generateEd25519KeyPair, signEd25519, didFromEd25519, uint8ArrayToHex, type Ed25519KeyPair, hexToUint8Array } from "../lib/identity"; // Use frontend identity utils
 import { Buffer } from "buffer"; // Needed for base64 encoding
 import * as ed from "@noble/ed25519";
 
@@ -19,32 +24,47 @@ import * as ed from "@noble/ed25519";
 const VIBE_CLOUD_BASE_URL = "http://127.0.0.1:3001"; // 3001 = backen run outside docker, 3000=backend in docker
 const ADMIN_CLAIM_CODE = "ABC1-XYZ9"; // From vibe-cloud/.env
 const LOCAL_STORAGE_KEY_PREFIX = "vibe_agent_";
+const LOCAL_STORAGE_IDENTITIES_KEY = `${LOCAL_STORAGE_KEY_PREFIX}identities`;
+const LOCAL_STORAGE_ACTIVE_DID_KEY = `${LOCAL_STORAGE_KEY_PREFIX}active_did`;
+const LOCAL_STORAGE_PERMISSIONS_KEY = `${LOCAL_STORAGE_KEY_PREFIX}permissions`;
+const LOCAL_STORAGE_JWT_KEY = `${LOCAL_STORAGE_KEY_PREFIX}jwts`; // Store JWTs per identity DID
 
 /**
- * Implementation of the VibeAgent interface that connects to the Vibe Cloud API.
+ * Mock implementation of the VibeAgent interface.
+ * Manages identities, permissions locally, and simulates UI interactions.
  */
 export class MockVibeAgent implements VibeAgent {
+    // --- State ---
+    private identities: Identity[] = [];
+    private activeIdentity: Identity | null = null;
+    // Permissions structure: identityDID -> origin -> scope -> setting
+    private permissions: Record<string, Record<string, Record<string, PermissionSetting>>> = {};
+    // JWTs structure: identityDID -> jwt
+    private jwts: Record<string, string> = {};
+
+    private manifest: AppManifest | null = null; // Current app manifest
+    private currentOrigin: string = window.location.origin; // Origin of the app using the agent
+
+    // UI Interaction State (Promises for pending requests)
+    private consentRequestResolver: ((result: Record<string, PermissionSetting>) => void) | null = null;
+    private actionConfirmationResolver: ((result: ActionResponse) => void) | null = null;
+
+    // Backend/WebSocket related (kept for potential future direct connection)
     private webSocket: WebSocket | null = null;
     private isWebSocketConnecting: boolean = false;
     private webSocketUrl: string | null = null;
     private subscriptions: Map<string, SubscriptionCallback<any>> = new Map();
     private pendingSubscriptions: Map<string, SubscriptionCallback<any>> = new Map();
 
-    private manifest: AppManifest | null = null;
-    private keyPair: Ed25519KeyPair | null = null;
-    private userDid: string | null = null;
-    private account: Account | null = null;
-    private jwt: string | null = null;
-    private grantedPermissions: Record<string, PermissionSetting> | null = null; // Store granted permissions
     private isInitialized = false;
-    private isInitializing = false; // Prevent concurrent init calls
+    private isInitializing = false;
 
     constructor() {
-        console.log("MockVibeAgent (Cloud Connected) initialized");
-        this.loadIdentityFromStorage(); // Try loading identity on construction
+        console.log("MockVibeAgent initialized");
+        this.loadStateFromStorage(); // Load identities, active DID, permissions, JWTs
     }
 
-    // --- WebSocket Methods ---
+    // --- WebSocket Methods (Placeholder/Future Use) ---
 
     private async ensureWebSocketConnection(): Promise<void> {
         this.ensureInitialized(); // Need JWT and manifest
@@ -65,13 +85,15 @@ export class MockVibeAgent implements VibeAgent {
 
         // Not connected, not connecting: Initiate connection
         if (!this.webSocket || this.webSocket.readyState === WebSocket.CLOSED) {
-            if (!this.jwt || !this.manifest?.appId) {
-                throw new Error("Cannot establish WebSocket connection without JWT and App ID.");
+            // Use JWT for the active identity
+            const activeJwt = this.activeIdentity ? this.jwts[this.activeIdentity.did] : null;
+            if (!activeJwt || !this.manifest?.appId) {
+                throw new Error("Cannot establish WebSocket connection without an active identity JWT and App ID.");
             }
             // Construct URL (handle potential http/https mismatch)
             const wsProtocol = VIBE_CLOUD_BASE_URL.startsWith("https:") ? "wss:" : "ws:";
             const wsHost = VIBE_CLOUD_BASE_URL.replace(/^https?:/, "");
-            this.webSocketUrl = `${wsProtocol}${wsHost}/ws?token=${encodeURIComponent(this.jwt)}&appId=${encodeURIComponent(this.manifest.appId)}`;
+            this.webSocketUrl = `${wsProtocol}${wsHost}/ws?token=${encodeURIComponent(activeJwt)}&appId=${encodeURIComponent(this.manifest.appId)}`;
 
             console.log(`Attempting to connect WebSocket to: ${this.webSocketUrl.split("?")[0]}...`); // Don't log token
             this.isWebSocketConnecting = true;
@@ -199,240 +221,371 @@ export class MockVibeAgent implements VibeAgent {
         }
     }
 
-    // --- Identity Management ---
+    // --- Storage Management ---
 
-    private getStorageKey(key: string): string {
-        // Use manifest appId for namespacing if available, otherwise a default
-        const namespace = this.manifest?.appId || "default_app";
-        // Sanitize namespace for local storage key
-        const sanitizedNamespace = namespace.replace(/[^a-zA-Z0-9_-]/g, "_");
-        return `${LOCAL_STORAGE_KEY_PREFIX}${sanitizedNamespace}_${key}`;
-    }
-
-    private loadIdentityFromStorage(): void {
+    private loadStateFromStorage(): void {
         try {
-            const storedDid = localStorage.getItem(this.getStorageKey("userDid"));
-            const storedPrivKeyHex = localStorage.getItem(this.getStorageKey("privateKeyHex"));
-            const storedJwt = localStorage.getItem(this.getStorageKey("jwt"));
-
-            if (storedDid && storedPrivKeyHex) {
-                const privateKey = Uint8Array.from(Buffer.from(storedPrivKeyHex, "hex"));
-                // Regenerate public key from private key
-                const publicKey = ed.getPublicKey(privateKey);
-                this.keyPair = { privateKey, publicKey };
-                this.userDid = storedDid;
-                console.log("Loaded identity from localStorage:", this.userDid);
-
-                if (storedJwt) {
-                    this.jwt = storedJwt;
-                    console.log("Loaded JWT from localStorage.");
-                    // TODO: Add JWT expiry check?
-                }
+            // Load Identities
+            const storedIdentities = localStorage.getItem(LOCAL_STORAGE_IDENTITIES_KEY);
+            if (storedIdentities) {
+                const parsed = JSON.parse(storedIdentities);
+                // Need to re-hydrate Uint8Arrays
+                this.identities = parsed.map((idData: any) => ({
+                    ...idData,
+                    publicKey: hexToUint8Array(idData.publicKeyHex),
+                    privateKey: hexToUint8Array(idData.privateKeyHex),
+                }));
+                console.log(`Loaded ${this.identities.length} identities from localStorage.`);
             } else {
-                console.log("No identity found in localStorage.");
+                console.log("No identities found in localStorage.");
+            }
+
+            // Load Active DID
+            const storedActiveDid = localStorage.getItem(LOCAL_STORAGE_ACTIVE_DID_KEY);
+            if (storedActiveDid) {
+                this.activeIdentity = this.identities.find((id) => id.did === storedActiveDid) || null;
+                if (this.activeIdentity) {
+                    console.log("Loaded active identity:", this.activeIdentity.did);
+                } else {
+                    console.warn("Stored active DID not found in loaded identities.");
+                }
+            } else if (this.identities.length > 0) {
+                // Default to first identity if none is set as active
+                this.activeIdentity = this.identities[0];
+                localStorage.setItem(LOCAL_STORAGE_ACTIVE_DID_KEY, this.activeIdentity.did);
+                console.log("No active DID found, defaulting to first identity:", this.activeIdentity.did);
+            }
+
+            // Load Permissions
+            const storedPermissions = localStorage.getItem(LOCAL_STORAGE_PERMISSIONS_KEY);
+            if (storedPermissions) {
+                this.permissions = JSON.parse(storedPermissions);
+                console.log("Loaded permissions from localStorage.");
+            } else {
+                console.log("No permissions found in localStorage.");
+            }
+
+            // Load JWTs
+            const storedJwts = localStorage.getItem(LOCAL_STORAGE_JWT_KEY);
+            if (storedJwts) {
+                this.jwts = JSON.parse(storedJwts);
+                console.log("Loaded JWTs from localStorage.");
+            } else {
+                console.log("No JWTs found in localStorage.");
             }
         } catch (error) {
-            console.error("Error loading identity from localStorage:", error);
+            console.error("Error loading state from localStorage:", error);
+            // Clear potentially corrupted state
+            this.clearStateFromStorage();
         }
     }
 
-    private saveIdentityToStorage(): void {
-        if (this.userDid && this.keyPair?.privateKey && this.jwt) {
-            try {
-                localStorage.setItem(this.getStorageKey("userDid"), this.userDid);
-                localStorage.setItem(this.getStorageKey("privateKeyHex"), uint8ArrayToHex(this.keyPair.privateKey));
-                localStorage.setItem(this.getStorageKey("jwt"), this.jwt);
-                console.log("Saved identity and JWT to localStorage.");
-            } catch (error) {
-                console.error("Error saving identity to localStorage:", error);
-            }
-        }
-    }
-
-    private clearIdentityFromStorage(): void {
+    private saveStateToStorage(): void {
         try {
-            localStorage.removeItem(this.getStorageKey("userDid"));
-            localStorage.removeItem(this.getStorageKey("privateKeyHex"));
-            localStorage.removeItem(this.getStorageKey("jwt"));
-            console.log("Cleared identity and JWT from localStorage.");
+            // Serialize identities with hex keys
+            const serializableIdentities = this.identities.map((id) => ({
+                ...id,
+                publicKeyHex: uint8ArrayToHex(id.publicKey),
+                privateKeyHex: uint8ArrayToHex(id.privateKey),
+                publicKey: undefined, // Remove raw bytes
+                privateKey: undefined, // Remove raw bytes
+            }));
+            localStorage.setItem(LOCAL_STORAGE_IDENTITIES_KEY, JSON.stringify(serializableIdentities));
+
+            if (this.activeIdentity) {
+                localStorage.setItem(LOCAL_STORAGE_ACTIVE_DID_KEY, this.activeIdentity.did);
+            } else {
+                localStorage.removeItem(LOCAL_STORAGE_ACTIVE_DID_KEY);
+            }
+            localStorage.setItem(LOCAL_STORAGE_PERMISSIONS_KEY, JSON.stringify(this.permissions));
+            localStorage.setItem(LOCAL_STORAGE_JWT_KEY, JSON.stringify(this.jwts));
+            console.log("Saved agent state (identities, active DID, permissions, JWTs) to localStorage.");
         } catch (error) {
-            console.error("Error clearing identity from localStorage:", error);
+            console.error("Error saving state to localStorage:", error);
         }
     }
 
-    // --- Core Agent Methods ---
+    private clearStateFromStorage(): void {
+        try {
+            localStorage.removeItem(LOCAL_STORAGE_IDENTITIES_KEY);
+            localStorage.removeItem(LOCAL_STORAGE_ACTIVE_DID_KEY);
+            localStorage.removeItem(LOCAL_STORAGE_PERMISSIONS_KEY);
+            localStorage.removeItem(LOCAL_STORAGE_JWT_KEY);
+            console.log("Cleared agent state from localStorage.");
+        } catch (error) {
+            console.error("Error clearing state from localStorage:", error);
+        }
+    }
 
-    // Updated return type to match interface
-    async init(manifest: AppManifest): Promise<{ account: Account | null; permissions: Record<string, PermissionSetting> | null }> {
+    // --- Initialization & State ---
+
+    async init(
+        manifest: AppManifest
+    ): Promise<{ account: Account | null; permissions: Record<string, PermissionSetting> | null; activeIdentity: Identity | null; identities: Identity[] }> {
         if (this.isInitialized || this.isInitializing) {
             console.warn(`MockVibeAgent already ${this.isInitializing ? "initializing" : "initialized"}. Returning current state.`);
-            return { account: this.account, permissions: this.grantedPermissions };
+            return this.getCurrentStateForSdk();
         }
         this.isInitializing = true;
         console.log("MockVibeAgent: Initializing with manifest:", manifest);
         this.manifest = manifest;
+        this.currentOrigin = window.location.origin; // Ensure origin is set
 
         try {
-            // 1. Ensure Identity (Load or Generate)
-            if (!this.userDid || !this.keyPair) {
-                console.log("Generating new identity...");
-                this.keyPair = generateEd25519KeyPair();
-                this.userDid = didFromEd25519(this.keyPair.publicKey);
-                this.jwt = null; // Clear any potentially stale JWT
-                this.clearIdentityFromStorage(); // Clear storage before attempting claim
-                console.log("Generated new DID:", this.userDid);
-            } else {
-                console.log("Using existing identity:", this.userDid);
+            // 1. Ensure at least one identity exists (create if none)
+            if (this.identities.length === 0) {
+                console.log("No identities found, creating initial identity...");
+                await this.createIdentity("Default Identity"); // Creates and sets as active
+            } else if (!this.activeIdentity && this.identities.length > 0) {
+                // If identities exist but none are active (e.g., after clearing storage), set first as active
+                this.activeIdentity = this.identities[0];
+                this.saveStateToStorage();
             }
 
-            // 2. Ensure JWT (Claim if missing/invalid)
-            // TODO: Add check for JWT validity/expiry here
-            if (!this.jwt) {
-                console.log("JWT missing or invalid, attempting admin claim...");
-                await this.performAdminClaim();
-            } else {
-                console.log("Using existing JWT.");
-                // Optional: Verify JWT against a /verify endpoint if one exists
-            }
-
-            // 3. Save identity and JWT if successful
-            this.saveIdentityToStorage();
-
-            // --- New App Registration/Update Flow ---
-            console.log(`Checking registration status for app: ${manifest.appId}`);
-            let needsUpsert = false;
-            let newGrants: Record<string, PermissionSetting> = {};
-
-            try {
-                // 4. Check Status
-                const statusBasePath = "/api/v1/apps/status";
-                const queryString = `?appId=${encodeURIComponent(this.manifest.appId)}`;
-                const statusEndpointWithQuery = statusBasePath + queryString;
-                const statusResponse = await this.fetchApi<{
-                    isRegistered: boolean;
-                    manifest?: AppManifest; // Manifest user last saw
-                    grants?: Record<string, PermissionSetting>; // Grants user last gave
-                }>(statusEndpointWithQuery, "GET", undefined, true); // Use GET, skip init check
-
-                const storedManifest = statusResponse.manifest;
-                const storedGrants = statusResponse.grants;
-
-                console.log("Status response:", statusResponse);
-
-                // 5. Compare Permissions & Determine Grants
-                const latestPermissions = new Set(manifest.permissions);
-                const storedPermissions = storedManifest ? new Set(storedManifest.permissions) : new Set<string>();
-
-                // Check if permissions lists are different or if no grants exist yet
-                let permissionsDiffer = latestPermissions.size !== storedPermissions.size || !manifest.permissions.every((p) => storedPermissions.has(p));
-                if (!storedGrants || Object.keys(storedGrants).length === 0) {
-                    console.log("No existing grants found, simulating initial consent.");
-                    permissionsDiffer = true; // Treat as different if no grants yet
-                }
-
-                if (permissionsDiffer) {
-                    console.log("Permissions differ or first time registration. Simulating consent based on latest manifest.");
-                    // Simulate consent based on the *latest* manifest
-                    manifest.permissions.forEach((perm) => {
-                        // Simple simulation: grant 'always' for read, 'ask' for others
-                        if (perm.startsWith("read:")) {
-                            newGrants[perm] = "always";
-                        } else {
-                            newGrants[perm] = "always"; // TODO "ask" should be the default for non-read permissions
-                        }
-                    });
-                    console.log("Simulated new grants:", newGrants);
-                    needsUpsert = true;
-                } else {
-                    console.log("Permissions match existing registration. Using stored grants.");
-                    newGrants = storedGrants!; // Use the existing grants
-                    this.grantedPermissions = newGrants; // Store locally
-                }
-
-                // 6. Call Upsert if needed
-                if (needsUpsert) {
-                    console.log(`Calling /upsert for app ${manifest.appId}`);
-                    const upsertPayload = {
-                        // Send the *latest* manifest details + new grants
-                        appId: manifest.appId,
-                        name: manifest.name,
-                        description: manifest.description,
-                        pictureUrl: manifest.pictureUrl,
-                        permissions: manifest.permissions, // Latest permissions
-                        grants: newGrants, // Newly simulated grants
-                    };
-                    await this.fetchApi<any>("/api/v1/apps/upsert", "POST", upsertPayload, true); // skip init check
-                    console.log("Upsert successful.");
-                    this.grantedPermissions = newGrants; // Store the newly set grants
-                }
-            } catch (error) {
-                console.error("Error during status check or upsert:", error);
-                // If status check fails (e.g., 404), we might still want to proceed with upsert as a first-time registration.
-                // Let's assume a failure here means we should try an initial upsert.
-                if (error instanceof Error && error.message.includes("404")) {
-                    // Check for 404 specifically if possible
-                    console.log("Status check failed (likely 404), proceeding with initial upsert.");
-                    // Simulate consent based on the *latest* manifest
-                    manifest.permissions.forEach((perm) => {
-                        if (perm.startsWith("read:")) {
-                            newGrants[perm] = "always";
-                        } else {
-                            newGrants[perm] = "always"; // TODO "ask" should be the default for non-read permissions
-                        }
-                    });
-                    console.log("Simulated initial grants:", newGrants);
-                    const upsertPayload = { ...manifest, grants: newGrants };
-                    try {
-                        await this.fetchApi<any>("/api/v1/apps/upsert", "POST", upsertPayload, true);
-                        console.log("Initial Upsert successful.");
-                        this.grantedPermissions = newGrants;
-                    } catch (upsertError) {
-                        console.error("Initial Upsert failed:", upsertError);
-                        throw new Error(`Failed initial app registration/upsert: ${upsertError instanceof Error ? upsertError.message : String(upsertError)}`);
-                    }
-                } else {
-                    // Rethrow other errors during status/upsert
-                    throw new Error(`Failed app status check or upsert: ${error instanceof Error ? error.message : String(error)}`);
+            // 2. Ensure active identity has JWT (claim if needed)
+            if (this.activeIdentity && !this.jwts[this.activeIdentity.did]) {
+                console.log(`JWT missing for active identity ${this.activeIdentity.did}, attempting claim...`);
+                // TODO: Implement claim flow - requires claim code input? For now, use admin claim.
+                try {
+                    await this.performAdminClaim(this.activeIdentity); // Pass identity for claim
+                    this.saveStateToStorage(); // Save JWT
+                } catch (claimError) {
+                    console.error("Claim failed during init:", claimError);
+                    // Proceed without JWT? Or throw? For now, log and continue.
                 }
             }
-            // --- End New Flow ---
 
-            // 7. Construct the account object
-            if (this.userDid) {
-                this.account = { userDid: this.userDid };
-                console.log("MockVibeAgent: Account object constructed:", this.account);
+            // 3. Handle Permissions (Check against manifest, potentially trigger consent)
+            const currentPermissions = await this.getCurrentPermissionsForOrigin();
+            const requiredPermissions = new Set(manifest.permissions);
+            const existingPermissions = new Set(Object.keys(currentPermissions));
+            const missingPermissions = manifest.permissions.filter((p) => !existingPermissions.has(p));
+            const extraPermissions = Object.keys(currentPermissions).filter((p) => !requiredPermissions.has(p)); // Permissions granted but no longer in manifest
+
+            // TODO: Handle 'extraPermissions' - maybe revoke them? Or leave them? For now, ignore.
+
+            if (missingPermissions.length > 0) {
+                console.log("New permissions requested by manifest:", missingPermissions);
+                // Trigger Consent UI
+                const consentRequest: ConsentRequest = {
+                    manifest,
+                    origin: this.currentOrigin,
+                    requestedPermissions: manifest.permissions, // Ask for all current ones
+                    existingPermissions: currentPermissions,
+                };
+                // In a real agent, this would trigger UI. Here we simulate or wait.
+                // For now, simulate auto-granting based on defaults.
+                const granted = await this.simulateConsent(consentRequest);
+                // Update local permissions based on consent result
+                await this.updatePermissionsForOrigin(granted);
             } else {
-                console.error("MockVibeAgent: userDid is null after identity check. Cannot construct account.");
-                this.account = null;
-                this.grantedPermissions = null; // Clear permissions if account fails
+                console.log("Manifest permissions match existing grants for this origin.");
             }
 
             this.isInitialized = true;
             console.log("MockVibeAgent: Initialization complete.");
-            return { account: this.account, permissions: this.grantedPermissions }; // Return combined object
+            return this.getCurrentStateForSdk();
         } catch (error) {
             console.error("MockVibeAgent: Initialization failed:", error);
-            this.isInitialized = false; // Ensure state reflects failure
-            this.account = null; // Clear account on failure
-            this.grantedPermissions = null; // Clear permissions on failure
-            this.clearIdentityFromStorage(); // Clear potentially partial/invalid state
-            return { account: null, permissions: null }; // Indicate failure
+            this.isInitialized = false;
+            this.activeIdentity = null; // Clear active identity on failure
+            // Don't clear all state, just indicate failure
+            return { account: null, permissions: null, activeIdentity: null, identities: this.identities };
         } finally {
             this.isInitializing = false;
         }
     }
 
-    private async performAdminClaim(): Promise<void> {
-        if (!this.userDid || !this.keyPair) {
-            throw new Error("Cannot perform claim without a valid DID and key pair.");
+    // Helper to get state formatted for SDK init/update
+    private async getCurrentStateForSdk(): Promise<{
+        account: Account | null;
+        permissions: Record<string, PermissionSetting> | null;
+        activeIdentity: Identity | null;
+        identities: Identity[];
+    }> {
+        const account = this.activeIdentity ? { userDid: this.activeIdentity.did } : null;
+        const permissions = this.activeIdentity ? this.permissions[this.activeIdentity.did]?.[this.currentOrigin] || {} : null;
+        return {
+            account,
+            permissions,
+            activeIdentity: this.activeIdentity,
+            identities: this.identities,
+        };
+    }
+
+    async getVibeState(): Promise<VibeState> {
+        const state = await this.getCurrentStateForSdk();
+        return {
+            account: state.account ?? undefined,
+            permissions: state.permissions ?? undefined,
+            activeIdentity: state.activeIdentity,
+            identities: state.identities,
+        };
+    }
+
+    // --- Identity Management ---
+
+    async createIdentity(label: string, pictureUrl?: string): Promise<Identity> {
+        console.log(`Creating new identity with label: ${label}`);
+        const keyPair = generateEd25519KeyPair();
+        const did = didFromEd25519(keyPair.publicKey);
+        const newIdentity: Identity = {
+            ...keyPair,
+            did,
+            label,
+            pictureUrl,
+        };
+        this.identities.push(newIdentity);
+        // If this is the first identity, make it active
+        if (!this.activeIdentity) {
+            this.activeIdentity = newIdentity;
+        }
+        this.saveStateToStorage();
+        console.log("New identity created:", newIdentity.did);
+        // TODO: Trigger state update to SDK/UI?
+        return newIdentity;
+    }
+
+    async setActiveIdentity(did: string): Promise<void> {
+        const identityToActivate = this.identities.find((id) => id.did === did);
+        if (!identityToActivate) {
+            throw new Error(`Identity with DID ${did} not found.`);
+        }
+        if (this.activeIdentity?.did === did) {
+            console.log(`Identity ${did} is already active.`);
+            return;
+        }
+        console.log(`Setting active identity to: ${did}`);
+        this.activeIdentity = identityToActivate;
+        this.saveStateToStorage();
+        // TODO: Trigger state update to SDK/UI?
+        // TODO: Ensure new active identity has JWT if needed?
+    }
+
+    async getIdentities(): Promise<Identity[]> {
+        return [...this.identities]; // Return a copy
+    }
+
+    async getActiveIdentity(): Promise<Identity | null> {
+        return this.activeIdentity ? { ...this.activeIdentity } : null; // Return a copy
+    }
+
+    // --- Permission Management ---
+
+    async getPermission(identityDid: string, origin: string, scope: string): Promise<PermissionSetting | null> {
+        return this.permissions[identityDid]?.[origin]?.[scope] || null;
+    }
+
+    async setPermission(identityDid: string, origin: string, scope: string, setting: PermissionSetting): Promise<void> {
+        if (!this.permissions[identityDid]) {
+            this.permissions[identityDid] = {};
+        }
+        if (!this.permissions[identityDid][origin]) {
+            this.permissions[identityDid][origin] = {};
+        }
+        console.log(`Setting permission for ${identityDid} / ${origin} / ${scope} -> ${setting}`);
+        this.permissions[identityDid][origin][scope] = setting;
+        this.saveStateToStorage();
+        // TODO: Trigger state update?
+    }
+
+    // Helper to get all permissions for the current active identity and origin
+    private async getCurrentPermissionsForOrigin(): Promise<Record<string, PermissionSetting>> {
+        if (!this.activeIdentity) return {};
+        return this.permissions[this.activeIdentity.did]?.[this.currentOrigin] || {};
+    }
+
+    // Helper to update permissions for the current active identity and origin
+    private async updatePermissionsForOrigin(newPermissions: Record<string, PermissionSetting>): Promise<void> {
+        if (!this.activeIdentity) return;
+        const did = this.activeIdentity.did;
+        if (!this.permissions[did]) {
+            this.permissions[did] = {};
+        }
+        this.permissions[did][this.currentOrigin] = {
+            ...(this.permissions[did][this.currentOrigin] || {}),
+            ...newPermissions,
+        };
+        this.saveStateToStorage();
+        // TODO: Trigger state update?
+    }
+
+    async getAllPermissionsForIdentity(identityDid: string): Promise<Record<string, Record<string, PermissionSetting>>> {
+        return this.permissions[identityDid] || {};
+    }
+
+    async revokeOriginPermissions(identityDid: string, origin: string): Promise<void> {
+        if (this.permissions[identityDid]?.[origin]) {
+            console.log(`Revoking all permissions for ${identityDid} at origin ${origin}`);
+            delete this.permissions[identityDid][origin];
+            this.saveStateToStorage();
+            // TODO: Trigger state update?
+        }
+    }
+
+    // --- UI Interaction Hooks (Called by SDK) ---
+
+    // Placeholder - needs integration with actual UI
+    async requestConsent(request: ConsentRequest): Promise<Record<string, PermissionSetting>> {
+        console.log("Agent: requestConsent called", request);
+        // In real agent, trigger UI modal here and wait for user response
+        // For mock, simulate auto-response or wait for a manual trigger
+        return new Promise((resolve) => {
+            // Simulate user interaction delay/modal display
+            setTimeout(() => {
+                console.log("Agent: Simulating consent grant based on defaults.");
+                const granted = this.simulateConsent(request);
+                resolve(granted);
+            }, 500); // Simulate delay
+        });
+    }
+
+    // Placeholder - needs integration with actual UI
+    async requestActionConfirmation(request: ActionRequest): Promise<ActionResponse> {
+        console.log("Agent: requestActionConfirmation called", request);
+        // In real agent, trigger UI modal here and wait for user response
+        return new Promise((resolve) => {
+            // Simulate user interaction delay/modal display
+            setTimeout(() => {
+                console.log("Agent: Simulating action confirmation (Allow, don't remember).");
+                resolve({ allowed: true, rememberChoice: false }); // Simulate allow, don't remember
+            }, 500); // Simulate delay
+        });
+    }
+
+    // --- Simulation Helpers ---
+
+    // Simulates the consent logic based on defaults (read=always, other=ask)
+    private simulateConsent(request: ConsentRequest): Record<string, PermissionSetting> {
+        const newGrants: Record<string, PermissionSetting> = {};
+        request.requestedPermissions.forEach((perm) => {
+            // Use existing grant if available, otherwise default
+            const existing = request.existingPermissions[perm];
+            if (existing) {
+                newGrants[perm] = existing;
+            } else if (perm.startsWith("read:")) {
+                newGrants[perm] = "always";
+            } else {
+                newGrants[perm] = "ask"; // Default others to ask
+            }
+        });
+        return newGrants;
+    }
+
+    // --- Authentication/Claim ---
+
+    // Updated to accept identity
+    private async performAdminClaim(identity: Identity): Promise<void> {
+        if (!identity) {
+            throw new Error("Cannot perform claim without a valid identity.");
         }
 
         const messageBytes = new TextEncoder().encode(ADMIN_CLAIM_CODE);
-        const signatureBytes = signEd25519(messageBytes, this.keyPair.privateKey);
+        const signatureBytes = signEd25519(messageBytes, identity.privateKey);
         const signatureBase64 = Buffer.from(signatureBytes).toString("base64");
 
         const url = `${VIBE_CLOUD_BASE_URL}/api/v1/admin/claim`;
-        console.log(`Attempting claim to ${url} with DID ${this.userDid}`);
+        console.log(`Attempting claim to ${url} with DID ${identity.did}`);
 
         try {
             const response = await fetch(url, {
@@ -441,7 +594,7 @@ export class MockVibeAgent implements VibeAgent {
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                    did: this.userDid,
+                    did: identity.did,
                     claimCode: ADMIN_CLAIM_CODE,
                     signature: signatureBase64,
                 }),
@@ -459,39 +612,60 @@ export class MockVibeAgent implements VibeAgent {
                 throw new Error("Admin claim successful, but token was not returned.");
             }
 
-            this.jwt = responseBody.token;
-            console.log("Admin claim successful, JWT obtained.");
+            this.jwts[identity.did] = responseBody.token; // Store JWT against DID
+            console.log(`Admin claim successful for ${identity.did}, JWT obtained.`);
         } catch (error) {
             console.error("Error during admin claim fetch:", error);
             throw error; // Re-throw network or parsing errors
         }
     }
 
-    // --- Obsolete Helper Methods ---
-    // private async registerApp(...) { ... } // Replaced by /upsert logic in init
-    // private async setAppGrants(...) { ... } // Replaced by /upsert logic in init
+    // Placeholder for claim flow using code
+    async claimIdentityWithCode(identityDid: string, claimCode: string): Promise<{ jwt: string }> {
+        console.warn("claimIdentityWithCode not fully implemented in mock agent.");
+        const identity = this.identities.find((id) => id.did === identityDid);
+        if (!identity) throw new Error("Identity not found for claim.");
+
+        // Simulate admin claim logic for now
+        await this.performAdminClaim(identity); // Reuses admin claim logic
+        this.saveStateToStorage();
+
+        const jwt = this.jwts[identityDid];
+        if (!jwt) throw new Error("Claim simulation failed to produce JWT.");
+        return { jwt };
+    }
+
+    // --- Core Data Methods (Need Permission Checks) ---
 
     private ensureInitialized(): void {
-        // Updated check: Ensure JWT is present, account and permissions might still be null during init
-        if (!this.isInitialized || !this.manifest || !this.userDid || !this.jwt) {
-            // Consider if check should be less strict during the init phase itself
-            throw new Error("MockVibeAgent not initialized or missing credentials. Call init() first.");
+        // Updated check: Ensure active identity and manifest are present
+        if (!this.isInitialized || !this.manifest || !this.activeIdentity) {
+            throw new Error("MockVibeAgent not initialized or missing active identity/manifest. Call init() first.");
         }
     }
 
-    // --- API Interaction Helper ---
+    // --- API Interaction Helper (Updated for Active Identity JWT) ---
     private async fetchApi<T>(endpoint: string, method: "GET" | "POST" | "PUT" | "DELETE" = "POST", body?: any, skipEnsureInitialized?: boolean): Promise<T> {
         if (!skipEnsureInitialized) {
-            this.ensureInitialized();
+            this.ensureInitialized(); // Ensures activeIdentity and manifest exist
         }
+
+        const activeJwt = this.activeIdentity ? this.jwts[this.activeIdentity.did] : null;
+        if (!activeJwt && !skipEnsureInitialized) {
+            // Allow skipping JWT check during init/claim itself
+            throw new Error(`No JWT found for active identity: ${this.activeIdentity?.did}`);
+        }
+
         const url = `${VIBE_CLOUD_BASE_URL}${endpoint}`;
         console.log(`Fetching API: ${method} ${url}`, body ? { body } : {});
 
         const headers: HeadersInit = {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${this.jwt}`,
-            "X-Vibe-App-ID": this.manifest!.appId, // ensureInitialized guarantees manifest is not null
+            "X-Vibe-App-ID": this.manifest!.appId, // Safe due to ensureInitialized
         };
+        if (activeJwt) {
+            headers["Authorization"] = `Bearer ${activeJwt}`;
+        }
 
         try {
             const response = await fetch(url, {
@@ -500,11 +674,8 @@ export class MockVibeAgent implements VibeAgent {
                 body: body ? JSON.stringify(body) : undefined,
             });
 
-            // Handle potential empty responses (e.g., 204 No Content)
             if (response.status === 204) {
                 console.log(`API Response ${response.status} (No Content) for ${method} ${url}`);
-                // Return an appropriate value for "No Content" - maybe null or an empty object/array?
-                // Adjust based on expected return type T. For now, returning null.
                 return null as T;
             }
 
@@ -512,7 +683,6 @@ export class MockVibeAgent implements VibeAgent {
 
             if (!response.ok) {
                 console.error(`API Error ${response.status}: ${method} ${url}`, responseBody);
-                // Attempt to extract a meaningful error message
                 const errorMessage = responseBody?.error?.details || responseBody?.error || responseBody?.message || `HTTP error ${response.status}`;
                 throw new Error(`API request failed: ${errorMessage}`);
             }
@@ -521,7 +691,6 @@ export class MockVibeAgent implements VibeAgent {
             return responseBody as T;
         } catch (error) {
             console.error(`Network or parsing error during API fetch: ${method} ${url}`, error);
-            // Re-throw network/parsing errors or wrap them
             if (error instanceof Error) {
                 throw new Error(`Network request failed: ${error.message}`);
             } else {
@@ -530,20 +699,16 @@ export class MockVibeAgent implements VibeAgent {
         }
     }
 
-    // --- Data Methods ---
+    // --- Data Methods (Placeholders - Need Permission Logic Integration) ---
 
     async readOnce<T>(params: ReadParams): Promise<ReadResult<T>> {
+        this.ensureInitialized(); // Basic check
         console.log("MockVibeAgent: readOnce calling API with params:", params);
-        // Map ReadParams to the /api/v1/data/read POST body structure
-        const apiPayload = {
-            collection: params.collection,
-            filter: params.filter || {}, // Ensure filter is at least an empty object
-        };
-        // The API returns the ReadResult structure directly { ok: boolean, data: T[] }
-        // However, our current API returns { docs: T[] }. Adapt accordingly.
+        // TODO: Integrate permission check + action confirmation hook call
+
+        const apiPayload = { collection: params.collection, filter: params.filter || {} };
         try {
             const result = await this.fetchApi<{ docs: T[] }>("/api/v1/data/read", "POST", apiPayload);
-            // Adapt the response shape if necessary
             return { ok: true, data: result.docs };
         } catch (error) {
             console.error("readOnce failed:", error);
@@ -552,99 +717,52 @@ export class MockVibeAgent implements VibeAgent {
     }
 
     async read<T>(params: ReadParams, callback: SubscriptionCallback<T>): Promise<Unsubscribe> {
-        this.ensureInitialized(); // Basic checks first
-        const { collection } = params; // Filter not used for WS subscription message
-
+        this.ensureInitialized();
+        const { collection } = params;
         console.log(`MockVibeAgent: read (subscription) requested for collection: ${collection}`);
+        // TODO: Integrate permission check + action confirmation hook call
+        // TODO: WebSocket logic needs updating for multi-identity JWTs if used
 
-        // 1. Ensure WebSocket connection is ready (or being established)
+        // --- Existing WebSocket logic (needs review/update) ---
         try {
-            await this.ensureWebSocketConnection();
+            await this.ensureWebSocketConnection(); // Needs JWT update potentially
         } catch (error) {
             console.error(`Failed to establish WebSocket connection for ${collection}:`, error);
             callback(error instanceof Error ? error : new Error("WebSocket connection failed"), null);
-            // Return a no-op unsubscribe function
             return async () => {};
         }
+        // ... (rest of WebSocket subscription logic - needs review) ...
+        // --- End Existing WebSocket logic ---
 
-        // 2. Perform initial readOnce via HTTP
-        console.log(`Performing initial readOnce for subscription '${collection}'...`);
-        try {
-            const initialResult = await this.readOnce<T>(params);
-            if (initialResult.ok) {
-                callback(null, initialResult.data); // Send initial data
-            } else {
-                // Still proceed with subscription even if initial read fails? Or fail here?
-                // Let's proceed but log the error.
-                console.error(`Initial readOnce failed for ${collection}: ${initialResult.error}`);
-                // Optionally call callback with error: callback(new Error(initialResult.error || "Initial read failed"), null);
-                // Send empty initial data if read fails?
-                callback(null, []);
-            }
-        } catch (error) {
-            console.error(`Error during initial readOnce for ${collection}:`, error);
-            // Proceed with subscription?
-            // Optionally call callback with error: callback(error instanceof Error ? error : new Error("Unknown error during initial fetch"), null);
-            callback(null, []);
-        }
-
-        // 3. Register subscription and send WS message (if WS is open, otherwise handled by pending)
-        if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
-            console.log(`WebSocket open, sending subscribe message for ${collection}`);
-            this.subscriptions.set(collection, callback);
-            this.sendWebSocketMessage({ action: "subscribe", collection });
-        } else {
-            console.log(`WebSocket not open yet, adding ${collection} to pending subscriptions`);
-            // Add to pending, ensureWebSocketConnection's onopen will handle it
-            this.pendingSubscriptions.set(collection, callback);
-        }
-
-        console.log(`MockVibeAgent: Subscription request processed for '${collection}'.`);
-
-        // 4. Return unsubscribe function
-        const unsubscribe = async () => {
-            console.log(`Unsubscribing from collection '${collection}'...`);
-            this.subscriptions.delete(collection);
-            this.pendingSubscriptions.delete(collection); // Remove if it was pending
-            // Send unsubscribe message over WebSocket
-            this.sendWebSocketMessage({ action: "unsubscribe", collection });
-            // Should we close the WS if no subscriptions remain? Maybe not for a mock agent.
+        // Placeholder unsubscribe
+        return async () => {
+            console.log(`Mock Unsubscribe called for ${collection}`);
         };
-        return unsubscribe;
     }
 
     async unsubscribe(unsubscribeFn: Unsubscribe): Promise<void> {
-        // The function returned by `read` *is* the unsubscribe function.
         console.log("MockVibeAgent: Calling unsubscribe function.");
-        // It now handles sending the WS message internally.
         await unsubscribeFn();
     }
 
     async write<T extends { _id?: string }>(params: WriteParams<T>): Promise<WriteResult> {
+        this.ensureInitialized();
         console.log("MockVibeAgent: write calling API with params:", params);
-        // Map WriteParams to the /api/v1/data/write POST body structure
-        const apiPayload = {
-            collection: params.collection,
-            data: params.data,
-        };
+        // TODO: Integrate permission check + action confirmation hook call
+
+        const apiPayload = { collection: params.collection, data: params.data };
         try {
-            // The API returns CouchDB-like response: { ok: boolean, id: string, rev: string }[] or single object
             const result = await this.fetchApi<any>("/api/v1/data/write", "POST", apiPayload);
-            // Adapt the response to WriteResult: { ok: boolean, ids: string[], errors?: any[] }
-            // This needs careful adaptation based on single vs bulk and potential 207 status
+            // Adapt response (same as before)
             if (Array.isArray(result)) {
-                // Bulk response
                 const ids = result.filter((r) => r.ok).map((r) => r.id);
                 const errors = result.filter((r) => !r.ok);
                 return { ok: errors.length === 0, ids, errors: errors.length > 0 ? errors : undefined };
             } else if (result && result.ok && result.id) {
-                // Single successful response
                 return { ok: true, ids: [result.id] };
             } else if (result && !result.ok) {
-                // Single error response
                 return { ok: false, ids: [], errors: [result] };
             } else {
-                // Unexpected response format
                 console.error("Unexpected write API response format:", result);
                 return { ok: false, ids: [], errors: [{ error: "unknown", reason: "Unexpected API response format" }] };
             }
@@ -653,8 +771,4 @@ export class MockVibeAgent implements VibeAgent {
             return { ok: false, ids: [], errors: [{ error: "network_or_parse", reason: error instanceof Error ? error.message : String(error) }] };
         }
     }
-
-    // --- Mock Specific Methods (if needed for testing) ---
-    // getCurrentState(): VibeState { ... } // No longer applicable as state is in the cloud
-    // simulateUpdate<T>(...) // No longer applicable
 }

@@ -11,8 +11,23 @@ export interface AppManifest {
     permissions: string[]; // Array of permission strings (e.g., "read:notes", "write:tasks")
 }
 
+import type { Ed25519KeyPair } from "../lib/identity";
+
+// --- Identity Management Types ---
+
+/**
+ * Represents a single user identity managed by the agent.
+ */
+export interface Identity extends Ed25519KeyPair {
+    did: string;
+    label: string;
+    pictureUrl?: string;
+    // Add other identity-specific details if needed
+}
+
 /**
  * Represents the user's account information provided by the Vibe Agent.
+ * Keeping this simple for now, focusing on the DID.
  */
 export interface Account {
     userDid: string; // The user's Decentralized Identifier
@@ -31,9 +46,44 @@ export type PermissionSetting = "always" | "ask" | "never";
  * Represents the overall state managed by the Vibe SDK.
  */
 export interface VibeState {
-    account?: Account; // Current user account, if authenticated/initialized
-    permissions?: Record<string, PermissionSetting>; // Permissions granted by the user for the app
+    account?: Account; // Current user account (based on active identity)
+    activeIdentity?: Identity | null; // The currently selected identity
+    identities?: Identity[]; // All available identities
+    permissions?: Record<string, PermissionSetting>; // Permissions granted for the active identity and current origin
     // Add other state properties like connection status, errors, etc.
+}
+
+// --- UI Interaction Types ---
+
+/**
+ * Details needed for the Consent Modal.
+ */
+export interface ConsentRequest {
+    manifest: AppManifest;
+    origin: string; // The origin requesting permission
+    requestedPermissions: string[]; // Specific permissions being requested now
+    existingPermissions: Record<string, PermissionSetting>; // Current settings for comparison
+}
+
+/**
+ * Details needed for the Action Prompt Modal.
+ */
+export interface ActionRequest {
+    actionType: "read" | "write";
+    origin: string;
+    collection: string;
+    filter?: any; // For read
+    data?: any | any[]; // For write
+    identity: Identity; // Identity performing the action
+    appInfo: { name: string; pictureUrl?: string }; // Requesting app info
+}
+
+/**
+ * Response from the Action Prompt Modal.
+ */
+export interface ActionResponse {
+    allowed: boolean;
+    rememberChoice?: boolean; // If true, update permission from 'ask' to 'always'/'never'
 }
 
 // --- Agent Interface & Related Types ---
@@ -93,10 +143,34 @@ export interface WriteResult {
  * This is implemented by MockVibeAgent or a real agent connection module.
  */
 export interface VibeAgent {
-    // init now returns account and the granted permissions map
-    init(manifest: AppManifest): Promise<{ account: Account | null; permissions: Record<string, PermissionSetting> | null }>;
+    // --- Initialization & State ---
+    init(
+        manifest: AppManifest
+    ): Promise<{ account: Account | null; permissions: Record<string, PermissionSetting> | null; activeIdentity: Identity | null; identities: Identity[] }>;
+    getVibeState(): Promise<VibeState>; // Method to get current agent state if needed
+
+    // --- Identity Management ---
+    createIdentity(label: string, pictureUrl?: string): Promise<Identity>;
+    setActiveIdentity(did: string): Promise<void>;
+    getIdentities(): Promise<Identity[]>;
+    getActiveIdentity(): Promise<Identity | null>;
+
+    // --- Permission Management ---
+    getPermission(identityDid: string, origin: string, scope: string): Promise<PermissionSetting | null>;
+    setPermission(identityDid: string, origin: string, scope: string, setting: PermissionSetting): Promise<void>;
+    getAllPermissionsForIdentity(identityDid: string): Promise<Record<string, Record<string, PermissionSetting>>>; // origin -> scope -> setting
+    revokeOriginPermissions(identityDid: string, origin: string): Promise<void>;
+
+    // --- UI Interaction Hooks (Called by SDK) ---
+    requestConsent(request: ConsentRequest): Promise<Record<string, PermissionSetting>>; // Returns the newly set permissions
+    requestActionConfirmation(request: ActionRequest): Promise<ActionResponse>;
+
+    // --- Data Operations (Called by SDK after permission checks/prompts) ---
     readOnce<T>(params: ReadParams): Promise<ReadResult<T>>;
     read<T>(params: ReadParams, callback: SubscriptionCallback<T>): Promise<Unsubscribe>;
-    unsubscribe(unsubscribeFn: Unsubscribe): Promise<void>; // Changed to accept the function itself
+    unsubscribe(unsubscribeFn: Unsubscribe): Promise<void>;
     write<T extends { _id?: string }>(params: WriteParams<T>): Promise<WriteResult>;
+
+    // --- Authentication/Claim ---
+    claimIdentityWithCode(identityDid: string, claimCode: string): Promise<{ jwt: string }>; // Returns JWT for the identity
 }
