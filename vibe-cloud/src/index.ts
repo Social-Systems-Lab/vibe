@@ -52,7 +52,7 @@ await dataService.connect();
 await dataService.ensureDatabaseExists(SYSTEM_DB);
 await blobService.initialize();
 const permissionService = new PermissionService(dataService);
-const authService = new AuthService(dataService, permissionService);
+const authService = new AuthService(dataService, permissionService, blobService); // Pass blobService here
 const realtimeService = new RealtimeService(dataService, permissionService);
 
 // --- Initial Admin Claim Code Bootstrap ---

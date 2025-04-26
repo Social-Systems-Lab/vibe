@@ -2,9 +2,19 @@
 import { DataService, dataService } from "./data.service";
 import { logger } from "../utils/logger";
 import { SYSTEM_DB } from "../utils/constants";
-import { CLAIM_CODES_COLLECTION, USERS_COLLECTION, type ClaimCode, type User } from "../models/models";
+import {
+    APPS_COLLECTION,
+    BLOBS_COLLECTION,
+    CLAIM_CODES_COLLECTION,
+    USERS_COLLECTION,
+    type App as AppModel,
+    type BlobMetadata,
+    type ClaimCode,
+    type User,
+} from "../models/models"; // Added APPS_COLLECTION, BLOBS_COLLECTION, AppModel, BlobMetadata
 import { InternalServerError, NotFoundError } from "elysia";
 import type { PermissionService } from "./permission.service";
+import type { BlobService } from "./blob.service"; // Import BlobService type
 import * as jose from "jose";
 import { randomUUIDv7 } from "bun";
 import { getUserDbName } from "../utils/identity.utils";
@@ -12,10 +22,13 @@ import { getUserDbName } from "../utils/identity.utils";
 export class AuthService {
     private dataService: DataService;
     private permissionService: PermissionService;
+    private blobService: BlobService; // Add blobService
 
-    constructor(dataService: DataService, permissionService: PermissionService) {
+    constructor(dataService: DataService, permissionService: PermissionService, blobService: BlobService) {
+        // Add blobService to constructor
         this.dataService = dataService;
         this.permissionService = permissionService;
+        this.blobService = blobService; // Store blobService
         logger.info("AuthService initialized.");
     }
 
@@ -62,11 +75,91 @@ export class AuthService {
             }
         }
 
-        // 3. TODO: Delete user-specific app registrations from SYSTEM_DB/apps collection?
-        // logger.info(`Cleanup of app registrations for user ${userDid} is not yet implemented.`);
+        // 3. Delete user's app registrations
+        try {
+            logger.debug(`Finding app registrations for user ${userDid} in ${SYSTEM_DB}...`);
+            const appQuery = { selector: { collection: APPS_COLLECTION, userDid: userDid } };
+            const appRegs = await this.dataService.findDocuments<AppModel>(SYSTEM_DB, appQuery);
 
-        // 4. TODO: Blob Cleanup (Requires querying BlobMetadata and calling blobService.deleteObject)
-        // logger.warn(`Blob cleanup for user ${userDid} is not yet implemented.`);
+            if (appRegs.docs && appRegs.docs.length > 0) {
+                logger.info(`Found ${appRegs.docs.length} app registrations for user ${userDid}. Deleting...`);
+                const bulkDeletePayload = appRegs.docs.map((doc) => ({
+                    _id: doc._id!,
+                    _rev: doc._rev!,
+                    _deleted: true,
+                }));
+                // Use db.bulk for efficient deletion
+                const db = await this.dataService.ensureDatabaseExists(SYSTEM_DB);
+                const bulkResult = await db.bulk({ docs: bulkDeletePayload });
+
+                const errors = bulkResult.filter((item) => !!item.error);
+                if (errors.length > 0) {
+                    logger.error(`Errors encountered during bulk deletion of app registrations for user ${userDid}:`, errors);
+                } else {
+                    logger.info(`Successfully deleted ${bulkDeletePayload.length} app registrations for user ${userDid}.`);
+                }
+            } else {
+                logger.info(`No app registrations found for user ${userDid}.`);
+            }
+        } catch (error: any) {
+            logger.error(`Error deleting app registrations for user ${userDid}:`, error.message || error);
+        }
+
+        // 4. Delete user's blobs (metadata and storage objects)
+        try {
+            logger.debug(`Finding blobs owned by user ${userDid} in ${SYSTEM_DB}...`);
+            const blobQuery = { selector: { collection: BLOBS_COLLECTION, ownerDid: userDid } };
+            const blobMetaDocs = await this.dataService.findDocuments<BlobMetadata>(SYSTEM_DB, blobQuery);
+
+            if (blobMetaDocs.docs && blobMetaDocs.docs.length > 0) {
+                logger.info(`Found ${blobMetaDocs.docs.length} blobs owned by user ${userDid}. Deleting objects and metadata...`);
+
+                const metaToDelete: any[] = [];
+                for (const meta of blobMetaDocs.docs) {
+                    if (!meta._id || !meta._rev) continue; // Skip invalid docs
+
+                    // Extract objectId (part after collection/)
+                    const objectId = meta._id.split("/")[1];
+                    if (!objectId) {
+                        logger.warn(`Could not extract objectId from blob metadata _id: ${meta._id}`);
+                        continue;
+                    }
+
+                    // Delete object from storage
+                    try {
+                        logger.debug(`Deleting blob object '${objectId}' from bucket '${meta.bucket}'...`);
+                        await this.blobService.deleteObject(objectId, meta.bucket);
+                        logger.debug(`Blob object '${objectId}' deleted successfully.`);
+                        // Only mark metadata for deletion if object deletion succeeded
+                        metaToDelete.push({ _id: meta._id, _rev: meta._rev, _deleted: true });
+                    } catch (objDeleteError: any) {
+                        logger.error(
+                            `Error deleting blob object '${objectId}' from storage (bucket: ${meta.bucket}) for user ${userDid}:`,
+                            objDeleteError.message || objDeleteError
+                        );
+                        // Decide if we should still delete metadata? Probably not.
+                    }
+                }
+
+                // Bulk delete metadata documents whose objects were successfully deleted
+                if (metaToDelete.length > 0) {
+                    logger.info(`Bulk deleting ${metaToDelete.length} blob metadata documents...`);
+                    const db = await this.dataService.ensureDatabaseExists(SYSTEM_DB);
+                    const bulkMetaResult = await db.bulk({ docs: metaToDelete });
+                    const metaErrors = bulkMetaResult.filter((item) => !!item.error);
+                    if (metaErrors.length > 0) {
+                        logger.error(`Errors encountered during bulk deletion of blob metadata for user ${userDid}:`, metaErrors);
+                    } else {
+                        logger.info(`Successfully deleted ${metaToDelete.length} blob metadata documents for user ${userDid}.`);
+                    }
+                }
+            } else {
+                logger.info(`No blobs found owned by user ${userDid}.`);
+            }
+        } catch (error: any) {
+            logger.error(`Error during blob cleanup for user ${userDid}:`, error.message || error);
+        }
+        logger.info(`User deletion process completed for userDid: ${userDid}`);
     }
 
     /**
@@ -197,6 +290,7 @@ export class AuthService {
         isAdmin: boolean = false,
         jwtExpiresIn: string = "1h"
     ): Promise<{ userDid: string; token: string; userRev: string }> {
+        // Removed permsRev from return type
         logger.warn(`Executing createTestUserAndToken helper. Use only in testing!`);
 
         const jwtSecret = process.env.JWT_SECRET;
@@ -251,6 +345,9 @@ export class AuthService {
             throw new InternalServerError(`[Test Helper] Failed to create database for test user ${testUserDid}.`);
         }
 
+        // 4. Grant Direct Permissions - This section is removed as direct permissions are no longer handled this way.
+        // The 'permsRev' variable is no longer relevant.
+
         // 5. Generate JWT
         let token: string;
         try {
@@ -271,7 +368,7 @@ export class AuthService {
             throw new InternalServerError(`[Test Helper] Failed to generate JWT for test user ${testUserDid}.`);
         }
 
-        // 6. Return results
+        // 6. Return results (without permsRev)
         return { userDid: testUserDid, token, userRev };
     }
 }

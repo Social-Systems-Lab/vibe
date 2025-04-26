@@ -1,8 +1,9 @@
 // tests/test-context.ts
 import { treaty } from "@elysiajs/eden";
-import { app, authService, permissionService, dataService, blobService, realtimeService } from "../src/index";
+import { app, authService, dataService, blobService, realtimeService } from "../src/index"; // Removed permissionService
 import { logger } from "../src/utils/logger";
 import type { App } from "../src/index"; // Import App type for treaty
+import type { AppManifest, PermissionSetting } from "../src/models/models"; // Import needed types
 import { randomUUIDv7 } from "bun";
 import { getUserDbName } from "../src/utils/identity.utils";
 
@@ -48,11 +49,37 @@ export async function createTestCtx(): Promise<{
 
         logger.debug(`Test user ${userDid} created, token obtained`);
 
-        // 2. Grant Permissions to the Test App for this User
+        // 2. Grant Permissions to the Test App for this User via /upsert
         const appPermissionsToGrant = [`read:test_items_${ts}`, `write:test_items_${ts}`];
-        logger.debug(`Granting app permissions [${appPermissionsToGrant.join(", ")}] to app '${testAppId}' for user '${userDid}'...`);
-        await permissionService.grantAppPermission(userDid, testAppId, appPermissionsToGrant);
-        logger.debug(`App permissions granted`);
+        // Simulate grants (e.g., 'always' for read, 'ask' for write)
+        const grantsToSet: Record<string, PermissionSetting> = {
+            [`read:test_items_${ts}`]: "always",
+            [`write:test_items_${ts}`]: "ask", // Or 'always' if tests require write without prompt simulation
+        };
+        // Define a minimal manifest for the upsert payload
+        const testAppManifest: AppManifest = {
+            appId: testAppId,
+            name: `Test App ${ts}`,
+            permissions: appPermissionsToGrant,
+            // description and pictureUrl are optional
+        };
+        logger.debug(`Upserting app registration and grants for app '${testAppId}', user '${userDid}'...`);
+        const upsertResponse = await api.api.v1.apps.upsert.post(
+            {
+                ...testAppManifest,
+                grants: grantsToSet,
+            },
+            { headers: { Authorization: `Bearer ${token}` } } // Pass the user's token
+        );
+
+        // Check if the response indicates an error (status not 200 or 201)
+        if (upsertResponse.status !== 200 && upsertResponse.status !== 201) {
+            // Type assertion for the error response data based on ErrorResponseSchema
+            const errorData = upsertResponse.data as { error?: string; details?: any };
+            logger.error("Failed to upsert app grants during test setup:", errorData);
+            throw new Error(`Failed to set initial app grants: ${errorData?.error || `Status ${upsertResponse.status}`}`);
+        }
+        logger.debug(`App registration/grants upserted successfully`);
     } catch (error) {
         logger.error("Error during test context setup:", error);
         // Attempt cleanup even if setup failed partially
@@ -97,4 +124,4 @@ export async function createTestCtx(): Promise<{
     return { ctx, cleanup };
 }
 
-export { authService, dataService, permissionService, blobService, realtimeService };
+export { authService, dataService, blobService, realtimeService }; // Removed permissionService

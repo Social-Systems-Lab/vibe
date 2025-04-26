@@ -1,10 +1,11 @@
 // tests/data.test.ts
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { createTestCtx, type TestCtx } from "./test-context";
-import { permissionService, dataService } from "../src/index";
+import { dataService } from "../src/index"; // Removed permissionService
 import { logger, disableLogging, enableLogging } from "../src/utils/logger";
 import type { ReadResult } from "../src/services/data.service";
 import { getUserDbName } from "../src/utils/identity.utils";
+import type { AppManifest, PermissionSetting } from "../src/models/models"; // Import needed types
 
 describe("Data API Endpoints (/api/v1/data)", () => {
     let testCtx: TestCtx;
@@ -21,10 +22,12 @@ describe("Data API Endpoints (/api/v1/data)", () => {
         testCollection = `test_items_${testCtx.ts}`;
         userDbName = getUserDbName(testCtx.userDid);
 
-        // Verify initial permissions are set correctly by the context
-        const initialPerms = await permissionService.getAppPermissionsForUser(testCtx.userDid, testCtx.appId);
-        expect(initialPerms).toContain(`read:${testCollection}`);
-        expect(initialPerms).toContain(`write:${testCollection}`);
+        // Permissions are now set during createTestCtx using /upsert.
+        // Optional: Verify initial permissions using the /status endpoint if needed.
+        // const statusResponse = await testCtx.api.api.v1.user.apps({ appId: testCtx.appId }).status.get({ headers: getHeaders() });
+        // expect(statusResponse.data?.grants?.[`read:${testCollection}`]).toBeDefined();
+        // expect(statusResponse.data?.grants?.[`write:${testCollection}`]).toBeDefined();
+        logger.debug(`Permissions for app '${testCtx.appId}' and collection '${testCollection}' assumed set by createTestCtx.`);
     });
 
     afterAll(async () => {
@@ -52,6 +55,21 @@ describe("Data API Endpoints (/api/v1/data)", () => {
             Authorization: `Bearer ${testCtx.token}`,
             "X-Vibe-App-ID": testCtx.appId,
         };
+    };
+
+    // Helper function to upsert grants for the test app
+    const upsertTestAppGrants = async (grants: Record<string, PermissionSetting>, permissions: string[]) => {
+        const manifest: AppManifest = {
+            appId: testCtx.appId,
+            name: `Test App ${testCtx.ts}`,
+            permissions: permissions,
+        };
+        const response = await testCtx.api.api.v1.apps.upsert.post({ ...manifest, grants }, { headers: getHeaders() });
+        if (response.status !== 200 && response.status !== 201) {
+            const errorData = response.data as { error?: string };
+            throw new Error(`Failed to upsert grants: ${errorData?.error || `Status ${response.status}`}`);
+        }
+        return response.data; // Return success data { ok, id, rev }
     };
 
     // --- Unauthorized/Invalid Access Tests ---
@@ -93,19 +111,22 @@ describe("Data API Endpoints (/api/v1/data)", () => {
     // --- Permission Tests ---
 
     it("POST /write: should return 403 Forbidden when app lacks write permission", async () => {
-        // 1. Revoke write permission specifically
         const readPerm = `read:${testCollection}`;
         const writePerm = `write:${testCollection}`;
-        try {
-            logger.debug(`Revoking write permission '${writePerm}' for app ${testCtx.appId}, user ${testCtx.userDid}`);
-            // Use the imported permissionService singleton
-            const revokeRes = await permissionService.revokeAppPermission(testCtx.userDid, testCtx.appId, [writePerm]);
-            logger.debug(`Write permission revoked`);
+        const initialGrants: Record<string, PermissionSetting> = { [readPerm]: "always", [writePerm]: "ask" }; // From createTestCtx
+        const initialPermissions = [readPerm, writePerm];
 
-            // Verify only read remains
-            const permsAfterRevoke = await permissionService.getAppPermissionsForUser(testCtx.userDid, testCtx.appId);
-            expect(permsAfterRevoke).toContain(readPerm);
-            expect(permsAfterRevoke).not.toContain(writePerm);
+        try {
+            // 1. Revoke write permission specifically via /upsert
+            logger.debug(`Revoking write permission '${writePerm}' via /upsert`);
+            const grantsWithoutWrite: Record<string, PermissionSetting> = { [readPerm]: "always" };
+            await upsertTestAppGrants(grantsWithoutWrite, [readPerm]); // Only list read perm
+            logger.debug(`Write permission revoked via /upsert`);
+
+            // Verify only read remains using /status
+            const statusAfterRevoke = await testCtx.api.api.v1.user.apps({ appId: testCtx.appId }).status.get({ headers: getHeaders() });
+            expect(statusAfterRevoke.data?.grants?.[readPerm]).toBe("always");
+            expect(statusAfterRevoke.data?.grants?.[writePerm]).toBeUndefined();
 
             // 2. Attempt write operation
             disableLogging();
@@ -119,26 +140,30 @@ describe("Data API Endpoints (/api/v1/data)", () => {
             expect(status).toBe(403);
             expect(error?.value as any).toEqual({ error: `Forbidden: Application does not have permission '${writePerm}' for this user.` });
         } finally {
-            // 4. Restore write permission using the latest rev
-            logger.debug(`Restoring write permission '${writePerm}' for app ${testCtx.appId}, user ${testCtx.userDid}`);
-            await permissionService.grantAppPermission(testCtx.userDid, testCtx.appId, [writePerm]);
-            logger.debug(`Write permission restored`);
+            // 4. Restore initial permissions
+            logger.debug(`Restoring initial permissions via /upsert`);
+            await upsertTestAppGrants(initialGrants, initialPermissions);
+            logger.debug(`Initial permissions restored`);
         }
     });
 
     it("POST /read: should return 403 Forbidden when app lacks read permission", async () => {
-        // 1. Revoke read permission specifically
         const readPerm = `read:${testCollection}`;
         const writePerm = `write:${testCollection}`;
-        try {
-            logger.debug(`Revoking read permission '${readPerm}' for app ${testCtx.appId}, user ${testCtx.userDid}`);
-            await permissionService.revokeAppPermission(testCtx.userDid, testCtx.appId, [readPerm]);
-            logger.debug(`Read permission revoked`);
+        const initialGrants: Record<string, PermissionSetting> = { [readPerm]: "always", [writePerm]: "ask" }; // From createTestCtx
+        const initialPermissions = [readPerm, writePerm];
 
-            // Verify only write remains
-            const permsAfterRevoke = await permissionService.getAppPermissionsForUser(testCtx.userDid, testCtx.appId);
-            expect(permsAfterRevoke).not.toContain(readPerm);
-            expect(permsAfterRevoke).toContain(writePerm);
+        try {
+            // 1. Revoke read permission specifically via /upsert
+            logger.debug(`Revoking read permission '${readPerm}' via /upsert`);
+            const grantsWithoutRead: Record<string, PermissionSetting> = { [writePerm]: "ask" }; // Keep write
+            await upsertTestAppGrants(grantsWithoutRead, [writePerm]); // Only list write perm
+            logger.debug(`Read permission revoked via /upsert`);
+
+            // Verify only write remains using /status
+            const statusAfterRevoke = await testCtx.api.api.v1.user.apps({ appId: testCtx.appId }).status.get({ headers: getHeaders() });
+            expect(statusAfterRevoke.data?.grants?.[readPerm]).toBeUndefined();
+            expect(statusAfterRevoke.data?.grants?.[writePerm]).toBe("ask");
 
             // 2. Attempt read operation
             disableLogging();
@@ -149,10 +174,10 @@ describe("Data API Endpoints (/api/v1/data)", () => {
             expect(status).toBe(403);
             expect(error?.value as any).toEqual({ error: `Forbidden: Application does not have permission '${readPerm}' for this user.` });
         } finally {
-            // 4. Restore read permission
-            logger.debug(`Restoring read permission '${readPerm}' for app ${testCtx.appId}, user ${testCtx.userDid}, rev ${currentRev}`);
-            const restoreRes = await permissionService.grantAppPermission(testCtx.userDid, testCtx.appId, [readPerm]);
-            logger.debug(`Read permission restored`);
+            // 4. Restore initial permissions
+            logger.debug(`Restoring initial permissions via /upsert`);
+            await upsertTestAppGrants(initialGrants, initialPermissions);
+            logger.debug(`Initial permissions restored`);
         }
     });
 

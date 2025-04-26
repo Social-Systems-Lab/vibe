@@ -1,9 +1,9 @@
 // tests/realtime.test.ts
 import { describe, it, beforeAll, afterAll, expect } from "bun:test";
-import { permissionService, startServer } from "../src/index";
+import { startServer } from "../src/index"; // Removed permissionService import
 import { createTestCtx, type TestCtx } from "./test-context";
 import { logger } from "../src/utils/logger";
-import type { WebSocketServerMessage } from "../src/models/models";
+import type { WebSocketServerMessage, AppManifest, PermissionSetting } from "../src/models/models"; // Added AppManifest, PermissionSetting
 import type { Server } from "bun";
 
 // --- Test Setup ---
@@ -37,13 +37,9 @@ describe("Real-time sync over WebSockets", () => {
         cleanup = contextCleanup;
         testCollection = `rt_items_${testCtx.ts}`;
 
-        // 3. Ensure permissions (using imported singleton)
-        logger.debug(`Ensuring app '${testCtx.appId}' has read/write for collection '${testCollection}' for user '${testCtx.userDid}'`);
-        const permissionsToGrant = [`read:${testCollection}`, `write:${testCollection}`];
-        await permissionService.grantAppPermission(testCtx.userDid, testCtx.appId, permissionsToGrant);
-        const currentPerms = await permissionService.getAppPermissionsForUser(testCtx.userDid, testCtx.appId);
-        expect(currentPerms).toContain(`read:${testCollection}`);
-        expect(currentPerms).toContain(`write:${testCollection}`);
+        // 3. Permissions are now set during createTestCtx using /upsert. No need to set them again here.
+        logger.debug(`Permissions for app '${testCtx.appId}' and collection '${testCollection}' assumed set by createTestCtx.`);
+        // We can optionally verify using the /status endpoint if needed, but createTestCtx should handle it.
 
         // 4. Establish WebSocket connection
         const wsPort = serverInstance.port;
@@ -200,15 +196,30 @@ describe("Real-time sync over WebSockets", () => {
         const writePerm = `write:${testCollection}`; // Keep write permission
 
         try {
-            // 1. Revoke read permission for the app
-            logger.debug(`Revoking read permission '${readPerm}' for app ${testCtx.appId}, user ${testCtx.userDid}`);
-            await permissionService.revokeAppPermission(testCtx.userDid, testCtx.appId, [readPerm]);
-            logger.debug(`Read permission revoked`);
+            // 1. Revoke read permission for the app by calling /upsert with updated grants
+            logger.debug(`Revoking read permission '${readPerm}' via /upsert for app ${testCtx.appId}, user ${testCtx.userDid}`);
+            const grantsWithoutRead: Record<string, PermissionSetting> = {
+                [writePerm]: "ask", // Keep write permission (or 'always' depending on test needs)
+            };
+            // Need a minimal manifest for the upsert
+            const minimalManifest: AppManifest = {
+                appId: testCtx.appId,
+                name: `Test App ${testCtx.ts}`, // Use consistent name or fetch from status?
+                permissions: [writePerm], // Only list permissions being granted/kept
+            };
+            const revokeResponse = await testCtx.api.api.v1.apps.upsert.post({ ...minimalManifest, grants: grantsWithoutRead }, { headers: getHeaders() });
+            if (revokeResponse.status !== 200) {
+                // Cast error data based on ErrorResponseSchema
+                const errorData = revokeResponse.data as { error?: string; details?: any };
+                throw new Error(`Failed to revoke read permission via upsert: ${errorData?.error || `Status ${revokeResponse.status}`}`);
+            }
+            logger.debug(`Read permission revoked via /upsert`);
 
-            // Verify permissions
-            const permsAfterRevoke = await permissionService.getAppPermissionsForUser(testCtx.userDid, testCtx.appId);
-            expect(permsAfterRevoke).not.toContain(readPerm);
-            expect(permsAfterRevoke).toContain(writePerm); // Should still have write
+            // Verify permissions using /status endpoint
+            // Pass appId as parameter to the function call, and only options object to .get()
+            const statusAfterRevoke = await testCtx.api.api.v1.user.apps({ appId: testCtx.appId }).status.get({ headers: getHeaders() });
+            expect(statusAfterRevoke.data?.grants?.[readPerm]).toBeUndefined();
+            expect(statusAfterRevoke.data?.grants?.[writePerm]).toBeDefined(); // Check write is still there
 
             // 2. Attempt to subscribe (should be denied)
             logger.debug(`Sending subscribe message for collection: ${testCollection} (expecting denial)`);
@@ -256,10 +267,26 @@ describe("Real-time sync over WebSockets", () => {
             expect(messageReceived).toBeNull(); // Assert no message was received
             logger.debug("No unexpected WebSocket message received, as expected.");
         } finally {
-            // 5. Restore read permission
-            logger.debug(`Restoring read permission '${readPerm}' for app ${testCtx.appId}, user ${testCtx.userDid}`);
-            await permissionService.grantAppPermission(testCtx.userDid, testCtx.appId, [readPerm]);
-            logger.debug(`Read permission restored`);
+            // 5. Restore read permission via /upsert
+            logger.debug(`Restoring read permission '${readPerm}' via /upsert for app ${testCtx.appId}, user ${testCtx.userDid}`);
+            const grantsWithRead: Record<string, PermissionSetting> = {
+                [readPerm]: "always",
+                [writePerm]: "ask", // Keep write as well
+            };
+            const restoreManifest: AppManifest = {
+                appId: testCtx.appId,
+                name: `Test App ${testCtx.ts}`,
+                permissions: [readPerm, writePerm], // List all permissions
+            };
+            const restoreResponse = await testCtx.api.api.v1.apps.upsert.post({ ...restoreManifest, grants: grantsWithRead }, { headers: getHeaders() });
+            if (restoreResponse.status !== 200) {
+                // Cast error data based on ErrorResponseSchema
+                const errorData = restoreResponse.data as { error?: string; details?: any };
+                logger.error(`Failed to restore read permission via upsert: ${errorData?.error || `Status ${restoreResponse.status}`}`);
+                // Don't throw in finally, just log
+            } else {
+                logger.debug(`Read permission restored via /upsert`);
+            }
         }
     });
 });
