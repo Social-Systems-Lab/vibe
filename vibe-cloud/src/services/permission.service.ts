@@ -1,6 +1,6 @@
 // permission.service.ts
 import { logger } from "../utils/logger";
-import { BLOBS_COLLECTION, PERMISSIONS_COLLECTION, type Permission, type PermissionUpdateResponse } from "../models/models";
+import { BLOBS_COLLECTION, PERMISSIONS_COLLECTION, type Permission, type PermissionUpdateResponse, type PermissionSetting } from "../models/models"; // Added PermissionSetting
 import { SYSTEM_DB } from "../utils/constants";
 import type { DataService } from "./data.service";
 import { InternalServerError, NotFoundError } from "elysia";
@@ -49,11 +49,31 @@ export class PermissionService {
 
     /**
      * Retrieves the permissions granted by a user to a specific application.
+     * NOTE: This returns the permission *strings* granted, not the setting (always/ask/never).
+     * The structure in models.ts (AppGrantSchema) needs adjustment if we store settings.
      */
     async getAppPermissionsForUser(userDid: string, appId: string): Promise<string[]> {
         if (!appId) return [];
         const doc = await this._getPermissionDoc(userDid);
-        return doc?.appGrants?.[appId] || [];
+        // TODO: Adjust this if AppGrantSchema stores settings map instead of string array
+        const grants = doc?.appGrants?.[appId];
+        if (Array.isArray(grants)) {
+            return grants; // Assuming it's still string[] based on original code
+        } else if (typeof grants === "object" && grants !== null) {
+            // If it's an object { perm: setting }, return the keys (permissions)
+            return Object.keys(grants);
+        }
+        return [];
+    }
+
+    /**
+     * Retrieves the permission setting (always/ask/never) for a specific app and permission string.
+     */
+    async getAppPermissionSetting(userDid: string, appId: string, permission: string): Promise<string | null> {
+        if (!userDid || !appId || !permission) return null;
+        const doc = await this._getPermissionDoc(userDid);
+        // Assumes appGrants stores { [appId]: { [permission]: setting } }
+        return doc?.appGrants?.[appId]?.[permission] || null;
     }
 
     /**
@@ -73,6 +93,8 @@ export class PermissionService {
             directPermissions: permissions, // Overwrite direct permissions
             appGrants: currentDoc?.appGrants || {}, // Preserve existing app grants
         };
+        // Ensure _id is set even for new docs before potential update call
+        if (!newDocState._id) newDocState._id = `${PERMISSIONS_COLLECTION}/${userDid}`;
         if (docRev) newDocState._rev = docRev;
 
         try {
@@ -81,8 +103,8 @@ export class PermissionService {
                 // Update existing document
                 response = await this.dataService.updateDocument(
                     SYSTEM_DB,
-                    PERMISSIONS_COLLECTION,
-                    `${PERMISSIONS_COLLECTION}/${userDid}`,
+                    PERMISSIONS_COLLECTION, // Collection name needed for update
+                    newDocState._id, // Use the full doc ID
                     docRev,
                     newDocState
                 );
@@ -99,31 +121,60 @@ export class PermissionService {
 
     /**
      * Grants specific permissions to an application for a user. Adds to existing grants.
+     * DEPRECATED in favor of setAppGrants which handles settings (always/ask/never).
      */
-    async grantAppPermission(userDid: string, appId: string, permissionsToGrant: string[]): Promise<PermissionUpdateResponse> {
-        if (!userDid || !appId || !permissionsToGrant || permissionsToGrant.length === 0) {
-            throw new Error("userDid, appId, and permissionsToGrant are required.");
+    // async grantAppPermission(userDid: string, appId: string, permissionsToGrant: string[]): Promise<PermissionUpdateResponse> {
+    // ... (original logic assuming string[] grants) ...
+    // }
+
+    /**
+     * Sets the entire grant map (permission -> setting) for a specific app and user.
+     * Overwrites any existing grants for that app.
+     */
+    // Correct the type of the 'grants' parameter
+    async setAppGrants(userDid: string, appId: string, grants: Record<string, PermissionSetting>): Promise<PermissionUpdateResponse> {
+        if (!userDid || !appId || !grants) {
+            throw new Error("userDid, appId, and grants object are required.");
         }
 
         const currentDoc = await this._getPermissionDoc(userDid);
         const docRev = currentDoc?._rev;
 
-        const currentGrants = currentDoc?.appGrants?.[appId] || [];
-        // Use Set to merge and deduplicate permissions
-        const newGrantSet = new Set([...currentGrants, ...permissionsToGrant]);
-        const updatedAppGrants = {
-            ...(currentDoc?.appGrants || {}),
-            [appId]: Array.from(newGrantSet), // Update grants for this specific app
+        // Get current app grants map or initialize if it doesn't exist
+        // Ensure the type matches AppGrantSchema
+        const currentAppGrantsMap: Record<string, Record<string, PermissionSetting>> = currentDoc?.appGrants || {};
+
+        // Update the grants for the specific app
+        const updatedAppGrantsMap: Record<string, Record<string, PermissionSetting>> = {
+            ...currentAppGrantsMap,
+            [appId]: grants, // Assign the new grants map for this appId
         };
 
+        // Construct the new state ensuring type safety
         const newDocState: Permission = {
-            ...(currentDoc || {}),
-            _id: `${PERMISSIONS_COLLECTION}/${userDid}`,
+            // Use spread carefully, ensure required fields are present
+            _id: currentDoc?._id || `${PERMISSIONS_COLLECTION}/${userDid}`,
+            _rev: docRev, // Will be undefined if currentDoc is null
             userDid: userDid,
             collection: PERMISSIONS_COLLECTION,
-            appGrants: updatedAppGrants, // Set the updated grants map
-            directPermissions: currentDoc?.directPermissions || [], // Preserve direct permissions
+            appGrants: updatedAppGrantsMap,
+            directPermissions: currentDoc?.directPermissions || [],
         };
+        // Remove _rev if it's undefined (for create operation)
+        if (!newDocState._rev) {
+            delete newDocState._rev;
+        }
+
+        // Ensure _id is always set
+        if (!newDocState._id) {
+            newDocState._id = `${PERMISSIONS_COLLECTION}/${userDid}`;
+        }
+
+        // Ensure collection is always set
+        newDocState.collection = PERMISSIONS_COLLECTION;
+
+        // Ensure _id is set even for new docs before potential update call - Redundant check removed
+        if (!newDocState._id) newDocState._id = `${PERMISSIONS_COLLECTION}/${userDid}`;
         if (docRev) newDocState._rev = docRev;
 
         try {
@@ -131,75 +182,28 @@ export class PermissionService {
             if (docRev) {
                 response = await this.dataService.updateDocument(
                     SYSTEM_DB,
-                    PERMISSIONS_COLLECTION,
-                    `${PERMISSIONS_COLLECTION}/${userDid}`,
+                    PERMISSIONS_COLLECTION, // Collection name needed for update
+                    newDocState._id, // Use the full doc ID
                     docRev,
                     newDocState
                 );
             } else {
                 response = await this.dataService.createDocument(SYSTEM_DB, PERMISSIONS_COLLECTION, newDocState);
             }
-            logger.info(`Permissions granted for app '${appId}' for user '${userDid}' (new rev: ${response.rev})`);
+            logger.info(`Grants set for app '${appId}' for user '${userDid}' (new rev: ${response.rev})`);
             return response;
         } catch (error: any) {
-            this._handleWriteError(error, `grant permissions to app '${appId}' for user '${userDid}'`);
+            this._handleWriteError(error, `set grants for app '${appId}' for user '${userDid}'`);
         }
     }
 
     /**
      * Revokes specific permissions from an application for a user.
+     * DEPRECATED in favor of setAppGrants.
      */
-    async revokeAppPermission(userDid: string, appId: string, permissionsToRemove: string[]): Promise<PermissionUpdateResponse> {
-        if (!userDid || !appId || !permissionsToRemove || permissionsToRemove.length === 0) {
-            throw new Error("userDid, appId, and permissionsToRemove are required.");
-        }
-        const currentDoc = await this._getPermissionDoc(userDid);
-        if (!currentDoc) {
-            logger.warn(`Cannot revoke permissions for app '${appId}' for user '${userDid}': User permission document not found.`);
-            // Or throw? For now, just return as if successful (idempotent)
-            return { ok: true, id: userDid, rev: "" }; // Mock response
-        }
-        const docRev = currentDoc._rev;
-
-        const currentGrants = currentDoc.appGrants?.[appId] || [];
-        if (currentGrants.length === 0) {
-            logger.debug(`No permissions found for app '${appId}' for user '${userDid}'. Nothing to revoke.`);
-            return { ok: true, id: userDid, rev: docRev }; // Return current state
-        }
-
-        // Filter out the permissions to remove
-        const permissionsToRemoveSet = new Set(permissionsToRemove);
-        const remainingGrants = currentGrants.filter((p) => !permissionsToRemoveSet.has(p));
-
-        const updatedAppGrants = { ...currentDoc.appGrants };
-        if (remainingGrants.length > 0) {
-            updatedAppGrants[appId] = remainingGrants;
-        } else {
-            // If no permissions left for this app, remove the app entry entirely
-            delete updatedAppGrants[appId];
-        }
-
-        const newDocState: Permission = {
-            ...currentDoc, // Start with existing doc
-            appGrants: updatedAppGrants, // Set the updated grants map
-        };
-        // _id, _rev, userDid, collection, directPermissions are already in currentDoc
-
-        try {
-            // Always an update here since currentDoc exists
-            const response = await this.dataService.updateDocument(
-                SYSTEM_DB,
-                PERMISSIONS_COLLECTION,
-                `${PERMISSIONS_COLLECTION}/${userDid}`,
-                docRev,
-                newDocState
-            );
-            logger.info(`Permissions revoked for app '${appId}' for user '${userDid}' (new rev: ${response.rev})`);
-            return response;
-        } catch (error: any) {
-            this._handleWriteError(error, `revoke permissions from app '${appId}' for user '${userDid}'`);
-        }
-    }
+    // async revokeAppPermission(userDid: string, appId: string, permissionsToRemove: string[]): Promise<PermissionUpdateResponse> {
+    // ... (original logic assuming string[] grants) ...
+    // }
 
     /**
      * Revokes all permissions for a specific application for a user.
@@ -218,12 +222,13 @@ export class PermissionService {
         delete updatedAppGrants[appId]; // Remove the app entry
 
         const newDocState: Permission = { ...currentDoc, appGrants: updatedAppGrants };
+        // _id, _rev, userDid, collection, directPermissions are already in currentDoc
 
         try {
             const response = await this.dataService.updateDocument(
                 SYSTEM_DB,
-                PERMISSIONS_COLLECTION,
-                `${PERMISSIONS_COLLECTION}/${userDid}`,
+                PERMISSIONS_COLLECTION, // Collection name needed for update
+                newDocState._id!, // Use the full doc ID (non-null asserted as currentDoc exists)
                 docRev,
                 newDocState
             );
@@ -235,16 +240,19 @@ export class PermissionService {
     }
 
     /**
-     * Checks if an application has the required permission FOR a specific user.
+     * Checks if an application has the required permission FOR a specific user,
+     * considering the grant setting (always/ask/never).
      */
     async canAppActForUser(userDid: string, appId: string, requiredPermission: string): Promise<boolean> {
         if (!userDid || !appId || !requiredPermission) return false;
         try {
-            const grantedPermissions = await this.getAppPermissionsForUser(userDid, appId);
-            // TODO: Implement wildcard/scope matching logic if needed (e.g., "write:notes" implies "write:*")
-            const hasPermission = grantedPermissions.includes(requiredPermission);
+            const setting = await this.getAppPermissionSetting(userDid, appId, requiredPermission);
+            // Treat 'ask' as denied for backend checks, agent handles prompt
+            const hasPermission = setting === "always";
             logger.debug(
-                `App Permission check for user '${userDid}', app '${appId}', required '${requiredPermission}': ${hasPermission ? "GRANTED" : "DENIED"}`
+                `App Permission check for user '${userDid}', app '${appId}', required '${requiredPermission}': Setting='${setting}', Result=${
+                    hasPermission ? "GRANTED" : "DENIED"
+                }`
             );
             return hasPermission;
         } catch (error) {
@@ -263,6 +271,7 @@ export class PermissionService {
         if (!userDid || !requiredPermission) return false;
         try {
             const directPermissions = await this.getUserDirectPermissions(userDid);
+            // TODO: Implement wildcard/scope matching logic if needed
             const hasPermission = directPermissions.includes(requiredPermission);
             logger.debug(`Direct Permission check for user '${userDid}', required '${requiredPermission}': ${hasPermission ? "GRANTED" : "DENIED"}`);
             return hasPermission;
@@ -287,7 +296,7 @@ export class PermissionService {
                 logger.warn(`Permission document for userDid '${userDid}' not found during deletion.`);
                 return; // Nothing to delete
             }
-            await this.dataService.deleteDocument(SYSTEM_DB, `${PERMISSIONS_COLLECTION}/${userDid}`, permDoc._rev);
+            await this.dataService.deleteDocument(SYSTEM_DB, permDoc._id, permDoc._rev); // Use full _id from fetched doc
             logger.info(`Successfully deleted permission document for userDid '${userDid}'.`);
         } catch (error: any) {
             // Catch specific errors from dataService if needed (e.g., conflict)
@@ -298,7 +307,8 @@ export class PermissionService {
 
     /** Centralized error handling for write operations */
     private _handleWriteError(error: any, context: string): never {
-        if (error.message?.includes("Conflict")) {
+        if (error.message?.includes("Conflict") || error.statusCode === 409) {
+            // Check status code too
             logger.warn(`Conflict (409) during ${context}.`);
             // Throw a standard error message for the API handler
             throw new Error(`Conflict during permission update (${context}). Please retry with latest revision.`);

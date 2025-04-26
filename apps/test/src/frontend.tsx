@@ -22,13 +22,12 @@ const testAppManifest: AppManifest = {
 
 const elem = document.getElementById("root")!;
 const app = (
-    <StrictMode>
-        <VibeProvider manifest={testAppManifest}>
-            {" "}
-            {/* Wrap App with VibeProvider */}
-            <App />
-        </VibeProvider>
-    </StrictMode>
+    // <StrictMode>
+    <VibeProvider manifest={testAppManifest}>
+        {/* Wrap App with VibeProvider */}
+        <App />
+    </VibeProvider>
+    // </StrictMode>
 );
 
 if (import.meta.hot) {

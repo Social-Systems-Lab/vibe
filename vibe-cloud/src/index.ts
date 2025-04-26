@@ -26,10 +26,12 @@ import {
     type BlobMetadata,
     type ClaimCode,
     type WebSocketAuthContext,
-    AppManifestSchema, // Import new schemas
+    AppManifestSchema,
     AppRegistrationResponseSchema,
     APPS_COLLECTION,
-    type App as AppModel, // Rename imported App type
+    type App as AppModel,
+    SetAppGrantsPayloadSchema, // Import new schema
+    type PermissionSetting, // Import type
 } from "./models/models";
 import { SYSTEM_DB } from "./utils/constants";
 import { AuthService } from "./services/auth.service";
@@ -586,6 +588,59 @@ export const app = new Elysia()
                     body: AppManifestSchema,
                     response: { 201: AppRegistrationResponseSchema, 409: ErrorResponseSchema },
                     detail: { summary: "Register an application manifest." },
+                }
+            )
+    )
+    // --- Protected Permissions Routes ---
+    .group("/api/v1/permissions", (group) =>
+        group
+            // Derive JWT user context
+            .derive(async ({ jwt, request: { headers } }) => {
+                const authHeader = headers.get("authorization");
+                if (!authHeader || !authHeader.startsWith("Bearer ")) return { user: null };
+                const token = authHeader.substring(7);
+                try {
+                    const payload = await jwt.verify(token);
+                    return { user: payload as { userDid: string } };
+                } catch (error) {
+                    return { user: null };
+                }
+            })
+            // Middleware: Check User JWT exists
+            .onBeforeHandle(({ user, set }) => {
+                if (!user) {
+                    set.status = 401;
+                    return { error: "Unauthorized: Invalid or missing user token." };
+                }
+            })
+            // POST /api/v1/permissions/grants - Set grants for a specific app
+            .post(
+                "/grants",
+                async ({ permissionService, user, body, set }) => {
+                    if (!user) throw new InternalServerError("User context missing after auth check.");
+                    const { userDid } = user;
+                    const { appId, grants } = body; // Body validated against SetAppGrantsPayloadSchema
+
+                    logger.info(`Setting grants for app '${appId}' for user '${userDid}'`);
+
+                    try {
+                        // Use the permission service to set the grants
+                        // The service handles creating/updating the user's permission doc
+                        const result = await permissionService.setAppGrants(userDid, appId, grants as Record<string, PermissionSetting>); // Cast grants
+
+                        logger.info(`Successfully set grants for app '${appId}' for user '${userDid}'. Rev: ${result.rev}`);
+                        set.status = 200; // OK
+                        return { ok: true, id: result.id, rev: result.rev }; // Return CouchDB-like success response
+                    } catch (error: any) {
+                        // Let the centralized error handler deal with conflicts or other errors
+                        logger.error(`Error setting grants for app '${appId}' for user '${userDid}':`, error);
+                        throw error; // Re-throw for central handling
+                    }
+                },
+                {
+                    body: SetAppGrantsPayloadSchema,
+                    // Define response schema if needed, e.g., { 200: t.Object({ ok: t.Boolean(), id: t.String(), rev: t.String() }) }
+                    detail: { summary: "Set/update the permission grants for a specific application for the authenticated user." },
                 }
             )
     )

@@ -47,25 +47,26 @@ class MockVibeSDK implements IVibeSDK {
         // Initialize the agent
         this.agent
             .init(manifest)
-            .then((account: Account | null) => {
-                // Explicitly type the received account
-                if (account) {
-                    console.log("[MockVibeSDK] Mock agent initialized successfully with account:", account);
+            .then(({ account, permissions: grantedPermissions }) => {
+                // Destructure the response
+                // Explicitly type the received account and permissions
+                if (account && grantedPermissions) {
+                    console.log("[MockVibeSDK] Mock agent initialized successfully with account and permissions:", account, grantedPermissions);
                     // Update state and notify listener
-                    this.updateState({ account, permissions });
+                    // Note: We use the 'permissions' key in VibeState for granted permissions
+                    this.updateState({ account, permissions: grantedPermissions });
                     this.isInitialized = true;
                 } else {
-                    console.error("[MockVibeSDK] Mock agent initialization failed (returned null account).");
+                    console.error("[MockVibeSDK] Mock agent initialization failed (returned null account or permissions).");
                     // Optionally update state to reflect the error, e.g., set an error flag
-                    this.updateState({ account: null, permissions }); // Update state with null account
+                    this.updateState({ account: null, permissions: null }); // Update state with nulls
                     this.isInitialized = false; // Ensure SDK is not marked as initialized
                 }
             })
             .catch((error) => {
-                // This catch might be redundant if agent.init now returns null instead of throwing
                 console.error("[MockVibeSDK] Error during agent initialization promise:", error);
                 // Handle error state if necessary
-                this.updateState({ account: null, permissions }); // Ensure account is null on error
+                this.updateState({ account: null, permissions: null }); // Ensure state is null on error
             });
 
         // Return a function to clean up this SDK instance
@@ -197,8 +198,9 @@ class MockVibeSDK implements IVibeSDK {
     }
 
     private ensureInitialized() {
-        if (!this.isInitialized || !this.state.account) {
-            throw new Error("Vibe SDK not initialized. Call init() first.");
+        // Check permissions map exists in state now, not just account
+        if (!this.isInitialized || !this.state.account || !this.state.permissions) {
+            throw new Error("Vibe SDK not initialized or missing permissions. Call init() first.");
         }
     }
 

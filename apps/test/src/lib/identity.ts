@@ -193,7 +193,5 @@ export function hexToUint8Array(hexString: string): Uint8Array {
 
 // Helper to convert Uint8Array to hex string
 export function uint8ArrayToHex(bytes: Uint8Array): string {
-    return Buffer.from(bytes).toString("hex"); // Use Buffer for simplicity here, browser might need alternative
-    // Alternative for pure browser:
-    // return bytes.reduce((str, byte) => str + byte.toString(16).padStart(2, '0'), '');
+    return bytes.reduce((str, byte) => str + byte.toString(16).padStart(2, "0"), "");
 }

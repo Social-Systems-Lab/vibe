@@ -4,13 +4,15 @@
 import React, { createContext, useState, useEffect, useContext, useCallback } from "react";
 import type { ReactNode } from "react";
 import { vibe } from "./sdk"; // Import the singleton instance of our mock SDK
-import type { Account, AppManifest, Unsubscribe, VibeState } from "./types";
+// Import PermissionSetting type
+import type { Account, AppManifest, Unsubscribe, VibeState, PermissionSetting } from "./types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 // Define the shape of the context value
 interface VibeContextValue {
-    account: Account | null | undefined; // Updated type to include null
+    account: Account | null | undefined;
+    permissions: Record<string, PermissionSetting> | null | undefined; // Add permissions map
     init: () => void; // Expose init in case manual re-init is needed (though unlikely with mock)
     readOnce: (collection: string, filter?: any) => Promise<any>;
     read: (collection: string, filter?: any, callback?: (result: any) => void) => Promise<Unsubscribe>; // read returns Promise<Unsubscribe>
@@ -71,6 +73,7 @@ export function VibeProvider({ children, manifest }: VibeProviderProps) {
     // Provide the state and methods through the context
     const contextValue: VibeContextValue = {
         account: vibeState?.account,
+        permissions: vibeState?.permissions, // Expose permissions from state
         init,
         readOnce,
         read,

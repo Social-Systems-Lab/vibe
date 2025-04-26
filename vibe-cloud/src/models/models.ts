@@ -5,7 +5,6 @@ import type { DocumentInsertResponse, MaybeDocument } from "nano";
 
 //#region --- Collection Constants ---
 
-export const PERMISSIONS_COLLECTION = "permissions" as const;
 export const USERS_COLLECTION = "users" as const;
 export const BLOBS_COLLECTION = "blobs" as const;
 export const CLAIM_CODES_COLLECTION = "claimCodes" as const;
@@ -15,26 +14,17 @@ export const APPS_COLLECTION = "apps" as const; // New collection constant
 
 //#region --- Core Database Document Schemas & Types ---
 
-// Schema for storing app grants within a user's permission document
-export const AppGrantSchema = t.Record(
-    t.String(), // Key: appId (URL or DID)
-    t.Array(t.String(), { minItems: 1 }), // Value: Array of granted permission strings (scopes)
-    { description: "Map of application IDs to their granted permissions for this user." }
-);
+// Define PermissionSetting enum/schema
+export const PermissionSettingSchema = t.Enum({ Always: "always", Ask: "ask", Never: "never" }, { description: "Permission setting granted by the user." });
+export type PermissionSetting = Static<typeof PermissionSettingSchema>;
 
-// Revised Permission Schema
-export const PermissionSchema = t.Object({
-    _id: t.Optional(t.String()), // Should be userDid
-    _rev: t.Optional(t.String()),
-    userDid: t.String({ description: "The user who owns these permissions/grants." }),
-    collection: t.Literal(PERMISSIONS_COLLECTION),
-    appGrants: t.Optional(AppGrantSchema), // Map of appId -> granted scopes
-    directPermissions: t.Optional(
-        t.Array(t.String(), { minItems: 1 }) // User's own direct permissions (e.g., read:blobs)
-    ),
+// GrantSchema: Map of permissionString -> permissionSetting
+export const GrantsSchema = t.Record(t.String({ description: "Permission string e.g., read:notes)" }), PermissionSettingSchema, {
+    description: "Map of permission strings to their grant setting for this app.",
 });
-export type Permission = Static<typeof PermissionSchema>;
-export interface PermissionUpdateResponse extends CouchDbModificationResponse {} // Alias for CouchDB response
+
+// Corrected Permission Schema
+export interface PermissionUpdateResponse extends CouchDbModificationResponse {} // Alias for CouchDB response - UNCOMMENTED
 
 export const UserSchema = t.Object({
     _id: t.Optional(t.String()),
@@ -62,7 +52,6 @@ export const ClaimCodeSchema = t.Object({
     _id: t.String(), // Required: e.g., "INITIAL_ADMIN" or UUID
     _rev: t.Optional(t.String()),
     code: t.String(),
-    // Use t.Nullable for fields that can be explicitly null
     expiresAt: t.Nullable(t.String({ format: "date-time" })),
     forDid: t.Nullable(t.String()),
     spentAt: t.Nullable(t.String({ format: "date-time" })),
@@ -75,12 +64,13 @@ export type ClaimCode = Static<typeof ClaimCodeSchema>;
 export const AppSchema = t.Object({
     _id: t.String(), // appId from the manifest
     _rev: t.Optional(t.String()),
-    appId: t.String(), // Redundant with _id but useful for queries
+    ownerDid: t.String(), // DID of the user who registered the app
+    appId: t.String(), // App ID (matches X-Vibe-App-ID header)
     name: t.String(),
     description: t.Optional(t.String()),
     pictureUrl: t.Optional(t.String({ format: "uri" })),
-    permissions: t.Array(t.String()), // Requested permissions
-    ownerDid: t.String(), // DID of the user who registered the app
+    requestedPermissions: t.Array(t.String()), // Requested permissions by the app manifest
+    grants: t.Optional(GrantsSchema),
     createdAt: t.String({ format: "date-time" }),
     collection: t.Literal(APPS_COLLECTION),
 });
@@ -126,7 +116,7 @@ export type WritePayload = Static<typeof WritePayloadSchema>;
 
 // Response type for successful updates/inserts (can be reused)
 export interface CouchDbModificationResponse extends DocumentInsertResponse {}
-export interface PermissionUpdateResponse extends CouchDbModificationResponse {}
+export interface PermissionUpdateResponse extends CouchDbModificationResponse {} // Uncommented
 
 // --- Elysia Validation Schemas & Derived Types (for API Payloads/Params) ---
 // Schemas used for validating API request bodies, query params, etc.
@@ -200,8 +190,18 @@ export type AppManifestPayload = Static<typeof AppManifestSchema>; // Type for r
 export const AppRegistrationResponseSchema = t.Object({
     message: t.String(),
     appId: t.String(),
+    // ownerGrants: ... // REMOVED ownerGrants from response
 });
 export type AppRegistrationResponse = Static<typeof AppRegistrationResponseSchema>;
+
+// Schema for setting app grants via API
+export const SetAppGrantsPayloadSchema = t.Object({
+    appId: t.String({ description: "The ID of the application whose grants are being set." }),
+    grants: t.Record(t.String({ description: "Permission string (e.g., read:notes)" }), PermissionSettingSchema, {
+        description: "Map of permission strings to their grant setting (always/ask/never).",
+    }),
+});
+export type SetAppGrantsPayload = Static<typeof SetAppGrantsPayloadSchema>;
 
 // Error Schema
 export const ErrorResponseSchema = t.Object({

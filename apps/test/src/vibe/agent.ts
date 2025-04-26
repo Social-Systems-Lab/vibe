@@ -1,5 +1,16 @@
 // apps/test/src/vibe/agent.ts
-import type { VibeAgent, AppManifest, ReadResult, WriteResult, ReadParams, WriteParams, SubscriptionCallback, Unsubscribe, Account } from "./types";
+import type {
+    VibeAgent,
+    AppManifest,
+    ReadResult,
+    WriteResult,
+    ReadParams,
+    WriteParams,
+    SubscriptionCallback,
+    Unsubscribe,
+    Account,
+    PermissionSetting,
+} from "./types"; // Added PermissionSetting
 import { generateEd25519KeyPair, signEd25519, didFromEd25519, uint8ArrayToHex, type Ed25519KeyPair } from "../lib/identity"; // Use frontend identity utils
 import { Buffer } from "buffer"; // Needed for base64 encoding
 import * as ed from "@noble/ed25519";
@@ -18,6 +29,7 @@ export class MockVibeAgent implements VibeAgent {
     private userDid: string | null = null;
     private account: Account | null = null;
     private jwt: string | null = null;
+    private grantedPermissions: Record<string, PermissionSetting> | null = null; // Store granted permissions
     private subscriptions: Map<string, SubscriptionCallback<any>> = new Map();
     private isInitialized = false;
     private isInitializing = false; // Prevent concurrent init calls
@@ -90,13 +102,11 @@ export class MockVibeAgent implements VibeAgent {
 
     // --- Core Agent Methods ---
 
-    async init(manifest: AppManifest): Promise<Account | null> {
+    // Updated return type to match interface
+    async init(manifest: AppManifest): Promise<{ account: Account | null; permissions: Record<string, PermissionSetting> | null }> {
         if (this.isInitialized || this.isInitializing) {
-            console.warn(`MockVibeAgent already ${this.isInitializing ? "initializing" : "initialized"}. Returning current account state.`);
-            // If already initialized, return the existing account object
-            // If initializing, let the ongoing process complete (or return null/undefined if preferred)
-            // For simplicity, returning the current state. Consider if null is better during initialization.
-            return this.account;
+            console.warn(`MockVibeAgent already ${this.isInitializing ? "initializing" : "initialized"}. Returning current state.`);
+            return { account: this.account, permissions: this.grantedPermissions };
         }
         this.isInitializing = true;
         console.log("MockVibeAgent: Initializing with manifest:", manifest);
@@ -128,30 +138,47 @@ export class MockVibeAgent implements VibeAgent {
             // 3. Save identity and JWT if successful
             this.saveIdentityToStorage();
 
-            // 4. Construct the account object (assuming userDid is now guaranteed)
+            // 4. Register App Manifest (Idempotent)
+            await this.registerApp(manifest);
+
+            // 5. Simulate Consent & Set Grants
+            // For mock, default to always for read, ask for write/other
+            const simulatedGrants: Record<string, PermissionSetting> = {};
+            manifest.permissions.forEach((perm) => {
+                if (perm.startsWith("read:")) {
+                    simulatedGrants[perm] = "always";
+                } else {
+                    simulatedGrants[perm] = "ask"; // Default others to 'ask'
+                }
+            });
+            console.log("MockVibeAgent: Simulated grants:", simulatedGrants);
+            await this.setAppGrants(manifest.appId, simulatedGrants);
+            this.grantedPermissions = simulatedGrants; // Store locally
+
+            // 6. Construct the account object
             if (this.userDid) {
                 this.account = { userDid: this.userDid };
                 console.log("MockVibeAgent: Account object constructed:", this.account);
             } else {
-                // This case should ideally not happen if logic above is correct
                 console.error("MockVibeAgent: userDid is null after identity check. Cannot construct account.");
                 this.account = null;
+                this.grantedPermissions = null; // Clear permissions if account fails
             }
 
             this.isInitialized = true;
             console.log("MockVibeAgent: Initialization complete.");
-            return this.account; // Return the constructed account object
+            return { account: this.account, permissions: this.grantedPermissions }; // Return combined object
         } catch (error) {
             console.error("MockVibeAgent: Initialization failed:", error);
             this.isInitialized = false; // Ensure state reflects failure
             this.account = null; // Clear account on failure
+            this.grantedPermissions = null; // Clear permissions on failure
             this.clearIdentityFromStorage(); // Clear potentially partial/invalid state
-            // Don't re-throw, let the SDK handle the null return
-            return null; // Indicate failure by returning null
+            return { account: null, permissions: null }; // Indicate failure
         } finally {
             this.isInitializing = false;
         }
-    }
+    } // <-- Added missing closing brace for init method
 
     private async performAdminClaim(): Promise<void> {
         if (!this.userDid || !this.keyPair) {
@@ -198,15 +225,49 @@ export class MockVibeAgent implements VibeAgent {
         }
     }
 
+    // --- New Helper Methods for App Registration & Grant Setting ---
+    private async registerApp(manifest: AppManifest): Promise<void> {
+        console.log(`MockVibeAgent: Registering app ${manifest.appId}...`);
+        try {
+            // The backend /register endpoint expects the manifest structure directly
+            const response = await this.fetchApi<any>("/api/v1/apps/register", "POST", manifest, true);
+            console.log(`MockVibeAgent: App registration successful for ${manifest.appId}`, response);
+            // We don't strictly need the response here unless it contains updated grants,
+            // but the endpoint was designed to return them. We'll overwrite with simulated grants anyway.
+        } catch (error) {
+            // Log error but don't necessarily fail init, registration might have happened before
+            // or might conflict if already registered (which is okay).
+            console.error(`MockVibeAgent: App registration failed for ${manifest.appId} (might be okay if already registered):`, error);
+            // Consider re-throwing only for specific fatal errors?
+        }
+    }
+
+    private async setAppGrants(appId: string, grants: Record<string, PermissionSetting>): Promise<void> {
+        console.log(`MockVibeAgent: Setting grants for app ${appId}...`, grants);
+        try {
+            const payload = { appId, grants };
+            await this.fetchApi<any>("/api/v1/permissions/grants", "POST", payload, true);
+            console.log(`MockVibeAgent: Grants set successfully for ${appId}`);
+        } catch (error) {
+            console.error(`MockVibeAgent: Failed to set grants for app ${appId}:`, error);
+            // Throw this error as it's crucial for permissions to be set correctly
+            throw new Error(`Failed to save permission grants: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
     private ensureInitialized(): void {
+        // Updated check: Ensure JWT is present, account and permissions might still be null during init
         if (!this.isInitialized || !this.manifest || !this.userDid || !this.jwt) {
+            // Consider if check should be less strict during the init phase itself
             throw new Error("MockVibeAgent not initialized or missing credentials. Call init() first.");
         }
     }
 
     // --- API Interaction Helper ---
-    private async fetchApi<T>(endpoint: string, method: "GET" | "POST" | "PUT" | "DELETE" = "POST", body?: any): Promise<T> {
-        this.ensureInitialized();
+    private async fetchApi<T>(endpoint: string, method: "GET" | "POST" | "PUT" | "DELETE" = "POST", body?: any, skipEnsureInitialized?: boolean): Promise<T> {
+        if (!skipEnsureInitialized) {
+            this.ensureInitialized();
+        }
         const url = `${VIBE_CLOUD_BASE_URL}${endpoint}`;
         console.log(`Fetching API: ${method} ${url}`, body ? { body } : {});
 

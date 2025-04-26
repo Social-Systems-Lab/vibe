@@ -93,7 +93,8 @@ export interface WriteResult {
  * This is implemented by MockVibeAgent or a real agent connection module.
  */
 export interface VibeAgent {
-    init(manifest: AppManifest): Promise<Account | null>; // Updated return type
+    // init now returns account and the granted permissions map
+    init(manifest: AppManifest): Promise<{ account: Account | null; permissions: Record<string, PermissionSetting> | null }>;
     readOnce<T>(params: ReadParams): Promise<ReadResult<T>>;
     read<T>(params: ReadParams, callback: SubscriptionCallback<T>): Promise<Unsubscribe>;
     unsubscribe(unsubscribeFn: Unsubscribe): Promise<void>; // Changed to accept the function itself
