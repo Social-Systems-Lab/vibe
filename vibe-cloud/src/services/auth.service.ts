@@ -243,8 +243,9 @@ export class AuthService {
                 logger.error(`Admin creation from DID failed: Document conflict for ID ${userDocId} (DID: ${userDid})`, error);
                 throw new Error(`Admin user creation failed due to document ID conflict.`);
             }
+            // Re-throw the original error for better debugging upstream
             logger.error(`Error saving admin user document from DID ${userDid}:`, error);
-            throw new Error(`Admin user creation failed for DID: ${userDid}.`);
+            throw error; // Re-throw original error
         }
 
         // 2. Create the user-specific database

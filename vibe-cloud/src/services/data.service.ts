@@ -248,6 +248,8 @@ export class DataService {
 
             const db = await this.ensureDatabaseExists(dbName);
             const docToInsert = { ...data, collection: collection };
+            // Log the document right before inserting
+            logger.debug(`[DataService.createDocument] Inserting document into ${dbName}:`, JSON.stringify(docToInsert, null, 2));
             const response = await db.insert(docToInsert);
             if (!response.ok) {
                 // This case might indicate an unexpected issue post-insert attempt
@@ -296,6 +298,8 @@ export class DataService {
 
             const db = await this.ensureDatabaseExists(dbName);
             const docToUpdate = { ...data, _id: docId, _rev: rev, collection: collection };
+            // Log the document right before updating (inserting with _rev)
+            logger.debug(`[DataService.updateDocument] Updating document ${docId} in ${dbName}:`, JSON.stringify(docToUpdate, null, 2));
             const response = await db.insert(docToUpdate);
             if (!response.ok) {
                 // This case might indicate an unexpected issue post-insert attempt

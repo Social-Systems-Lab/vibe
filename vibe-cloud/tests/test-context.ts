@@ -50,11 +50,19 @@ export async function createTestCtx(): Promise<{
         logger.debug(`Test user ${userDid} created, token obtained`);
 
         // 2. Grant Permissions to the Test App for this User via /upsert
-        const appPermissionsToGrant = [`read:test_items_${ts}`, `write:test_items_${ts}`];
-        // Simulate grants (e.g., 'always' for read, 'ask' for write)
+        // Include permissions for both data and realtime tests
+        const appPermissionsToGrant = [
+            `read:test_items_${ts}`,
+            `write:test_items_${ts}`,
+            `read:rt_items_${ts}`, // Add realtime read permission
+            `write:rt_items_${ts}`, // Add realtime write permission
+        ];
+        // Set grants to 'always' for testing API directly
         const grantsToSet: Record<string, PermissionSetting> = {
             [`read:test_items_${ts}`]: "always",
-            [`write:test_items_${ts}`]: "ask", // Or 'always' if tests require write without prompt simulation
+            [`write:test_items_${ts}`]: "always", // Set write to always for data tests
+            [`read:rt_items_${ts}`]: "always", // Set read to always for realtime tests
+            [`write:rt_items_${ts}`]: "always", // Set write to always for realtime tests
         };
         // Define a minimal manifest for the upsert payload
         const testAppManifest: AppManifest = {

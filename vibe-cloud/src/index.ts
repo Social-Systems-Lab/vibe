@@ -33,6 +33,7 @@ import {
     type App as AppModel, // The DB model
     type AppManifest, // Type alias for manifest part
     type PermissionSetting, // Keep type
+    type User, // Import User type
     GrantsSchema, // Need this for validation/typing
 } from "./models/models";
 import { SYSTEM_DB } from "./utils/constants";
@@ -56,14 +57,11 @@ const authService = new AuthService(dataService, permissionService, blobService)
 const realtimeService = new RealtimeService(dataService, permissionService);
 
 // --- Initial Admin Claim Code Bootstrap ---
-// NOTE: ensureInitialAdminClaimCode was removed from AuthService as it's part of its internal setup now.
-// logger.info("Ensuring initial admin claim code exists...");
-// try {
-//     await authService.ensureInitialAdminClaimCode(); // Method removed
-//     logger.info("Initial admin claim code check complete.");
-// } catch (error) {
-//     logger.error("CRITICAL: Failed to ensure initial admin claim code:", error);
-// }
+try {
+    await authService.ensureInitialAdminClaimCode();
+} catch (error) {
+    logger.error("CRITICAL: Failed to ensure initial admin claim code:", error);
+}
 // --- End Initial Admin Claim Code Bootstrap ---
 
 // --- App Initialization ---
@@ -307,7 +305,7 @@ export const app = new Elysia()
                 };
 
                 // --- Conditional Claim Spending ---
-                if (process.env.NODE_ENV === "production") {
+                if (process.env.NODE_ENV === "production" || claimCode !== process.env.ADMIN_CLAIM_CODE) {
                     logger.info(`Production environment detected. Marking claim code '${claimDoc._id}' as spent.`);
                     try {
                         await dataService.updateDocument(SYSTEM_DB, CLAIM_CODES_COLLECTION, claimDoc._id, claimDoc._rev!, updatedClaimData);
@@ -329,16 +327,44 @@ export const app = new Elysia()
                 }
                 // --- End Conditional Claim Spending ---
 
-                // 5. Create the admin user (Now handled internally by AuthService if needed, or requires a different flow)
-                // NOTE: createAdminUserFromDid was removed from AuthService. The claim flow might need adjustment
-                // if user creation isn't implicitly handled elsewhere or if a different method should be called.
-                // For now, we assume the user document is created elsewhere or the flow changes.
-                // We still need the userDid to sign the JWT. We get it from the claim request body.
-                const userDid = did; // Use the DID from the claim request directly
-                logger.info(`Admin claim successful for DID ${userDid}. User document creation assumed handled elsewhere or not needed here.`);
-                // let newUser; // Removed as we don't call createAdminUserFromDid
+                // 5. Ensure Admin User Exists (Create if necessary)
+                const userDid = did; // Use the DID from the claim request
+                let user: User | null = null;
+                try {
+                    // Attempt to fetch user first
+                    user = await dataService.getDocument<User>(SYSTEM_DB, `users/${userDid}`);
+                    logger.info(`Admin user ${userDid} already exists.`);
+                } catch (fetchError: any) {
+                    if (fetchError instanceof NotFoundError) {
+                        // User doesn't exist, create them using AuthService
+                        logger.info(`Admin user ${userDid} not found. Creating user via AuthService...`);
+                        try {
+                            // Use the injected authService instance
+                            user = await authService.createAdminUserFromDid(userDid);
+                            logger.info(`Admin user ${userDid} created successfully via claim.`);
+                        } catch (createError: any) {
+                            logger.error(`Failed to create admin user ${userDid} after successful claim:`, createError);
+                            set.status = 500;
+                            return { error: "Claim successful, but failed to create admin user account. Please contact support." };
+                        }
+                    } else {
+                        // Other error fetching user
+                        logger.error(`Error checking for existing admin user ${userDid}:`, fetchError);
+                        set.status = 500;
+                        return { error: "Internal server error while checking user status." };
+                    }
+                }
+
+                // Ensure user is available before proceeding
+                if (!user) {
+                    logger.error(`User object for ${userDid} is null after creation/fetch attempt.`);
+                    set.status = 500;
+                    return { error: "Internal server error processing user account." };
+                }
+
+                // let newUser; // Removed as we don't call createAdminUserFromDid directly anymore
                 // try {
-                //     logger.debug(`Creating admin user for DID ${did}...`);
+                //     logger.debug(`Creating admin user for DID ${did}...`); // Old logic removed
                 //     newUser = await authService.createAdminUserFromDid(did); // Method removed
                 //     logger.info(`Admin user created for DID ${did}, internal userDid: ${newUser.userDid}`);
                 // } catch (error: any) {
@@ -581,6 +607,8 @@ export const app = new Elysia()
                             grantsUpdatedAt: now, // Update timestamp
                             collection: APPS_COLLECTION, // Ensure collection is set
                         };
+                        // Log the exact object being sent for update
+                        logger.debug("Updating app registration document:", JSON.stringify(updatedDoc, null, 2));
                         const updateResult = await dataService.updateDocument(SYSTEM_DB, APPS_COLLECTION, docId, existingDoc._rev!, updatedDoc);
                         logger.info(`App registration for '${appId}' updated successfully for user ${userDid}. Rev: ${updateResult.rev}`);
                         set.status = 200; // OK
@@ -604,6 +632,8 @@ export const app = new Elysia()
                                 collection: APPS_COLLECTION,
                             };
                             try {
+                                // Log the exact object being sent for creation
+                                logger.debug("Creating new app registration document:", JSON.stringify(newDoc, null, 2));
                                 // Call createDocument with 3 arguments: dbName, collection, data (which includes _id)
                                 const createResult = await dataService.createDocument(SYSTEM_DB, APPS_COLLECTION, newDoc);
                                 logger.info(
@@ -872,12 +902,9 @@ export const app = new Elysia()
             )
     );
 
-// --- Export Singletons for Tests ---
-export { dataService, authService, permissionService, blobService, realtimeService };
-
-// Define the pure Bun WebSocket handler logic
+// --- WebSocket Handler Definition ---
+// Define the pure Bun WebSocket handler logic BEFORE startServer uses it
 const bunWsHandler: WebSocketHandler<WebSocketAuthContext> = {
-    // Use updated type
     open(ws: ServerWebSocket<WebSocketAuthContext>) {
         // Add type hint
         realtimeService.handleConnection(ws);
@@ -892,8 +919,8 @@ const bunWsHandler: WebSocketHandler<WebSocketAuthContext> = {
     },
 };
 
-// --- Define the Fetch Handler (including WS Upgrade) ---
-// This uses the initialized app singleton for HTTP requests
+// --- Fetch Handler Definition ---
+// Define the fetch handler BEFORE startServer uses it
 async function fetchHandler(req: Request, server: Server): Promise<Response | undefined> {
     const url = new URL(req.url);
 
@@ -934,7 +961,7 @@ async function fetchHandler(req: Request, server: Server): Promise<Response | un
 }
 
 // --- Exportable Server Start Function ---
-// This function encapsulates the Bun.serve call
+// Define startServer function
 export function startServer(port: number = 3000): Server {
     logger.info(`Attempting to start Vibe Cloud server on port ${port}...`);
     try {
@@ -956,4 +983,7 @@ if (import.meta.main) {
     startServer(Number(process.env.PORT) || 3000);
 }
 
+// --- Exports ---
+// Export singletons and types AFTER they are fully defined
+export { dataService, authService, permissionService, blobService, realtimeService };
 export type App = typeof app; // Export the app type for Eden client
