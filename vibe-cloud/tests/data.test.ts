@@ -96,13 +96,11 @@ describe("Data API Endpoints (/api/v1/data)", () => {
         // 1. Revoke write permission specifically
         const readPerm = `read:${testCollection}`;
         const writePerm = `write:${testCollection}`;
-        let currentRev = testCtx.permsRev; // Get latest rev from context
         try {
-            logger.debug(`Revoking write permission '${writePerm}' for app ${testCtx.appId}, user ${testCtx.userDid}, rev ${currentRev}`);
+            logger.debug(`Revoking write permission '${writePerm}' for app ${testCtx.appId}, user ${testCtx.userDid}`);
             // Use the imported permissionService singleton
             const revokeRes = await permissionService.revokeAppPermission(testCtx.userDid, testCtx.appId, [writePerm]);
-            currentRev = revokeRes.rev; // Update rev
-            logger.debug(`Write permission revoked, new rev ${currentRev}`);
+            logger.debug(`Write permission revoked`);
 
             // Verify only read remains
             const permsAfterRevoke = await permissionService.getAppPermissionsForUser(testCtx.userDid, testCtx.appId);
@@ -122,10 +120,9 @@ describe("Data API Endpoints (/api/v1/data)", () => {
             expect(error?.value as any).toEqual({ error: `Forbidden: Application does not have permission '${writePerm}' for this user.` });
         } finally {
             // 4. Restore write permission using the latest rev
-            logger.debug(`Restoring write permission '${writePerm}' for app ${testCtx.appId}, user ${testCtx.userDid}, rev ${currentRev}`);
-            const restoreRes = await permissionService.grantAppPermission(testCtx.userDid, testCtx.appId, [writePerm]);
-            testCtx.permsRev = restoreRes.rev; // Update context rev state for subsequent tests
-            logger.debug(`Write permission restored, new rev ${testCtx.permsRev}`);
+            logger.debug(`Restoring write permission '${writePerm}' for app ${testCtx.appId}, user ${testCtx.userDid}`);
+            await permissionService.grantAppPermission(testCtx.userDid, testCtx.appId, [writePerm]);
+            logger.debug(`Write permission restored`);
         }
     });
 
@@ -133,12 +130,10 @@ describe("Data API Endpoints (/api/v1/data)", () => {
         // 1. Revoke read permission specifically
         const readPerm = `read:${testCollection}`;
         const writePerm = `write:${testCollection}`;
-        let currentRev = testCtx.permsRev;
         try {
-            logger.debug(`Revoking read permission '${readPerm}' for app ${testCtx.appId}, user ${testCtx.userDid}, rev ${currentRev}`);
-            const revokeRes = await permissionService.revokeAppPermission(testCtx.userDid, testCtx.appId, [readPerm]);
-            currentRev = revokeRes.rev;
-            logger.debug(`Read permission revoked, new rev ${currentRev}`);
+            logger.debug(`Revoking read permission '${readPerm}' for app ${testCtx.appId}, user ${testCtx.userDid}`);
+            await permissionService.revokeAppPermission(testCtx.userDid, testCtx.appId, [readPerm]);
+            logger.debug(`Read permission revoked`);
 
             // Verify only write remains
             const permsAfterRevoke = await permissionService.getAppPermissionsForUser(testCtx.userDid, testCtx.appId);
@@ -157,8 +152,7 @@ describe("Data API Endpoints (/api/v1/data)", () => {
             // 4. Restore read permission
             logger.debug(`Restoring read permission '${readPerm}' for app ${testCtx.appId}, user ${testCtx.userDid}, rev ${currentRev}`);
             const restoreRes = await permissionService.grantAppPermission(testCtx.userDid, testCtx.appId, [readPerm]);
-            testCtx.permsRev = restoreRes.rev;
-            logger.debug(`Read permission restored, new rev ${testCtx.permsRev}`);
+            logger.debug(`Read permission restored`);
         }
     });
 

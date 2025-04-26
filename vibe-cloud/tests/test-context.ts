@@ -14,7 +14,6 @@ export interface TestCtx {
     userDid: string;
     token: string; // User JWT
     appId: string; // The mock App ID
-    permsRev: string | null; // Revision of the user's permission doc
     ts: number;
 }
 
@@ -34,32 +33,26 @@ export async function createTestCtx(): Promise<{
 
     let userDid: string | null = null;
     let token: string | null = null;
-    let initialPermsRev: string | null = null; // Rev after user creation/direct perms
-    let finalPermsRev: string | null = null; // Rev after granting app perms
 
     try {
         // 1. Create Test User and get Token using AuthService helper
         // Grant basic blob permissions directly to the user for testing blob endpoints later
-        const directPermissions = [`read:blobs`, `write:blobs`];
-        logger.debug(`Creating test user ${testUserDid} with direct permissions [${directPermissions.join(", ")}]...`);
+        logger.debug(`Creating test user ${testUserDid}...`);
         const userCreationResult = await authService.createTestUserAndToken(
             testUserDid,
-            directPermissions,
             false, // Not an admin
             "5m" // Short-lived token for tests
         );
         userDid = userCreationResult.userDid;
         token = userCreationResult.token;
 
-        initialPermsRev = userCreationResult.permsRev; // This is the rev *after* setting direct permissions
-        logger.debug(`Test user ${userDid} created, token obtained, initial perms rev: ${initialPermsRev}`);
+        logger.debug(`Test user ${userDid} created, token obtained`);
 
         // 2. Grant Permissions to the Test App for this User
         const appPermissionsToGrant = [`read:test_items_${ts}`, `write:test_items_${ts}`];
         logger.debug(`Granting app permissions [${appPermissionsToGrant.join(", ")}] to app '${testAppId}' for user '${userDid}'...`);
-        const permRes = await permissionService.grantAppPermission(userDid, testAppId, appPermissionsToGrant);
-        finalPermsRev = permRes.rev;
-        logger.debug(`App permissions granted, final perms rev: ${finalPermsRev}`);
+        await permissionService.grantAppPermission(userDid, testAppId, appPermissionsToGrant);
+        logger.debug(`App permissions granted`);
     } catch (error) {
         logger.error("Error during test context setup:", error);
         // Attempt cleanup even if setup failed partially
@@ -79,7 +72,6 @@ export async function createTestCtx(): Promise<{
         userDid: userDid,
         token: token,
         appId: testAppId,
-        permsRev: finalPermsRev, // Store the latest rev after app grant
         ts,
     };
 

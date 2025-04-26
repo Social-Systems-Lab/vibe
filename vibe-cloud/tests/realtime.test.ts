@@ -40,8 +40,7 @@ describe("Real-time sync over WebSockets", () => {
         // 3. Ensure permissions (using imported singleton)
         logger.debug(`Ensuring app '${testCtx.appId}' has read/write for collection '${testCollection}' for user '${testCtx.userDid}'`);
         const permissionsToGrant = [`read:${testCollection}`, `write:${testCollection}`];
-        const permRes = await permissionService.grantAppPermission(testCtx.userDid, testCtx.appId, permissionsToGrant);
-        testCtx.permsRev = permRes.rev;
+        await permissionService.grantAppPermission(testCtx.userDid, testCtx.appId, permissionsToGrant);
         const currentPerms = await permissionService.getAppPermissionsForUser(testCtx.userDid, testCtx.appId);
         expect(currentPerms).toContain(`read:${testCollection}`);
         expect(currentPerms).toContain(`write:${testCollection}`);
@@ -199,15 +198,12 @@ describe("Real-time sync over WebSockets", () => {
     it("should deny subscription and NOT push updates when read permission is revoked", async () => {
         const readPerm = `read:${testCollection}`;
         const writePerm = `write:${testCollection}`; // Keep write permission
-        let currentRev = testCtx.permsRev;
-        expect(currentRev).toBeTypeOf("string");
 
         try {
             // 1. Revoke read permission for the app
-            logger.debug(`Revoking read permission '${readPerm}' for app ${testCtx.appId}, user ${testCtx.userDid}, rev ${currentRev}`);
-            const revokeRes = await permissionService.revokeAppPermission(testCtx.userDid, testCtx.appId, [readPerm]);
-            currentRev = revokeRes.rev;
-            logger.debug(`Read permission revoked, new rev ${currentRev}`);
+            logger.debug(`Revoking read permission '${readPerm}' for app ${testCtx.appId}, user ${testCtx.userDid}`);
+            await permissionService.revokeAppPermission(testCtx.userDid, testCtx.appId, [readPerm]);
+            logger.debug(`Read permission revoked`);
 
             // Verify permissions
             const permsAfterRevoke = await permissionService.getAppPermissionsForUser(testCtx.userDid, testCtx.appId);
@@ -261,10 +257,9 @@ describe("Real-time sync over WebSockets", () => {
             logger.debug("No unexpected WebSocket message received, as expected.");
         } finally {
             // 5. Restore read permission
-            logger.debug(`Restoring read permission '${readPerm}' for app ${testCtx.appId}, user ${testCtx.userDid}, rev ${currentRev}`);
-            const restoreRes = await permissionService.grantAppPermission(testCtx.userDid, testCtx.appId, [readPerm]);
-            testCtx.permsRev = restoreRes.rev; // Update context rev state
-            logger.debug(`Read permission restored, new rev ${testCtx.permsRev}`);
+            logger.debug(`Restoring read permission '${readPerm}' for app ${testCtx.appId}, user ${testCtx.userDid}`);
+            await permissionService.grantAppPermission(testCtx.userDid, testCtx.appId, [readPerm]);
+            logger.debug(`Read permission restored`);
         }
     });
 });

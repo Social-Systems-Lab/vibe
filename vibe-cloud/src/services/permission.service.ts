@@ -53,30 +53,4 @@ export class PermissionService {
             return false; // Default deny on any other error
         }
     }
-
-    /**
-     * Checks if a user has a specific direct permission.
-     * NOTE: This implementation is commented out as it relies on the old 'permissions' collection model.
-     * Direct permissions might be handled differently now (e.g., via user roles or specific checks).
-     */
-    /*
-    async userHasDirectPermission(userDid: string, requiredPermission: string): Promise<boolean> {
-        // This needs reimplementation based on how direct permissions are stored now.
-        // Example: Check user's 'isAdmin' flag or query a different collection/field.
-        logger.warn(`userHasDirectPermission is not implemented for the current data model.`);
-        return false; // Default deny until reimplemented
-    }
-    */
-
-    // --- Obsolete methods based on the old 'permissions' collection model ---
-    // These methods are removed or commented out as they are no longer applicable.
-    // private async _getPermissionDoc(...) { ... }
-    // async getUserDirectPermissions(...) { ... }
-    // async getAppPermissionsForUser(...) { ... }
-    // async getAppPermissionSetting(...) { ... }
-    // async setUserDirectPermissions(...) { ... }
-    // async setAppGrants(...) { ... } // This logic is now handled by the /apps/upsert endpoint
-    // async revokeApp(...) { ... }
-    // async deletePermissionsDoc(...) { ... }
-    // private _handleWriteError(...) { ... } // Error handling might be needed differently now
 }

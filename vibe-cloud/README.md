@@ -29,7 +29,6 @@ bun start
     -   Includes an admin claim flow for initial setup, requiring a signature generated with the admin's Ed25519 private key.
 -   **Permission Management:**
     -   Stores user consent for applications (`appGrants`).
-    -   Stores user's direct permissions for accessing shared resources (`directPermissions`).
 
 # Architecture: Vibe Cloud & Vibe Agent
 
@@ -145,7 +144,6 @@ Vibe Cloud uses a layered approach built upon cryptographic identity:
 
 5.  **Permission Storage (`permissions` collection in `SYSTEM_DB`):**
     -   `appGrants`: An object mapping `appId` (URL or DID) to an array of granted permission strings (scopes) for that app by that user.
-    -   `directPermissions`: An array of permission strings granted directly to the user for accessing shared resources (e.g., `read:blobs`, `write:blobs`).
 
 ## API Endpoints Summary
 

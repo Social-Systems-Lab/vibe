@@ -60,6 +60,8 @@ export class AuthService {
                 logger.error(`Error deleting user data database '${userDbName}':`, error.message || error);
                 // Optional: throw error if DB deletion failure is critical
             }
+        }
+
         // 3. TODO: Delete user-specific app registrations from SYSTEM_DB/apps collection?
         // logger.info(`Cleanup of app registrations for user ${userDid} is not yet implemented.`);
 
@@ -186,17 +188,15 @@ export class AuthService {
      * Creates a user directly for testing purposes and generates a JWT.
      * WARNING: Use only in test environments. Does not involve standard auth flows.
      * @param userDid - Optional: Specify a DID. If not provided, a test DID is generated.
-     * @param directPermissions - Optional: Grant initial direct permissions.
      * @param isAdmin - Optional: Create the user as an admin. Defaults to false.
      * @param jwtExpiresIn - Optional: JWT expiry time (e.g., '1h', '10m'). Defaults to '1h'.
-     * @returns { userDid: string, token: string, userRev: string, permsRev: string | null }
+     * @returns { userDid: string, token: string, userRev: string }
      */
     async createTestUserAndToken(
         userDid?: string,
-        directPermissions: string[] = [],
         isAdmin: boolean = false,
         jwtExpiresIn: string = "1h"
-    ): Promise<{ userDid: string; token: string; userRev: string; permsRev: string | null }> {
+    ): Promise<{ userDid: string; token: string; userRev: string }> {
         logger.warn(`Executing createTestUserAndToken helper. Use only in testing!`);
 
         const jwtSecret = process.env.JWT_SECRET;
@@ -251,15 +251,6 @@ export class AuthService {
             throw new InternalServerError(`[Test Helper] Failed to create database for test user ${testUserDid}.`);
         }
 
-        // 4. Grant Direct Permissions (if any)
-        let permsRev: string | null = null; // Keep variable for return type consistency, but it won't be set.
-        if (directPermissions.length > 0) {
-            // TODO: Re-evaluate how to handle initial permissions for test users.
-            // Direct permissions via PermissionService are removed.
-            // Could potentially create default app registration docs here if needed.
-            logger.warn(`[Test Helper] Setting direct permissions for ${testUserDid} skipped (model changed). Permissions provided: [${directPermissions.join(", ")}]`);
-        }
-
         // 5. Generate JWT
         let token: string;
         try {
@@ -281,6 +272,6 @@ export class AuthService {
         }
 
         // 6. Return results
-        return { userDid: testUserDid, token, userRev, permsRev };
+        return { userDid: testUserDid, token, userRev };
     }
 }

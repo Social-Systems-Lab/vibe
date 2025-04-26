@@ -9,17 +9,8 @@ import { BLOBS_COLLECTION, type BlobMetadata } from "../src/models/models"; // I
 
 // --- Test Setup ---
 
-// User 1: Will have read/write blob permissions
 let ctx1: TestCtx, cleanup1: () => Promise<void>;
 let userDid1: string, token1: string, appId1: string;
-
-// User 2: Will have only read blob permissions
-let ctx2: TestCtx, cleanup2: () => Promise<void>;
-let userDid2: string, token2: string, appId2: string;
-
-// User 3: Will have no blob permissions
-let ctx3: TestCtx, cleanup3: () => Promise<void>;
-let userDid3: string, token3: string, appId3: string;
 
 // Global variable for the uploaded blob ID in this test suite
 type UUID = `${string}-${string}-${string}-${string}-${string}`;
@@ -40,29 +31,6 @@ describe("Blob API (/api/v1/blob)", () => {
         userDid1 = ctx1.userDid;
         token1 = ctx1.token;
         appId1 = ctx1.appId;
-
-        ({ ctx: ctx2, cleanup: cleanup2 } = await createTestCtx());
-        userDid2 = ctx2.userDid;
-        token2 = ctx2.token;
-        appId2 = ctx2.appId;
-
-        ({ ctx: ctx3, cleanup: cleanup3 } = await createTestCtx());
-        userDid3 = ctx3.userDid;
-        token3 = ctx3.token;
-        appId3 = ctx3.appId;
-
-        // Adjust direct permissions using the imported singleton service
-        // User 1: Should already have read/write from createTestCtx, verify or set explicitly
-        logger.debug(`Setting User 1 (${userDid1}) direct permissions: read/write`);
-        await permissionService.setUserDirectPermissions(userDid1, [`read:${BLOBS_COLLECTION}`, `write:${BLOBS_COLLECTION}`]);
-
-        // User 2: Grant only read
-        logger.debug(`Setting User 2 (${userDid2}) direct permissions: read-only`);
-        await permissionService.setUserDirectPermissions(userDid2, [`read:${BLOBS_COLLECTION}`]);
-
-        // User 3: Grant no blob permissions (ensure empty array)
-        logger.debug(`Setting User 3 (${userDid3}) direct permissions: none`);
-        await permissionService.setUserDirectPermissions(userDid3, []);
 
         logger.info("Blob test contexts setup complete.");
     });
@@ -106,11 +74,7 @@ describe("Blob API (/api/v1/blob)", () => {
         }
 
         // Clean up test users (calls authService.deleteUser which handles user, db, perms)
-        await Promise.all([
-            cleanup1().catch((e) => logger.error(`Cleanup failed for user 1: ${e}`)),
-            cleanup2().catch((e) => logger.error(`Cleanup failed for user 2: ${e}`)),
-            cleanup3().catch((e) => logger.error(`Cleanup failed for user 3: ${e}`)),
-        ]);
+        await Promise.all([cleanup1().catch((e) => logger.error(`Cleanup failed for user 1: ${e}`))]);
         logger.info("Blob test cleanup complete.");
     });
 
@@ -132,23 +96,7 @@ describe("Blob API (/api/v1/blob)", () => {
 
     // --- Upload Tests ---
 
-    it("POST /upload: should reject blob upload without 'write:blobs' direct permission (403)", async () => {
-        // Use User 3 (no permissions)
-        const { data, error, status } = await ctx3.api.api.v1.blob.upload.post({ file: testFile }, { headers: getHeaders(token3, appId3) });
-
-        expect(status).toBe(403);
-        expect(error?.value as any).toEqual({ error: `Forbidden: Missing 'write:${BLOBS_COLLECTION}' permission.` });
-    });
-
-    it("POST /upload: should reject blob upload with only 'read:blobs' direct permission (403)", async () => {
-        // Use User 2 (read-only)
-        const { data, error, status } = await ctx2.api.api.v1.blob.upload.post({ file: testFile }, { headers: getHeaders(token2, appId2) });
-
-        expect(status).toBe(403);
-        expect(error?.value as any).toEqual({ error: `Forbidden: Missing 'write:${BLOBS_COLLECTION}' permission.` });
-    });
-
-    it("POST /upload: should upload a blob successfully with 'write:blobs' direct permission (201)", async () => {
+    it("POST /upload: should upload a blob successfully (201)", async () => {
         // Use User 1 (read/write)
         const { data, error, status } = await ctx1.api.api.v1.blob.upload.post({ file: testFile }, { headers: getHeaders(token1, appId1) });
 
@@ -192,66 +140,6 @@ describe("Blob API (/api/v1/blob)", () => {
 
         expect(status).toBe(404);
         expect(error?.value).toEqual({ error: `Document with id "blobs/${nonExistentId}" not found.` });
-    });
-
-    it("GET /download/:objectId: should reject getting download URL without ownership or 'read:blobs' direct permission (403)", async () => {
-        expect(uploadedObjectId).toBeDefined(); // Ensure upload succeeded
-
-        // Use User 3 (no permissions)
-        const { data, error, status } = await ctx3.api.api.v1.blob.download({ objectId: uploadedObjectId! }).get({
-            headers: getHeaders(token3, appId3),
-        });
-
-        expect(status).toBe(403);
-        expect(error?.value).toEqual({ error: "Forbidden: You do not have permission to access this blob." });
-    });
-
-    it("GET /download/:objectId: should get URL successfully as the owner (even without explicit read perm) (200)", async () => {
-        expect(uploadedObjectId).toBeDefined();
-
-        // Temporarily remove direct read permission from owner to test ownership bypass
-        logger.debug(`Temporarily removing read perm for owner ${userDid1}`);
-        const tempRes = await permissionService.setUserDirectPermissions(userDid1, [`write:${BLOBS_COLLECTION}`]); // Only write
-        const tempRev = tempRes.rev;
-        logger.debug(`Read perm removed, new rev ${tempRev}`);
-
-        try {
-            // Use User 1 (owner)
-            const { data, error, status } = await ctx1.api.api.v1.blob.download({ objectId: uploadedObjectId! }).get({
-                headers: getHeaders(token1, appId1),
-            });
-
-            expect(status).toBe(200);
-            expect(error).toBeNull();
-            expect(data).toHaveProperty("url");
-            expect(data?.url).toMatch(expectedMinioUrlRegex);
-            expect(data?.url).toContain(uploadedObjectId);
-            // Check for common presigned URL components
-            expect(data?.url).toContain("X-Amz-Algorithm=");
-            expect(data?.url).toContain("X-Amz-Credential=");
-            expect(data?.url).toContain("X-Amz-Expires=");
-            expect(data?.url).toContain("X-Amz-Signature=");
-        } finally {
-            // Ensure permissions are restored
-            logger.debug(`Restoring read perm for owner ${userDid1}, rev ${tempRev}`);
-            await permissionService.setUserDirectPermissions(userDid1, [`read:${BLOBS_COLLECTION}`, `write:${BLOBS_COLLECTION}`]);
-            logger.debug(`Read perm restored`);
-        }
-    });
-
-    it("GET /download/:objectId: should get URL successfully with 'read:blobs' direct permission (non-owner) (200)", async () => {
-        expect(uploadedObjectId).toBeDefined();
-
-        // Use User 2 (non-owner, but has read:blobs)
-        const { data, error, status } = await ctx2.api.api.v1.blob.download({ objectId: uploadedObjectId! }).get({
-            headers: getHeaders(token2, appId2),
-        });
-
-        expect(status).toBe(200);
-        expect(error).toBeNull();
-        expect(data).toHaveProperty("url");
-        expect(data?.url).toMatch(expectedMinioUrlRegex);
-        expect(data?.url).toContain(uploadedObjectId);
     });
 
     it("GET /download/:objectId: should allow downloading content using the pre-signed URL", async () => {
