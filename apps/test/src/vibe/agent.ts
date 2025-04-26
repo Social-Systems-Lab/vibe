@@ -16,7 +16,7 @@ import { Buffer } from "buffer"; // Needed for base64 encoding
 import * as ed from "@noble/ed25519";
 
 // --- Constants ---
-const VIBE_CLOUD_BASE_URL = "http://127.0.0.1:3000"; // From docker-compose/env
+const VIBE_CLOUD_BASE_URL = "http://127.0.0.1:3001"; // 3001 = backen run outside docker, 3000=backend in docker
 const ADMIN_CLAIM_CODE = "ABC1-XYZ9"; // From vibe-cloud/.env
 const LOCAL_STORAGE_KEY_PREFIX = "vibe_agent_";
 
@@ -24,19 +24,179 @@ const LOCAL_STORAGE_KEY_PREFIX = "vibe_agent_";
  * Implementation of the VibeAgent interface that connects to the Vibe Cloud API.
  */
 export class MockVibeAgent implements VibeAgent {
+    private webSocket: WebSocket | null = null;
+    private isWebSocketConnecting: boolean = false;
+    private webSocketUrl: string | null = null;
+    private subscriptions: Map<string, SubscriptionCallback<any>> = new Map();
+    private pendingSubscriptions: Map<string, SubscriptionCallback<any>> = new Map();
+
     private manifest: AppManifest | null = null;
     private keyPair: Ed25519KeyPair | null = null;
     private userDid: string | null = null;
     private account: Account | null = null;
     private jwt: string | null = null;
     private grantedPermissions: Record<string, PermissionSetting> | null = null; // Store granted permissions
-    private subscriptions: Map<string, SubscriptionCallback<any>> = new Map();
     private isInitialized = false;
     private isInitializing = false; // Prevent concurrent init calls
 
     constructor() {
         console.log("MockVibeAgent (Cloud Connected) initialized");
         this.loadIdentityFromStorage(); // Try loading identity on construction
+    }
+
+    // --- WebSocket Methods ---
+
+    private async ensureWebSocketConnection(): Promise<void> {
+        this.ensureInitialized(); // Need JWT and manifest
+
+        // Already connected and open? Nothing to do.
+        if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
+            return;
+        }
+
+        // Currently connecting? Wait for it to finish (or fail).
+        if (this.isWebSocketConnecting) {
+            // Simple approach: wait a bit and check again, or use a Promise-based lock
+            console.debug("WebSocket is already connecting, waiting...");
+            // A more robust solution would use a Promise that resolves/rejects when connection attempt finishes
+            await new Promise((resolve) => setTimeout(resolve, 100)); // Simple polling/delay
+            return this.ensureWebSocketConnection(); // Re-check status
+        }
+
+        // Not connected, not connecting: Initiate connection
+        if (!this.webSocket || this.webSocket.readyState === WebSocket.CLOSED) {
+            if (!this.jwt || !this.manifest?.appId) {
+                throw new Error("Cannot establish WebSocket connection without JWT and App ID.");
+            }
+            // Construct URL (handle potential http/https mismatch)
+            const wsProtocol = VIBE_CLOUD_BASE_URL.startsWith("https:") ? "wss:" : "ws:";
+            const wsHost = VIBE_CLOUD_BASE_URL.replace(/^https?:/, "");
+            this.webSocketUrl = `${wsProtocol}${wsHost}/ws?token=${encodeURIComponent(this.jwt)}&appId=${encodeURIComponent(this.manifest.appId)}`;
+
+            console.log(`Attempting to connect WebSocket to: ${this.webSocketUrl.split("?")[0]}...`); // Don't log token
+            this.isWebSocketConnecting = true;
+            this.webSocket = new WebSocket(this.webSocketUrl);
+
+            return new Promise((resolve, reject) => {
+                this.webSocket!.onopen = () => {
+                    console.log("WebSocket connection established.");
+                    this.isWebSocketConnecting = false;
+                    // Process any subscriptions that were waiting
+                    this.processPendingSubscriptions();
+                    resolve();
+                };
+
+                this.webSocket!.onmessage = (event) => {
+                    this.handleWebSocketMessage(event.data);
+                };
+
+                this.webSocket!.onerror = (event) => {
+                    console.error("WebSocket error:", event);
+                    this.isWebSocketConnecting = false;
+                    this.webSocket = null; // Reset on error
+                    // Reject pending subscriptions? Or just let subsequent calls fail?
+                    this.pendingSubscriptions.clear(); // Clear pending ones on error
+                    reject(new Error("WebSocket connection error."));
+                };
+
+                this.webSocket!.onclose = (event) => {
+                    console.log(`WebSocket closed: Code=${event.code}, Reason=${event.reason}`);
+                    this.isWebSocketConnecting = false;
+                    this.webSocket = null; // Reset on close
+                    // Clear subscriptions as they are no longer active
+                    this.subscriptions.clear();
+                    this.pendingSubscriptions.clear();
+                    // Optionally notify the app about the disconnection
+                };
+            });
+        }
+        // Should not reach here if logic is correct, but return resolved promise
+        return Promise.resolve();
+    }
+
+    private processPendingSubscriptions(): void {
+        if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
+            console.warn("WebSocket not open, cannot process pending subscriptions.");
+            return;
+        }
+        console.debug(`Processing ${this.pendingSubscriptions.size} pending subscriptions...`);
+        this.pendingSubscriptions.forEach((callback, collection) => {
+            // Move from pending to active
+            this.subscriptions.set(collection, callback);
+            // Send subscribe message
+            this.sendWebSocketMessage({ action: "subscribe", collection });
+        });
+        this.pendingSubscriptions.clear();
+    }
+
+    private handleWebSocketMessage(rawMessage: any): void {
+        try {
+            const message = JSON.parse(rawMessage);
+            console.debug("WebSocket message received:", message);
+
+            // Handle backend messages (update, error, status confirmations)
+            if (message.type === "update" && message.collection && message.data) {
+                const callback = this.subscriptions.get(message.collection);
+                if (callback) {
+                    // Assuming backend sends the single changed doc in `data`
+                    // We need to merge this into the existing state, which the agent doesn't know.
+                    // The current VibeProvider/SDK design expects the *full* dataset on update.
+                    // This is a mismatch!
+                    // Option 1: Agent refetches full data (inefficient)
+                    // Option 2: Backend RealtimeService sends full data (potentially large)
+                    // Option 3: SDK/App handles merging the single update (complex state logic in app)
+
+                    // --- TEMPORARY WORKAROUND (Option 1 - Inefficient): Refetch ---
+                    console.warn(`Received single doc update for ${message.collection}. Refetching full data as a workaround.`);
+                    this.readOnce({ collection: message.collection })
+                        .then((result) => {
+                            if (result.ok) {
+                                callback(null, result.data);
+                            } else {
+                                callback(new Error(result.error || `Refetch failed for ${message.collection}`), null);
+                            }
+                        })
+                        .catch((err) => {
+                            callback(err, null);
+                        });
+                    // --- End Workaround ---
+
+                    // Ideal (if backend sent full data or app handled merge):
+                    // callback(null, message.data); // Adjust based on actual payload structure
+                } else {
+                    console.warn(`Received update for unsubscribed collection: ${message.collection}`);
+                }
+            } else if (
+                message.status === "subscribed" ||
+                message.status === "unsubscribed" ||
+                message.status === "denied" ||
+                message.status === "not_subscribed"
+            ) {
+                // Log confirmation/status messages from backend
+                console.log(`WebSocket status for collection '${message.collection}': ${message.status}${message.reason ? ` (${message.reason})` : ""}`);
+            } else if (message.error) {
+                console.error(`WebSocket error message from server: ${message.error}`);
+                // Maybe notify specific subscription? Difficult without context.
+            } else {
+                console.warn("Received unknown WebSocket message format:", message);
+            }
+        } catch (error) {
+            console.error("Failed to parse WebSocket message:", rawMessage, error);
+        }
+    }
+
+    private sendWebSocketMessage(message: object): void {
+        if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
+            try {
+                console.debug("Sending WebSocket message:", message);
+                this.webSocket.send(JSON.stringify(message));
+            } catch (error) {
+                console.error("Failed to send WebSocket message:", error);
+            }
+        } else {
+            console.warn("WebSocket not open, cannot send message:", message);
+            // TODO: Queue message or handle error? For subscribe/unsubscribe, queuing might be complex.
+        }
     }
 
     // --- Identity Management ---
@@ -178,7 +338,7 @@ export class MockVibeAgent implements VibeAgent {
                         if (perm.startsWith("read:")) {
                             newGrants[perm] = "always";
                         } else {
-                            newGrants[perm] = "ask";
+                            newGrants[perm] = "always"; // TODO "ask" should be the default for non-read permissions
                         }
                     });
                     console.log("Simulated new grants:", newGrants);
@@ -217,7 +377,7 @@ export class MockVibeAgent implements VibeAgent {
                         if (perm.startsWith("read:")) {
                             newGrants[perm] = "always";
                         } else {
-                            newGrants[perm] = "ask";
+                            newGrants[perm] = "always"; // TODO "ask" should be the default for non-read permissions
                         }
                     });
                     console.log("Simulated initial grants:", newGrants);
@@ -392,33 +552,63 @@ export class MockVibeAgent implements VibeAgent {
     }
 
     async read<T>(params: ReadParams, callback: SubscriptionCallback<T>): Promise<Unsubscribe> {
-        console.log("MockVibeAgent: read (subscription) called with params:", params);
-        // For Iteration 2, simulate subscription with an initial readOnce
-        // Real-time updates via WebSocket will be handled later.
+        this.ensureInitialized(); // Basic checks first
+        const { collection } = params; // Filter not used for WS subscription message
 
-        const subscriptionId = `sub_${params.collection}_${Date.now()}`;
-        this.subscriptions.set(subscriptionId, callback);
+        console.log(`MockVibeAgent: read (subscription) requested for collection: ${collection}`);
 
-        console.log(`MockVibeAgent: Performing initial readOnce for subscription '${subscriptionId}'...`);
+        // 1. Ensure WebSocket connection is ready (or being established)
+        try {
+            await this.ensureWebSocketConnection();
+        } catch (error) {
+            console.error(`Failed to establish WebSocket connection for ${collection}:`, error);
+            callback(error instanceof Error ? error : new Error("WebSocket connection failed"), null);
+            // Return a no-op unsubscribe function
+            return async () => {};
+        }
+
+        // 2. Perform initial readOnce via HTTP
+        console.log(`Performing initial readOnce for subscription '${collection}'...`);
         try {
             const initialResult = await this.readOnce<T>(params);
             if (initialResult.ok) {
                 callback(null, initialResult.data); // Send initial data
             } else {
-                callback(new Error(initialResult.error || "Failed to fetch initial data"), null);
+                // Still proceed with subscription even if initial read fails? Or fail here?
+                // Let's proceed but log the error.
+                console.error(`Initial readOnce failed for ${collection}: ${initialResult.error}`);
+                // Optionally call callback with error: callback(new Error(initialResult.error || "Initial read failed"), null);
+                // Send empty initial data if read fails?
+                callback(null, []);
             }
         } catch (error) {
-            callback(error instanceof Error ? error : new Error("Unknown error during initial fetch"), null);
+            console.error(`Error during initial readOnce for ${collection}:`, error);
+            // Proceed with subscription?
+            // Optionally call callback with error: callback(error instanceof Error ? error : new Error("Unknown error during initial fetch"), null);
+            callback(null, []);
         }
 
-        console.log(`MockVibeAgent: Subscription '${subscriptionId}' established (readOnce complete).`);
+        // 3. Register subscription and send WS message (if WS is open, otherwise handled by pending)
+        if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
+            console.log(`WebSocket open, sending subscribe message for ${collection}`);
+            this.subscriptions.set(collection, callback);
+            this.sendWebSocketMessage({ action: "subscribe", collection });
+        } else {
+            console.log(`WebSocket not open yet, adding ${collection} to pending subscriptions`);
+            // Add to pending, ensureWebSocketConnection's onopen will handle it
+            this.pendingSubscriptions.set(collection, callback);
+        }
 
-        // Return an unsubscribe function
+        console.log(`MockVibeAgent: Subscription request processed for '${collection}'.`);
+
+        // 4. Return unsubscribe function
         const unsubscribe = async () => {
-            this.subscriptions.delete(subscriptionId);
-            console.log(`MockVibeAgent: Unsubscribed from '${subscriptionId}'.`);
-            // In a real agent, this might involve sending a message to the server
-            await Promise.resolve();
+            console.log(`Unsubscribing from collection '${collection}'...`);
+            this.subscriptions.delete(collection);
+            this.pendingSubscriptions.delete(collection); // Remove if it was pending
+            // Send unsubscribe message over WebSocket
+            this.sendWebSocketMessage({ action: "unsubscribe", collection });
+            // Should we close the WS if no subscriptions remain? Maybe not for a mock agent.
         };
         return unsubscribe;
     }
@@ -426,6 +616,7 @@ export class MockVibeAgent implements VibeAgent {
     async unsubscribe(unsubscribeFn: Unsubscribe): Promise<void> {
         // The function returned by `read` *is* the unsubscribe function.
         console.log("MockVibeAgent: Calling unsubscribe function.");
+        // It now handles sending the WS message internally.
         await unsubscribeFn();
     }
 

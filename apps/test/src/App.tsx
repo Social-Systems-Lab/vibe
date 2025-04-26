@@ -1,3 +1,4 @@
+// App.tsx - Main application file for the Vibe mock integration test
 import { useState, useEffect, useCallback, useRef } from "react";
 import "./index.css";
 // import { APITester } from "./APITester"; // Comment out for now
