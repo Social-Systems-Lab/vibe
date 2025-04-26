@@ -60,18 +60,11 @@ export class AuthService {
                 logger.error(`Error deleting user data database '${userDbName}':`, error.message || error);
                 // Optional: throw error if DB deletion failure is critical
             }
-        }
-
-        // 3. Delete the user's permission document
-        try {
-            await this.permissionService.deletePermissionsDoc(userDid);
-            logger.info(`Attempted deletion of permission document for userDid '${userDid}'.`);
-        } catch (error: any) {
-            logger.error(`Error during permission document deletion for userDid '${userDid}':`, error.message || error);
-        }
+        // 3. TODO: Delete user-specific app registrations from SYSTEM_DB/apps collection?
+        // logger.info(`Cleanup of app registrations for user ${userDid} is not yet implemented.`);
 
         // 4. TODO: Blob Cleanup (Requires querying BlobMetadata and calling blobService.deleteObject)
-        //logger.warn(`Blob cleanup for user ${userDid} is not yet implemented.`);
+        // logger.warn(`Blob cleanup for user ${userDid} is not yet implemented.`);
     }
 
     /**
@@ -172,24 +165,11 @@ export class AuthService {
             throw new InternalServerError(`Failed to create database for admin user ${userDid}.`);
         }
 
-        // 3. Grant default direct permissions to the new admin user
-        const defaultAdminPermissions = [
-            "read:*", // Read anything (including other users' data if needed, system data)
-            "write:*", // Write anything (including system data)
-            "manage:permissions", // Ability to grant/revoke permissions
-            "manage:users", // Ability to manage users (if such endpoints exist)
-            "read:blobs", // Explicit read access to shared blobs
-            "write:blobs", // Explicit write access to shared blobs
-        ];
-        try {
-            await this.permissionService.setUserDirectPermissions(userDid, defaultAdminPermissions);
-            logger.info(`Default admin direct permissions granted to user ${userDid}.`);
-        } catch (error: any) {
-            logger.error(`Failed to set default direct permissions for admin user ${userDid}:`, error);
-            // Critical failure. User exists, DB exists, but permissions failed.
-            // Manual intervention likely required. Log and throw.
-            throw new InternalServerError(`Failed to set default permissions for admin user ${userDid}.`);
-        }
+        // 3. TODO: Grant default app grants if necessary?
+        // The concept of 'direct permissions' managed by PermissionService is removed.
+        // Admin status is handled by the 'isAdmin' flag on the User document.
+        // If specific default app grants are needed, they would be created as 'apps/{userDid}/{appId}' documents.
+        logger.info(`Admin user ${userDid} created. Direct permission setting is skipped (handled by isAdmin flag).`);
 
         // 4. Return the created user object
         const createdUser: User = {
@@ -272,19 +252,12 @@ export class AuthService {
         }
 
         // 4. Grant Direct Permissions (if any)
-        let permsRev: string | null = null;
+        let permsRev: string | null = null; // Keep variable for return type consistency, but it won't be set.
         if (directPermissions.length > 0) {
-            try {
-                logger.debug(`[Test Helper] Setting direct permissions for ${testUserDid}: [${directPermissions.join(", ")}]`);
-                const permRes = await this.permissionService.setUserDirectPermissions(testUserDid, directPermissions);
-                permsRev = permRes.rev;
-                logger.info(`[Test Helper] Direct permissions set for ${testUserDid}, rev: ${permsRev}`);
-            } catch (error: any) {
-                logger.error(`[Test Helper] Failed to set direct permissions for test user ${testUserDid}:`, error);
-                // Attempt cleanup before failing
-                await this.deleteUser(testUserDid).catch((e) => logger.error("Cleanup failed:", e)); // deleteUser handles DB and user doc
-                throw new InternalServerError(`[Test Helper] Failed to set direct permissions for test user ${testUserDid}.`);
-            }
+            // TODO: Re-evaluate how to handle initial permissions for test users.
+            // Direct permissions via PermissionService are removed.
+            // Could potentially create default app registration docs here if needed.
+            logger.warn(`[Test Helper] Setting direct permissions for ${testUserDid} skipped (model changed). Permissions provided: [${directPermissions.join(", ")}]`);
         }
 
         // 5. Generate JWT

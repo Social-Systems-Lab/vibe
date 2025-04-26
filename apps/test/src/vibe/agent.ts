@@ -138,24 +138,103 @@ export class MockVibeAgent implements VibeAgent {
             // 3. Save identity and JWT if successful
             this.saveIdentityToStorage();
 
-            // 4. Register App Manifest (Idempotent)
-            await this.registerApp(manifest);
+            // --- New App Registration/Update Flow ---
+            console.log(`Checking registration status for app: ${manifest.appId}`);
+            let needsUpsert = false;
+            let newGrants: Record<string, PermissionSetting> = {};
 
-            // 5. Simulate Consent & Set Grants
-            // For mock, default to always for read, ask for write/other
-            const simulatedGrants: Record<string, PermissionSetting> = {};
-            manifest.permissions.forEach((perm) => {
-                if (perm.startsWith("read:")) {
-                    simulatedGrants[perm] = "always";
-                } else {
-                    simulatedGrants[perm] = "ask"; // Default others to 'ask'
+            try {
+                // 4. Check Status
+                const statusResponse = await this.fetchApi<{
+                    isRegistered: boolean;
+                    manifest?: AppManifest; // Manifest user last saw
+                    grants?: Record<string, PermissionSetting>; // Grants user last gave
+                }>(`/api/v1/user/apps/${manifest.appId}/status`, "GET", undefined, true); // Use GET, skip init check
+
+                const storedManifest = statusResponse.manifest;
+                const storedGrants = statusResponse.grants;
+
+                console.log("Status response:", statusResponse);
+
+                // 5. Compare Permissions & Determine Grants
+                const latestPermissions = new Set(manifest.permissions);
+                const storedPermissions = storedManifest ? new Set(storedManifest.permissions) : new Set<string>();
+
+                // Check if permissions lists are different or if no grants exist yet
+                let permissionsDiffer = latestPermissions.size !== storedPermissions.size || !manifest.permissions.every((p) => storedPermissions.has(p));
+                if (!storedGrants || Object.keys(storedGrants).length === 0) {
+                    console.log("No existing grants found, simulating initial consent.");
+                    permissionsDiffer = true; // Treat as different if no grants yet
                 }
-            });
-            console.log("MockVibeAgent: Simulated grants:", simulatedGrants);
-            await this.setAppGrants(manifest.appId, simulatedGrants);
-            this.grantedPermissions = simulatedGrants; // Store locally
 
-            // 6. Construct the account object
+                if (permissionsDiffer) {
+                    console.log("Permissions differ or first time registration. Simulating consent based on latest manifest.");
+                    // Simulate consent based on the *latest* manifest
+                    manifest.permissions.forEach((perm) => {
+                        // Simple simulation: grant 'always' for read, 'ask' for others
+                        if (perm.startsWith("read:")) {
+                            newGrants[perm] = "always";
+                        } else {
+                            newGrants[perm] = "ask";
+                        }
+                    });
+                    console.log("Simulated new grants:", newGrants);
+                    needsUpsert = true;
+                } else {
+                    console.log("Permissions match existing registration. Using stored grants.");
+                    newGrants = storedGrants!; // Use the existing grants
+                    this.grantedPermissions = newGrants; // Store locally
+                }
+
+                // 6. Call Upsert if needed
+                if (needsUpsert) {
+                    console.log(`Calling /upsert for app ${manifest.appId}`);
+                    const upsertPayload = {
+                        // Send the *latest* manifest details + new grants
+                        appId: manifest.appId,
+                        name: manifest.name,
+                        description: manifest.description,
+                        pictureUrl: manifest.pictureUrl,
+                        permissions: manifest.permissions, // Latest permissions
+                        grants: newGrants, // Newly simulated grants
+                    };
+                    await this.fetchApi<any>("/api/v1/apps/upsert", "POST", upsertPayload, true); // skip init check
+                    console.log("Upsert successful.");
+                    this.grantedPermissions = newGrants; // Store the newly set grants
+                }
+            } catch (error) {
+                console.error("Error during status check or upsert:", error);
+                // If status check fails (e.g., 404), we might still want to proceed with upsert as a first-time registration.
+                // Let's assume a failure here means we should try an initial upsert.
+                if (error instanceof Error && error.message.includes("404")) {
+                    // Check for 404 specifically if possible
+                    console.log("Status check failed (likely 404), proceeding with initial upsert.");
+                    // Simulate consent based on the *latest* manifest
+                    manifest.permissions.forEach((perm) => {
+                        if (perm.startsWith("read:")) {
+                            newGrants[perm] = "always";
+                        } else {
+                            newGrants[perm] = "ask";
+                        }
+                    });
+                    console.log("Simulated initial grants:", newGrants);
+                    const upsertPayload = { ...manifest, grants: newGrants };
+                    try {
+                        await this.fetchApi<any>("/api/v1/apps/upsert", "POST", upsertPayload, true);
+                        console.log("Initial Upsert successful.");
+                        this.grantedPermissions = newGrants;
+                    } catch (upsertError) {
+                        console.error("Initial Upsert failed:", upsertError);
+                        throw new Error(`Failed initial app registration/upsert: ${upsertError instanceof Error ? upsertError.message : String(upsertError)}`);
+                    }
+                } else {
+                    // Rethrow other errors during status/upsert
+                    throw new Error(`Failed app status check or upsert: ${error instanceof Error ? error.message : String(error)}`);
+                }
+            }
+            // --- End New Flow ---
+
+            // 7. Construct the account object
             if (this.userDid) {
                 this.account = { userDid: this.userDid };
                 console.log("MockVibeAgent: Account object constructed:", this.account);
@@ -178,7 +257,7 @@ export class MockVibeAgent implements VibeAgent {
         } finally {
             this.isInitializing = false;
         }
-    } // <-- Added missing closing brace for init method
+    }
 
     private async performAdminClaim(): Promise<void> {
         if (!this.userDid || !this.keyPair) {
@@ -225,35 +304,9 @@ export class MockVibeAgent implements VibeAgent {
         }
     }
 
-    // --- New Helper Methods for App Registration & Grant Setting ---
-    private async registerApp(manifest: AppManifest): Promise<void> {
-        console.log(`MockVibeAgent: Registering app ${manifest.appId}...`);
-        try {
-            // The backend /register endpoint expects the manifest structure directly
-            const response = await this.fetchApi<any>("/api/v1/apps/register", "POST", manifest, true);
-            console.log(`MockVibeAgent: App registration successful for ${manifest.appId}`, response);
-            // We don't strictly need the response here unless it contains updated grants,
-            // but the endpoint was designed to return them. We'll overwrite with simulated grants anyway.
-        } catch (error) {
-            // Log error but don't necessarily fail init, registration might have happened before
-            // or might conflict if already registered (which is okay).
-            console.error(`MockVibeAgent: App registration failed for ${manifest.appId} (might be okay if already registered):`, error);
-            // Consider re-throwing only for specific fatal errors?
-        }
-    }
-
-    private async setAppGrants(appId: string, grants: Record<string, PermissionSetting>): Promise<void> {
-        console.log(`MockVibeAgent: Setting grants for app ${appId}...`, grants);
-        try {
-            const payload = { appId, grants };
-            await this.fetchApi<any>("/api/v1/permissions/grants", "POST", payload, true);
-            console.log(`MockVibeAgent: Grants set successfully for ${appId}`);
-        } catch (error) {
-            console.error(`MockVibeAgent: Failed to set grants for app ${appId}:`, error);
-            // Throw this error as it's crucial for permissions to be set correctly
-            throw new Error(`Failed to save permission grants: ${error instanceof Error ? error.message : String(error)}`);
-        }
-    }
+    // --- Obsolete Helper Methods ---
+    // private async registerApp(...) { ... } // Replaced by /upsert logic in init
+    // private async setAppGrants(...) { ... } // Replaced by /upsert logic in init
 
     private ensureInitialized(): void {
         // Updated check: Ensure JWT is present, account and permissions might still be null during init
