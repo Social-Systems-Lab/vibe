@@ -564,21 +564,26 @@ export const app = new Elysia()
                     return { error: "Unauthorized: Invalid or missing user token." };
                 }
             })
-            // GET /api/v1/apps/:appId/status - Get registration status and details for a specific app for the user
+            // GET /api/v1/apps/status - Get registration status and details for a specific app for the user
             .get(
-                "/:appId/status",
-                async ({ dataService, user, params, set }) => {
+                "/status",
+                async ({ dataService, user, query, set }) => {
                     if (!user) throw new InternalServerError("User context missing after auth check.");
                     const { userDid } = user;
-                    const { appId } = params;
+                    const { appId } = query; // Get appId from query parameters
 
-                    logger.debug(`Checking status for app '${appId}' for user '${userDid}'`);
+                    // Add validation for appId presence in query
+                    if (!appId || typeof appId !== "string") {
+                        set.status = 400;
+                        return { error: "Bad Request: Missing or invalid 'appId' query parameter." };
+                    }
+
+                    logger.debug(`Checking status for app '${appId}' (from query) for user '${userDid}'`);
                     const docId = `${APPS_COLLECTION}/${userDid}/${appId}`;
 
                     try {
                         const doc = await dataService.getDocument<AppModel>(SYSTEM_DB, docId);
-
-                        // Extract manifest fields from the document
+                        // ... rest of the handler remains the same ...
                         const manifest: AppManifest = {
                             appId: doc.appId,
                             name: doc.name,
@@ -586,7 +591,6 @@ export const app = new Elysia()
                             pictureUrl: doc.pictureUrl,
                             permissions: doc.permissions,
                         };
-
                         logger.info(`Found registration for app '${appId}' for user '${userDid}'.`);
                         set.status = 200;
                         return {
@@ -595,26 +599,40 @@ export const app = new Elysia()
                             grants: doc.grants,
                         };
                     } catch (error: any) {
+                        // Log the specific error type and message BEFORE the check
+                        logger.error(
+                            `[/status] Caught error fetching status for app '${appId}', user ${userDid}. Error type: ${
+                                error?.constructor?.name
+                            }, Status code: ${error?.statusCode}, IsNotFoundError: ${error instanceof NotFoundError}, Message: ${error?.message}`,
+                            error
+                        );
+
                         if (error instanceof NotFoundError || error.statusCode === 404) {
-                            logger.info(`No registration found for app '${appId}' for user '${userDid}'.`);
-                            set.status = 200; // Still OK, just not registered
+                            logger.info(`[/status] Handling as NotFoundError. Returning 200 status with isRegistered: false.`);
+                            set.status = 200;
                             return {
                                 isRegistered: false,
-                                manifest: undefined, // Explicitly undefined
-                                grants: undefined, // Explicitly undefined
+                                manifest: undefined,
+                                grants: undefined,
                             };
                         } else {
-                            logger.error(`Error fetching status for app '${appId}', user ${userDid}:`, error);
+                            logger.error(`[/status] Handling as non-NotFoundError. Throwing InternalServerError.`);
                             throw new InternalServerError("Failed to fetch application status.");
                         }
                     }
                 },
                 {
-                    params: t.Object({ appId: t.String() }),
-                    response: { 200: AppStatusResponseSchema }, // Use the new response schema
-                    detail: { summary: "Get the registration status, manifest, and grants for a specific app for the authenticated user." },
+                    // CHANGE: Define query parameter instead of path parameter
+                    query: t.Object({ appId: t.String() }),
+                    response: {
+                        200: AppStatusResponseSchema, // Schema for 200 OK (found or not found)
+                        400: ErrorResponseSchema, // Schema for 400 Bad Request
+                        // You could add 401, 403, 500 etc. if the handler could directly return those
+                    },
+                    detail: { summary: "Get the registration status, manifest, and grants for a specific app (via query param) for the authenticated user." },
                 }
             )
+
             // POST /api/v1/apps/upsert - Create or update a user-specific app registration
             .post(
                 "/upsert",

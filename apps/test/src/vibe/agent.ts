@@ -145,11 +145,14 @@ export class MockVibeAgent implements VibeAgent {
 
             try {
                 // 4. Check Status
+                const statusBasePath = "/api/v1/apps/status";
+                const queryString = `?appId=${encodeURIComponent(this.manifest.appId)}`;
+                const statusEndpointWithQuery = statusBasePath + queryString;
                 const statusResponse = await this.fetchApi<{
                     isRegistered: boolean;
                     manifest?: AppManifest; // Manifest user last saw
                     grants?: Record<string, PermissionSetting>; // Grants user last gave
-                }>(`/api/v1/apps/${manifest.appId}/status`, "GET", undefined, true); // Use GET, skip init check
+                }>(statusEndpointWithQuery, "GET", undefined, true); // Use GET, skip init check
 
                 const storedManifest = statusResponse.manifest;
                 const storedGrants = statusResponse.grants;

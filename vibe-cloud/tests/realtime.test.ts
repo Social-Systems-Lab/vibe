@@ -219,7 +219,10 @@ describe("Real-time sync over WebSockets", () => {
 
             // Verify permissions using /status endpoint
             // Pass appId as parameter to the function call, and only options object to .get()
-            const statusAfterRevoke = await testCtx.api.api.v1.user.apps({ appId: testCtx.appId }).status.get({ headers: getHeaders() });
+            const statusAfterRevoke = await testCtx.api.api.v1.apps.status.get({
+                query: { appId: testCtx.appId },
+                headers: getHeaders(),
+            });
             expect(statusAfterRevoke.data?.grants?.[readPerm]).toBeUndefined();
             expect(statusAfterRevoke.data?.grants?.[writePerm]).toBeDefined(); // Check write is still there
 

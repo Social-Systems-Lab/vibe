@@ -110,9 +110,10 @@ describe("Data API Endpoints (/api/v1/data)", () => {
             logger.debug(`Write permission revoked via /upsert`);
 
             // Verify only read remains using /status
-            const statusAfterRevoke = await testCtx.api.api.v1.user.apps({ appId: testCtx.appId }).status.get({ headers: getHeaders() });
-
-            logger.log("***** Status after revoking write permission:", JSON.stringify(statusAfterRevoke));
+            const statusAfterRevoke = await testCtx.api.api.v1.apps.status.get({
+                query: { appId: testCtx.appId },
+                headers: getHeaders(),
+            });
 
             expect(statusAfterRevoke.data?.grants?.[readPerm]).toBe("always");
             expect(statusAfterRevoke.data?.grants?.[writePerm]).toBeUndefined();
@@ -152,7 +153,10 @@ describe("Data API Endpoints (/api/v1/data)", () => {
             logger.debug(`Read permission revoked via /upsert`);
 
             // Verify only write remains using /status
-            const statusAfterRevoke = await testCtx.api.api.v1.user.apps({ appId: testCtx.appId }).status.get({ headers: getHeaders() });
+            const statusAfterRevoke = await testCtx.api.api.v1.apps.status.get({
+                query: { appId: testCtx.appId },
+                headers: getHeaders(),
+            });
             expect(statusAfterRevoke.data?.grants?.[readPerm]).toBeUndefined();
             expect(statusAfterRevoke.data?.grants?.[writePerm]).toBe("always"); // Should still be 'always'
 
@@ -192,7 +196,10 @@ describe("Data API Endpoints (/api/v1/data)", () => {
     it("POST /write: should create a single document", async () => {
         // Add status check before write
         logger.debug("Checking status before write operation...");
-        const statusCheck = await testCtx.api.api.v1.user.apps({ appId: testCtx.appId }).status.get({ headers: getHeaders() });
+        const statusCheck = await testCtx.api.api.v1.apps.status.get({
+            query: { appId: testCtx.appId },
+            headers: getHeaders(),
+        });
         logger.debug("Status check response:", statusCheck.data);
         // Verify the specific write grant needed for this test
         expect(statusCheck.data?.grants?.[`write:${testCollection}`]).toBe("always");

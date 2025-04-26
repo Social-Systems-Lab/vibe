@@ -87,7 +87,7 @@ describe("Auth Service & Admin Claim", () => {
             } catch (e: any) {
                 logger.warn(`Initial cleanup failed for ${label} claim code ${docId} (rev ${docRev}), fetching latest...`, e.message);
                 try {
-                    const doc = await dataService.getDocument<ClaimCode>(SYSTEM_DB, docId);
+                    const doc = await dataService.getDocument(SYSTEM_DB, docId);
                     if (doc._rev) {
                         await dataService.deleteDocument(SYSTEM_DB, docId, doc._rev);
                         logger.info(`Cleaned up ${label} claim code ${docId} with fetched rev ${doc._rev}`);
@@ -99,7 +99,8 @@ describe("Auth Service & Admin Claim", () => {
         } else {
             logger.warn(`${label} claim code rev was missing for ${docId}, attempting delete without rev (might fail)...`);
             try {
-                const doc = await dataService.getDocument<ClaimCode>(SYSTEM_DB, docId);
+                const docData = await dataService.getDocument(SYSTEM_DB, docId); // Remove <ClaimCode>
+                const doc = docData as ClaimCode; // Cast after fetching
                 if (doc._rev) await dataService.deleteDocument(SYSTEM_DB, docId, doc._rev);
             } catch (e) {
                 logger.error(`Final cleanup attempt failed for ${label} claim code ${docId}:`, e);
@@ -148,7 +149,8 @@ describe("Auth Service & Admin Claim", () => {
             expect(createdAdminUserDid).not.toBeNull();
 
             // Verify main claim code is spent
-            const spentClaimDoc = await dataService.getDocument<ClaimCode>(SYSTEM_DB, claimCodeDocId);
+            const spentClaimDocData = await dataService.getDocument(SYSTEM_DB, claimCodeDocId); // Remove <ClaimCode>
+            const spentClaimDoc = spentClaimDocData as ClaimCode; // Cast after fetching
             expect(spentClaimDoc.spentAt).toBeTypeOf("string");
             claimCodeRev = spentClaimDoc._rev; // Update rev for cleanup
 
@@ -193,7 +195,8 @@ describe("Auth Service & Admin Claim", () => {
 
             // Verify the invalidSigClaimCode was NOT spent
             try {
-                const codeDoc = await dataService.getDocument<ClaimCode>(SYSTEM_DB, invalidSigClaimCodeDocId);
+                const codeDocData = await dataService.getDocument(SYSTEM_DB, invalidSigClaimCodeDocId); // Remove <ClaimCode>
+                const codeDoc = codeDocData as ClaimCode; // Cast after fetching
                 expect(codeDoc.spentAt).toBeNull();
                 // Update rev if needed for cleanup, although it shouldn't change here
                 invalidSigClaimCodeRev = codeDoc._rev;
@@ -221,10 +224,65 @@ describe("Auth Service & Admin Claim", () => {
 
         // Expired and Locked tests remain the same (they create their own codes)
         it("should fail if claim code is expired", async () => {
-            /* ... no change ... */
+            const expiredCodeId = `${CLAIM_CODES_COLLECTION}/test-claim-expired-${randomUUID()}`;
+            const expiredCodeValue = `EXPIREDCODE-${randomUUID()}`;
+            const pastDate = new Date(Date.now() - 1000 * 60 * 60).toISOString();
+            const expiredDoc: Omit<ClaimCode, "_rev"> = {
+                _id: expiredCodeId,
+                code: expiredCodeValue,
+                expiresAt: pastDate,
+                forDid: null,
+                spentAt: null,
+                collection: CLAIM_CODES_COLLECTION,
+            };
+            let expiredRev: string | undefined;
+            try {
+                const createRes = await dataService.createDocument(SYSTEM_DB, CLAIM_CODES_COLLECTION, expiredDoc);
+                expiredRev = createRes.rev;
+
+                const messageBytes = new TextEncoder().encode(expiredCodeValue);
+                const signatureBytes = signEd25519(messageBytes, adminKeyPair.privateKey); // Use utility
+                const signatureBase64 = Buffer.from(signatureBytes).toString("base64");
+
+                const { data, error, status } = await api.api.v1.admin.claim.post({ did: adminDid, claimCode: expiredCodeValue, signature: signatureBase64 });
+
+                expect(status).toBe(400);
+                expect(error?.value as any).toEqual({ error: "Claim code has expired." });
+            } finally {
+                if (expiredCodeId && expiredRev) {
+                    await dataService.deleteDocument(SYSTEM_DB, expiredCodeId, expiredRev).catch((e) => logger.error("Cleanup failed for expired code:", e));
+                }
+            }
         });
         it("should fail if claim code is locked to a different DID", async () => {
-            /* ... no change ... */
+            const lockedCodeId = `${CLAIM_CODES_COLLECTION}/test-claim-locked-${randomUUID()}`;
+            const lockedCodeValue = `LOCKEDCODE-${randomUUID()}`;
+            const lockedDoc: Omit<ClaimCode, "_rev"> = {
+                _id: lockedCodeId,
+                code: lockedCodeValue,
+                expiresAt: null,
+                forDid: "did:vibe:some-other-user",
+                spentAt: null,
+                collection: CLAIM_CODES_COLLECTION,
+            };
+            let lockedRev: string | undefined;
+            try {
+                const createRes = await dataService.createDocument(SYSTEM_DB, CLAIM_CODES_COLLECTION, lockedDoc);
+                lockedRev = createRes.rev;
+
+                const messageBytes = new TextEncoder().encode(lockedCodeValue);
+                const signatureBytes = signEd25519(messageBytes, adminKeyPair.privateKey); // Use utility
+                const signatureBase64 = Buffer.from(signatureBytes).toString("base64");
+
+                const { data, error, status } = await api.api.v1.admin.claim.post({ did: adminDid, claimCode: lockedCodeValue, signature: signatureBase64 });
+
+                expect(status).toBe(400);
+                expect(error?.value as any).toEqual({ error: "Claim code is not valid for the provided DID." });
+            } finally {
+                if (lockedCodeId && lockedRev) {
+                    await dataService.deleteDocument(SYSTEM_DB, lockedCodeId, lockedRev).catch((e) => logger.error("Cleanup failed for locked code:", e));
+                }
+            }
         });
     });
 });
