@@ -143,7 +143,12 @@ export interface WriteResult {
  * This is implemented by MockVibeAgent or a real agent connection module.
  */
 export interface VibeAgent {
-    // --- Initialization & State ---
+    // --- Initialization & Setup ---
+    setUIHandlers(handlers: {
+        // Method for UI layer to inject handlers
+        requestConsent: (request: ConsentRequest) => Promise<Record<string, PermissionSetting>>;
+        requestActionConfirmation: (request: ActionRequest) => Promise<ActionResponse>;
+    }): void;
     init(
         manifest: AppManifest
     ): Promise<{ account: Account | null; permissions: Record<string, PermissionSetting> | null; activeIdentity: Identity | null; identities: Identity[] }>;

@@ -1,21 +1,20 @@
 // App.tsx - Main application file for the Vibe mock integration test
 import { useState, useEffect, useCallback, useRef } from "react";
 import "./index.css";
-// import { APITester } from "./APITester"; // Comment out for now
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button"; // Import Button
-import { useVibe } from "./vibe/react"; // Import useVibe
-import type { Unsubscribe } from "./vibe/types"; // Import Unsubscribe type
+import { Button } from "@/components/ui/button";
+import { useVibe } from "./vibe/react"; // Import useVibe hook
+import { IdentityPanel } from "./components/agent/IdentityPanel"; // Import IdentityPanel
+import type { Unsubscribe } from "./vibe/types";
 
 // Remove logo imports if not used
 // import logo from "./logo.svg";
-// import reactLogo from "./react.svg";
-
 export function App() {
-    const { account, readOnce, read, write } = useVibe(); // Use the hook
+    // Get full state and methods from useVibe
+    const { account, identities, activeIdentity, readOnce, read, write, createIdentity, setActiveIdentity } = useVibe();
     const [notes, setNotes] = useState<any[]>([]);
     const [tasks, setTasks] = useState<any[]>([]);
-    const [status, setStatus] = useState<string>("");
+    const [status, setStatus] = useState<string>("Initializing...");
     const taskSubscription = useRef<Unsubscribe | null>(null); // Ref to hold unsubscribe function
 
     // --- Handlers ---
@@ -88,10 +87,11 @@ export function App() {
 
     useEffect(() => {
         if (!account) {
-            setStatus("No account found. Waiting for account initialization...");
+            setStatus("No active identity found. Waiting for initialization...");
             return;
         }
-        console.log("[App] Account found.", JSON.stringify(account));
+        // Use activeIdentity for logging or display if needed
+        console.log("[App] Active Identity found:", JSON.stringify(activeIdentity));
 
         setStatus("Subscribing to tasks...");
         let isMounted = true; // Flag to prevent state updates after unmount
@@ -135,23 +135,74 @@ export function App() {
             }
             setStatus("Task subscription stopped.");
         };
-    }, [read, account]); // Dependency array includes 'read' from useVibe
+        // Depend on activeIdentity as well, so subscription restarts if identity changes
+    }, [read, activeIdentity]);
+
+    // --- Identity Panel Handlers ---
+    const handleCreateIdentity = useCallback(async () => {
+        // Simple prompt for now, could be a modal later
+        const label = prompt("Enter a label for the new identity:", `Identity ${identities ? identities.length + 1 : 1}`);
+        if (label) {
+            setStatus("Creating new identity...");
+            try {
+                await createIdentity(label);
+                setStatus("New identity created.");
+            } catch (error) {
+                console.error("Error creating identity:", error);
+                setStatus(`Error creating identity: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
+    }, [createIdentity, identities]);
+
+    const handleSwitchIdentity = useCallback(
+        async (did: string) => {
+            setStatus(`Switching identity to ${did}...`);
+            try {
+                await setActiveIdentity(did);
+                setStatus("Identity switched.");
+                // Clear old data when switching identity
+                setNotes([]);
+                setTasks([]);
+            } catch (error) {
+                console.error("Error switching identity:", error);
+                setStatus(`Error switching identity: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        },
+        [setActiveIdentity]
+    );
+
+    const handleManagePermissions = useCallback(() => {
+        // TODO: Implement navigation or modal opening for permission manager
+        alert("Permission Management UI not implemented yet.");
+        console.log("Navigate to Permission Management UI");
+    }, []);
 
     return (
         <div className="container mx-auto p-8 text-left relative z-10">
-            {/* Keep header if desired, or remove */}
-            {/* <div className="flex justify-center items-center gap-8 mb-8"> ... logos ... </div> */}
+            {/* Header with Identity Panel */}
+            <header className="flex justify-between items-center mb-6">
+                <h1 className="text-2xl font-bold">Vibe Test App</h1>
+                <IdentityPanel
+                    identities={identities ?? []}
+                    activeIdentity={activeIdentity ?? null}
+                    onCreateIdentity={handleCreateIdentity}
+                    onSwitchIdentity={handleSwitchIdentity}
+                    onManagePermissions={handleManagePermissions}
+                />
+            </header>
 
             <Card className="bg-card/50 backdrop-blur-sm border-muted mb-6">
                 <CardHeader>
-                    <CardTitle>Vibe Mock Integration Test</CardTitle>
+                    <CardTitle>Status & Active Identity</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <p className="mb-4">
-                        Account DID:{" "}
-                        <code className="relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm">{account?.userDid || "Loading..."}</code>
+                    <p className="mb-2">
+                        Active Identity:{" "}
+                        <code className="relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm">
+                            {activeIdentity?.label ?? "None"} ({activeIdentity?.did ?? "N/A"})
+                        </code>
                     </p>
-                    <p className="mb-4">
+                    <p>
                         Status: <span className="italic">{status}</span>
                     </p>
                 </CardContent>

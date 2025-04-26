@@ -197,8 +197,13 @@ class MockVibeSDK implements IVibeSDK {
     // These would call corresponding agent methods and likely trigger state updates.
 }
 
-// Export a singleton instance
-export const vibe = new MockVibeSDK();
+// Export a singleton instance of the SDK
+const vibeSDKInstance = new MockVibeSDK();
+export const vibe = vibeSDKInstance;
+
+// Expose the agent instance for connection purposes (e.g., in VibeProvider)
+// This is a specific pattern for this mock setup.
+export const mockAgentInstance = vibeSDKInstance["agent"];
 
 /* eslint-enable @typescript-eslint/no-explicit-any */
 /* eslint-enable @typescript-eslint/no-unused-vars */
