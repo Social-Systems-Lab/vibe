@@ -149,7 +149,7 @@ export class MockVibeAgent implements VibeAgent {
                     isRegistered: boolean;
                     manifest?: AppManifest; // Manifest user last saw
                     grants?: Record<string, PermissionSetting>; // Grants user last gave
-                }>(`/api/v1/user/apps/${manifest.appId}/status`, "GET", undefined, true); // Use GET, skip init check
+                }>(`/api/v1/apps/${manifest.appId}/status`, "GET", undefined, true); // Use GET, skip init check
 
                 const storedManifest = statusResponse.manifest;
                 const storedGrants = statusResponse.grants;

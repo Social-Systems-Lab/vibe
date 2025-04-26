@@ -198,7 +198,7 @@ export const AppUpsertPayloadSchema = t.Intersect([
 ]);
 export type AppUpsertPayload = Static<typeof AppUpsertPayloadSchema>;
 
-// Schema for the /user/apps/:appId/status endpoint response
+// Schema for the /apps/:appId/status endpoint response
 export const AppStatusResponseSchema = t.Object({
     isRegistered: t.Boolean(),
     manifest: t.Optional(AppManifestSchema), // The manifest version the user last consented to

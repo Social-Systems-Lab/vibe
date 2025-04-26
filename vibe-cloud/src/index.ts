@@ -362,19 +362,7 @@ export const app = new Elysia()
                     return { error: "Internal server error processing user account." };
                 }
 
-                // let newUser; // Removed as we don't call createAdminUserFromDid directly anymore
-                // try {
-                //     logger.debug(`Creating admin user for DID ${did}...`); // Old logic removed
-                //     newUser = await authService.createAdminUserFromDid(did); // Method removed
-                //     logger.info(`Admin user created for DID ${did}, internal userDid: ${newUser.userDid}`);
-                // } catch (error: any) {
-                //     logger.error(`Failed to create admin user for DID ${did} after successful claim:`, error);
-                // This is problematic - the claim is spent, but user creation failed.
-                // Manual intervention might be needed. Log critical error.
-                // TODO: Consider a compensation mechanism? (Difficult)
                 set.status = 500;
-                //     return { error: "Claim successful, but failed to create admin user account. Please contact support." };
-                // }
 
                 // 6. Generate JWT for the claimed user DID
                 let token;
@@ -576,6 +564,57 @@ export const app = new Elysia()
                     return { error: "Unauthorized: Invalid or missing user token." };
                 }
             })
+            // GET /api/v1/apps/:appId/status - Get registration status and details for a specific app for the user
+            .get(
+                "/:appId/status",
+                async ({ dataService, user, params, set }) => {
+                    if (!user) throw new InternalServerError("User context missing after auth check.");
+                    const { userDid } = user;
+                    const { appId } = params;
+
+                    logger.debug(`Checking status for app '${appId}' for user '${userDid}'`);
+                    const docId = `${APPS_COLLECTION}/${userDid}/${appId}`;
+
+                    try {
+                        const doc = await dataService.getDocument<AppModel>(SYSTEM_DB, docId);
+
+                        // Extract manifest fields from the document
+                        const manifest: AppManifest = {
+                            appId: doc.appId,
+                            name: doc.name,
+                            description: doc.description,
+                            pictureUrl: doc.pictureUrl,
+                            permissions: doc.permissions,
+                        };
+
+                        logger.info(`Found registration for app '${appId}' for user '${userDid}'.`);
+                        set.status = 200;
+                        return {
+                            isRegistered: true,
+                            manifest: manifest,
+                            grants: doc.grants,
+                        };
+                    } catch (error: any) {
+                        if (error instanceof NotFoundError || error.statusCode === 404) {
+                            logger.info(`No registration found for app '${appId}' for user '${userDid}'.`);
+                            set.status = 200; // Still OK, just not registered
+                            return {
+                                isRegistered: false,
+                                manifest: undefined, // Explicitly undefined
+                                grants: undefined, // Explicitly undefined
+                            };
+                        } else {
+                            logger.error(`Error fetching status for app '${appId}', user ${userDid}:`, error);
+                            throw new InternalServerError("Failed to fetch application status.");
+                        }
+                    }
+                },
+                {
+                    params: t.Object({ appId: t.String() }),
+                    response: { 200: AppStatusResponseSchema }, // Use the new response schema
+                    detail: { summary: "Get the registration status, manifest, and grants for a specific app for the authenticated user." },
+                }
+            )
             // POST /api/v1/apps/upsert - Create or update a user-specific app registration
             .post(
                 "/upsert",
@@ -675,80 +714,6 @@ export const app = new Elysia()
                 }
             )
     )
-    // --- Protected User-Specific App Routes ---
-    .group("/api/v1/user/apps", (group) =>
-        group
-            // Derive JWT user context
-            .derive(async ({ jwt, request: { headers } }) => {
-                const authHeader = headers.get("authorization");
-                if (!authHeader || !authHeader.startsWith("Bearer ")) return { user: null };
-                const token = authHeader.substring(7);
-                try {
-                    const payload = await jwt.verify(token);
-                    return { user: payload as { userDid: string } };
-                } catch (error) {
-                    return { user: null };
-                }
-            })
-            // Middleware: Check User JWT exists
-            .onBeforeHandle(({ user, set }) => {
-                if (!user) {
-                    set.status = 401;
-                    return { error: "Unauthorized: Invalid or missing user token." };
-                }
-            })
-            // GET /api/v1/user/apps/:appId/status - Get registration status and details for a specific app for the user
-            .get(
-                "/:appId/status",
-                async ({ dataService, user, params, set }) => {
-                    if (!user) throw new InternalServerError("User context missing after auth check.");
-                    const { userDid } = user;
-                    const { appId } = params;
-
-                    logger.debug(`Checking status for app '${appId}' for user '${userDid}'`);
-                    const docId = `${APPS_COLLECTION}/${userDid}/${appId}`;
-
-                    try {
-                        const doc = await dataService.getDocument<AppModel>(SYSTEM_DB, docId);
-
-                        // Extract manifest fields from the document
-                        const manifest: AppManifest = {
-                            appId: doc.appId,
-                            name: doc.name,
-                            description: doc.description,
-                            pictureUrl: doc.pictureUrl,
-                            permissions: doc.permissions,
-                        };
-
-                        logger.info(`Found registration for app '${appId}' for user '${userDid}'.`);
-                        set.status = 200;
-                        return {
-                            isRegistered: true,
-                            manifest: manifest,
-                            grants: doc.grants,
-                        };
-                    } catch (error: any) {
-                        if (error instanceof NotFoundError || error.statusCode === 404) {
-                            logger.info(`No registration found for app '${appId}' for user '${userDid}'.`);
-                            set.status = 200; // Still OK, just not registered
-                            return {
-                                isRegistered: false,
-                                manifest: undefined, // Explicitly undefined
-                                grants: undefined, // Explicitly undefined
-                            };
-                        } else {
-                            logger.error(`Error fetching status for app '${appId}', user ${userDid}:`, error);
-                            throw new InternalServerError("Failed to fetch application status.");
-                        }
-                    }
-                },
-                {
-                    params: t.Object({ appId: t.String() }),
-                    response: { 200: AppStatusResponseSchema }, // Use the new response schema
-                    detail: { summary: "Get the registration status, manifest, and grants for a specific app for the authenticated user." },
-                }
-            )
-    )
     // --- Protected Blob Routes ---
     .group("/api/v1/blob", (group) =>
         group
@@ -843,7 +808,6 @@ export const app = new Elysia()
 
                     const { objectId } = params;
                     const { userDid } = user;
-                    const requiredPermission = `read:${BLOBS_COLLECTION}`;
 
                     try {
                         // 1. Fetch Metadata

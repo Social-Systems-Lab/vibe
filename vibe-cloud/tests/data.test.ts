@@ -111,6 +111,9 @@ describe("Data API Endpoints (/api/v1/data)", () => {
 
             // Verify only read remains using /status
             const statusAfterRevoke = await testCtx.api.api.v1.user.apps({ appId: testCtx.appId }).status.get({ headers: getHeaders() });
+
+            logger.log("***** Status after revoking write permission:", JSON.stringify(statusAfterRevoke));
+
             expect(statusAfterRevoke.data?.grants?.[readPerm]).toBe("always");
             expect(statusAfterRevoke.data?.grants?.[writePerm]).toBeUndefined();
 
