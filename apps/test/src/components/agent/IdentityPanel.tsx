@@ -11,28 +11,21 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PlusCircle, Settings, LogOut, UserCircle } from "lucide-react"; // Added UserCircle
-import { VibeLogo } from "../ui/VibeLogo"; // Import the logo
+// Removed VibeLogo import if not used directly here
+import { useAgent } from "../../vibe/agent.tsx"; // Import the agent hook
+import type { Identity } from "../../vibe/types"; // Adjust path as needed
 
-// TODO: Import useVibeAgent hook (to be created) or pass agent methods as props
-// import { useVibeAgent } from "@/hooks/useVibeAgent"; // Example hook name
-import type { Identity } from "@/vibe/types"; // Adjust path as needed
-
+// Keep props for handlers passed down from RootLayout
 interface IdentityPanelProps {
-    // Props to receive identities, active identity, and agent interaction methods
-    identities: Identity[];
-    activeIdentity: Identity | null;
-    onCreateIdentity: () => void; // Function to trigger identity creation UI
-    onSwitchIdentity: (did: string) => void; // Function to switch identity
-    onManagePermissions: () => void; // Function to navigate to permission manager
+    onCreateIdentity: () => void;
+    onSwitchIdentity: (did: string) => void;
+    onManagePermissions: () => void;
 }
 
-export function IdentityPanel({
-    identities = [], // Default to empty array
-    activeIdentity = null,
-    onCreateIdentity,
-    onSwitchIdentity,
-    onManagePermissions,
-}: IdentityPanelProps) {
+export function IdentityPanel({ onCreateIdentity, onSwitchIdentity, onManagePermissions }: IdentityPanelProps) {
+    // Get state for display from the agent context
+    const { identities, activeIdentity } = useAgent();
+
     const getInitials = (label: string) => {
         return label
             .split(" ")

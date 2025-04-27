@@ -1,12 +1,16 @@
 // apps/test/src/vibe/react.tsx
 "use client";
 
+// apps/test/src/vibe/react.tsx
+"use client";
+
 import React, { createContext, useState, useEffect, useContext, useCallback } from "react";
-import type { ReactNode } from "react";
-import { vibe, mockAgentInstance } from "./sdk"; // Import SDK singleton AND agent instance
-import { useAgentUI } from "./ui-context"; // Import the UI context hook
+import type { ReactNode } from "react"; // Import ReactNode as a type
+// Removed SDK/Agent instance imports
+// Removed ui-context import
+import type { IVibeSDK } from "./sdk"; // Import the SDK interface type
 // Import types
-import type { Account, AppManifest, Unsubscribe, VibeState, PermissionSetting, Identity } from "./types"; // Added Identity
+import type { Account, AppManifest, Unsubscribe, VibeState, PermissionSetting, Identity, ReadResult, WriteResult } from "./types"; // Added Identity, ReadResult, WriteResult
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -14,21 +18,23 @@ import type { Account, AppManifest, Unsubscribe, VibeState, PermissionSetting, I
 interface VibeContextValue {
     account: Account | null | undefined;
     permissions: Record<string, PermissionSetting> | null | undefined;
-    activeIdentity: Identity | null | undefined;
-    identities: Identity[] | undefined;
-    // Agent interaction methods (potentially add more like createIdentity, switchIdentity)
-    init: () => void;
-    readOnce: (collection: string, filter?: any) => Promise<any>;
-    read: (collection: string, filter?: any, callback?: (result: any) => void) => Promise<Unsubscribe>;
-    write: (collection: string, data: any | any[]) => Promise<any>;
-    // Identity Management Methods
-    createIdentity: (label: string, pictureUrl?: string) => Promise<Identity | null>;
-    setActiveIdentity: (did: string) => Promise<void>;
-    // TODO: Add permission management methods if needed directly in context
+    activeIdentity: Identity | null | undefined; // Still part of VibeState
+    identities: Identity[] | undefined; // Still part of VibeState
+    // SDK interaction methods ONLY
+    init: () => void; // Keep manual init trigger if desired, though auto-init is primary
+    readOnce: (collection: string, filter?: any) => Promise<ReadResult<any>>;
+    read: (collection: string, filter?: any, callback?: (result: ReadResult<any>) => void) => Promise<Unsubscribe>;
+    write: (collection: string, data: any | any[]) => Promise<WriteResult>;
+    // Identity Management methods REMOVED - Handled by AgentProvider/useAgent
 }
 
 // Create the context
 const VibeContext = createContext<VibeContextValue | undefined>(undefined);
+
+// Helper function to get the SDK from window, with type safety
+const getSdk = (): IVibeSDK | null => {
+    return (window as any).vibe as IVibeSDK | null;
+};
 
 // Define props for the provider component
 interface VibeProviderProps {
@@ -38,102 +44,101 @@ interface VibeProviderProps {
 
 export function VibeProvider({ children, manifest }: VibeProviderProps) {
     const [vibeState, setVibeState] = useState<VibeState | undefined>(undefined);
-    const agentUI = useAgentUI(); // Get the UI context methods
+    const [sdkUnsubscribe, setSdkUnsubscribe] = useState<Unsubscribe | null>(null);
+    // Removed agentUI hook
 
-    // Effect to connect Agent UI handlers to the Agent instance
+    // Removed effect connecting UI handlers
+
+    // Initialize the Vibe SDK (from window.vibe) when the provider mounts
     useEffect(() => {
-        // Ensure agent instance exists and has the method (type safety)
-        if (mockAgentInstance && typeof mockAgentInstance.setUIHandlers === "function") {
-            mockAgentInstance.setUIHandlers({
-                requestConsent: agentUI.requestConsent,
-                requestActionConfirmation: agentUI.requestActionConfirmation,
-            });
-            console.log("[VibeProvider] Connected Agent UI handlers to MockVibeAgent instance.");
-        } else {
-            console.error("[VibeProvider] Failed to connect Agent UI handlers: mockAgentInstance or setUIHandlers not available.");
+        const sdk = getSdk();
+        if (!sdk) {
+            console.error("[VibeProvider] window.vibe SDK not found on mount. AgentProvider might be missing or hasn't initialized yet.");
+            // TODO: How to handle this? Maybe retry later? For now, just log error.
+            return;
         }
-        // This effect should likely only run once on mount
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [agentUI.requestConsent, agentUI.requestActionConfirmation]); // Dependencies ensure stable functions are used
 
-    // Initialize the Vibe SDK when the provider mounts
-    useEffect(() => {
-        console.log("[VibeProvider] Initializing Vibe SDK with manifest:", manifest);
-        // vibe.init returns an unsubscribe function for cleanup
-        const unsubscribeFromSdk = vibe.init(manifest, (newState) => {
-            console.log("[VibeProvider] Received state update from SDK:", newState);
-            // Update the full state, including identities and active identity
-            setVibeState(newState);
-        });
+        console.log("[VibeProvider] Initializing Vibe SDK via window.vibe with manifest:", manifest);
+        let isMounted = true; // Prevent state updates after unmount
 
-        // Cleanup function to be called when the component unmounts
-        return () => {
-            console.log("[VibeProvider] Cleaning up Vibe SDK subscription.");
-            unsubscribeFromSdk();
+        const initialize = async () => {
+            try {
+                const unsubscribeFn = await sdk.init(manifest, (newState) => {
+                    if (isMounted) {
+                        console.log("[VibeProvider] Received state update from SDK:", newState);
+                        setVibeState(newState);
+                    }
+                });
+                if (isMounted) {
+                    setSdkUnsubscribe(() => unsubscribeFn); // Store the unsubscribe function
+                } else {
+                    // If component unmounted before init finished, call unsubscribe immediately
+                    unsubscribeFn();
+                }
+            } catch (error) {
+                console.error("[VibeProvider] Error during SDK initialization:", error);
+                if (isMounted) {
+                    // Set state to indicate error? Or just rely on console?
+                    setVibeState(undefined); // Clear state on init error
+                }
+            }
         };
-    }, [manifest]); // Re-run effect if the manifest changes
 
-    // Manual init function (mostly for consistency, auto-init is handled by useEffect)
-    const init = useCallback(() => {
-        console.warn("[VibeProvider] Manual init called. SDK is auto-initialized.");
-        // Optionally, could re-trigger init if needed, but might cause issues
-        // vibe.init(manifest, setVibeState);
+        initialize();
+
+        // Cleanup function
+        return () => {
+            isMounted = false;
+            console.log("[VibeProvider] Cleaning up Vibe SDK subscription.");
+            if (sdkUnsubscribe) {
+                // Use the stored unsubscribe function
+                sdkUnsubscribe();
+                setSdkUnsubscribe(null);
+            }
+        };
+        // Only re-run if manifest changes. sdkUnsubscribe is managed internally.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [manifest]);
 
-    // Wrappers around vibe SDK methods using useCallback for stability
-    const readOnce = useCallback((collection: string, filter?: any) => {
-        console.log(`[VibeProvider] Calling readOnce: ${collection}`);
-        return vibe.readOnce(collection, filter);
+    // Manual init function (less critical now, but can be kept)
+    const init = useCallback(() => {
+        console.warn("[VibeProvider] Manual init called. SDK should auto-initialize via AgentProvider.");
+        // Could potentially re-trigger the useEffect logic if needed, but might be complex.
     }, []);
 
-    const read = useCallback((collection: string, filter?: any, callback?: (result: any) => void) => {
-        console.log(`[VibeProvider] Calling read: ${collection}`);
-        return vibe.read(collection, filter, callback);
+    // Wrappers around window.vibe SDK methods
+    const readOnce = useCallback(async (collection: string, filter?: any): Promise<ReadResult<any>> => {
+        const sdk = getSdk();
+        if (!sdk) throw new Error("Vibe SDK (window.vibe) not available.");
+        console.log(`[VibeProvider] Calling window.vibe.readOnce: ${collection}`);
+        return sdk.readOnce(collection, filter);
     }, []);
 
-    const write = useCallback((collection: string, data: any | any[]) => {
-        console.log(`[VibeProvider] Calling write: ${collection}`);
-        return vibe.write(collection, data);
+    const read = useCallback(async (collection: string, filter?: any, callback?: (result: ReadResult<any>) => void): Promise<Unsubscribe> => {
+        const sdk = getSdk();
+        if (!sdk) throw new Error("Vibe SDK (window.vibe) not available.");
+        console.log(`[VibeProvider] Calling window.vibe.read: ${collection}`);
+        return sdk.read(collection, filter, callback);
     }, []);
 
-    // Provide the full state and methods through the context
+    const write = useCallback(async (collection: string, data: any | any[]): Promise<WriteResult> => {
+        const sdk = getSdk();
+        if (!sdk) throw new Error("Vibe SDK (window.vibe) not available.");
+        console.log(`[VibeProvider] Calling window.vibe.write: ${collection}`);
+        return sdk.write(collection, data);
+    }, []);
+
+    // Provide the application-level state and SDK methods through the context
     const contextValue: VibeContextValue = {
         account: vibeState?.account,
         permissions: vibeState?.permissions,
-        activeIdentity: vibeState?.activeIdentity, // Add activeIdentity
-        identities: vibeState?.identities, // Add identities
+        activeIdentity: vibeState?.activeIdentity,
+        identities: vibeState?.identities,
         init,
         readOnce,
         read,
         write,
-        // --- Identity Management Implementation ---
-        createIdentity: async (label: string, pictureUrl?: string): Promise<Identity | null> => {
-            try {
-                const newIdentity = await mockAgentInstance.createIdentity(label, pictureUrl);
-                // Refresh state after creation
-                console.log("[VibeProvider] Identity created by agent:", newIdentity);
-                const updatedState = await mockAgentInstance.getVibeState();
-                console.log("[VibeProvider] Fetched updated state from agent:", updatedState);
-                setVibeState(updatedState);
-                console.log("[VibeProvider] setVibeState called with updated state.");
-                return newIdentity;
-            } catch (error) {
-                console.error("[VibeProvider] Error creating identity:", error);
-                // Handle error appropriately, maybe update state with error info
-                return null;
-            }
-        },
-        setActiveIdentity: async (did: string): Promise<void> => {
-            try {
-                await mockAgentInstance.setActiveIdentity(did);
-                // Refresh state after switching
-                const updatedState = await mockAgentInstance.getVibeState();
-                setVibeState(updatedState);
-            } catch (error) {
-                console.error("[VibeProvider] Error setting active identity:", error);
-                // Handle error
-            }
-        },
+        // Identity management methods REMOVED
     };
 
     return <VibeContext.Provider value={contextValue}>{children}</VibeContext.Provider>;

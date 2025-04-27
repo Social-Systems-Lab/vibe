@@ -1,26 +1,36 @@
-// apps/test/src/vibe/agent.ts
+// apps/test/src/vibe/agent.tsx - Renamed from ui-context.tsx
+// This provider now simulates the Vibe Agent itself, managing identities,
+// permissions (internally), UI prompts, and providing the `window.vibe` SDK interface.
+
+import React, { createContext, useState, useContext, useCallback, useEffect, useMemo } from "react";
+import type { ReactNode } from "react"; // Import ReactNode as a type
+// Removed import { MockVibeAgent } from "./agent";
+// Consolidated imports for both class and provider:
 import type {
-    VibeAgent,
+    VibeAgent, // Added
+    Account, // Added
+    SubscriptionCallback, // Added
+    ReadParams, // Added
+    WriteParams, // Added
+    ConsentRequest,
+    ActionRequest,
+    ActionResponse,
+    PermissionSetting,
+    Identity,
     AppManifest,
+    VibeState,
     ReadResult,
     WriteResult,
-    ReadParams,
-    WriteParams,
-    SubscriptionCallback,
     Unsubscribe,
-    Account,
-    PermissionSetting,
-    Identity, // Added
-    ConsentRequest, // Added
-    ActionRequest, // Added
-    ActionResponse, // Added
-    VibeState, // Added
 } from "./types";
-import { generateEd25519KeyPair, signEd25519, didFromEd25519, uint8ArrayToHex, type Ed25519KeyPair, hexToUint8Array } from "../lib/identity"; // Use frontend identity utils
-import { Buffer } from "buffer"; // Needed for base64 encoding
-import * as ed from "@noble/ed25519";
+import { generateEd25519KeyPair, signEd25519, didFromEd25519, uint8ArrayToHex, type Ed25519KeyPair, hexToUint8Array } from "../lib/identity"; // Added
+import { Buffer } from "buffer"; // Added
+import * as ed from "@noble/ed25519"; // Added
 
-// --- Constants ---
+import { ConsentModal } from "../components/agent/ConsentModal";
+import { ActionPromptModal } from "../components/agent/ActionPromptModal";
+
+// --- Constants for MockVibeAgent ---
 const VIBE_CLOUD_BASE_URL = "http://127.0.0.1:3001"; // 3001 = backen run outside docker, 3000=backend in docker
 const ADMIN_CLAIM_CODE = "ABC1-XYZ9"; // From vibe-cloud/.env
 const LOCAL_STORAGE_KEY_PREFIX = "vibe_agent_";
@@ -29,11 +39,12 @@ const LOCAL_STORAGE_ACTIVE_DID_KEY = `${LOCAL_STORAGE_KEY_PREFIX}active_did`;
 const LOCAL_STORAGE_PERMISSIONS_KEY = `${LOCAL_STORAGE_KEY_PREFIX}permissions`;
 const LOCAL_STORAGE_JWT_KEY = `${LOCAL_STORAGE_KEY_PREFIX}jwts`; // Store JWTs per identity DID
 
+// --- MockVibeAgent Class Definition (Moved from agent.ts) ---
 /**
  * Mock implementation of the VibeAgent interface.
  * Manages identities, permissions locally, and simulates UI interactions.
  */
-export class MockVibeAgent implements VibeAgent {
+class MockVibeAgent implements VibeAgent {
     // --- State ---
     private identities: Identity[] = [];
     private activeIdentity: Identity | null = null;
@@ -61,7 +72,7 @@ export class MockVibeAgent implements VibeAgent {
 
     constructor() {
         console.log("MockVibeAgent initialized");
-        this.clearStateFromStorage(); // Uncomment to clear state on each instantiation (for testing)
+        // this.clearStateFromStorage(); // Uncomment to clear state on each instantiation (for testing)
         this.loadStateFromStorage(); // Load identities, active DID, permissions, JWTs
     }
 
@@ -841,6 +852,7 @@ export class MockVibeAgent implements VibeAgent {
         // --- End Mock Subscription ---
 
         // --- Original WebSocket logic (needs review/update if re-enabled) ---
+        /*
         try {
             await this.ensureWebSocketConnection(); // Needs JWT update potentially
         } catch (error) {
@@ -848,6 +860,7 @@ export class MockVibeAgent implements VibeAgent {
             callback(error instanceof Error ? error : new Error("WebSocket connection failed"), null);
             return async () => {};
         }
+        */
         /*
         try {
             await this.ensureWebSocketConnection(); // Needs JWT update potentially
@@ -968,4 +981,273 @@ export class MockVibeAgent implements VibeAgent {
             return { ok: false, ids: [], errors: [{ error: "network_or_parse", reason: error instanceof Error ? error.message : String(error) }] };
         }
     }
+}
+
+// --- Agent React Context & Provider ---
+
+// Define the shape of the Agent's context value (for Agent UI components like IdentityPanel)
+interface AgentContextValue {
+    // Agent State (exposed to Agent UI)
+    identities: Identity[];
+    activeIdentity: Identity | null;
+
+    // Agent Actions (called by Agent UI)
+    createIdentity: (label: string, pictureUrl?: string) => Promise<Identity | null>;
+    setActiveIdentity: (did: string) => Promise<void>;
+    // TODO: Add methods for managing permissions if needed in UI (e.g., openPermissionManager)
+
+    // UI Prompt State (Internal to AgentProvider, but needed for modals)
+    isConsentOpen: boolean;
+    consentRequest: ConsentRequest | null;
+    isActionPromptOpen: boolean;
+    actionRequest: ActionRequest | null;
+}
+
+const AgentContext = createContext<AgentContextValue | undefined>(undefined);
+
+interface AgentProviderProps {
+    children: ReactNode;
+}
+
+export function AgentProvider({ children }: AgentProviderProps) {
+    // --- Agent Instance ---
+    // Instantiate the MockVibeAgent. Use useMemo to ensure it's created only once.
+    const agent = useMemo(() => new MockVibeAgent(), []);
+
+    // --- Agent State (Managed by this Provider) ---
+    const [identities, setIdentities] = useState<Identity[]>([]);
+    const [activeIdentity, _setActiveIdentityState] = useState<Identity | null>(null); // Renamed state setter
+
+    // --- UI Prompt State ---
+    const [isConsentOpen, setIsConsentOpen] = useState(false);
+    const [consentRequest, setConsentRequest] = useState<ConsentRequest | null>(null);
+    const [consentResolver, setConsentResolver] = useState<((result: Record<string, PermissionSetting> | null) => void) | null>(null);
+
+    const [isActionPromptOpen, setIsActionPromptOpen] = useState(false);
+    const [actionRequest, setActionRequest] = useState<ActionRequest | null>(null);
+    const [actionResolver, setActionResolver] = useState<((result: ActionResponse) => void) | null>(null);
+
+    // --- Effect to Load Initial Agent State ---
+    useEffect(() => {
+        const loadInitialState = async () => {
+            try {
+                // Agent loads from localStorage internally, just get the initial values
+                const initialIdentities = await agent.getIdentities();
+                const initialActiveIdentity = await agent.getActiveIdentity();
+                setIdentities(initialIdentities);
+                _setActiveIdentityState(initialActiveIdentity); // Use state setter
+                console.log("[AgentProvider] Initial agent state loaded:", { initialIdentities, initialActiveIdentity });
+            } catch (error) {
+                console.error("[AgentProvider] Error loading initial agent state:", error);
+            }
+        };
+        loadInitialState();
+    }, [agent]); // Run only once when agent instance is created
+
+    // --- UI Interaction Logic (requestConsent, requestActionConfirmation) ---
+    // These are passed to the agent instance via setUIHandlers
+    const requestConsent = useCallback((request: ConsentRequest): Promise<Record<string, PermissionSetting>> => {
+        return new Promise((resolve, reject) => {
+            console.log("[AgentProvider] requestConsent called by agent instance", request);
+            setConsentRequest(request);
+            setIsConsentOpen(true);
+            setConsentResolver(() => (result: Record<string, PermissionSetting> | null) => {
+                setIsConsentOpen(false);
+                setConsentRequest(null);
+                setConsentResolver(null);
+                if (result) {
+                    console.log("[AgentProvider] Consent granted by user", result);
+                    resolve(result);
+                } else {
+                    console.log("[AgentProvider] Consent denied by user");
+                    reject(new Error("User denied consent request."));
+                }
+            });
+        });
+    }, []); // Empty dependency array: these functions don't depend on component state directly
+
+    const handleConsentDecision = (grantedPermissions: Record<string, PermissionSetting> | null) => {
+        if (consentResolver) {
+            consentResolver(grantedPermissions);
+        }
+    };
+
+    const requestActionConfirmation = useCallback((request: ActionRequest): Promise<ActionResponse> => {
+        return new Promise((resolve) => {
+            console.log("[AgentProvider] requestActionConfirmation called by agent instance", request);
+            setActionRequest(request);
+            setIsActionPromptOpen(true);
+            setActionResolver(() => (result: ActionResponse) => {
+                setIsActionPromptOpen(false);
+                setActionRequest(null);
+                setActionResolver(null);
+                console.log("[AgentProvider] Action confirmation decision by user", result);
+                resolve(result);
+            });
+        });
+    }, []); // Empty dependency array
+
+    const handleActionDecision = (response: ActionResponse) => {
+        if (actionResolver) {
+            actionResolver(response);
+        }
+    };
+
+    // --- Effect to Connect UI Handlers and Define window.vibe ---
+    useEffect(() => {
+        console.log("[AgentProvider] Setting UI handlers and defining window.vibe");
+
+        // 1. Connect UI Handlers
+        agent.setUIHandlers({ requestConsent, requestActionConfirmation });
+
+        // 2. Define window.vibe SDK Interface
+        // This simulates the agent injecting the SDK into the page
+        const sdkInterface = {
+            init: async (manifest: AppManifest, onStateChange: (state: VibeState) => void): Promise<Unsubscribe> => {
+                console.log("[window.vibe] init called", manifest);
+                try {
+                    // Agent's init now returns the initial state directly
+                    const initialState = await agent.init(manifest);
+                    console.log("[window.vibe] Agent init successful, initial state:", initialState);
+                    // Adapt nulls to undefined for VibeState compatibility
+                    onStateChange({
+                        account: initialState.account ?? undefined,
+                        permissions: initialState.permissions ?? undefined,
+                        activeIdentity: initialState.activeIdentity ?? undefined,
+                        identities: initialState.identities,
+                    }); // Send initial state to VibeProvider
+
+                    // TODO: Implement proper state change subscription in MockVibeAgent
+                    // For now, the agent doesn't push updates. VibeProvider will need to re-fetch state
+                    // after identity changes etc. This is a limitation of the current mock.
+                    console.warn("[window.vibe] Mock SDK does not currently push state updates after init.");
+
+                    // Return a mock unsubscribe function
+                    const unsubscribe = () => {
+                        console.log("[window.vibe] unsubscribe called (mock)");
+                        // In a real scenario, this would tell the agent to clean up resources for this app.
+                        // The agent might close WebSockets, clear listeners, etc.
+                        // For the mock, we might clear the manifest association in the agent?
+                    };
+                    return unsubscribe;
+                } catch (error) {
+                    console.error("[window.vibe] Agent init failed:", error);
+                    // Notify VibeProvider of the error state (ensure null -> undefined)
+                    const currentIdentities = await agent.getIdentities();
+                    const currentActiveIdentity = await agent.getActiveIdentity();
+                    onStateChange({
+                        identities: currentIdentities,
+                        activeIdentity: currentActiveIdentity ?? undefined, // Correctly handle null
+                        // account and permissions will be implicitly undefined
+                    });
+                    throw error; // Re-throw error so VibeProvider knows init failed
+                }
+            },
+            readOnce: async (collection: string, filter?: any): Promise<ReadResult> => {
+                console.log(`[window.vibe] readOnce called: ${collection}`, filter);
+                return agent.readOnce({ collection, filter });
+            },
+            read: async (collection: string, filter?: any, callback?: (result: ReadResult) => void): Promise<Unsubscribe> => {
+                console.log(`[window.vibe] read called: ${collection}`, filter);
+                // Agent's read now expects the callback format (error | null, data | null)
+                const agentCallback = (error: Error | null, data: any | null) => {
+                    if (callback) {
+                        const result: ReadResult = { ok: !error, data: data || [], error: error?.message };
+                        callback(result);
+                    }
+                };
+                return agent.read({ collection, filter }, agentCallback);
+            },
+            write: async (collection: string, data: any | any[]): Promise<WriteResult> => {
+                console.log(`[window.vibe] write called: ${collection}`, data);
+                return agent.write({ collection, data });
+            },
+            // --- Expose Agent methods needed by VibeProvider (SHOULD NOT BE NEEDED after refactor) ---
+            // getVibeState: async (): Promise<VibeState> => {
+            //     console.log("[window.vibe] getVibeState called (should be internal to agent)");
+            //     return agent.getVibeState();
+            // }
+        };
+
+        // Assign to window
+        (window as any).vibe = sdkInterface;
+
+        // Cleanup function: Remove window.vibe when provider unmounts
+        return () => {
+            console.log("[AgentProvider] Cleaning up: Removing window.vibe");
+            delete (window as any).vibe;
+            // Optional: Tell agent to clean up? Depends on agent's design.
+        };
+        // Dependencies: agent instance and the stable callback functions
+    }, [agent, requestConsent, requestActionConfirmation]);
+
+    // --- Agent Actions (Called by UI Components like IdentityPanel) ---
+    const createIdentity = useCallback(
+        async (label: string, pictureUrl?: string): Promise<Identity | null> => {
+            console.log("[AgentProvider] createIdentity called", { label, pictureUrl });
+            try {
+                const newIdentity = await agent.createIdentity(label, pictureUrl);
+                // Refresh local state after creation
+                const updatedIdentities = await agent.getIdentities();
+                const updatedActiveIdentity = await agent.getActiveIdentity(); // Active might change if it was the first
+                setIdentities(updatedIdentities);
+                _setActiveIdentityState(updatedActiveIdentity); // Use state setter
+                console.log("[AgentProvider] Identity created, state updated", { newIdentity, updatedIdentities, updatedActiveIdentity });
+                return newIdentity;
+            } catch (error) {
+                console.error("[AgentProvider] Error creating identity:", error);
+                return null;
+            }
+        },
+        [agent] // Depends only on the agent instance
+    );
+
+    const setActiveIdentity = useCallback(
+        async (did: string): Promise<void> => {
+            console.log("[AgentProvider] setActiveIdentity called", { did });
+            try {
+                await agent.setActiveIdentity(did);
+                // Refresh local state after switching
+                const updatedActiveIdentity = await agent.getActiveIdentity();
+                _setActiveIdentityState(updatedActiveIdentity); // Use renamed state setter
+                console.log("[AgentProvider] Active identity switched, state updated", { updatedActiveIdentity });
+                // TODO: Should ideally trigger a state update via window.vibe.onStateChange
+                // For now, VibeProvider might need to manually re-init or re-fetch on identity change.
+            } catch (error) {
+                console.error("[AgentProvider] Error setting active identity:", error);
+            }
+        },
+        [agent] // Depends only on the agent instance
+    );
+
+    // --- Context Value for Agent UI ---
+    const contextValue: AgentContextValue = {
+        identities,
+        activeIdentity,
+        createIdentity,
+        setActiveIdentity,
+        // Pass through modal state needed for rendering
+        isConsentOpen,
+        consentRequest,
+        isActionPromptOpen,
+        actionRequest,
+    };
+
+    return (
+        <AgentContext.Provider value={contextValue}>
+            {children}
+            {/* Render Modals controlled by this context */}
+            <ConsentModal isOpen={isConsentOpen} request={consentRequest} onDecision={handleConsentDecision} />
+            <ActionPromptModal isOpen={isActionPromptOpen} request={actionRequest} onDecision={handleActionDecision} />
+        </AgentContext.Provider>
+    );
+}
+
+// Renamed hook for Agent UI components
+export function useAgent() {
+    const context = useContext(AgentContext);
+    if (context === undefined) {
+        throw new Error("useAgent must be used within an AgentProvider");
+    }
+    return context;
 }
