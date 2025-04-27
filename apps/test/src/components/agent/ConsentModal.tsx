@@ -62,7 +62,37 @@ export function ConsentModal({ isOpen, request, onDecision }: ConsentModalProps)
         return null; // Don't render if no request
     }
 
-    const { manifest } = request;
+    const { manifest, newPermissions = [] } = request; // Destructure newPermissions with default
+
+    // Separate permissions into new and existing
+    const newPermissionsSet = new Set(newPermissions);
+    const newPermissionsToDisplay = request.requestedPermissions.filter((scope) => newPermissionsSet.has(scope));
+    const existingPermissionsToDisplay = request.requestedPermissions.filter((scope) => !newPermissionsSet.has(scope));
+
+    // Helper function to render a permission item
+    const renderPermissionItem = (scope: string) => (
+        <div key={scope} className="border p-3 rounded-md">
+            <p className="text-sm font-semibold mb-2">{getPermissionDescription(scope)}</p>
+            <RadioGroup
+                value={permissionSettings[scope]}
+                onValueChange={(value) => handlePermissionChange(scope, value as PermissionSetting)}
+                className="flex space-x-4"
+            >
+                <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="always" id={`${scope}-always`} />
+                    <Label htmlFor={`${scope}-always`}>Always</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="ask" id={`${scope}-ask`} />
+                    <Label htmlFor={`${scope}-ask`}>Ask</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="never" id={`${scope}-never`} />
+                    <Label htmlFor={`${scope}-never`}>Never</Label>
+                </div>
+            </RadioGroup>
+        </div>
+    );
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && handleDeny()}>
@@ -83,31 +113,24 @@ export function ConsentModal({ isOpen, request, onDecision }: ConsentModalProps)
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="py-4 space-y-4 max-h-[50vh] overflow-y-auto px-1">
-                    <p className="text-sm font-medium">Requested Permissions:</p>
-                    {request.requestedPermissions.map((scope) => (
-                        <div key={scope} className="border p-3 rounded-md">
-                            <p className="text-sm font-semibold mb-2">{getPermissionDescription(scope)}</p>
-                            <RadioGroup
-                                value={permissionSettings[scope]}
-                                onValueChange={(value) => handlePermissionChange(scope, value as PermissionSetting)}
-                                className="flex space-x-4"
-                            >
-                                <div className="flex items-center space-x-2">
-                                    <RadioGroupItem value="always" id={`${scope}-always`} />
-                                    <Label htmlFor={`${scope}-always`}>Always</Label>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <RadioGroupItem value="ask" id={`${scope}-ask`} />
-                                    <Label htmlFor={`${scope}-ask`}>Ask</Label>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <RadioGroupItem value="never" id={`${scope}-never`} />
-                                    <Label htmlFor={`${scope}-never`}>Never</Label>
-                                </div>
-                            </RadioGroup>
+                <div className="py-4 space-y-6 max-h-[60vh] overflow-y-auto px-1">
+                    {/* New Permissions Section */}
+                    {newPermissionsToDisplay.length > 0 && (
+                        <div className="space-y-4">
+                            <p className="text-sm font-medium text-primary">New Permissions Requested:</p>
+                            {newPermissionsToDisplay.map(renderPermissionItem)}
                         </div>
-                    ))}
+                    )}
+
+                    {/* Existing Permissions Section */}
+                    {existingPermissionsToDisplay.length > 0 && (
+                        <div className="space-y-4">
+                            <p className="text-sm font-medium text-muted-foreground">
+                                {newPermissionsToDisplay.length > 0 ? "Previously Granted Permissions:" : "Requested Permissions:"}
+                            </p>
+                            {existingPermissionsToDisplay.map(renderPermissionItem)}
+                        </div>
+                    )}
                 </div>
 
                 <DialogFooter>

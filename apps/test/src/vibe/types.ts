@@ -63,6 +63,7 @@ export interface ConsentRequest {
     origin: string; // The origin requesting permission
     requestedPermissions: string[]; // Specific permissions being requested now
     existingPermissions: Record<string, PermissionSetting>; // Current settings for comparison
+    newPermissions?: string[]; // Optional: Permissions requested that are not in existingPermissions
 }
 
 /**

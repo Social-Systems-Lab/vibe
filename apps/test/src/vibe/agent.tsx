@@ -29,6 +29,7 @@ import * as ed from "@noble/ed25519"; // Added
 
 import { ConsentModal } from "../components/agent/ConsentModal";
 import { ActionPromptModal } from "../components/agent/ActionPromptModal";
+import { InitPrompt } from "../components/agent/InitPrompt"; // Added import
 
 // --- Constants for MockVibeAgent ---
 const VIBE_CLOUD_BASE_URL = "http://127.0.0.1:3001"; // 3001 = backen run outside docker, 3000=backend in docker
@@ -59,6 +60,7 @@ class MockVibeAgent implements VibeAgent {
     // --- UI Interaction Callbacks (Injected by UI Layer) ---
     private uiRequestConsent: ((request: ConsentRequest) => Promise<Record<string, PermissionSetting>>) | null = null;
     private uiRequestActionConfirmation: ((request: ActionRequest) => Promise<ActionResponse>) | null = null;
+    private uiRequestInitPrompt: ((manifest: AppManifest) => Promise<void>) | null = null; // Added for Scenario 1
 
     // Backend/WebSocket related (kept for potential future direct connection)
     private webSocket: WebSocket | null = null;
@@ -80,10 +82,12 @@ class MockVibeAgent implements VibeAgent {
     public setUIHandlers(handlers: {
         requestConsent: (request: ConsentRequest) => Promise<Record<string, PermissionSetting>>;
         requestActionConfirmation: (request: ActionRequest) => Promise<ActionResponse>;
+        requestInitPrompt: (manifest: AppManifest) => Promise<void>; // Added
     }): void {
         console.log("[MockVibeAgent] Setting UI handlers.");
         this.uiRequestConsent = handlers.requestConsent;
         this.uiRequestActionConfirmation = handlers.requestActionConfirmation;
+        this.uiRequestInitPrompt = handlers.requestInitPrompt; // Added
     }
 
     // --- WebSocket Methods (Placeholder/Future Use) ---
@@ -354,89 +358,149 @@ class MockVibeAgent implements VibeAgent {
         this.currentOrigin = window.location.origin; // Ensure origin is set
 
         try {
-            // 1. Ensure at least one identity exists (create if none)
-            if (this.identities.length === 0) {
-                console.log("No identities found. User must create one via UI.");
-                // await this.createIdentity("Default Identity"); // <-- REMOVED: Don't auto-create
-            } else if (!this.activeIdentity && this.identities.length > 0) {
-                // If identities exist but none are active (e.g., after clearing storage), set first as active
-                this.activeIdentity = this.identities[0];
-                this.saveStateToStorage();
+            // --- Step 1: Check for Active Identity ---
+            if (!this.activeIdentity) {
+                // If no identity is active (might happen on first load or after clearing storage),
+                // we cannot proceed with app-specific init. The user needs to select/create one first.
+                // The AgentProvider should handle showing the IdentityPanel.
+                // We return a state indicating no active identity, but don't throw an error here,
+                // as the VibeProvider might still want to show the app shell.
+                console.warn("[MockVibeAgent.init] No active identity. Waiting for user selection.");
+                // Return current state without account/permissions
+                const state = await this.getCurrentStateForSdk(false); // Pass false to skip active identity check
+                this.isInitialized = false; // Not fully initialized for the app yet
+                this.isInitializing = false;
+                return state;
+                // OLD: throw new Error("No active identity selected. Cannot initialize application.");
             }
+            const identity = this.activeIdentity; // Use the active identity
 
-            // 2. Ensure active identity has JWT (claim if needed)
-            if (this.activeIdentity && !this.jwts[this.activeIdentity.did]) {
-                console.log(`JWT missing for active identity ${this.activeIdentity.did}, attempting claim...`);
-                // TODO: Implement claim flow - requires claim code input? For now, use admin claim.
+            // --- Step 2: Ensure Active Identity has JWT (Claim if needed) ---
+            // This remains important for backend interactions
+            if (!this.jwts[identity.did]) {
+                console.log(`JWT missing for active identity ${identity.did}, attempting claim...`);
                 try {
-                    await this.performAdminClaim(this.activeIdentity); // Pass identity for claim
+                    await this.performAdminClaim(identity);
                     this.saveStateToStorage(); // Save JWT
                 } catch (claimError) {
                     console.error("Claim failed during init:", claimError);
-                    // Proceed without JWT? Or throw? For now, log and continue.
+                    // Proceeding without JWT might break data operations, but let init continue for now
                 }
             }
 
-            // 3. Handle Permissions (Check against manifest, potentially trigger consent)
-            const currentPermissions = await this.getCurrentPermissionsForOrigin();
-            const requiredPermissions = new Set(manifest.permissions);
-            const existingPermissions = new Set(Object.keys(currentPermissions));
-            const missingPermissions = manifest.permissions.filter((p) => !existingPermissions.has(p));
-            const extraPermissions = Object.keys(currentPermissions).filter((p) => !requiredPermissions.has(p)); // Permissions granted but no longer in manifest
+            // --- Step 3: Determine Initialization Scenario based on Permissions ---
+            const existingPermissions = this.permissions[identity.did]?.[this.currentOrigin] || {};
+            const hasExistingPermissions = Object.keys(existingPermissions).length > 0;
+            const requestedPermissions = new Set(manifest.permissions);
+            const grantedPermissions = new Set(Object.keys(existingPermissions));
+            const newPermissions = manifest.permissions.filter((p) => !grantedPermissions.has(p));
+            // Removed permissions are those in grantedPermissions but not in requestedPermissions
+            // const removedPermissions = Object.keys(existingPermissions).filter(p => !requestedPermissions.has(p));
 
-            // TODO: Handle 'extraPermissions' - maybe revoke them? Or leave them? For now, ignore.
+            let scenario: "new" | "update" | "no_change" = "no_change";
+            if (!hasExistingPermissions) {
+                scenario = "new";
+            } else if (newPermissions.length > 0) {
+                scenario = "update";
+            }
 
-            if (missingPermissions.length > 0) {
-                console.log("New permissions requested by manifest:", missingPermissions);
-                // Trigger Consent UI
+            console.log(`[MockVibeAgent.init] Scenario determined: ${scenario}`, { hasExistingPermissions, newPermissions });
+
+            // --- Step 4: Execute Scenario Logic ---
+            let finalPermissions = { ...existingPermissions }; // Start with existing
+
+            if (scenario === "new") {
+                // Scenario 1: New App - Show Init Prompt, then Consent Modal
+                console.log("[MockVibeAgent.init] New application registration required.");
+                if (!this.uiRequestInitPrompt || !this.uiRequestConsent) {
+                    throw new Error("UI handlers for InitPrompt or Consent are not set.");
+                }
+                // 1. Show the initial prompt (Google One-Tap style)
+                await this.uiRequestInitPrompt(manifest); // This promise resolves when the user clicks the prompt
+
+                // 2. User clicked prompt, now show the full consent modal
                 const consentRequest: ConsentRequest = {
                     manifest,
                     origin: this.currentOrigin,
-                    requestedPermissions: manifest.permissions, // Ask for all current ones
-                    existingPermissions: currentPermissions,
+                    requestedPermissions: manifest.permissions,
+                    existingPermissions: {}, // None exist yet
+                    newPermissions: manifest.permissions, // All are new
                 };
-                // In a real agent, this would trigger UI. Here we simulate or wait.
-                // For now, simulate auto-granting based on defaults.
-                const granted = await this.simulateConsent(consentRequest);
-                // Update local permissions based on consent result
-                await this.updatePermissionsForOrigin(granted);
+                const granted = await this.triggerConsentUI(consentRequest); // Use the existing trigger method
+                finalPermissions = granted; // Update permissions based on consent result
+                await this.updatePermissionsForOrigin(finalPermissions); // Save granted permissions
+                console.log("[MockVibeAgent.init] New app consent granted.");
+            } else if (scenario === "update") {
+                // Scenario 3: Existing App, New Permissions Requested - Show Consent Modal directly
+                console.log("[MockVibeAgent.init] Application requires updated permissions:", newPermissions);
+                if (!this.uiRequestConsent) {
+                    throw new Error("UI handler for Consent is not set.");
+                }
+                const consentRequest: ConsentRequest = {
+                    manifest,
+                    origin: this.currentOrigin,
+                    requestedPermissions: manifest.permissions, // Ask for the full current set
+                    existingPermissions: existingPermissions,
+                    newPermissions: newPermissions, // Highlight these
+                };
+                const granted = await this.triggerConsentUI(consentRequest);
+                finalPermissions = granted; // Update permissions based on consent result
+                await this.updatePermissionsForOrigin(finalPermissions); // Save updated permissions
+                console.log("[MockVibeAgent.init] Updated app consent granted.");
             } else {
-                console.log("Manifest permissions match existing grants for this origin.");
+                // Scenario 2: Existing App, No Changes or Only Removals
+                // Optional: Handle removed permissions (e.g., revoke them) - For now, we just accept the current manifest
+                console.log("[MockVibeAgent.init] Application already registered with sufficient permissions.");
+                // We might want to update the stored permissions to remove ones no longer in the manifest,
+                // but for now, we'll just use the existing ones that cover the manifest's needs.
+                // finalPermissions remains existingPermissions
             }
 
-            this.isInitialized = true;
-            console.log("MockVibeAgent: Initialization complete.");
-            return this.getCurrentStateForSdk();
+            // --- Step 5: Finalize Initialization ---
+            this.isInitialized = true; // Mark as initialized *for this app*
+            console.log("MockVibeAgent: Initialization complete for this app.");
+            // Return the final state based on the outcome
+            return this.getCurrentStateForSdk(); // Get state based on active identity and final permissions
         } catch (error) {
             console.error("MockVibeAgent: Initialization failed:", error);
             this.isInitialized = false;
-            this.activeIdentity = null; // Clear active identity on failure
-            // Don't clear all state, just indicate failure
-            return { account: null, permissions: null, activeIdentity: null, identities: this.identities };
+            // Return state indicating failure (no account/permissions) but keep identities
+            const state = await this.getCurrentStateForSdk(false); // Get state without requiring active identity
+            return { ...state, account: null, permissions: null };
         } finally {
             this.isInitializing = false;
         }
     }
 
     // Helper to get state formatted for SDK init/update
-    private async getCurrentStateForSdk(): Promise<{
+    // Added optional flag to skip active identity check during early init stages or failures
+    private async getCurrentStateForSdk(requireActiveIdentity = true): Promise<{
         account: Account | null;
         permissions: Record<string, PermissionSetting> | null;
         activeIdentity: Identity | null;
         identities: Identity[];
     }> {
-        const account = this.activeIdentity ? { userDid: this.activeIdentity.did } : null;
-        const permissions = this.activeIdentity ? this.permissions[this.activeIdentity.did]?.[this.currentOrigin] || {} : null;
+        const identity = this.activeIdentity;
+        if (requireActiveIdentity && !identity) {
+            // This case should ideally be handled before calling this helper in final stages
+            console.warn("getCurrentStateForSdk called requires active identity, but none found.");
+            return { account: null, permissions: null, activeIdentity: null, identities: this.identities };
+        }
+
+        const account = identity ? { userDid: identity.did } : null;
+        // Only return permissions if an identity is active
+        const permissions = identity ? this.permissions[identity.did]?.[this.currentOrigin] || {} : null;
+
         return {
             account,
             permissions,
-            activeIdentity: this.activeIdentity,
+            activeIdentity: identity, // Return the active identity (or null if none)
             identities: this.identities,
         };
     }
 
     async getVibeState(): Promise<VibeState> {
-        const state = await this.getCurrentStateForSdk();
+        const state = await this.getCurrentStateForSdk(); // Uses the updated implementation above
         return {
             account: state.account ?? undefined,
             permissions: state.permissions ?? undefined,
@@ -550,6 +614,8 @@ class MockVibeAgent implements VibeAgent {
 
     // Public methods required by the VibeAgent interface
     async requestConsent(request: ConsentRequest): Promise<Record<string, PermissionSetting>> {
+        // This is now primarily called directly by AgentProvider for Scenario 3,
+        // or indirectly via triggerConsentUI for Scenario 1.
         return this.triggerConsentUI(request);
     }
 
@@ -575,6 +641,23 @@ class MockVibeAgent implements VibeAgent {
         }
     }
 
+    // Added trigger for the new Init Prompt (Scenario 1)
+    private async triggerInitPromptUI(manifest: AppManifest): Promise<void> {
+        console.log("[MockVibeAgent] Triggering Init Prompt UI via callback", manifest);
+        if (!this.uiRequestInitPrompt) {
+            console.error("[MockVibeAgent] uiRequestInitPrompt handler not set!");
+            throw new Error("Init Prompt UI handler not available.");
+        }
+        try {
+            // This promise resolves when the user clicks the prompt, allowing init to proceed to consent.
+            await this.uiRequestInitPrompt(manifest);
+            console.log("[MockVibeAgent] Init Prompt UI interaction complete (user clicked).");
+        } catch (error) {
+            console.error("[MockVibeAgent] Init Prompt UI request failed:", error);
+            throw error; // Re-throw error if the prompt itself fails/is dismissed incorrectly
+        }
+    }
+
     private async triggerActionConfirmationUI(request: ActionRequest): Promise<ActionResponse> {
         console.log("[MockVibeAgent] Triggering Action Confirmation UI via callback", request);
         if (!this.uiRequestActionConfirmation) {
@@ -587,24 +670,9 @@ class MockVibeAgent implements VibeAgent {
         return result;
     }
 
-    // --- Simulation Helpers (Keep simulateConsent for init default logic) ---
-
-    // Simulates the consent logic based on defaults (read=always, other=ask)
-    private simulateConsent(request: ConsentRequest): Record<string, PermissionSetting> {
-        const newGrants: Record<string, PermissionSetting> = {};
-        request.requestedPermissions.forEach((perm) => {
-            // Use existing grant if available, otherwise default
-            const existing = request.existingPermissions[perm];
-            if (existing) {
-                newGrants[perm] = existing;
-            } else if (perm.startsWith("read:")) {
-                newGrants[perm] = "always";
-            } else {
-                newGrants[perm] = "always"; // TODO: should be ask Default others to ask
-            }
-        });
-        return newGrants;
-    }
+    // --- Simulation Helpers REMOVED ---
+    // We no longer simulate consent; we trigger the actual UI flow.
+    // private simulateConsent(...) { ... }
 
     // --- Authentication/Claim ---
 
@@ -1001,6 +1069,8 @@ interface AgentContextValue {
     consentRequest: ConsentRequest | null;
     isActionPromptOpen: boolean;
     actionRequest: ActionRequest | null;
+    isInitPromptOpen: boolean; // Added
+    initPromptManifest: AppManifest | null; // Added
 }
 
 const AgentContext = createContext<AgentContextValue | undefined>(undefined);
@@ -1026,6 +1096,10 @@ export function AgentProvider({ children }: AgentProviderProps) {
     const [isActionPromptOpen, setIsActionPromptOpen] = useState(false);
     const [actionRequest, setActionRequest] = useState<ActionRequest | null>(null);
     const [actionResolver, setActionResolver] = useState<((result: ActionResponse) => void) | null>(null);
+
+    const [isInitPromptOpen, setIsInitPromptOpen] = useState(false); // Added
+    const [initPromptManifest, setInitPromptManifest] = useState<AppManifest | null>(null); // Added
+    const [initPromptResolver, setInitPromptResolver] = useState<(() => void) | null>(null); // Added (resolves when prompt is clicked)
 
     // --- Effect to Load Initial Agent State ---
     useEffect(() => {
@@ -1093,55 +1167,106 @@ export function AgentProvider({ children }: AgentProviderProps) {
         }
     };
 
+    // Added: Handler for the Init Prompt (Scenario 1)
+    const requestInitPrompt = useCallback((manifest: AppManifest): Promise<void> => {
+        return new Promise((resolve) => {
+            console.log("[AgentProvider] requestInitPrompt called by agent instance", manifest);
+            setInitPromptManifest(manifest);
+            setIsInitPromptOpen(true);
+            // This resolver is called when the user *clicks* the prompt, allowing init to proceed to consent
+            setInitPromptResolver(() => () => {
+                setIsInitPromptOpen(false); // Hide prompt after click
+                setInitPromptManifest(null);
+                setInitPromptResolver(null);
+                console.log("[AgentProvider] Init prompt clicked by user");
+                resolve(); // Resolve the promise to signal the agent to continue
+            });
+            // Note: No reject case needed here unless the prompt itself can fail/be dismissed
+        });
+    }, []); // Empty dependency array
+
+    // Added: Handler for when the InitPrompt component is clicked by the user
+    const handleInitPromptClick = () => {
+        if (initPromptResolver) {
+            initPromptResolver(); // This resolves the promise in requestInitPrompt
+        }
+    };
+
     // --- Effect to Connect UI Handlers and Define window.vibe ---
     useEffect(() => {
         console.log("[AgentProvider] Setting UI handlers and defining window.vibe");
 
         // 1. Connect UI Handlers
-        agent.setUIHandlers({ requestConsent, requestActionConfirmation });
+        agent.setUIHandlers({ requestConsent, requestActionConfirmation, requestInitPrompt }); // Added requestInitPrompt
 
         // 2. Define window.vibe SDK Interface
         // This simulates the agent injecting the SDK into the page
         const sdkInterface = {
-            init: async (manifest: AppManifest, onStateChange: (state: VibeState) => void): Promise<Unsubscribe> => {
+            init: (manifest: AppManifest, onStateChange: (state: VibeState) => void): Promise<Unsubscribe> => {
                 console.log("[window.vibe] init called", manifest);
-                try {
-                    // Agent's init now returns the initial state directly
-                    const initialState = await agent.init(manifest);
-                    console.log("[window.vibe] Agent init successful, initial state:", initialState);
-                    // Adapt nulls to undefined for VibeState compatibility
-                    onStateChange({
-                        account: initialState.account ?? undefined,
-                        permissions: initialState.permissions ?? undefined,
-                        activeIdentity: initialState.activeIdentity ?? undefined,
-                        identities: initialState.identities,
-                    }); // Send initial state to VibeProvider
+                // Wrap the agent.init call in a new promise to control when onStateChange is called
+                return new Promise(async (resolve, reject) => {
+                    try {
+                        // Agent's init now handles the scenarios and UI prompts internally.
+                        // It returns the *final* state after any necessary consent.
+                        const finalState = await agent.init(manifest);
+                        console.log("[window.vibe] Agent init successful, final state:", finalState);
 
-                    // TODO: Implement proper state change subscription in MockVibeAgent
-                    // For now, the agent doesn't push updates. VibeProvider will need to re-fetch state
-                    // after identity changes etc. This is a limitation of the current mock.
-                    console.warn("[window.vibe] Mock SDK does not currently push state updates after init.");
+                        // Check if initialization was actually successful (e.g., user didn't deny consent)
+                        // We determine success by checking if an activeIdentity and account exist in the final state.
+                        // If the user denied consent or there's no active identity, init technically "failed" from the app's perspective.
+                        if (finalState.activeIdentity && finalState.account) {
+                            // Adapt nulls to undefined for VibeState compatibility before calling onStateChange
+                            onStateChange({
+                                account: finalState.account ?? undefined,
+                                permissions: finalState.permissions ?? undefined,
+                                activeIdentity: finalState.activeIdentity ?? undefined,
+                                identities: finalState.identities,
+                            }); // Send final state ONLY on success
 
-                    // Return a mock unsubscribe function
-                    const unsubscribe = () => {
-                        console.log("[window.vibe] unsubscribe called (mock)");
-                        // In a real scenario, this would tell the agent to clean up resources for this app.
-                        // The agent might close WebSockets, clear listeners, etc.
-                        // For the mock, we might clear the manifest association in the agent?
-                    };
-                    return unsubscribe;
-                } catch (error) {
-                    console.error("[window.vibe] Agent init failed:", error);
-                    // Notify VibeProvider of the error state (ensure null -> undefined)
-                    const currentIdentities = await agent.getIdentities();
-                    const currentActiveIdentity = await agent.getActiveIdentity();
-                    onStateChange({
-                        identities: currentIdentities,
-                        activeIdentity: currentActiveIdentity ?? undefined, // Correctly handle null
-                        // account and permissions will be implicitly undefined
-                    });
-                    throw error; // Re-throw error so VibeProvider knows init failed
-                }
+                            // TODO: Implement proper state change subscription in MockVibeAgent
+                            console.warn("[window.vibe] Mock SDK does not currently push state updates after init.");
+
+                            // Return a mock unsubscribe function
+                            const unsubscribe = () => {
+                                console.log("[window.vibe] unsubscribe called (mock)");
+                                // In a real scenario, this would tell the agent to clean up resources for this app.
+                            };
+                            resolve(unsubscribe); // Resolve the main promise with the unsubscribe function
+                        } else {
+                            // Initialization didn't fully complete (e.g., no active identity, consent denied)
+                            // Send a state update indicating no active session, but don't throw an error here,
+                            // let the VibeProvider handle the lack of activeIdentity/account.
+                            console.warn("[window.vibe] Agent init completed but no active session established (no active identity or consent denied).");
+                            onStateChange({
+                                identities: finalState.identities,
+                                activeIdentity: undefined,
+                                account: undefined,
+                                permissions: undefined,
+                            });
+                            // Still resolve the promise, but maybe with a different signal or just no-op unsubscribe?
+                            // Resolving allows the VibeProvider to know the init attempt finished.
+                            const unsubscribe = () => {
+                                console.log("[window.vibe] unsubscribe called (mock, init incomplete)");
+                            };
+                            resolve(unsubscribe);
+                            // Or reject? Rejecting might be better to signal failure clearly to VibeProvider.
+                            // Let's try rejecting.
+                            // reject(new Error("Initialization failed: No active identity or consent denied."));
+                        }
+                    } catch (error) {
+                        console.error("[window.vibe] Agent init threw an error:", error);
+                        // Notify VibeProvider of the error state
+                        const currentIdentities = await agent.getIdentities(); // Get current identities even on error
+                        onStateChange({
+                            identities: currentIdentities,
+                            activeIdentity: undefined,
+                            account: undefined,
+                            permissions: undefined,
+                        });
+                        reject(error); // Reject the main promise
+                    }
+                });
             },
             readOnce: async (collection: string, filter?: any): Promise<ReadResult> => {
                 console.log(`[window.vibe] readOnce called: ${collection}`, filter);
@@ -1179,7 +1304,7 @@ export function AgentProvider({ children }: AgentProviderProps) {
             // Optional: Tell agent to clean up? Depends on agent's design.
         };
         // Dependencies: agent instance and the stable callback functions
-    }, [agent, requestConsent, requestActionConfirmation]);
+    }, [agent, requestConsent, requestActionConfirmation, requestInitPrompt]); // Added requestInitPrompt dependency
 
     // --- Agent Actions (Called by UI Components like IdentityPanel) ---
     const createIdentity = useCallback(
@@ -1231,12 +1356,15 @@ export function AgentProvider({ children }: AgentProviderProps) {
         consentRequest,
         isActionPromptOpen,
         actionRequest,
+        isInitPromptOpen, // Added
+        initPromptManifest, // Added
     };
 
     return (
         <AgentContext.Provider value={contextValue}>
             {children}
             {/* Render Modals controlled by this context */}
+            <InitPrompt isOpen={isInitPromptOpen} manifest={initPromptManifest} onClick={handleInitPromptClick} />
             <ConsentModal isOpen={isConsentOpen} request={consentRequest} onDecision={handleConsentDecision} />
             <ActionPromptModal isOpen={isActionPromptOpen} request={actionRequest} onDecision={handleActionDecision} />
         </AgentContext.Provider>

@@ -49,56 +49,73 @@ export function VibeProvider({ children, manifest }: VibeProviderProps) {
 
     // Removed effect connecting UI handlers
 
-    // Initialize the Vibe SDK (from window.vibe) when the provider mounts
+    // Initialize the Vibe SDK (from window.vibe) when the provider mounts or manifest changes
     useEffect(() => {
         const sdk = getSdk();
         if (!sdk) {
             console.error("[VibeProvider] window.vibe SDK not found on mount. AgentProvider might be missing or hasn't initialized yet.");
-            // TODO: How to handle this? Maybe retry later? For now, just log error.
+            setVibeState(undefined); // Ensure state is cleared if SDK is missing
             return;
         }
 
         console.log("[VibeProvider] Initializing Vibe SDK via window.vibe with manifest:", manifest);
-        let isMounted = true; // Prevent state updates after unmount
+        let isMounted = true;
+        let unsubscribeFn: Unsubscribe | null = null;
 
-        const initialize = async () => {
+        const initializeSdk = async () => {
             try {
-                const unsubscribeFn = await sdk.init(manifest, (newState) => {
+                // The onStateChange callback will be called by the AgentProvider's window.vibe.init
+                // *after* the agent's internal init (including potential UI prompts) completes successfully.
+                unsubscribeFn = await sdk.init(manifest, (newState) => {
                     if (isMounted) {
-                        console.log("[VibeProvider] Received state update from SDK:", newState);
-                        setVibeState(newState);
+                        console.log("[VibeProvider] Received final state update from SDK after init:", newState);
+                        setVibeState(newState); // Set state based on the final update from successful init
+                    } else {
+                        console.log("[VibeProvider] Received state update after unmount, ignoring.");
                     }
                 });
+
+                // Store the unsubscribe function if mounted
                 if (isMounted) {
-                    setSdkUnsubscribe(() => unsubscribeFn); // Store the unsubscribe function
+                    console.log("[VibeProvider] SDK init promise resolved successfully.");
+                    setSdkUnsubscribe(() => unsubscribeFn);
                 } else {
-                    // If component unmounted before init finished, call unsubscribe immediately
-                    unsubscribeFn();
+                    // If component unmounted before init promise resolved, call unsubscribe immediately
+                    console.log("[VibeProvider] Unmounted before SDK init resolved, calling unsubscribe.");
+                    unsubscribeFn?.();
                 }
             } catch (error) {
-                console.error("[VibeProvider] Error during SDK initialization:", error);
+                // This catch block handles errors thrown by agent.init OR rejections from window.vibe.init
+                // (e.g., if consent was denied and AgentProvider rejects the promise)
+                console.error("[VibeProvider] Error during SDK initialization promise:", error);
                 if (isMounted) {
-                    // Set state to indicate error? Or just rely on console?
-                    setVibeState(undefined); // Clear state on init error
+                    // Clear state on initialization error or denial
+                    setVibeState(undefined);
+                    setSdkUnsubscribe(null); // Ensure no stale unsubscribe function
                 }
             }
         };
 
-        initialize();
+        initializeSdk();
 
         // Cleanup function
         return () => {
             isMounted = false;
             console.log("[VibeProvider] Cleaning up Vibe SDK subscription.");
-            if (sdkUnsubscribe) {
-                // Use the stored unsubscribe function
-                sdkUnsubscribe();
+            // Use the unsubscribe function obtained from the successful init promise
+            if (unsubscribeFn) {
+                console.log("[VibeProvider] Calling unsubscribe function provided by SDK init.");
+                unsubscribeFn();
+                // Also clear the stored state version if necessary, though unsubscribeFn should be sufficient
                 setSdkUnsubscribe(null);
+            } else {
+                console.log("[VibeProvider] No unsubscribe function available (init might have failed or not completed).");
             }
+            // Clear Vibe state on cleanup? Optional, depends on desired behavior on unmount/manifest change.
+            // setVibeState(undefined);
         };
-        // Only re-run if manifest changes. sdkUnsubscribe is managed internally.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [manifest]);
+        // Re-run effect if the manifest changes
+    }, [manifest]); // sdkUnsubscribe is managed internally via unsubscribeFn closure
 
     // Manual init function (less critical now, but can be kept)
     const init = useCallback(() => {
