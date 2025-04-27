@@ -23,44 +23,89 @@ import type {
     WriteResult,
     Unsubscribe,
 } from "./types";
-import { generateEd25519KeyPair, signEd25519, didFromEd25519, uint8ArrayToHex, type Ed25519KeyPair, hexToUint8Array } from "../lib/identity"; // Added
-import { Buffer } from "buffer"; // Added
-import * as ed from "@noble/ed25519"; // Added
+import { generateEd25519KeyPair, signEd25519, didFromEd25519, uint8ArrayToHex, type Ed25519KeyPair, hexToUint8Array } from "../lib/identity";
+import { Buffer } from "buffer";
+import * as ed from "@noble/ed25519";
+// Import crypto helpers needed for vault operations
+import {
+    deriveEncryptionKey,
+    decryptData,
+    seedFromMnemonic,
+    getMasterHDKeyFromSeed,
+    deriveChildKeyPair,
+    wipeMemory,
+    type EncryptedData,
+    generateSalt, // Added for createIdentity
+} from "../lib/crypto";
+import type { HDKey } from "micro-ed25519-hdkey"; // Import type
 
 import { ConsentModal } from "../components/agent/ConsentModal";
 import { ActionPromptModal } from "../components/agent/ActionPromptModal";
 import { InitPrompt } from "../components/agent/InitPrompt"; // Added import
+import { UnlockModal } from "../components/agent/UnlockModal"; // Import UnlockModal
+import { Button } from "@/components/ui/button"; // Import Button for error step
 
 // --- Constants for MockVibeAgent ---
 const VIBE_CLOUD_BASE_URL = "http://127.0.0.1:3001"; // 3001 = backen run outside docker, 3000=backend in docker
 const ADMIN_CLAIM_CODE = "ABC1-XYZ9"; // From vibe-cloud/.env
 const LOCAL_STORAGE_KEY_PREFIX = "vibe_agent_";
-const LOCAL_STORAGE_IDENTITIES_KEY = `${LOCAL_STORAGE_KEY_PREFIX}identities`;
+// Use keys defined in SetupWizard
+const LOCAL_STORAGE_VAULT_KEY = "vibe_agent_vault";
+const LOCAL_STORAGE_VAULT_SALT_KEY = "vibe_agent_vault_salt";
+const LOCAL_STORAGE_CLOUD_URL_KEY = "vibe_agent_cloud_url"; // Keep for now, might move into vault later
+// Keep other keys separate for now
 const LOCAL_STORAGE_ACTIVE_DID_KEY = `${LOCAL_STORAGE_KEY_PREFIX}active_did`;
 const LOCAL_STORAGE_PERMISSIONS_KEY = `${LOCAL_STORAGE_KEY_PREFIX}permissions`;
-const LOCAL_STORAGE_JWT_KEY = `${LOCAL_STORAGE_KEY_PREFIX}jwts`; // Store JWTs per identity DID
+const LOCAL_STORAGE_JWT_KEY = `${LOCAL_STORAGE_KEY_PREFIX}jwts`;
 
-// --- MockVibeAgent Class Definition (Moved from agent.ts) ---
+// Type for the decrypted vault structure
+interface VaultData {
+    encryptedSeedPhrase: EncryptedData;
+    identities: Array<{
+        did: string;
+        derivationPath: string;
+        profile_name: string | null;
+        profile_picture: string | null;
+    }>;
+    settings: {
+        nextAccountIndex: number;
+    };
+}
+
+// Type for public identity info (when locked)
+type PublicIdentityInfo = Omit<Identity, "privateKey" | "publicKey">;
+
+// --- MockVibeAgent Class Definition ---
 /**
  * Mock implementation of the VibeAgent interface.
- * Manages identities, permissions locally, and simulates UI interactions.
+ * Manages identities (via encrypted vault), permissions locally, and simulates UI interactions.
  */
 class MockVibeAgent implements VibeAgent {
     // --- State ---
-    private identities: Identity[] = [];
-    private activeIdentity: Identity | null = null;
-    // Permissions structure: identityDID -> origin -> scope -> setting
+    public isLocked: boolean = true; // Agent starts locked - make public for provider check
+    private vaultSalt: Uint8Array | null = null; // Loaded from storage
+    private encryptedVaultData: VaultData | null = null; // Loaded from storage
+
+    // In-memory state (populated after unlock)
+    private identities: Identity[] = []; // Holds full Identity objects with keys *only when unlocked*
+    private activeIdentity: Identity | null = null; // Refers to an object in the in-memory `identities` array
+    private decryptedSeedPhrase: string | null = null; // Temporary, wiped after use
+    private masterHDKey: HDKey | null = null; // Temporary, wiped after use
+
+    // State loaded/managed regardless of lock status (or after unlock)
     private permissions: Record<string, Record<string, Record<string, PermissionSetting>>> = {};
-    // JWTs structure: identityDID -> jwt
     private jwts: Record<string, string> = {};
+    private cloudUrl: string | null = null; // Loaded from storage
 
-    private manifest: AppManifest | null = null; // Current app manifest
-    private currentOrigin: string = window.location.origin; // Origin of the app using the agent
+    // App/UI related state
+    private manifest: AppManifest | null = null;
+    private currentOrigin: string = window.location.origin;
 
-    // --- UI Interaction Callbacks (Injected by UI Layer) ---
+    // --- UI Interaction Callbacks ---
     private uiRequestConsent: ((request: ConsentRequest) => Promise<Record<string, PermissionSetting>>) | null = null;
     private uiRequestActionConfirmation: ((request: ActionRequest) => Promise<ActionResponse>) | null = null;
     private uiRequestInitPrompt: ((manifest: AppManifest) => Promise<void>) | null = null; // Added for Scenario 1
+    // TODO: Add uiRequestPasswordPrompt callback
 
     // Backend/WebSocket related (kept for potential future direct connection)
     private webSocket: WebSocket | null = null;
@@ -73,16 +118,17 @@ class MockVibeAgent implements VibeAgent {
     private isInitializing = false;
 
     constructor() {
-        console.log("MockVibeAgent initialized");
-        // this.clearStateFromStorage(); // Uncomment to clear state on each instantiation (for testing)
-        this.loadStateFromStorage(); // Load identities, active DID, permissions, JWTs
+        console.log("MockVibeAgent: Initializing...");
+        this.loadInitialStateFromStorage(); // Load only non-sensitive data initially
+        console.log(`MockVibeAgent: Initialized. Locked: ${this.isLocked}`);
     }
 
-    // Method for UI Layer to inject its prompt functions
+    // Method for UI Layer to inject prompt functions
     public setUIHandlers(handlers: {
         requestConsent: (request: ConsentRequest) => Promise<Record<string, PermissionSetting>>;
         requestActionConfirmation: (request: ActionRequest) => Promise<ActionResponse>;
         requestInitPrompt: (manifest: AppManifest) => Promise<void>; // Added
+        // TODO: Add requestPasswordPrompt handler
     }): void {
         console.log("[MockVibeAgent] Setting UI handlers.");
         this.uiRequestConsent = handlers.requestConsent;
@@ -247,99 +293,228 @@ class MockVibeAgent implements VibeAgent {
         }
     }
 
-    // --- Storage Management ---
+    // --- Vault and State Management ---
 
-    private loadStateFromStorage(): void {
+    // Check if vault exists in storage
+    public hasVault(): boolean {
+        return !!localStorage.getItem(LOCAL_STORAGE_VAULT_KEY) && !!localStorage.getItem(LOCAL_STORAGE_VAULT_SALT_KEY);
+    }
+
+    // Loads only the salt and encrypted vault initially. Does not unlock.
+    private loadInitialStateFromStorage(): void {
         try {
-            // Load Identities
-            const storedIdentities = localStorage.getItem(LOCAL_STORAGE_IDENTITIES_KEY);
-            if (storedIdentities) {
-                const parsed = JSON.parse(storedIdentities);
-                // Need to re-hydrate Uint8Arrays
-                this.identities = parsed.map((idData: any) => ({
-                    ...idData,
-                    publicKey: hexToUint8Array(idData.publicKeyHex),
-                    privateKey: hexToUint8Array(idData.privateKeyHex),
-                }));
-                console.log(`Loaded ${this.identities.length} identities from localStorage.`);
+            const storedSaltHex = localStorage.getItem(LOCAL_STORAGE_VAULT_SALT_KEY);
+            const storedVaultJson = localStorage.getItem(LOCAL_STORAGE_VAULT_KEY);
+
+            if (storedSaltHex && storedVaultJson) {
+                this.vaultSalt = hexToUint8Array(storedSaltHex);
+                this.encryptedVaultData = JSON.parse(storedVaultJson);
+                this.isLocked = true; // Explicitly set to locked, even if vault exists
+                console.log("MockVibeAgent: Vault salt and encrypted data loaded. Agent is LOCKED.");
             } else {
-                console.log("No identities found in localStorage.");
+                // This case should ideally not happen after setup is complete.
+                // If it does, it means setup wasn't done or storage was cleared.
+                this.isLocked = true; // Remain locked
+                this.vaultSalt = null;
+                this.encryptedVaultData = null;
+                console.warn("MockVibeAgent: Vault salt or data not found in localStorage. Agent remains LOCKED. Setup may be required.");
             }
 
-            // Load Active DID
-            const storedActiveDid = localStorage.getItem(LOCAL_STORAGE_ACTIVE_DID_KEY);
-            if (storedActiveDid) {
-                this.activeIdentity = this.identities.find((id) => id.did === storedActiveDid) || null;
-                if (this.activeIdentity) {
-                    console.log("Loaded active identity:", this.activeIdentity.did);
-                } else {
-                    console.warn("Stored active DID not found in loaded identities.");
-                }
-            } else if (this.identities.length > 0) {
-                // Default to first identity if none is set as active
-                this.activeIdentity = this.identities[0];
-                localStorage.setItem(LOCAL_STORAGE_ACTIVE_DID_KEY, this.activeIdentity.did);
-                console.log("No active DID found, defaulting to first identity:", this.activeIdentity.did);
-            }
-
-            // Load Permissions
+            // Load non-sensitive data that doesn't require unlock (permissions, JWTs, cloud URL)
+            // Permissions
             const storedPermissions = localStorage.getItem(LOCAL_STORAGE_PERMISSIONS_KEY);
-            if (storedPermissions) {
-                this.permissions = JSON.parse(storedPermissions);
-                console.log("Loaded permissions from localStorage.");
-            } else {
-                console.log("No permissions found in localStorage.");
-            }
+            this.permissions = storedPermissions ? JSON.parse(storedPermissions) : {};
+            console.log(`MockVibeAgent: Loaded permissions (${Object.keys(this.permissions).length} DIDs).`);
 
-            // Load JWTs
+            // JWTs
             const storedJwts = localStorage.getItem(LOCAL_STORAGE_JWT_KEY);
-            if (storedJwts) {
-                this.jwts = JSON.parse(storedJwts);
-                console.log("Loaded JWTs from localStorage.");
-            } else {
-                console.log("No JWTs found in localStorage.");
-            }
+            this.jwts = storedJwts ? JSON.parse(storedJwts) : {};
+            console.log(`MockVibeAgent: Loaded JWTs (${Object.keys(this.jwts).length} DIDs).`);
+
+            // Cloud URL
+            this.cloudUrl = localStorage.getItem(LOCAL_STORAGE_CLOUD_URL_KEY);
+            console.log(`MockVibeAgent: Loaded Cloud URL: ${this.cloudUrl || "Not set"}`);
+
+            // Note: Active DID ref is loaded after unlock, as it refers to the derived identities.
         } catch (error) {
-            console.error("Error loading state from localStorage:", error);
-            // Clear potentially corrupted state
-            this.clearStateFromStorage();
+            console.error("MockVibeAgent: Error loading initial state from localStorage:", error);
+            // Reset state in case of corruption
+            this.vaultSalt = null;
+            this.encryptedVaultData = null;
+            this.permissions = {};
+            this.jwts = {};
+            this.cloudUrl = null;
+            this.isLocked = true;
         }
     }
 
-    private saveStateToStorage(): void {
+    // Saves the currently encrypted vault and salt (e.g., after adding an identity)
+    // NOTE: This should only be called internally when the vault structure changes.
+    // The vault remains encrypted on disk.
+    private saveVaultToStorage(): void {
+        // Vault saving should happen when the encryptedVaultData is updated (e.g., adding identity)
+        // This method might not be needed if updates happen atomically.
+        // For now, assume vault is saved by the methods that modify it (like a future createIdentity).
+        if (!this.vaultSalt || !this.encryptedVaultData) {
+            console.error("MockVibeAgent: Cannot save vault if vault data/salt is missing.");
+            return;
+        }
         try {
-            // Serialize identities with hex keys
-            const serializableIdentities = this.identities.map((id) => ({
-                ...id,
-                publicKeyHex: uint8ArrayToHex(id.publicKey),
-                privateKeyHex: uint8ArrayToHex(id.privateKey),
-                publicKey: undefined, // Remove raw bytes
-                privateKey: undefined, // Remove raw bytes
-            }));
-            localStorage.setItem(LOCAL_STORAGE_IDENTITIES_KEY, JSON.stringify(serializableIdentities));
+            const saltHex = Buffer.from(this.vaultSalt).toString("hex");
+            localStorage.setItem(LOCAL_STORAGE_VAULT_SALT_KEY, saltHex);
+            localStorage.setItem(LOCAL_STORAGE_VAULT_KEY, JSON.stringify(this.encryptedVaultData));
+            console.log("MockVibeAgent: Encrypted vault and salt saved to localStorage.");
+        } catch (error) {
+            console.error("MockVibeAgent: Error saving vault state to localStorage:", error);
+        }
+    }
 
+    // Saves non-vault state (permissions, JWTs, active DID ref, cloud URL)
+    // Should generally be called after modifications while unlocked.
+    private saveNonVaultStateToStorage(): void {
+        try {
+            localStorage.setItem(LOCAL_STORAGE_PERMISSIONS_KEY, JSON.stringify(this.permissions));
+            localStorage.setItem(LOCAL_STORAGE_JWT_KEY, JSON.stringify(this.jwts));
             if (this.activeIdentity) {
                 localStorage.setItem(LOCAL_STORAGE_ACTIVE_DID_KEY, this.activeIdentity.did);
             } else {
                 localStorage.removeItem(LOCAL_STORAGE_ACTIVE_DID_KEY);
             }
-            localStorage.setItem(LOCAL_STORAGE_PERMISSIONS_KEY, JSON.stringify(this.permissions));
-            localStorage.setItem(LOCAL_STORAGE_JWT_KEY, JSON.stringify(this.jwts));
-            console.log("Saved agent state (identities, active DID, permissions, JWTs) to localStorage.");
+            if (this.cloudUrl) {
+                localStorage.setItem(LOCAL_STORAGE_CLOUD_URL_KEY, this.cloudUrl);
+            } else {
+                localStorage.removeItem(LOCAL_STORAGE_CLOUD_URL_KEY);
+            }
+            console.log("MockVibeAgent: Non-vault state (permissions, JWTs, active DID, cloud URL) saved.");
         } catch (error) {
-            console.error("Error saving state to localStorage:", error);
+            console.error("MockVibeAgent: Error saving non-vault state to localStorage:", error);
         }
     }
 
-    private clearStateFromStorage(): void {
+    // Clears ALL agent-related data from storage (for testing/reset)
+    public clearAllStorage(): void {
         try {
-            localStorage.removeItem(LOCAL_STORAGE_IDENTITIES_KEY);
+            localStorage.removeItem(LOCAL_STORAGE_VAULT_KEY);
+            localStorage.removeItem(LOCAL_STORAGE_VAULT_SALT_KEY);
             localStorage.removeItem(LOCAL_STORAGE_ACTIVE_DID_KEY);
             localStorage.removeItem(LOCAL_STORAGE_PERMISSIONS_KEY);
             localStorage.removeItem(LOCAL_STORAGE_JWT_KEY);
-            console.log("Cleared agent state from localStorage.");
+            localStorage.removeItem(LOCAL_STORAGE_CLOUD_URL_KEY);
+            // Also clear in-memory state
+            this.isLocked = true;
+            this.vaultSalt = null;
+            this.encryptedVaultData = null;
+            this.identities = [];
+            this.activeIdentity = null;
+            this.decryptedSeedPhrase = null;
+            if (this.masterHDKey) {
+                // HDKey doesn't have an explicit wipe, rely on GC
+                this.masterHDKey = null;
+            }
+            this.permissions = {};
+            this.jwts = {};
+            this.cloudUrl = null;
+            console.log("MockVibeAgent: Cleared ALL agent state from localStorage and memory.");
         } catch (error) {
-            console.error("Error clearing state from localStorage:", error);
+            console.error("MockVibeAgent: Error clearing state:", error);
+        }
+    }
+
+    // --- Unlock / Lock ---
+
+    public async unlock(password: string): Promise<void> {
+        if (!this.isLocked) {
+            console.log("MockVibeAgent: Already unlocked.");
+            return;
+        }
+        if (!this.vaultSalt || !this.encryptedVaultData) {
+            throw new Error("Cannot unlock: Vault salt or data is missing.");
+        }
+
+        let encryptionKey: CryptoKey | null = null;
+        let seed: Buffer | null = null;
+        try {
+            console.log("MockVibeAgent: Deriving key to unlock vault...");
+            encryptionKey = await deriveEncryptionKey(password, this.vaultSalt);
+
+            console.log("MockVibeAgent: Decrypting seed phrase...");
+            this.decryptedSeedPhrase = await decryptData(this.encryptedVaultData.encryptedSeedPhrase, encryptionKey);
+
+            console.log("MockVibeAgent: Deriving master HD key...");
+            seed = await seedFromMnemonic(this.decryptedSeedPhrase);
+            this.masterHDKey = getMasterHDKeyFromSeed(seed);
+
+            console.log("MockVibeAgent: Deriving identity keys from vault data...");
+            this.identities = this.encryptedVaultData.identities.map((idData) => {
+                const derivedKeys = deriveChildKeyPair(this.masterHDKey!, parseInt(idData.derivationPath.split("/").pop()!, 10)); // Assuming index is last part
+                if (didFromEd25519(derivedKeys.publicKey) !== idData.did) {
+                    console.error(
+                        `DID mismatch during unlock for path ${idData.derivationPath}! Expected ${idData.did}, got ${didFromEd25519(derivedKeys.publicKey)}`
+                    );
+                    throw new Error(`Identity data corruption detected for ${idData.did}`);
+                }
+                return {
+                    did: idData.did,
+                    publicKey: derivedKeys.publicKey,
+                    privateKey: derivedKeys.privateKey, // Store the derived private key in memory
+                    label: idData.profile_name, // Use stored profile name as label
+                    pictureUrl: idData.profile_picture,
+                };
+            });
+
+            // Restore active identity reference
+            const storedActiveDid = localStorage.getItem(LOCAL_STORAGE_ACTIVE_DID_KEY);
+            if (storedActiveDid) {
+                this.activeIdentity = this.identities.find((id) => id.did === storedActiveDid) || null;
+            }
+            // Default to first identity if no active one was stored or found
+            if (!this.activeIdentity && this.identities.length > 0) {
+                this.activeIdentity = this.identities[0];
+                // Save the defaulted active DID ref
+                localStorage.setItem(LOCAL_STORAGE_ACTIVE_DID_KEY, this.activeIdentity.did);
+            }
+
+            this.isLocked = false;
+            console.log(`MockVibeAgent: Vault unlocked. ${this.identities.length} identities loaded. Active: ${this.activeIdentity?.did || "None"}`);
+        } catch (error) {
+            console.error("MockVibeAgent: Unlock failed.", error);
+            // Ensure sensitive data is cleared on failure
+            this.lock(); // Call lock to clear potentially partially populated state
+            throw new Error(`Unlock failed: ${error instanceof Error ? error.message : "Incorrect password or corrupted vault."}`);
+        } finally {
+            // Wipe intermediate sensitive data (seed, decrypted phrase, encryption key)
+            if (seed) wipeMemory(seed);
+            if (this.decryptedSeedPhrase) {
+                // Simple wipe for string - replace with more robust method if needed
+                this.decryptedSeedPhrase = this.decryptedSeedPhrase.replace(/./g, " ");
+                this.decryptedSeedPhrase = null;
+            }
+            // CryptoKey cannot be wiped directly, rely on GC
+            encryptionKey = null;
+        }
+    }
+
+    public lock(): void {
+        console.log("MockVibeAgent: Locking agent...");
+        this.isLocked = true;
+        this.identities = []; // Clear identities with keys
+        this.activeIdentity = null; // Clear active identity reference
+        // Wipe master key and decrypted phrase if they exist
+        if (this.masterHDKey) {
+            // HDKey has no wipe method, rely on GC
+            this.masterHDKey = null;
+        }
+        if (this.decryptedSeedPhrase) {
+            this.decryptedSeedPhrase = this.decryptedSeedPhrase.replace(/./g, " ");
+            this.decryptedSeedPhrase = null;
+        }
+        console.log("MockVibeAgent: Agent locked.");
+    }
+
+    // Helper to ensure the agent is unlocked before performing sensitive operations
+    private ensureUnlocked(): void {
+        if (this.isLocked) {
+            throw new Error("Agent is locked. Unlock required.");
         }
     }
 
@@ -356,6 +531,25 @@ class MockVibeAgent implements VibeAgent {
         console.log("MockVibeAgent: Initializing with manifest:", manifest);
         this.manifest = manifest;
         this.currentOrigin = window.location.origin; // Ensure origin is set
+
+        // --- Unlock Check ---
+        // TODO: Implement unlock flow if needed at init
+        if (this.isLocked) {
+            console.warn("MockVibeAgent.init: Agent is locked. Need to unlock first.");
+            // In a real scenario, this might trigger an unlock prompt.
+            // For the mock, we might assume it's unlocked or require manual unlock via dev tools/context.
+            // Let's proceed assuming unlock happens elsewhere for now, but add a check.
+            // throw new Error("Agent is locked. Cannot initialize app.");
+            // OR return a state indicating locked status?
+            const publicIdentities =
+                this.encryptedVaultData?.identities.map((idData) => ({
+                    did: idData.did,
+                    label: idData.profile_name,
+                    pictureUrl: idData.profile_picture,
+                })) || [];
+            return { account: null, permissions: null, activeIdentity: null, identities: publicIdentities as Identity[] }; // Return public state if locked
+        }
+        // --- End Unlock Check ---
 
         try {
             // --- Step 1: Check for Active Identity ---
@@ -381,7 +575,7 @@ class MockVibeAgent implements VibeAgent {
                 console.log(`JWT missing for active identity ${identity.did}, attempting claim...`);
                 try {
                     await this.performAdminClaim(identity);
-                    this.saveStateToStorage(); // Save JWT
+                    // performAdminClaim now calls saveNonVaultStateToStorage
                 } catch (claimError) {
                     console.error("Claim failed during init:", claimError);
                     // Proceeding without JWT might break data operations, but let init continue for now
@@ -478,24 +672,47 @@ class MockVibeAgent implements VibeAgent {
         account: Account | null;
         permissions: Record<string, PermissionSetting> | null;
         activeIdentity: Identity | null;
-        identities: Identity[];
+        identities: Identity[]; // Return full identities if unlocked, public info if locked
     }> {
+        // If locked, return only the publicly available info (identities without keys)
+        if (this.isLocked) {
+            const publicIdentities =
+                this.encryptedVaultData?.identities.map((idData) => ({
+                    did: idData.did,
+                    label: idData.profile_name, // Use profile name as label when locked
+                    pictureUrl: idData.profile_picture,
+                    // Keys are omitted
+                })) || [];
+            // Cast to Identity[] for compatibility, acknowledging keys are missing
+            return { account: null, permissions: null, activeIdentity: null, identities: publicIdentities as Identity[] };
+        }
+
+        // If unlocked, proceed as before
         const identity = this.activeIdentity;
         if (requireActiveIdentity && !identity) {
             // This case should ideally be handled before calling this helper in final stages
             console.warn("getCurrentStateForSdk called requires active identity, but none found.");
-            return { account: null, permissions: null, activeIdentity: null, identities: this.identities };
+            // Return public info even if unlocked but no active identity selected
+            const publicIdentities = this.identities.map((id) => ({
+                did: id.did,
+                label: id.label,
+                pictureUrl: id.pictureUrl,
+            }));
+            return { account: null, permissions: null, activeIdentity: null, identities: publicIdentities as Identity[] };
         }
 
         const account = identity ? { userDid: identity.did } : null;
         // Only return permissions if an identity is active
         const permissions = identity ? this.permissions[identity.did]?.[this.currentOrigin] || {} : null;
 
+        // Return copies of identities to prevent external modification
+        const identitiesCopy = this.identities.map((id) => ({ ...id }));
+
         return {
             account,
             permissions,
-            activeIdentity: identity, // Return the active identity (or null if none)
-            identities: this.identities,
+            activeIdentity: identity ? { ...identity } : null, // Return a copy
+            identities: identitiesCopy,
         };
     }
 
@@ -504,35 +721,63 @@ class MockVibeAgent implements VibeAgent {
         return {
             account: state.account ?? undefined,
             permissions: state.permissions ?? undefined,
-            activeIdentity: state.activeIdentity,
+            activeIdentity: state.activeIdentity ?? undefined, // Handle potential null
             identities: state.identities,
         };
     }
 
     // --- Identity Management ---
 
+    // TODO: Refactor createIdentity to work with the encrypted vault
     async createIdentity(label: string, pictureUrl?: string): Promise<Identity> {
-        console.log(`Creating new identity with label: ${label}`);
-        const keyPair = generateEd25519KeyPair();
-        const did = didFromEd25519(keyPair.publicKey);
+        this.ensureUnlocked(); // Must be unlocked to create identity
+        // console.warn("MockVibeAgent.createIdentity needs refactoring for encrypted vault."); // Keep for now
+
+        if (!this.masterHDKey || !this.encryptedVaultData) {
+            throw new Error("Cannot create identity: Master key or vault data missing.");
+        }
+
+        const nextIndex = this.encryptedVaultData.settings.nextAccountIndex;
+        console.log(`Deriving new identity key pair (index ${nextIndex})...`);
+        const newKeys = deriveChildKeyPair(this.masterHDKey, nextIndex);
+        const did = didFromEd25519(newKeys.publicKey);
+
         const newIdentity: Identity = {
-            ...keyPair,
             did,
-            label,
-            pictureUrl,
+            publicKey: newKeys.publicKey,
+            privateKey: newKeys.privateKey,
+            label: label || null, // Use provided label or null
+            pictureUrl: pictureUrl || null,
         };
+
+        // Add to in-memory list
         this.identities.push(newIdentity);
-        // If this is the first identity, make it active
+
+        // Update the encrypted vault data structure
+        this.encryptedVaultData.identities.push({
+            did: did,
+            derivationPath: newKeys.derivationPath,
+            profile_name: label || null,
+            profile_picture: pictureUrl || null,
+        });
+        this.encryptedVaultData.settings.nextAccountIndex = nextIndex + 1;
+
+        // Save the updated vault (which contains the new identity structure without keys)
+        this.saveVaultToStorage();
+
+        // If this is the first identity created after unlock, make it active
         if (!this.activeIdentity) {
             this.activeIdentity = newIdentity;
+            this.saveNonVaultStateToStorage(); // Save active DID ref
         }
-        this.saveStateToStorage();
-        console.log("New identity created:", newIdentity.did);
+
+        console.log("New identity created and vault updated:", newIdentity.did);
         // TODO: Trigger state update to SDK/UI?
-        return newIdentity;
+        return { ...newIdentity }; // Return a copy
     }
 
     async setActiveIdentity(did: string): Promise<void> {
+        this.ensureUnlocked(); // Must be unlocked
         const identityToActivate = this.identities.find((id) => id.did === did);
         if (!identityToActivate) {
             throw new Error(`Identity with DID ${did} not found.`);
@@ -543,26 +788,41 @@ class MockVibeAgent implements VibeAgent {
         }
         console.log(`Setting active identity to: ${did}`);
         this.activeIdentity = identityToActivate;
-        this.saveStateToStorage();
+        this.saveNonVaultStateToStorage(); // Save active DID ref
         // TODO: Trigger state update to SDK/UI?
-        // TODO: Ensure new active identity has JWT if needed?
+        // TODO: Ensure new active identity has JWT if needed? (Maybe in init/unlock)
     }
 
     async getIdentities(): Promise<Identity[]> {
-        return [...this.identities]; // Return a copy
+        if (this.isLocked) {
+            // Return only public info if locked
+            const publicIdentities =
+                this.encryptedVaultData?.identities.map((idData) => ({
+                    did: idData.did,
+                    label: idData.profile_name,
+                    pictureUrl: idData.profile_picture,
+                    // Keys omitted
+                })) || [];
+            return publicIdentities as Identity[]; // Cast needed as keys are missing
+        }
+        // Return full identity objects (copies) if unlocked
+        return this.identities.map((id) => ({ ...id }));
     }
 
     async getActiveIdentity(): Promise<Identity | null> {
+        if (this.isLocked) return null; // No active identity if locked
         return this.activeIdentity ? { ...this.activeIdentity } : null; // Return a copy
     }
 
     // --- Permission Management ---
 
     async getPermission(identityDid: string, origin: string, scope: string): Promise<PermissionSetting | null> {
+        // Permissions can be checked even if locked? Yes, they are stored separately.
         return this.permissions[identityDid]?.[origin]?.[scope] || null;
     }
 
     async setPermission(identityDid: string, origin: string, scope: string, setting: PermissionSetting): Promise<void> {
+        // Permissions can be set even if locked? Yes.
         if (!this.permissions[identityDid]) {
             this.permissions[identityDid] = {};
         }
@@ -571,19 +831,19 @@ class MockVibeAgent implements VibeAgent {
         }
         console.log(`Setting permission for ${identityDid} / ${origin} / ${scope} -> ${setting}`);
         this.permissions[identityDid][origin][scope] = setting;
-        this.saveStateToStorage();
+        this.saveNonVaultStateToStorage(); // Save permissions
         // TODO: Trigger state update?
     }
 
     // Helper to get all permissions for the current active identity and origin
     private async getCurrentPermissionsForOrigin(): Promise<Record<string, PermissionSetting>> {
-        if (!this.activeIdentity) return {};
+        if (this.isLocked || !this.activeIdentity) return {}; // Need unlocked state for activeIdentity
         return this.permissions[this.activeIdentity.did]?.[this.currentOrigin] || {};
     }
 
     // Helper to update permissions for the current active identity and origin
     private async updatePermissionsForOrigin(newPermissions: Record<string, PermissionSetting>): Promise<void> {
-        if (!this.activeIdentity) return;
+        if (this.isLocked || !this.activeIdentity) return; // Need unlocked state for activeIdentity
         const did = this.activeIdentity.did;
         if (!this.permissions[did]) {
             this.permissions[did] = {};
@@ -592,19 +852,21 @@ class MockVibeAgent implements VibeAgent {
             ...(this.permissions[did][this.currentOrigin] || {}),
             ...newPermissions,
         };
-        this.saveStateToStorage();
+        this.saveNonVaultStateToStorage(); // Save permissions
         // TODO: Trigger state update?
     }
 
     async getAllPermissionsForIdentity(identityDid: string): Promise<Record<string, Record<string, PermissionSetting>>> {
+        // Can be checked if locked
         return this.permissions[identityDid] || {};
     }
 
     async revokeOriginPermissions(identityDid: string, origin: string): Promise<void> {
+        // Can be done if locked
         if (this.permissions[identityDid]?.[origin]) {
             console.log(`Revoking all permissions for ${identityDid} at origin ${origin}`);
             delete this.permissions[identityDid][origin];
-            this.saveStateToStorage();
+            this.saveNonVaultStateToStorage(); // Save permissions
             // TODO: Trigger state update?
         }
     }
@@ -678,15 +940,17 @@ class MockVibeAgent implements VibeAgent {
 
     // Updated to accept identity
     private async performAdminClaim(identity: Identity): Promise<void> {
-        if (!identity) {
-            throw new Error("Cannot perform claim without a valid identity.");
+        this.ensureUnlocked(); // Need unlocked identity
+        if (!identity || !identity.privateKey) {
+            // Check for private key specifically
+            throw new Error("Cannot perform claim without a valid, unlocked identity.");
         }
 
         const messageBytes = new TextEncoder().encode(ADMIN_CLAIM_CODE);
         const signatureBytes = signEd25519(messageBytes, identity.privateKey);
         const signatureBase64 = Buffer.from(signatureBytes).toString("base64");
 
-        const url = `${VIBE_CLOUD_BASE_URL}/api/v1/admin/claim`;
+        const url = `${this.cloudUrl || VIBE_CLOUD_BASE_URL}/api/v1/admin/claim`; // Use configured cloud URL
         console.log(`Attempting claim to ${url} with DID ${identity.did}`);
 
         try {
@@ -715,6 +979,7 @@ class MockVibeAgent implements VibeAgent {
             }
 
             this.jwts[identity.did] = responseBody.token; // Store JWT against DID
+            this.saveNonVaultStateToStorage(); // Save JWTs
             console.log(`Admin claim successful for ${identity.did}, JWT obtained.`);
         } catch (error) {
             console.error("Error during admin claim fetch:", error);
@@ -725,12 +990,12 @@ class MockVibeAgent implements VibeAgent {
     // Placeholder for claim flow using code
     async claimIdentityWithCode(identityDid: string, claimCode: string): Promise<{ jwt: string }> {
         console.warn("claimIdentityWithCode not fully implemented in mock agent.");
+        this.ensureUnlocked();
         const identity = this.identities.find((id) => id.did === identityDid);
         if (!identity) throw new Error("Identity not found for claim.");
 
         // Simulate admin claim logic for now
         await this.performAdminClaim(identity); // Reuses admin claim logic
-        this.saveStateToStorage();
 
         const jwt = this.jwts[identityDid];
         if (!jwt) throw new Error("Claim simulation failed to produce JWT.");
@@ -740,7 +1005,8 @@ class MockVibeAgent implements VibeAgent {
     // --- Core Data Methods (Need Permission Checks) ---
 
     private ensureInitialized(): void {
-        // Updated check: Ensure active identity and manifest are present
+        // Updated check: Ensure agent is unlocked and has active identity/manifest
+        this.ensureUnlocked();
         if (!this.isInitialized || !this.manifest || !this.activeIdentity) {
             throw new Error("MockVibeAgent not initialized or missing active identity/manifest. Call init() first.");
         }
@@ -749,7 +1015,7 @@ class MockVibeAgent implements VibeAgent {
     // --- API Interaction Helper (Updated for Active Identity JWT) ---
     private async fetchApi<T>(endpoint: string, method: "GET" | "POST" | "PUT" | "DELETE" = "POST", body?: any, skipEnsureInitialized?: boolean): Promise<T> {
         if (!skipEnsureInitialized) {
-            this.ensureInitialized(); // Ensures activeIdentity and manifest exist
+            this.ensureInitialized(); // Ensures agent is unlocked, initialized, and has active identity/manifest
         }
 
         const activeJwt = this.activeIdentity ? this.jwts[this.activeIdentity.did] : null;
@@ -758,13 +1024,17 @@ class MockVibeAgent implements VibeAgent {
             throw new Error(`No JWT found for active identity: ${this.activeIdentity?.did}`);
         }
 
-        const url = `${VIBE_CLOUD_BASE_URL}${endpoint}`;
+        const baseUrl = this.cloudUrl || VIBE_CLOUD_BASE_URL; // Use configured URL or default
+        const url = `${baseUrl}${endpoint}`;
         console.log(`Fetching API: ${method} ${url}`, body ? { body } : {});
 
         const headers: HeadersInit = {
             "Content-Type": "application/json",
-            "X-Vibe-App-ID": this.manifest!.appId, // Safe due to ensureInitialized
         };
+        // Manifest might not be set if skipEnsureInitialized is true (e.g., during claim)
+        if (this.manifest?.appId) {
+            headers["X-Vibe-App-ID"] = this.manifest.appId;
+        }
         if (activeJwt) {
             headers["Authorization"] = `Bearer ${activeJwt}`;
         }
@@ -804,7 +1074,7 @@ class MockVibeAgent implements VibeAgent {
     // --- Data Methods (Integrating Permission Checks) ---
 
     async readOnce<T>(params: ReadParams): Promise<ReadResult<T>> {
-        this.ensureInitialized(); // Basic check: has active identity & manifest
+        this.ensureInitialized(); // Basic check: agent unlocked, initialized, has active identity & manifest
         const { collection, filter } = params;
         const scope = `read:${collection}`;
         const identity = this.activeIdentity!; // Safe due to ensureInitialized
@@ -826,7 +1096,7 @@ class MockVibeAgent implements VibeAgent {
                 origin: origin,
                 collection: collection,
                 filter: filter,
-                identity: identity,
+                identity: identity, // Pass the full unlocked identity for display
                 appInfo: { name: this.manifest?.name ?? "App", pictureUrl: this.manifest?.pictureUrl },
             };
             const confirmation = await this.triggerActionConfirmationUI(actionRequest);
@@ -1056,12 +1326,15 @@ class MockVibeAgent implements VibeAgent {
 // Define the shape of the Agent's context value (for Agent UI components like IdentityPanel)
 interface AgentContextValue {
     // Agent State (exposed to Agent UI)
-    identities: Identity[];
-    activeIdentity: Identity | null;
+    identities: Identity[]; // Will contain full Identity if unlocked, PublicIdentityInfo if locked
+    activeIdentity: Identity | null; // Will be null if locked
+    isLocked: boolean; // Expose lock state
 
     // Agent Actions (called by Agent UI)
     createIdentity: (label: string, pictureUrl?: string) => Promise<Identity | null>;
     setActiveIdentity: (did: string) => Promise<void>;
+    unlock: (password: string) => Promise<void>; // Expose unlock
+    lock: () => void; // Expose lock
     // TODO: Add methods for managing permissions if needed in UI (e.g., openPermissionManager)
 
     // UI Prompt State (Internal to AgentProvider, but needed for modals)
@@ -1071,6 +1344,7 @@ interface AgentContextValue {
     actionRequest: ActionRequest | null;
     isInitPromptOpen: boolean; // Added
     initPromptManifest: AppManifest | null; // Added
+    isUnlockModalOpen: boolean; // Added state for unlock modal
 }
 
 const AgentContext = createContext<AgentContextValue | undefined>(undefined);
@@ -1085,8 +1359,9 @@ export function AgentProvider({ children }: AgentProviderProps) {
     const agent = useMemo(() => new MockVibeAgent(), []);
 
     // --- Agent State (Managed by this Provider) ---
-    const [identities, setIdentities] = useState<Identity[]>([]);
+    const [identities, setIdentities] = useState<Identity[]>([]); // Holds full or public info based on lock state
     const [activeIdentity, _setActiveIdentityState] = useState<Identity | null>(null); // Renamed state setter
+    const [isLocked, setIsLocked] = useState<boolean>(true); // Track lock state in provider
 
     // --- UI Prompt State ---
     const [isConsentOpen, setIsConsentOpen] = useState(false);
@@ -1098,27 +1373,53 @@ export function AgentProvider({ children }: AgentProviderProps) {
     const [actionResolver, setActionResolver] = useState<((result: ActionResponse) => void) | null>(null);
 
     const [isInitPromptOpen, setIsInitPromptOpen] = useState(false); // Added
-    const [initPromptManifest, setInitPromptManifest] = useState<AppManifest | null>(null); // Added
-    const [initPromptResolver, setInitPromptResolver] = useState<(() => void) | null>(null); // Added (resolves when prompt is clicked)
+    const [initPromptManifest, setInitPromptManifest] = useState<AppManifest | null>(null);
+    const [initPromptResolver, setInitPromptResolver] = useState<(() => void) | null>(null);
 
-    // --- Effect to Load Initial Agent State ---
-    useEffect(() => {
-        const loadInitialState = async () => {
-            try {
-                // Agent loads from localStorage internally, just get the initial values
-                const initialIdentities = await agent.getIdentities();
-                const initialActiveIdentity = await agent.getActiveIdentity();
-                setIdentities(initialIdentities);
-                _setActiveIdentityState(initialActiveIdentity); // Use state setter
-                console.log("[AgentProvider] Initial agent state loaded:", { initialIdentities, initialActiveIdentity });
-            } catch (error) {
-                console.error("[AgentProvider] Error loading initial agent state:", error);
+    const [isUnlockModalOpen, setIsUnlockModalOpen] = useState<boolean>(false); // State for unlock modal
+
+    // --- Helper to refresh provider state from agent ---
+    const refreshAgentState = useCallback(
+        async (checkLockStatus = true) => {
+            // Avoid unnecessary checks if we know the lock status hasn't changed
+            const currentLockStatus = agent.isLocked; // Access internal state directly (or add getter)
+            if (checkLockStatus) {
+                setIsLocked(currentLockStatus);
             }
-        };
-        loadInitialState();
-    }, [agent]); // Run only once when agent instance is created
 
-    // --- UI Interaction Logic (requestConsent, requestActionConfirmation) ---
+            try {
+                // Get identities (public or full based on lock state)
+                const currentIdentities = await agent.getIdentities();
+                setIdentities(currentIdentities);
+                // Get active identity (will be null if locked)
+                const currentActiveIdentity = await agent.getActiveIdentity();
+                _setActiveIdentityState(currentActiveIdentity);
+
+                console.log("[AgentProvider] Refreshed state from agent:", { isLocked: currentLockStatus });
+
+                // Automatically open unlock modal if agent is locked and vault exists
+                if (checkLockStatus && currentLockStatus && agent.hasVault()) {
+                    // Add hasVault() method to agent
+                    console.log("[AgentProvider] Agent is locked and vault exists, opening unlock modal.");
+                    setIsUnlockModalOpen(true);
+                }
+            } catch (error) {
+                console.error("[AgentProvider] Error refreshing agent state:", error);
+                // Handle error, maybe reset state?
+                setIdentities([]);
+                _setActiveIdentityState(null);
+                setIsLocked(true);
+            }
+        },
+        [agent]
+    ); // Dependency on agent instance
+
+    // --- Effect to Load Initial Agent State & Check Lock ---
+    useEffect(() => {
+        refreshAgentState(true); // Load initial state and check lock status
+    }, [refreshAgentState]); // Run only once
+
+    // --- UI Interaction Logic ---
     // These are passed to the agent instance via setUIHandlers
     const requestConsent = useCallback((request: ConsentRequest): Promise<Record<string, PermissionSetting>> => {
         return new Promise((resolve, reject) => {
@@ -1312,19 +1613,16 @@ export function AgentProvider({ children }: AgentProviderProps) {
             console.log("[AgentProvider] createIdentity called", { label, pictureUrl });
             try {
                 const newIdentity = await agent.createIdentity(label, pictureUrl);
-                // Refresh local state after creation
-                const updatedIdentities = await agent.getIdentities();
-                const updatedActiveIdentity = await agent.getActiveIdentity(); // Active might change if it was the first
-                setIdentities(updatedIdentities);
-                _setActiveIdentityState(updatedActiveIdentity); // Use state setter
-                console.log("[AgentProvider] Identity created, state updated", { newIdentity, updatedIdentities, updatedActiveIdentity });
+                await refreshAgentState(); // Refresh state after creation
+                console.log("[AgentProvider] Identity created, state updated", { newIdentity });
                 return newIdentity;
             } catch (error) {
                 console.error("[AgentProvider] Error creating identity:", error);
+                // TODO: Show error to user?
                 return null;
             }
         },
-        [agent] // Depends only on the agent instance
+        [agent, refreshAgentState] // Depends on agent and refresh helper
     );
 
     const setActiveIdentity = useCallback(
@@ -1332,25 +1630,48 @@ export function AgentProvider({ children }: AgentProviderProps) {
             console.log("[AgentProvider] setActiveIdentity called", { did });
             try {
                 await agent.setActiveIdentity(did);
-                // Refresh local state after switching
-                const updatedActiveIdentity = await agent.getActiveIdentity();
-                _setActiveIdentityState(updatedActiveIdentity); // Use renamed state setter
-                console.log("[AgentProvider] Active identity switched, state updated", { updatedActiveIdentity });
+                await refreshAgentState(); // Refresh state after switching
+                console.log("[AgentProvider] Active identity switched, state updated");
                 // TODO: Should ideally trigger a state update via window.vibe.onStateChange
                 // For now, VibeProvider might need to manually re-init or re-fetch on identity change.
             } catch (error) {
                 console.error("[AgentProvider] Error setting active identity:", error);
+                // TODO: Show error to user?
             }
         },
-        [agent] // Depends only on the agent instance
+        [agent, refreshAgentState] // Depends on agent and refresh helper
     );
+
+    // --- Unlock/Lock Actions ---
+    const unlock = useCallback(
+        async (password: string) => {
+            try {
+                await agent.unlock(password);
+                setIsUnlockModalOpen(false); // Close modal on success
+                await refreshAgentState(false); // Update provider state after unlock (don't re-check lock status)
+            } catch (error) {
+                console.error("[AgentProvider] Unlock failed:", error);
+                // TODO: Show error message in UI (e.g., via a toast or state variable in UnlockModal)
+                throw error; // Re-throw for potential UI handling in UnlockModal
+            }
+        },
+        [agent, refreshAgentState]
+    );
+
+    const lock = useCallback(() => {
+        agent.lock();
+        refreshAgentState(false); // Update provider state after lock (don't re-check lock status)
+    }, [agent, refreshAgentState]);
 
     // --- Context Value for Agent UI ---
     const contextValue: AgentContextValue = {
         identities,
         activeIdentity,
+        isLocked, // Expose lock state
         createIdentity,
         setActiveIdentity,
+        unlock, // Expose unlock action
+        lock, // Expose lock action
         // Pass through modal state needed for rendering
         isConsentOpen,
         consentRequest,
@@ -1358,12 +1679,14 @@ export function AgentProvider({ children }: AgentProviderProps) {
         actionRequest,
         isInitPromptOpen, // Added
         initPromptManifest, // Added
+        isUnlockModalOpen, // Added
     };
 
     return (
         <AgentContext.Provider value={contextValue}>
             {children}
             {/* Render Modals controlled by this context */}
+            <UnlockModal isOpen={isUnlockModalOpen} onUnlock={unlock} />
             <InitPrompt isOpen={isInitPromptOpen} manifest={initPromptManifest} onClick={handleInitPromptClick} />
             <ConsentModal isOpen={isConsentOpen} request={consentRequest} onDecision={handleConsentDecision} />
             <ActionPromptModal isOpen={isActionPromptOpen} request={actionRequest} onDecision={handleActionDecision} />
