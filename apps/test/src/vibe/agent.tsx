@@ -35,7 +35,9 @@ import {
     deriveChildKeyPair,
     wipeMemory,
     type EncryptedData,
-    generateSalt, // Added for createIdentity
+    generateSalt,
+    generateMnemonic, // Added for createNewVault
+    encryptData, // Added for createNewVault
 } from "../lib/crypto";
 import type { HDKey } from "micro-ed25519-hdkey"; // Import type
 
@@ -80,7 +82,8 @@ type PublicIdentityInfo = Omit<Identity, "privateKey" | "publicKey">;
  * Mock implementation of the VibeAgent interface.
  * Manages identities (via encrypted vault), permissions locally, and simulates UI interactions.
  */
-class MockVibeAgent implements VibeAgent {
+export class MockVibeAgent implements VibeAgent {
+    // Add export keyword
     // --- State ---
     public isLocked: boolean = true; // Agent starts locked - make public for provider check
     private vaultSalt: Uint8Array | null = null; // Loaded from storage
@@ -417,6 +420,112 @@ class MockVibeAgent implements VibeAgent {
             console.log("MockVibeAgent: Cleared ALL agent state from localStorage and memory.");
         } catch (error) {
             console.error("MockVibeAgent: Error clearing state:", error);
+        }
+    }
+
+    // --- Vault Creation (New Vibe Flow) ---
+
+    /**
+     * Creates a brand new vault with a new mnemonic and first identity.
+     * Encrypts the vault with the provided password.
+     * Should only be called if no vault exists (`hasVault()` is false).
+     * @param password The password to encrypt the new vault.
+     * @returns The generated 24-word mnemonic phrase (for user backup).
+     */
+    public async createNewVault(password: string): Promise<string> {
+        if (this.hasVault()) {
+            throw new Error("Cannot create new vault: Vault already exists.");
+        }
+        if (!password) {
+            throw new Error("Password is required to create a new vault.");
+        }
+
+        console.log("MockVibeAgent: Creating new vault...");
+
+        let encryptionKey: CryptoKey | null = null;
+        let plaintextPhrase: string | null = null;
+        let seed: Buffer | null = null;
+        let tempMasterHDKey: HDKey | null = null;
+
+        try {
+            // 1. Generate Salt & Derive Key
+            this.vaultSalt = generateSalt();
+            encryptionKey = await deriveEncryptionKey(password, this.vaultSalt);
+            console.log("MockVibeAgent: Salt generated and encryption key derived.");
+
+            // 2. Generate Mnemonic & Seed
+            plaintextPhrase = generateMnemonic(); // Generate 24 words by default
+            seed = await seedFromMnemonic(plaintextPhrase);
+            tempMasterHDKey = getMasterHDKeyFromSeed(seed);
+            console.log("MockVibeAgent: Mnemonic, seed, and master HD key generated.");
+
+            // 3. Derive First Identity (Index 0)
+            const firstKeys = deriveChildKeyPair(tempMasterHDKey, 0);
+            const firstDid = didFromEd25519(firstKeys.publicKey);
+            console.log(`MockVibeAgent: First identity derived: ${firstDid}`);
+
+            // 4. Encrypt Mnemonic
+            const encryptedSeedPhraseData = await encryptData(plaintextPhrase, encryptionKey);
+            console.log("MockVibeAgent: Mnemonic phrase encrypted.");
+
+            // 5. Create Vault Structure
+            this.encryptedVaultData = {
+                encryptedSeedPhrase: encryptedSeedPhraseData,
+                identities: [
+                    {
+                        did: firstDid,
+                        derivationPath: firstKeys.derivationPath,
+                        profile_name: null, // Initially null
+                        profile_picture: null, // Initially null
+                    },
+                ],
+                settings: {
+                    nextAccountIndex: 1, // Next index to use is 1
+                },
+            };
+
+            // 6. Save Vault to Storage
+            this.saveVaultToStorage(); // Saves salt and encryptedVaultData
+
+            // 7. Set In-Memory State (Unlock)
+            this.isLocked = false;
+            this.masterHDKey = tempMasterHDKey; // Keep master key in memory now that we're unlocked
+            tempMasterHDKey = null; // Clear temp reference
+            this.identities = [
+                {
+                    did: firstDid,
+                    publicKey: firstKeys.publicKey,
+                    privateKey: firstKeys.privateKey,
+                    label: null,
+                    pictureUrl: null,
+                },
+            ];
+            this.activeIdentity = this.identities[0];
+
+            // 8. Save Active DID Reference
+            this.saveNonVaultStateToStorage(); // Saves active DID ref (and potentially empty permissions/JWTs)
+
+            console.log("MockVibeAgent: New vault created, saved, and agent unlocked.");
+
+            // 9. Return the plaintext phrase for backup
+            const phraseToReturn = plaintextPhrase;
+            plaintextPhrase = null; // Clear reference before returning
+            return phraseToReturn;
+        } catch (error) {
+            console.error("MockVibeAgent: Failed to create new vault:", error);
+            // Clean up potentially partially created state
+            this.clearAllStorage(); // Clear everything on creation failure
+            throw new Error(`Vault creation failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+        } finally {
+            // Wipe sensitive data from memory
+            if (plaintextPhrase) {
+                plaintextPhrase = plaintextPhrase.replace(/./g, " "); // Simple wipe
+                plaintextPhrase = null;
+            }
+            if (seed) wipeMemory(seed);
+            if (tempMasterHDKey) tempMasterHDKey = null; // Rely on GC for HDKey object
+            // Rely on GC for encryptionKey (CryptoKey)
+            encryptionKey = null;
         }
     }
 
@@ -1351,12 +1460,14 @@ const AgentContext = createContext<AgentContextValue | undefined>(undefined);
 
 interface AgentProviderProps {
     children: ReactNode;
+    agentInstance: MockVibeAgent; // Add prop to accept pre-created agent
 }
 
-export function AgentProvider({ children }: AgentProviderProps) {
+export function AgentProvider({ children, agentInstance }: AgentProviderProps) {
+    // Destructure agentInstance
     // --- Agent Instance ---
-    // Instantiate the MockVibeAgent. Use useMemo to ensure it's created only once.
-    const agent = useMemo(() => new MockVibeAgent(), []);
+    // Use the provided agent instance instead of creating a new one
+    const agent = agentInstance; // No useMemo needed here
 
     // --- Agent State (Managed by this Provider) ---
     const [identities, setIdentities] = useState<Identity[]>([]); // Holds full or public info based on lock state

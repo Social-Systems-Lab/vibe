@@ -7,17 +7,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { zxcvbn, zxcvbnOptions } from "@zxcvbn-ts/core";
 import zxcvbnCommonPackage from "@zxcvbn-ts/language-common";
 import zxcvbnEnPackage from "@zxcvbn-ts/language-en";
-
-// Initialize zxcvbn options
-const options = {
-    translations: zxcvbnEnPackage.translations,
-    graphs: zxcvbnCommonPackage.adjacencyGraphs,
-    dictionary: {
-        ...zxcvbnCommonPackage.dictionary,
-        ...zxcvbnEnPackage.dictionary,
-    },
-};
-zxcvbnOptions.setOptions(options);
+import { useEffect } from "react"; // Import useEffect
 
 interface CreatePasswordStepProps {
     onPasswordSet: (password: string) => void;
@@ -29,11 +19,45 @@ export function CreatePasswordStep({ onPasswordSet, isImportFlow = false }: Crea
     const [confirmPassword, setConfirmPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [zxcvbnLoaded, setZxcvbnLoaded] = useState(false); // State to track loading
+
+    // Load zxcvbn options asynchronously on mount
+    useEffect(() => {
+        const loadOptions = async () => {
+            try {
+                // Ensure packages are loaded (though direct import usually suffices with bundlers)
+                const common = await zxcvbnCommonPackage;
+                const en = await zxcvbnEnPackage;
+
+                const options = {
+                    translations: en.translations,
+                    graphs: common.adjacencyGraphs,
+                    dictionary: {
+                        ...common.dictionary,
+                        ...en.dictionary,
+                    },
+                };
+                zxcvbnOptions.setOptions(options);
+                setZxcvbnLoaded(true);
+                console.log("ZXCVBN options loaded.");
+            } catch (err) {
+                console.error("Failed to load zxcvbn options:", err);
+                // Handle error appropriately, maybe disable strength check
+            }
+        };
+        loadOptions();
+    }, []); // Empty dependency array ensures this runs only once on mount
 
     const strength = useMemo(() => {
-        if (!password) return null;
-        return zxcvbn(password);
-    }, [password]);
+        // Only calculate strength if options are loaded and password exists
+        if (!zxcvbnLoaded || !password) return null;
+        try {
+            return zxcvbn(password);
+        } catch (err) {
+            console.error("Error calculating password strength:", err);
+            return null; // Return null or a default weak score on error
+        }
+    }, [password, zxcvbnLoaded]); // Depend on password and loaded status
 
     const passwordsMatch = useMemo(() => {
         return password && confirmPassword && password === confirmPassword;

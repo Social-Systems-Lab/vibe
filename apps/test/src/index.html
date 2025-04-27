@@ -5,6 +5,10 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <link rel="icon" type="image/svg+xml" href="./logo.svg" />
         <title>Vibe Test App</title>
+        <script>
+            // Polyfill global for browser environment compatibility
+            window.global = window;
+        </script>
         <script type="module" src="./frontend.tsx" async></script>
     </head>
     <body>

@@ -9,11 +9,15 @@ import { useState, useEffect, useCallback } from "react"; // Added useState, use
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
-import { AgentProvider } from "./vibe/agent.tsx";
+import { AgentProvider, MockVibeAgent } from "./vibe/agent.tsx"; // Import MockVibeAgent class
 // import type { AppManifest } from "./vibe/types"; // AppManifest not used here directly
-import { SetupWizard } from "./components/setup/SetupWizard"; // Import the wizard (will be created)
+import { SetupWizard } from "./components/setup/SetupWizard";
 
 const SETUP_COMPLETE_KEY = "vibe_agent_setup_complete";
+
+// Instantiate the agent globally for this mock app instance
+// In a real extension, this would be managed differently (e.g., background script)
+const agent = new MockVibeAgent();
 
 // --- App Entry Point Component ---
 // Checks if setup is complete and renders either the wizard or the main app
@@ -43,13 +47,17 @@ function AppEntry() {
 
     if (!isSetupComplete) {
         // Render the setup wizard if setup is not complete
-        return <SetupWizard onSetupComplete={handleSetupComplete} />;
+        // Pass the globally created agent instance
+        return <SetupWizard agent={agent} onSetupComplete={handleSetupComplete} />;
     }
 
     // Render the main application if setup is complete
+    // Pass the globally created agent instance to the provider
     return (
         <BrowserRouter>
-            <AgentProvider>
+            <AgentProvider agentInstance={agent}>
+                {" "}
+                {/* Pass agent instance */}
                 <App />
             </AgentProvider>
         </BrowserRouter>
