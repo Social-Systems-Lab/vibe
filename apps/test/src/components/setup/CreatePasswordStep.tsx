@@ -166,7 +166,6 @@ export function CreatePasswordStep({ onPasswordSet, isImportFlow = false }: Crea
                             ))}
                         </ul>
                     )}
-
                     <div className="space-y-2">
                         <Label htmlFor="confirm-password">Confirm Password</Label>
                         <Input
@@ -188,6 +187,11 @@ export function CreatePasswordStep({ onPasswordSet, isImportFlow = false }: Crea
                     <Button type="submit" className="w-full" disabled={!canProceed}>
                         {isImportFlow ? "Set Password & Import" : "Set Device Password"}
                     </Button>
+                    <div>
+                        password: {password}
+                        strength: {JSON.stringify(strength)}
+                    </div>{" "}
+                    {/* Debugging line, can be removed later */}
                 </form>
             </CardContent>
             <CardFooter className="text-xs text-muted-foreground">
