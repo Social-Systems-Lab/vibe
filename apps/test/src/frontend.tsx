@@ -6,21 +6,10 @@
  */
 
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom"; // Import BrowserRouter
-// import { StrictMode } from "react"; // StrictMode commented out below
-import { App } from "./App"; // App will contain the router setup
-// Removed VibeProvider import
-import { AgentProvider } from "./vibe/agent.tsx"; // Added .tsx extension
-import type { AppManifest } from "./vibe/types"; // Import the type
-
-// Define the manifest for this test application (Keep this, might be needed elsewhere or remove later)
-const testAppManifest: AppManifest = {
-    appId: "test-app-local", // Changed from id to appId
-    name: "Vibe Test App (Local Mock)",
-    description: "An application for testing the mock Vibe SDK integration.",
-    // Request permissions based on mock agent data
-    permissions: ["read:notes", "write:notes", "read:tasks", "write:tasks"],
-};
+import { BrowserRouter } from "react-router-dom";
+import { App } from "./App";
+import { AgentProvider } from "./vibe/agent.tsx";
+import type { AppManifest } from "./vibe/types";
 
 const elem = document.getElementById("root")!;
 const app = (
