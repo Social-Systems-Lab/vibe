@@ -345,8 +345,8 @@ export class MockVibeAgent implements VibeAgent {
         try {
             // 1. Ensure at least one identity exists (create if none)
             if (this.identities.length === 0) {
-                console.log("No identities found, creating initial identity...");
-                await this.createIdentity("Default Identity"); // Creates and sets as active
+                console.log("No identities found. User must create one via UI.");
+                // await this.createIdentity("Default Identity"); // <-- REMOVED: Don't auto-create
             } else if (!this.activeIdentity && this.identities.length > 0) {
                 // If identities exist but none are active (e.g., after clearing storage), set first as active
                 this.activeIdentity = this.identities[0];

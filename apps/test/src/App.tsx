@@ -4,17 +4,23 @@ import "./index.css";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useVibe } from "./vibe/react"; // Import useVibe hook
-import { IdentityPanel } from "./components/agent/IdentityPanel"; // Import IdentityPanel
+import { IdentityPanel } from "@/components/agent/IdentityPanel"; // Use alias
 import type { Unsubscribe } from "./vibe/types";
+import { VibeLogo } from "@/components/ui/VibeLogo"; // Use alias
 
 // Remove logo imports if not used
 // import logo from "./logo.svg";
+
+// Define the possible views for the application
+type AppView = "initial" | "main";
+
 export function App() {
     // Get full state and methods from useVibe
     const { account, identities, activeIdentity, readOnce, read, write, createIdentity, setActiveIdentity } = useVibe();
     const [notes, setNotes] = useState<any[]>([]);
     const [tasks, setTasks] = useState<any[]>([]);
     const [status, setStatus] = useState<string>("Initializing...");
+    const [appView, setAppView] = useState<AppView>("initial"); // State to control the view
     const taskSubscription = useRef<Unsubscribe | null>(null); // Ref to hold unsubscribe function
 
     // --- Handlers ---
@@ -138,21 +144,31 @@ export function App() {
         // Depend on activeIdentity as well, so subscription restarts if identity changes
     }, [read, activeIdentity]);
 
+    // --- View Handler ---
+    const handleEnterWebsite = useCallback(() => {
+        setAppView("main");
+        setStatus("Entered main application."); // Update status
+    }, []);
+
     // --- Identity Panel Handlers ---
     const handleCreateIdentity = useCallback(async () => {
-        // Simple prompt for now, could be a modal later
-        const label = prompt("Enter a label for the new identity:", `Identity ${identities ? identities.length + 1 : 1}`);
-        if (label) {
-            setStatus("Creating new identity...");
-            try {
-                await createIdentity(label);
-                setStatus("New identity created.");
-            } catch (error) {
-                console.error("Error creating identity:", error);
-                setStatus(`Error creating identity: ${error instanceof Error ? error.message : String(error)}`);
-            }
+        console.log("[App] handleCreateIdentity called!"); // <-- ADDED LOG
+        // Auto-create with default label for testing, bypassing prompt()
+        const defaultLabel = `Identity ${identities ? identities.length + 1 : 1}`;
+        console.log(`[App] Auto-creating identity with label: ${defaultLabel}`);
+        setStatus("Creating new identity...");
+        try {
+            await createIdentity(defaultLabel);
+            setStatus("New identity created.");
+            // Optionally, automatically switch to main view after first identity creation?
+            // if (identities && identities.length === 0) {
+            //     setAppView("main");
+            // }
+        } catch (error) {
+            console.error("Error creating identity:", error);
+            setStatus(`Error creating identity: ${error instanceof Error ? error.message : String(error)}`);
         }
-    }, [createIdentity, identities]);
+    }, [createIdentity, identities]); // Removed setAppView from dependencies for now
 
     const handleSwitchIdentity = useCallback(
         async (did: string) => {
@@ -177,10 +193,29 @@ export function App() {
         console.log("Navigate to Permission Management UI");
     }, []);
 
+    // --- Initial Welcome Screen Component ---
+    const InitialWelcomeScreen = () => (
+        <Card className="bg-card/50 backdrop-blur-sm border-muted mt-10 max-w-lg mx-auto">
+            <CardHeader className="items-center">
+                <VibeLogo className="h-12 w-12 mb-4 text-primary" /> {/* Example Logo Usage */}
+                <CardTitle className="text-2xl">Welcome to the Vibe Test App</CardTitle>
+            </CardHeader>
+            <CardContent className="text-center">
+                <p className="mb-6 text-muted-foreground">
+                    This application demonstrates mock interactions with the Vibe Agent.
+                    {identities && identities.length === 0 && " Please set up your first identity using the panel above."}
+                </p>
+                <Button onClick={handleEnterWebsite} size="lg">
+                    Enter Website
+                </Button>
+            </CardContent>
+        </Card>
+    );
+
     return (
-        <div className="container mx-auto p-8 text-left relative z-10">
-            {/* Header with Identity Panel */}
-            <header className="flex justify-between items-center mb-6">
+        <div className="container mx-auto p-8 text-left relative z-10 min-h-screen flex flex-col">
+            {/* Header with Identity Panel - Always Visible */}
+            <header className="flex justify-between items-center mb-6 flex-shrink-0">
                 <h1 className="text-2xl font-bold">Vibe Test App</h1>
                 <IdentityPanel
                     identities={identities ?? []}
@@ -191,67 +226,83 @@ export function App() {
                 />
             </header>
 
+            {/* Main Content Area - Conditional Rendering */}
+            <main className="flex-grow">
+                {appView === "initial" && <InitialWelcomeScreen />}
+
+                {appView === "main" && (
+                    <>
+                        {/* Status Card */}
+                        <Card className="bg-card/50 backdrop-blur-sm border-muted mb-6">
+                            <CardHeader>
+                                <CardTitle>Status & Active Identity</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <p className="mb-2">
+                                    Active Identity:{" "}
+                                    <code className="relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm">
+                                        {activeIdentity?.label ?? "None"} ({activeIdentity?.did ?? "N/A"})
+                                    </code>
+                                </p>
+                                <p>
+                                    Status: <span className="italic">{status}</span>
+                                </p>
+                            </CardContent>
+                        </Card>
+
+                        {/* Notes & Tasks Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Notes Section */}
+                            <Card className="bg-card/50 backdrop-blur-sm border-muted">
+                                <CardHeader>
+                                    <CardTitle>Notes (Read Once / Write)</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="flex gap-2 mb-4">
+                                        <Button onClick={handleReadNotesOnce} disabled={!account}>
+                                            Read Notes Once
+                                        </Button>
+                                        <Button onClick={handleWriteNote} variant="secondary" disabled={!account}>
+                                            Write New Note
+                                        </Button>
+                                        <Button onClick={handleWriteTask} variant="secondary" disabled={!account}>
+                                            Write New Task
+                                        </Button>
+                                    </div>
+                                    <h3 className="font-semibold mb-2">Notes Data:</h3>
+                                    <pre className="text-xs bg-muted p-2 rounded overflow-auto max-h-60">
+                                        {notes.length > 0 ? JSON.stringify(notes, null, 2) : "No notes loaded."}
+                                    </pre>
+                                </CardContent>
+                            </Card>
+
+                            {/* Tasks Section */}
+                            <Card className="bg-card/50 backdrop-blur-sm border-muted">
+                                <CardHeader>
+                                    <CardTitle>Tasks (Subscription)</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-sm mb-2 text-muted-foreground">
+                                        Task data should update automatically via subscription (check console logs from Mock Agent/SDK).
+                                    </p>
+                                    <h3 className="font-semibold mb-2">Tasks Data:</h3>
+                                    <pre className="text-xs bg-muted p-2 rounded overflow-auto max-h-60">
+                                        {tasks.length > 0 ? JSON.stringify(tasks, null, 2) : "No tasks loaded."}
+                                    </pre>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </>
+                )}
+            </main>
+
+            {/* Original content commented out - kept for reference if needed */}
+            {/*
             <Card className="bg-card/50 backdrop-blur-sm border-muted mb-6">
                 <CardHeader>
                     <CardTitle>Status & Active Identity</CardTitle>
                 </CardHeader>
-                <CardContent>
-                    <p className="mb-2">
-                        Active Identity:{" "}
-                        <code className="relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm">
-                            {activeIdentity?.label ?? "None"} ({activeIdentity?.did ?? "N/A"})
-                        </code>
-                    </p>
-                    <p>
-                        Status: <span className="italic">{status}</span>
-                    </p>
-                </CardContent>
-            </Card>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Notes Section */}
-                <Card className="bg-card/50 backdrop-blur-sm border-muted">
-                    <CardHeader>
-                        <CardTitle>Notes (Read Once / Write)</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="flex gap-2 mb-4">
-                            <Button onClick={handleReadNotesOnce} disabled={!account}>
-                                Read Notes Once
-                            </Button>
-                            <Button onClick={handleWriteNote} variant="secondary" disabled={!account}>
-                                Write New Note
-                            </Button>
-                            <Button onClick={handleWriteTask} variant="secondary" disabled={!account}>
-                                Write New Task
-                            </Button>
-                        </div>
-                        <h3 className="font-semibold mb-2">Notes Data:</h3>
-                        <pre className="text-xs bg-muted p-2 rounded overflow-auto max-h-60">
-                            {notes.length > 0 ? JSON.stringify(notes, null, 2) : "No notes loaded."}
-                        </pre>
-                    </CardContent>
-                </Card>
-
-                {/* Tasks Section */}
-                <Card className="bg-card/50 backdrop-blur-sm border-muted">
-                    <CardHeader>
-                        <CardTitle>Tasks (Subscription)</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <p className="text-sm mb-2 text-muted-foreground">
-                            Task data should update automatically via subscription (check console logs from Mock Agent/SDK).
-                        </p>
-                        <h3 className="font-semibold mb-2">Tasks Data:</h3>
-                        <pre className="text-xs bg-muted p-2 rounded overflow-auto max-h-60">
-                            {tasks.length > 0 ? JSON.stringify(tasks, null, 2) : "No tasks loaded."}
-                        </pre>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Original content commented out */}
-            {/* <Card className="bg-card/50 backdrop-blur-sm border-muted">
+            <Card className="bg-card/50 backdrop-blur-sm border-muted">
         <CardContent className="pt-6">
           <h1 className="text-5xl font-bold my-4 leading-tight">Bun + React</h1>
           <p>

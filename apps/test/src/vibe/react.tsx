@@ -111,8 +111,11 @@ export function VibeProvider({ children, manifest }: VibeProviderProps) {
             try {
                 const newIdentity = await mockAgentInstance.createIdentity(label, pictureUrl);
                 // Refresh state after creation
+                console.log("[VibeProvider] Identity created by agent:", newIdentity);
                 const updatedState = await mockAgentInstance.getVibeState();
+                console.log("[VibeProvider] Fetched updated state from agent:", updatedState);
                 setVibeState(updatedState);
+                console.log("[VibeProvider] setVibeState called with updated state.");
                 return newIdentity;
             } catch (error) {
                 console.error("[VibeProvider] Error creating identity:", error);
