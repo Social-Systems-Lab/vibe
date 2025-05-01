@@ -42,3 +42,4 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+vibe-browser-extension/icon-dev.png
