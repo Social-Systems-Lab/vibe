@@ -43,13 +43,67 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
 // --- Other Background Logic (to be added later) ---
 
-// Example: Listener for messages from content scripts or popup
+// Listener for messages from content scripts (originating from window.vibe) or popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log("Received message:", message, "from sender:", sender);
-    // Handle messages based on message.action or similar
-    // Example: if (message.action === "getSomething") { ... }
-    // Remember to return true for async sendResponse:
-    // return true;
+    console.log("Background script received message:", message, "from sender:", sender);
+
+    if (message.type === "VIBE_AGENT_REQUEST" && message.action) {
+        const { action, payload, requestId } = message;
+        const origin = sender.origin || (sender.tab && sender.tab.url ? new URL(sender.tab.url).origin : "unknown_origin");
+
+        console.log(`Action: ${action}, Origin: ${origin}, Payload:`, payload);
+
+        // Simulate async processing
+        (async () => {
+            try {
+                let responsePayload: any;
+                // TODO: Implement actual logic for each action
+                switch (action) {
+                    case "init":
+                        // Placeholder: Simulate successful initialization
+                        // In reality: check permissions, maybe show consent, get/store JWT
+                        console.log(`Processing 'init' for app: ${payload?.name} from ${origin}`);
+                        // TODO: Get actual active DID
+                        const activeDid = "did:vibe:placeholder_active_did";
+                        // TODO: Get actual granted permissions for this origin and DID
+                        const grantedPermissions = { "profile:read": "always" };
+                        responsePayload = {
+                            did: activeDid,
+                            permissions: grantedPermissions,
+                            message: `Successfully initialized with ${payload?.name}. Active DID: ${activeDid}`,
+                        };
+                        break;
+                    case "readOnce":
+                        console.log(`Processing 'readOnce' for collection: ${payload?.collection} from ${origin}`);
+                        // TODO: Permission check, fetch from Vibe Cloud
+                        responsePayload = { data: { message: `Data for ${payload?.collection} would be here.` }, success: true };
+                        break;
+                    case "write":
+                        console.log(`Processing 'write' for collection: ${payload?.collection} from ${origin} with data:`, payload?.data);
+                        // TODO: Permission check, send to Vibe Cloud
+                        responsePayload = { success: true, id: "mock_document_id_123" };
+                        break;
+                    default:
+                        console.warn(`Unknown action: ${action}`);
+                        sendResponse({ type: "VIBE_AGENT_RESPONSE_ERROR", requestId, error: { message: `Unknown action: ${action}` } });
+                        return;
+                }
+                sendResponse({ type: "VIBE_AGENT_RESPONSE", requestId, payload: responsePayload });
+            } catch (error: any) {
+                console.error(`Error processing action ${action}:`, error);
+                sendResponse({ type: "VIBE_AGENT_RESPONSE_ERROR", requestId, error: { message: error.message || "Unknown error occurred" } });
+            }
+        })();
+
+        return true; // Indicates that sendResponse will be called asynchronously
+    } else {
+        // Handle other types of messages if necessary (e.g., from popup)
+        console.log("Received non-agent request or message without action:", message);
+        // If not handling this message type or not sending an async response:
+        // sendResponse({ status: "unhandled_message_type" }); // Optional: send a synchronous response
+    }
+    // Return false if not sending an asynchronous response from this top-level path
+    return false;
 });
 
 console.log("Vibe Background Service Worker listeners attached.");

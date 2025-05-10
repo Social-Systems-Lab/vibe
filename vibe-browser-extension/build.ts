@@ -142,6 +142,8 @@ const entrypoints = [
     "src/index.tsx", // For popup (linked from public/index.html)
     "src/setup.tsx", // For setup page (linked from public/setup.html)
     "src/background.ts", // Background service worker
+    "src/content.ts", // Content script
+    "src/vibe-inpage.ts", // In-page script (window.vibe API)
 ];
 console.log(`🔧 Building entry points: ${entrypoints.join(", ")}`);
 
