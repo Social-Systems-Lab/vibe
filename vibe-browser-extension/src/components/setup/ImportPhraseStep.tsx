@@ -32,7 +32,12 @@ export function ImportPhraseStep({ onPhraseVerified }: ImportPhraseStepProps) {
             }
 
             // Validate the mnemonic
-            if (!validateMnemonic(trimmedPhrase)) {
+            console.log(`[ImportPhraseStep] Attempting to validate mnemonic: "${trimmedPhrase}"`);
+            console.log(`[ImportPhraseStep] Mnemonic length (words): ${trimmedPhrase.split(" ").length}`);
+            const isValid = validateMnemonic(trimmedPhrase);
+            console.log(`[ImportPhraseStep] validateMnemonic result: ${isValid}`);
+
+            if (!isValid) {
                 setError("Invalid Secret Recovery Phrase. Please check the words and try again.");
                 return;
             }
