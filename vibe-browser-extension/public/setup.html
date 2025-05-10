@@ -4,6 +4,12 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Vibe Setup</title>
+        <script>
+            // Polyfill global for browser environment if it's not defined
+            if (typeof global === "undefined") {
+                window.global = window;
+            }
+        </script>
         <link rel="stylesheet" href="./index.css" />
         <!-- Assuming bun build generates this -->
     </head>
