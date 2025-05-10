@@ -271,8 +271,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 settings: { nextAccountIndex: 1, cloudUrl: null },
                             };
                             await chrome.storage.local.set({ [STORAGE_KEY_VAULT_SALT]: saltHex, [STORAGE_KEY_VAULT]: vaultData });
-                            responsePayload = { success: true, message: "Vault imported successfully." };
-                            console.log("Vault imported and stored successfully.");
+                            // Do not mark setup as complete here. Frontend will proceed to SetupIdentityStep.
+                            responsePayload = { success: true, did: firstDid, message: "Vault imported. Proceed to identity setup." };
+                            console.log("Vault imported and stored successfully. First DID:", firstDid);
                         } finally {
                             if (encryptionKey) encryptionKey = null;
                             if (seed) wipeMemory(seed);
