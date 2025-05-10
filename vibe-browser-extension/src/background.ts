@@ -290,11 +290,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         vaultData.settings.cloudUrl = cloudUrl || null;
                         await chrome.storage.local.set({ [STORAGE_KEY_VAULT]: vaultData, [STORAGE_KEY_SETUP_COMPLETE]: true });
                         if (claimCode) console.log(`TODO: Implement Vibe Cloud claim with URL: ${cloudUrl} and Code: ${claimCode}`);
-                        responsePayload = { success: true, message: "Setup finalized and marked complete." };
+                        responsePayload = {
+                            success: true,
+                            message: "Setup finalized and marked complete.",
+                            identityName: vaultData.identities[0].profile_name,
+                        };
                         console.log("Setup finalized, vault updated, and setup marked complete.");
-                        if (sender.tab && sender.tab.id && sender.tab.url?.includes(SETUP_URL)) {
-                            console.log("Closing setup tab:", sender.tab.id);
+                        // Tab closing will be handled by a separate message from the frontend
+                        break;
+                    }
+                    case "CLOSE_SETUP_TAB": {
+                        console.log("Processing 'CLOSE_SETUP_TAB'");
+                        if (sender.tab && sender.tab.id) {
+                            console.log("Closing tab:", sender.tab.id);
                             chrome.tabs.remove(sender.tab.id);
+                            responsePayload = { success: true, message: "Setup tab closed." };
+                        } else {
+                            console.warn("No sender tab ID found to close.");
+                            responsePayload = { success: false, message: "No tab ID to close." };
+                            responseType = "VIBE_AGENT_RESPONSE_ERROR";
                         }
                         break;
                     }

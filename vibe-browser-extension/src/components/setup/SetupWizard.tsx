@@ -5,6 +5,7 @@ import { ShowPhraseStep } from "./ShowPhraseStep.tsx";
 import { NameIdentityStep } from "./NameIdentityStep.tsx";
 import { ConfigureCloudStep } from "./ConfigureCloudStep.tsx";
 import { ImportPhraseStep } from "./ImportPhraseStep.tsx";
+import { SetupCompleteStep } from "./SetupCompleteStep.tsx"; // Added import
 import { Button } from "@/components/ui/button.tsx";
 // import type { MockVibeAgent } from "@/vibe/agent"; // Agent prop no longer needed for createNewVault
 
@@ -25,6 +26,7 @@ type SetupStep =
     | "nameIdentity"
     | "configureCloud"
     | "importPhrase"
+    | "setupComplete" // Added new step
     // | "complete" // Removed, handled by handleCloudConfigured
     | "error";
 
@@ -220,8 +222,10 @@ export function SetupWizard({ onSetupComplete }: SetupWizardProps) {
                 }
 
                 console.log("Setup finalized successfully via background script.");
-                // Background script now handles marking setup_complete and closing tab.
-                onSetupComplete(); // Notify parent component
+                // Navigate to the new complete step
+                setWizardState((prev) => ({ ...prev, identityName: response.payload?.identityName || prev.identityName }));
+                setCurrentStep("setupComplete");
+                // onSetupComplete(); // This will be called by the new step's button handler
             } catch (error) {
                 console.error("Error finalizing setup via background:", error);
                 setWizardState((prev) => ({
@@ -257,6 +261,17 @@ export function SetupWizard({ onSetupComplete }: SetupWizardProps) {
                 return <ConfigureCloudStep onCloudConfigured={handleCloudConfigured} />;
             case "importPhrase":
                 return <ImportPhraseStep onPhraseVerified={handlePhraseImported} />;
+            case "setupComplete":
+                return (
+                    <SetupCompleteStep
+                        identityName={wizardState.identityName || undefined}
+                        onStartUsingVibe={() => {
+                            // Send message to background to close the tab
+                            chrome.runtime.sendMessage({ type: "VIBE_AGENT_REQUEST", action: "CLOSE_SETUP_TAB" });
+                            onSetupComplete(); // Call original completion handler
+                        }}
+                    />
+                );
             // case "complete": // Removed
             //     return ( <div>Finalizing...</div> );
             case "error":
