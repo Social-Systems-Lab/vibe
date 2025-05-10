@@ -2,23 +2,23 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css"; // Assuming Tailwind/CSS setup is handled by the build
 import { SetupWizard } from "./components/setup/SetupWizard";
-import type { MockVibeAgent } from "./vibe/agent"; // Import the type
+// MockVibeAgent is no longer needed as SetupWizard doesn't take agent prop
+// import type { MockVibeAgent } from "./vibe/agent";
 
-// Mock agent implementation for UI development
+// Mock agent implementation is no longer needed here
+/*
 const mockAgent: MockVibeAgent = {
     createNewVault: async (password: string) => {
         console.log("MockAgent: createNewVault called with password:", password);
-        // Simulate mnemonic generation
-        await new Promise((resolve) => setTimeout(resolve, 500)); // Simulate async delay
-        return "test test test test test test test test test test test junk"; // 12 words
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        return "test test test test test test test test test test test junk";
     },
     importVaultFromMnemonic: async (mnemonic: string, password: string) => {
         console.log("MockAgent: importVaultFromMnemonic called with", { mnemonic, password });
-        await new Promise((resolve) => setTimeout(resolve, 500)); // Simulate async delay
-        // Simulate success
+        await new Promise((resolve) => setTimeout(resolve, 500));
     },
-    // Add other methods if SetupWizard starts using them
 };
+*/
 
 const handleSetupComplete = () => {
     console.log("Setup complete! Redirecting or closing tab...");
@@ -39,7 +39,7 @@ if (container) {
     const root = createRoot(container);
     root.render(
         <React.StrictMode>
-            <SetupWizard agent={mockAgent} onSetupComplete={handleSetupComplete} />
+            <SetupWizard onSetupComplete={handleSetupComplete} />
         </React.StrictMode>
     );
 } else {

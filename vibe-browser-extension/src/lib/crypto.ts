@@ -190,3 +190,24 @@ export function wipeMemory(sensitiveData: Buffer | Uint8Array): void {
     }
     // Note: Garbage collection timing is not guaranteed, but this overwrites the data.
 }
+
+// --- WebCrypto Key Import ---
+
+/**
+ * Imports a raw Ed25519 private key (seed) into a CryptoKey object for signing.
+ * @param privateKeyBytes - The 32-byte raw private key (seed).
+ * @param extractable - Whether the key should be extractable. Defaults to false for security.
+ * @returns A Promise that resolves to the imported CryptoKey.
+ */
+export async function importEd25519Key(privateKeyBytes: Uint8Array, extractable: boolean = false): Promise<CryptoKey> {
+    if (privateKeyBytes.length !== 32) {
+        throw new Error("Ed25519 private key (seed) must be 32 bytes.");
+    }
+    return crypto.subtle.importKey(
+        "raw",
+        privateKeyBytes,
+        { name: "Ed25519" }, // Algorithm identifier for Ed25519
+        extractable,
+        ["sign"] // Key usages: only signing for private keys
+    );
+}

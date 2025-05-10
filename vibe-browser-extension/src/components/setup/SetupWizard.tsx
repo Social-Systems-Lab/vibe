@@ -1,30 +1,19 @@
-import React, { useState, useCallback, useEffect } from "react";
-import { WelcomeStep } from "./WelcomeStep";
-import { CreatePasswordStep } from "./CreatePasswordStep";
-import { ShowPhraseStep } from "./ShowPhraseStep";
-import { NameIdentityStep } from "./NameIdentityStep";
-import { ConfigureCloudStep } from "./ConfigureCloudStep";
-import { ImportPhraseStep } from "./ImportPhraseStep";
-import { Button } from "@/components/ui/button";
-import type { MockVibeAgent } from "@/vibe/agent";
-// Restore crypto imports still needed for import/finish logic (will be removed later)
-import {
-    generateSalt,
-    deriveEncryptionKey,
-    encryptData,
-    seedFromMnemonic,
-    getMasterHDKeyFromSeed,
-    deriveChildKeyPair,
-    wipeMemory, // Needed for handlePhraseConfirmed, finalizeImportFlow, handleFinish
-    generateMnemonic, // Still needed for effect hook
-} from "@/lib/crypto";
-import { Buffer } from "buffer"; // Needed for salt hex and seed wiping
-import { didFromEd25519 } from "@/lib/identity"; // Needed for finalizeImportFlow/handleFinish
+import React, { useState, useCallback } from "react";
+import { WelcomeStep } from "./WelcomeStep.tsx";
+import { CreatePasswordStep } from "./CreatePasswordStep.tsx";
+import { ShowPhraseStep } from "./ShowPhraseStep.tsx";
+import { NameIdentityStep } from "./NameIdentityStep.tsx";
+import { ConfigureCloudStep } from "./ConfigureCloudStep.tsx";
+import { ImportPhraseStep } from "./ImportPhraseStep.tsx";
+import { Button } from "@/components/ui/button.tsx";
+// import type { MockVibeAgent } from "@/vibe/agent"; // Agent prop no longer needed for createNewVault
 
-// Restore localStorage keys (still needed for finalizeImport/handleFinish)
-const LOCAL_STORAGE_VAULT_KEY = "vibe_agent_vault";
-const LOCAL_STORAGE_VAULT_SALT_KEY = "vibe_agent_vault_salt";
-const LOCAL_STORAGE_CLOUD_URL_KEY = "vibe_agent_cloud_url";
+// Crypto imports are no longer needed here, background script handles them.
+// Buffer might still be needed if we handle raw binary data, but likely not.
+// import { Buffer } from "buffer";
+// didFromEd25519 is also handled by background.
+
+// localStorage keys are no longer needed here.
 
 // Define the possible steps in the setup process
 type SetupStep =
@@ -40,164 +29,126 @@ type SetupStep =
     | "error";
 
 interface SetupWizardProps {
-    agent: MockVibeAgent; // Add agent prop
+    // agent: MockVibeAgent; // Agent prop no longer needed
     onSetupComplete: () => void;
 }
 
-export function SetupWizard({ agent, onSetupComplete }: SetupWizardProps) {
-    // Destructure agent prop
+export function SetupWizard({ onSetupComplete }: SetupWizardProps) {
     const [currentStep, setCurrentStep] = useState<SetupStep>("welcome");
-    // State to hold intermediate data during the wizard
     const [wizardState, setWizardState] = useState<{
         password?: string;
-        mnemonic?: string; // Still needed to pass to ShowPhraseStep
-        importedMnemonic?: string;
+        mnemonic?: string; // For displaying to user after generation
+        importedMnemonic?: string; // For passing to background during import
         identityName?: string | null;
         identityPicture?: string | null;
-        cloudUrl?: string; // Added for cloud config
+        cloudUrl?: string;
         claimCode?: string;
-        error?: string; // For displaying errors during finish step
+        error?: string;
     }>({});
 
-    // --- Import Flow Finalization ---
-    // Moved logic here to keep handlePasswordSet cleaner and allow async operations
-    // Define finalizeImportFlow *before* handlePasswordSet which uses it
+    // --- Import Flow Finalization (now calls background script) ---
     const finalizeImportFlow = useCallback(
         async (password: string) => {
-            console.log("Attempting to finalize import flow...");
-            setWizardState((prev) => ({ ...prev, error: undefined })); // Clear previous errors
+            console.log("Attempting to finalize import flow via background script...");
+            setWizardState((prev) => ({ ...prev, error: undefined }));
 
             const { importedMnemonic } = wizardState;
 
             if (!importedMnemonic) {
-                console.error("Import Error: Imported mnemonic missing.");
+                console.error("Import Error: Imported mnemonic missing in wizard state.");
                 setWizardState((prev) => ({ ...prev, error: "Imported recovery phrase is missing." }));
                 setCurrentStep("error");
                 return;
             }
             if (!password) {
-                console.error("Import Error: Password missing.");
+                console.error("Import Error: Password missing in wizard state.");
                 setWizardState((prev) => ({ ...prev, error: "Password was not set." }));
                 setCurrentStep("error");
                 return;
             }
 
-            let encryptionKey: CryptoKey | null = null;
-            let seed: Buffer | null = null;
             try {
-                // Generate a NEW salt for this device
-                console.log("Generating new salt for imported vault...");
-                const salt = generateSalt();
-                const saltHex = Buffer.from(salt).toString("hex");
+                const response = await chrome.runtime.sendMessage({
+                    type: "VIBE_AGENT_REQUEST", // Consistent with other agent messages
+                    action: "SETUP_IMPORT_VAULT",
+                    payload: { importedMnemonic, password },
+                });
 
-                console.log("Deriving encryption key for imported vault...");
-                encryptionKey = await deriveEncryptionKey(password, salt);
+                console.log("Background response from SETUP_IMPORT_VAULT:", response);
 
-                console.log("Encrypting imported mnemonic...");
-                // Encrypt the IMPORTED mnemonic
-                const encryptedMnemonicData = await encryptData(importedMnemonic, encryptionKey);
-
-                console.log("Deriving seed from imported mnemonic...");
-                seed = await seedFromMnemonic(importedMnemonic); // Use imported mnemonic
-
-                console.log("Deriving master HD key from imported seed...");
-                const masterHDKey = getMasterHDKeyFromSeed(seed);
-
-                console.log("Deriving first identity key pair (index 0) from imported seed...");
-                const firstIdentityKeys = deriveChildKeyPair(masterHDKey, 0);
-
-                console.log("Generating DID for first identity...");
-                const firstDid = didFromEd25519(firstIdentityKeys.publicKey);
-
-                // Construct Vault Data for Import
-                // Profile info (name/picture) is NOT restored from seed, set to null.
-                // Cloud URL is also not restored, user needs to configure later (or we add a step).
-                const vaultData = {
-                    encryptedSeedPhrase: encryptedMnemonicData,
-                    identities: [
-                        {
-                            did: firstDid,
-                            derivationPath: firstIdentityKeys.derivationPath,
-                            profile_name: null,
-                            profile_picture: null,
-                        },
-                        // TODO: Implement basic account discovery? (e.g., derive index 1, 2)
-                        // For MVP, just restore the first one.
-                    ],
-                    settings: {
-                        nextAccountIndex: 1, // Assume at least one account exists
-                        // TODO: More robust discovery needed post-MVP
-                    },
-                };
-
-                // Save ONLY the salt and vault for import flow
-                // Cloud URL needs separate configuration after import.
-                console.log("Saving new vault salt and encrypted vault to localStorage for import...");
-                localStorage.setItem(LOCAL_STORAGE_VAULT_SALT_KEY, saltHex);
-                localStorage.setItem(LOCAL_STORAGE_VAULT_KEY, JSON.stringify(vaultData));
-                // DO NOT save cloud URL here for import flow
-
-                console.log("Import data saved successfully.");
-
-                // --- Final Cleanup & Completion ---
-                if (encryptionKey) encryptionKey = null;
-                if (seed) {
-                    wipeMemory(seed);
-                    seed = null;
-                    console.log("Imported seed buffer wiped from memory.");
+                if (response?.error) {
+                    throw new Error(response.error.message || "Failed to import vault via background.");
                 }
-                // Wipe the imported mnemonic from state if still present (shouldn't be needed)
-                setWizardState((prev) => ({ ...prev, importedMnemonic: undefined }));
+                if (!response?.payload?.success) {
+                    throw new Error(response?.payload?.message || "Background import reported failure.");
+                }
 
-                console.log("Import wizard finished successfully.");
-                // Set setup complete flag and trigger transition via onSetupComplete
-                // We need to set the flag here as well
-                localStorage.setItem("vibe_agent_setup_complete", "true"); // Use the key from frontend.tsx
+                console.log("Import vault successful via background script.");
+                setWizardState((prev) => ({ ...prev, importedMnemonic: undefined })); // Clear imported mnemonic
+
+                // Mark setup complete (background script handles storage)
+                // The background script for SETUP_IMPORT_VAULT doesn't mark setup complete.
+                // It only creates the vault. The "SETUP_COMPLETE_AND_FINALIZE" is for new vault flow.
+                // For import, we might need a separate "mark complete" or just call onSetupComplete.
+                // Let's assume for now that after import, the user might still go through naming/cloud.
+                // OR, if import is the *final* step, we tell background to mark complete.
+                // The original code called localStorage.setItem("vibe_agent_setup_complete", "true");
+                // and then onSetupComplete().
+                // Let's send a message to background to mark setup complete.
+                await chrome.runtime.sendMessage({ type: "MARK_SETUP_COMPLETE" });
+                console.log("MARK_SETUP_COMPLETE message sent to background.");
+
                 onSetupComplete();
             } catch (error) {
-                console.error("Error during import finalization:", error);
+                console.error("Error during background import finalization:", error);
                 setWizardState((prev) => ({
                     ...prev,
                     error: `An unexpected error occurred during import: ${error instanceof Error ? error.message : String(error)}`,
                 }));
                 setCurrentStep("error");
-
-                // Attempt cleanup even on error
-                if (encryptionKey) encryptionKey = null;
-                if (seed) wipeMemory(seed);
             }
         },
-        [wizardState, onSetupComplete] // Dependencies
+        [wizardState, onSetupComplete]
     );
-
-    // --- Step Navigation & Logic Callbacks ---
 
     const handleCreateNew = useCallback(() => {
         console.log("User chose: Create New Vibe");
-        setCurrentStep("createPassword_new"); // Go to password creation for new flow
+        setCurrentStep("createPassword_new");
     }, []);
 
     const handleImportExisting = useCallback(() => {
         console.log("User chose: Import Existing Vibe");
-        setCurrentStep("importPhrase"); // Go to phrase import
+        setCurrentStep("importPhrase");
     }, []);
 
-    // Called by CreatePasswordStep when password is successfully set
     const handlePasswordSet = useCallback(
         async (password: string) => {
-            // Make async
             console.log("Password set by user.");
-            setWizardState((prev) => ({ ...prev, password, error: undefined })); // Clear previous errors
+            setWizardState((prev) => ({ ...prev, password, error: undefined }));
 
             if (currentStep === "createPassword_new") {
                 try {
-                    console.log("Calling agent.createNewVault...");
-                    const mnemonic = await agent.createNewVault(password);
-                    console.log("Agent createNewVault successful, mnemonic received.");
-                    setWizardState((prev) => ({ ...prev, mnemonic })); // Store mnemonic from agent
-                    setCurrentStep("showPhrase"); // Proceed to show phrase
+                    console.log("Requesting new vault creation from background script...");
+                    const response = await chrome.runtime.sendMessage({
+                        type: "VIBE_AGENT_REQUEST",
+                        action: "SETUP_CREATE_VAULT",
+                        payload: { password },
+                    });
+
+                    console.log("Background response from SETUP_CREATE_VAULT:", response);
+
+                    if (response?.error) {
+                        throw new Error(response.error.message || "Failed to create vault.");
+                    }
+                    if (!response?.payload?.mnemonic) {
+                        throw new Error("Mnemonic not received from background script.");
+                    }
+
+                    console.log("New vault created by background, mnemonic received.");
+                    setWizardState((prev) => ({ ...prev, mnemonic: response.payload.mnemonic }));
+                    setCurrentStep("showPhrase");
                 } catch (error) {
-                    console.error("Error calling agent.createNewVault:", error);
+                    console.error("Error creating new vault via background:", error);
                     setWizardState((prev) => ({
                         ...prev,
                         error: `Failed to create vault: ${error instanceof Error ? error.message : String(error)}`,
@@ -205,66 +156,83 @@ export function SetupWizard({ agent, onSetupComplete }: SetupWizardProps) {
                     setCurrentStep("error");
                 }
             } else if (currentStep === "createPassword_import") {
-                // Finalize the import flow (logic remains here for now)
                 finalizeImportFlow(password);
             }
         },
-        [agent, currentStep, finalizeImportFlow] // Dependencies updated in previous step
+        [currentStep, finalizeImportFlow]
     );
 
-    // Called by ShowPhraseStep when user confirms they've backed up the phrase
     const handlePhraseConfirmed = useCallback(() => {
         console.log("User confirmed phrase backup.");
-        // Agent handles mnemonic lifecycle internally now.
-        // No need to wipe mnemonicBuffer here.
-        // Clear mnemonic from wizard state as it's no longer needed here.
-        setWizardState((prev) => ({ ...prev, mnemonic: undefined, mnemonicBuffer: undefined }));
-        // TODO: Add optional "confirmPhrase" step here if desired
-        setCurrentStep("nameIdentity"); // Proceed to naming the identity
-    }, []); // No dependencies needed now
+        // Mnemonic is now managed by ShowPhraseStep or cleared from state after use.
+        // Background script handles the actual seed phrase.
+        setWizardState((prev) => ({ ...prev, mnemonic: undefined })); // Clear from wizard state
+        setCurrentStep("nameIdentity");
+    }, []);
 
-    // Called by NameIdentityStep when user saves or skips profile info
     const handleIdentityNamed = useCallback((name: string | null, picture?: string | null) => {
-        console.log("Identity profile set/skipped:", { name, picture: picture ? "[data url]" : null });
+        console.log("Identity profile set/skipped:", { name, picture: picture ? "yes" : "no" });
         setWizardState((prev) => ({
             ...prev,
             identityName: name,
             identityPicture: picture,
         }));
-        setCurrentStep("configureCloud"); // Proceed to cloud configuration
+        setCurrentStep("configureCloud");
     }, []);
 
-    // Called by ImportPhraseStep when the user enters a valid mnemonic
     const handlePhraseImported = useCallback((mnemonic: string) => {
-        console.log("Phrase imported and verified.");
+        console.log("Phrase imported by user and verified by ImportPhraseStep.");
         setWizardState((prev) => ({
             ...prev,
-            importedMnemonic: mnemonic, // Store the imported phrase
-            mnemonic: undefined, // Ensure generated mnemonic is cleared if user switched flows
-            mnemonicBuffer: undefined,
+            importedMnemonic: mnemonic,
+            mnemonic: undefined, // Clear any generated mnemonic
         }));
-        // Next step after importing is to set a *new* device password
         setCurrentStep("createPassword_import");
     }, []);
 
-    // Called by ConfigureCloudStep when user confirms URL and claim code
     const handleCloudConfigured = useCallback(
-        (url: string, claimCode: string) => {
-            console.log("Cloud configuration set:", { url, claimCode });
-            setWizardState((prev) => ({
-                ...prev,
-                cloudUrl: url,
-            }));
-            // TODO: Save cloudUrl and claimCode to agent state if needed
-            // This is now the final step for the 'Create New' flow.
-            // Set setup complete flag and trigger transition
-            localStorage.setItem("vibe_agent_setup_complete", "true"); // Use the key from frontend.tsx
-            onSetupComplete();
-        },
-        [onSetupComplete]
-    ); // Removed wizardState dependency as it's not used directly
+        async (url: string, claimCode: string) => {
+            console.log("Cloud configuration received:", { url, claimCode });
+            // The wizardState already contains identityName and identityPicture from previous step.
+            const { identityName, identityPicture } = wizardState;
+            setWizardState((prev) => ({ ...prev, cloudUrl: url, claimCode, error: undefined }));
 
-    // --- Create New Flow Finalization (handleFinish) --- REMOVED ---
+            try {
+                console.log("Requesting setup finalization from background script...");
+                const response = await chrome.runtime.sendMessage({
+                    type: "VIBE_AGENT_REQUEST",
+                    action: "SETUP_COMPLETE_AND_FINALIZE",
+                    payload: {
+                        identityName,
+                        identityPicture,
+                        cloudUrl: url,
+                        claimCode,
+                    },
+                });
+
+                console.log("Background response from SETUP_COMPLETE_AND_FINALIZE:", response);
+
+                if (response?.error) {
+                    throw new Error(response.error.message || "Failed to finalize setup.");
+                }
+                if (!response?.payload?.success) {
+                    throw new Error(response?.payload?.message || "Background finalization reported failure.");
+                }
+
+                console.log("Setup finalized successfully via background script.");
+                // Background script now handles marking setup_complete and closing tab.
+                onSetupComplete(); // Notify parent component
+            } catch (error) {
+                console.error("Error finalizing setup via background:", error);
+                setWizardState((prev) => ({
+                    ...prev,
+                    error: `Failed to finalize setup: ${error instanceof Error ? error.message : String(error)}`,
+                }));
+                setCurrentStep("error");
+            }
+        },
+        [wizardState, onSetupComplete]
+    );
 
     // --- Render Logic ---
 
