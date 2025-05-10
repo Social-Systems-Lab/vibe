@@ -1,5 +1,18 @@
 console.log("[BACKGROUND_SCRIPT_RESTORING_CODE] Service worker script has started."); // Keep top-level log
-import { Buffer } from "buffer";
+import { Buffer } from "buffer"; // Standard import
+
+// Explicitly make Buffer available on self, for environments where it might be needed globally.
+// This should ideally be handled by the bundler's polyfilling for browser/service worker targets,
+// but we're adding it defensively due to previous "Buffer is not defined" errors.
+if (typeof self !== "undefined" && typeof (self as any).Buffer === "undefined") {
+    console.log("[BACKGROUND_SCRIPT_BUFFER_POLYFILL] Assigning imported Buffer to self.Buffer");
+    (self as any).Buffer = Buffer;
+} else if (typeof self !== "undefined") {
+    console.log("[BACKGROUND_SCRIPT_BUFFER_POLYFILL] self.Buffer already exists or self is defined.");
+} else {
+    console.log("[BACKGROUND_SCRIPT_BUFFER_POLYFILL] self is not defined. Cannot assign Buffer to self.Buffer.");
+}
+
 import {
     generateMnemonic,
     generateSalt,

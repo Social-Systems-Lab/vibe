@@ -157,7 +157,7 @@ const result = await build({
     sourcemap: "linked", // Use 'none' for production builds if preferred
     define: {
         "process.env.NODE_ENV": JSON.stringify("production"),
-        global: "self", // Define global as self for service worker / browser environment
+        global: "self", // Restore: Define global as self for service worker / browser environment
         // Add other defines if needed
     },
     ...cliConfig, // Merge in any CLI-provided options
