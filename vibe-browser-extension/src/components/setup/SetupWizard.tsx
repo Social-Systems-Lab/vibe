@@ -2,10 +2,10 @@ import React, { useState, useCallback } from "react";
 import { WelcomeStep } from "./WelcomeStep.tsx";
 import { CreatePasswordStep } from "./CreatePasswordStep.tsx";
 import { ShowPhraseStep } from "./ShowPhraseStep.tsx";
-import { NameIdentityStep } from "./NameIdentityStep.tsx";
-import { ConfigureCloudStep } from "./ConfigureCloudStep.tsx";
+// NameIdentityStep and ConfigureCloudStep removed
 import { ImportPhraseStep } from "./ImportPhraseStep.tsx";
-import { SetupCompleteStep } from "./SetupCompleteStep.tsx"; // Added import
+import { SetupCompleteStep } from "./SetupCompleteStep.tsx";
+import { SetupIdentityStep } from "./SetupIdentityStep.tsx"; // Added import
 import { Button } from "@/components/ui/button.tsx";
 // import type { MockVibeAgent } from "@/vibe/agent"; // Agent prop no longer needed for createNewVault
 
@@ -23,10 +23,9 @@ type SetupStep =
     | "createPassword_import"
     | "showPhrase"
     // | "confirmPhrase"
-    | "nameIdentity"
-    | "configureCloud"
+    | "setupIdentity" // Replaces nameIdentity and configureCloud
     | "importPhrase"
-    | "setupComplete" // Added new step
+    | "setupComplete"
     // | "complete" // Removed, handled by handleCloudConfigured
     | "error";
 
@@ -169,18 +168,19 @@ export function SetupWizard({ onSetupComplete }: SetupWizardProps) {
         // Mnemonic is now managed by ShowPhraseStep or cleared from state after use.
         // Background script handles the actual seed phrase.
         setWizardState((prev) => ({ ...prev, mnemonic: undefined })); // Clear from wizard state
-        setCurrentStep("nameIdentity");
+        setCurrentStep("setupIdentity"); // Changed to new step
     }, []);
 
-    const handleIdentityNamed = useCallback((name: string | null, picture?: string | null) => {
-        console.log("Identity profile set/skipped:", { name, picture: picture ? "yes" : "no" });
-        setWizardState((prev) => ({
-            ...prev,
-            identityName: name,
-            identityPicture: picture,
-        }));
-        setCurrentStep("configureCloud");
-    }, []);
+    // handleIdentityNamed and handleCloudConfigured are replaced by handleIdentitySetup
+    // const handleIdentityNamed = useCallback((name: string | null, picture?: string | null) => {
+    //     console.log("Identity profile set/skipped:", { name, picture: picture ? "yes" : "no" });
+    //     setWizardState((prev) => ({
+    //         ...prev,
+    //         identityName: name,
+    //         identityPicture: picture,
+    //     }));
+    //     setCurrentStep("configureCloud");
+    // }, []);
 
     const handlePhraseImported = useCallback((mnemonic: string) => {
         console.log("Phrase imported by user and verified by ImportPhraseStep.");
@@ -192,12 +192,18 @@ export function SetupWizard({ onSetupComplete }: SetupWizardProps) {
         setCurrentStep("createPassword_import");
     }, []);
 
-    const handleCloudConfigured = useCallback(
-        async (url: string, claimCode: string) => {
-            console.log("Cloud configuration received:", { url, claimCode });
-            // The wizardState already contains identityName and identityPicture from previous step.
-            const { identityName, identityPicture } = wizardState;
-            setWizardState((prev) => ({ ...prev, cloudUrl: url, claimCode, error: undefined }));
+    // Combined handler for the new SetupIdentityStep
+    const handleIdentitySetup = useCallback(
+        async (details: { identityName: string | null; identityPicture: string | null; cloudUrl: string; claimCode: string | null }) => {
+            console.log("Identity setup details received:", details);
+            setWizardState((prev) => ({
+                ...prev,
+                identityName: details.identityName,
+                identityPicture: details.identityPicture,
+                cloudUrl: details.cloudUrl,
+                claimCode: details.claimCode || undefined, // Ensure undefined if null
+                error: undefined,
+            }));
 
             try {
                 console.log("Requesting setup finalization from background script...");
@@ -205,10 +211,11 @@ export function SetupWizard({ onSetupComplete }: SetupWizardProps) {
                     type: "VIBE_AGENT_REQUEST",
                     action: "SETUP_COMPLETE_AND_FINALIZE",
                     payload: {
-                        identityName,
-                        identityPicture,
-                        cloudUrl: url,
-                        claimCode,
+                        // Pass all details collected from SetupIdentityStep
+                        identityName: details.identityName,
+                        identityPicture: details.identityPicture,
+                        cloudUrl: details.cloudUrl,
+                        claimCode: details.claimCode,
                     },
                 });
 
@@ -255,10 +262,9 @@ export function SetupWizard({ onSetupComplete }: SetupWizardProps) {
                 ) : (
                     <div>Generating phrase...</div>
                 );
-            case "nameIdentity":
-                return <NameIdentityStep onIdentityNamed={handleIdentityNamed} />;
-            case "configureCloud":
-                return <ConfigureCloudStep onCloudConfigured={handleCloudConfigured} />;
+            case "setupIdentity": // New combined step
+                return <SetupIdentityStep onIdentitySetup={handleIdentitySetup} />;
+            // nameIdentity and configureCloud cases removed
             case "importPhrase":
                 return <ImportPhraseStep onPhraseVerified={handlePhraseImported} />;
             case "setupComplete":
