@@ -1,9 +1,16 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
+import { Buffer } from "buffer"; // Import Buffer
 import "./index.css"; // Assuming Tailwind/CSS setup is handled by the build
 import { SetupWizard } from "./components/setup/SetupWizard";
 // MockVibeAgent is no longer needed as SetupWizard doesn't take agent prop
 // import type { MockVibeAgent } from "./vibe/agent";
+
+// Polyfill window.Buffer for frontend context if not already defined
+if (typeof window !== "undefined" && typeof window.Buffer === "undefined") {
+    console.log("[SETUP.TSX] Polyfilling window.Buffer");
+    (window as any).Buffer = Buffer;
+}
 
 // Mock agent implementation is no longer needed here
 /*

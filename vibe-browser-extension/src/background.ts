@@ -24,10 +24,28 @@ import {
     wipeMemory,
     decryptData,
     importEd25519Key, // Ensure this is imported
+    validateMnemonic, // Ensure validateMnemonic is imported for the test
 } from "./lib/crypto";
 import { didFromEd25519 } from "./lib/identity";
 
 console.log("Vibe Background Service Worker started."); // Original log line
+
+// --- BIP39 Self-Test ---
+try {
+    console.log("[BIP39 TEST] Running self-test...");
+    const testMnemonic = generateMnemonic(12); // Generate a 12-word for quick test
+    console.log(`[BIP39 TEST] Generated test mnemonic: "${testMnemonic}"`);
+    const isValid = validateMnemonic(testMnemonic);
+    console.log(`[BIP39 TEST] Validation result for generated mnemonic: ${isValid}`);
+    if (!isValid) {
+        console.error("[BIP39 TEST] CRITICAL: bip39.validateMnemonic failed for a freshly generated mnemonic!");
+    } else {
+        console.log("[BIP39 TEST] Self-test PASSED.");
+    }
+} catch (e) {
+    console.error("[BIP39 TEST] CRITICAL: Error during bip39 self-test:", e);
+}
+// --- End BIP39 Self-Test ---
 
 // --- Constants ---
 const SETUP_URL = chrome.runtime.getURL("setup.html");
