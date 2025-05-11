@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: vibe-cloud-app
+    namespace: vibe-cloud-services
+    labels:
+        app: vibe-cloud-app
+spec:
+    replicas: 1 # Start with one replica
+    selector:
+        matchLabels:
+            app: vibe-cloud-app
+    template:
+        metadata:
+            labels:
+                app: vibe-cloud-app
+        spec:
+            containers:
+                - name: vibe-cloud-app
+                  image: sslorg/vibe-cloud:latest # Updated image path
+                  # imagePullPolicy: Always # Useful if using :latest tag
+                  ports:
+                      - containerPort: 3000 # Port exposed in Dockerfile
+                  env:
+                      - name: APP_PORT
+                        value: "3000"
+                      - name: COUCHDB_URL
+                        value: "http://couchdb.vibe-cloud-services.svc.cluster.local:5984" # Internal service URL
+                      - name: COUCHDB_USER
+                        value: "admin" # Should match CouchDB config, use Secrets in production
+                      - name: COUCHDB_PASSWORD
+                        value: "password" # Should match CouchDB config, use Secrets in production
+                  # Add other necessary environment variables for vibe-cloud
+                  # - name: S3_ENDPOINT
+                  #   value: "your-s3-endpoint"
+                  # - name: S3_ACCESS_KEY
+                  #   value: "your-s3-access-key" # Use Secrets
+                  # - name: S3_SECRET_KEY
+                  #   value: "your-s3-secret-key" # Use Secrets
+                  # - name: S3_BUCKET_NAME
+                  #   value: "your-s3-bucket-name"
+                  # resources: # Define resource requests and limits for production
+                  #   requests:
+                  #     memory: "256Mi"
+                  #     cpu: "250m"
+                  #   limits:
+                  #     memory: "512Mi"
+                  #     cpu: "500m"
