@@ -948,6 +948,7 @@ export function startServer(port: number = 3000): Server {
     logger.info(`Attempting to start Vibe Cloud server on port ${port}...`);
     try {
         const server = Bun.serve({
+            hostname: "0.0.0.0",
             port: port,
             websocket: bunWsHandler, // Use the defined WS handler
             fetch: fetchHandler, // Use the defined fetch handler
