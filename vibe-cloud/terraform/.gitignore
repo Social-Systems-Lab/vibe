@@ -1,0 +1,44 @@
+# Local Terraform state files
+*.tfstate
+*.tfstate.*.backup
+
+# .terraform directory containing provider plugins and modules
+.terraform/
+
+# Crash log files
+crash.log
+*.tfplan
+
+# Kubeconfig files - these contain sensitive cluster access credentials
+*.kubeconfig
+vibe-cluster.kubeconfig
+
+# Infracost output files
+*.infracost.terraform.json
+.infracost/
+
+# Terraform Cloud/Enterprise credentials
+# .terraformrc
+# terraform.rc
+
+# Override files
+#
+# These files provide a way to override entries in your Terraform
+# configuration with local values. They are often used to inject credentials
+# or other sensitive data, so they should not be committed.
+#
+# Ignore all .tfvars files, which are often used for sensitive variables.
+# If you have specific .tfvars files that ARE NOT sensitive and you WANT to commit,
+# you can un-ignore them with ! (e.g., !variables.tfvars)
+*.tfvars
+*.tfvars.json
+
+# Ignore override files from Terraform Cloud unless explicitly unignored
+# !override.tf
+# !override.tf.json
+# !override.tfvars
+# !override.tfvars.json
+
+# Include an example for how to unignore a specific .tfvars file if needed
+# (though for now, ignoring all is safer)
+# !example.tfvars
