@@ -30,6 +30,10 @@ spec:
                         value: "admin" # Should match CouchDB config, use Secrets in production
                       - name: COUCHDB_PASSWORD
                         value: "password" # Should match CouchDB config, use Secrets in production
+                      - name: JWT_SECRET
+                        value: "aSecureSecretPlaceholderValuePleaseChange" # Placeholder - CHANGE THIS
+                      - name: S3_ENABLED
+                        value: "false"
                   # Add other necessary environment variables for vibe-cloud
                   # - name: S3_ENDPOINT
                   #   value: "your-s3-endpoint"
