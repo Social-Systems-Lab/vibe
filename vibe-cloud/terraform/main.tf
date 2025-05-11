@@ -4,8 +4,41 @@ terraform {
     scaleway = {
       source = "scaleway/scaleway" # Specifies the official Scaleway provider from the Terraform Registry
     }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 2.11" # Use a recent version
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.20" # Use a recent version
+    }
+    kubectl = {
+      source  = "gavinbunney/kubectl"
+      version = "~> 1.14"
+    }
   }
   required_version = ">= 0.13" # Specifies the minimum Terraform version required
+}
+
+provider "helm" {
+  kubernetes {
+    host                   = scaleway_k8s_cluster.vibe-cluster.kubeconfig[0].host
+    token                  = scaleway_k8s_cluster.vibe-cluster.kubeconfig[0].token
+    cluster_ca_certificate = base64decode(scaleway_k8s_cluster.vibe-cluster.kubeconfig[0].cluster_ca_certificate)
+  }
+}
+
+provider "kubernetes" {
+  host                   = scaleway_k8s_cluster.vibe-cluster.kubeconfig[0].host
+  token                  = scaleway_k8s_cluster.vibe-cluster.kubeconfig[0].token
+  cluster_ca_certificate = base64decode(scaleway_k8s_cluster.vibe-cluster.kubeconfig[0].cluster_ca_certificate)
+}
+
+provider "kubectl" {
+  host                   = scaleway_k8s_cluster.vibe-cluster.kubeconfig[0].host
+  token                  = scaleway_k8s_cluster.vibe-cluster.kubeconfig[0].token
+  cluster_ca_certificate = base64decode(scaleway_k8s_cluster.vibe-cluster.kubeconfig[0].cluster_ca_certificate)
+  load_config_file       = false # Important: we are providing config directly
 }
 
 # Block 2: Input Variable (Project ID)
@@ -61,4 +94,115 @@ resource "scaleway_k8s_pool" "vibe-pool" {
 output "kubeconfig" {
   value     = scaleway_k8s_cluster.vibe-cluster.kubeconfig
   sensitive = true # Marks the output as sensitive, so Terraform won't show it in plain logs
+}
+
+# --- Helm Releases for Ingress Nginx and Cert-Manager ---
+
+# Namespace for Ingress Nginx
+resource "kubernetes_namespace" "ingress_nginx_ns" {
+  metadata {
+    name = "ingress-nginx"
+  }
+}
+
+# Ingress Nginx Helm Release
+resource "helm_release" "ingress_nginx" {
+  name       = "ingress-nginx"
+  repository = "https://kubernetes.github.io/ingress-nginx"
+  chart      = "ingress-nginx"
+  namespace  = kubernetes_namespace.ingress_nginx_ns.metadata[0].name
+  version    = "4.10.0" # Specify a version for consistency
+  timeout    = 600      # Increase timeout to 10 minutes
+
+  set {
+    name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/scw-loadbalancer-id"
+    value = "" # For Scaleway, to provision a new LoadBalancer
+    type  = "string"
+  }
+  # Add other necessary values for ingress-nginx if needed
+  # For example, if you need to set a specific ingress class:
+  # set {
+  #   name  = "controller.ingressClassResource.name"
+  #   value = "nginx" # This will be the IngressClassName
+  # }
+  # set {
+  #   name = "controller.ingressClassResource.default"
+  #   value = "true" # Make this the default ingress class
+  # }
+
+  depends_on = [
+    scaleway_k8s_pool.vibe-pool, # Ensure cluster is ready
+    kubernetes_namespace.ingress_nginx_ns
+  ]
+}
+
+# Namespace for Cert-Manager
+resource "kubernetes_namespace" "cert_manager_ns" {
+  metadata {
+    name = "cert-manager"
+  }
+}
+
+# Cert-Manager Helm Release
+resource "helm_release" "cert_manager" {
+  name       = "cert-manager"
+  repository = "https://charts.jetstack.io"
+  chart      = "cert-manager"
+  namespace  = kubernetes_namespace.cert_manager_ns.metadata[0].name
+  version    = "v1.14.5" # Specify a version for consistency
+
+  set {
+    name  = "installCRDs"
+    value = "true"
+  }
+  set {
+    name  = "prometheus.enabled" # Disable prometheus if not used
+    value = "false"
+  }
+
+  depends_on = [
+    scaleway_k8s_pool.vibe-pool, # Ensure cluster is ready
+    kubernetes_namespace.cert_manager_ns
+  ]
+}
+
+# --- ClusterIssuer for Cert-Manager ---
+
+variable "letsencrypt_email" {
+  type        = string
+  description = "Email address for Let's Encrypt registration."
+  # TODO: Provide a default or pass this variable during apply
+  # default     = "your-email@example.com"
+}
+
+data "kubectl_file_documents" "letsencrypt_clusterissuer_docs" {
+    content = <<-EOT
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ${var.letsencrypt_email}
+    privateKeySecretRef:
+      name: letsencrypt-prod-private-key
+    solvers:
+    - http01:
+        ingress:
+          # The class field is deprecated in newer cert-manager versions with networking.k8s.io/v1 Ingress.
+          # ingressClassName is preferred.
+          # Ensure this matches the IngressClass created by your Nginx Ingress controller.
+          # If Nginx Ingress controller creates an IngressClass named 'nginx', use that.
+          ingressClassName: nginx
+EOT
+}
+
+resource "kubectl_manifest" "letsencrypt_clusterissuer" {
+  for_each  = data.kubectl_file_documents.letsencrypt_clusterissuer_docs.manifests
+  yaml_body = each.value
+
+  depends_on = [
+    helm_release.cert_manager # Ensure cert-manager CRDs are installed
+  ]
 }

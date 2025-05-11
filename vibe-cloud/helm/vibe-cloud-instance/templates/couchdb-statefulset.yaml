@@ -1,0 +1,62 @@
+apiVersion: {{ include "vibe-cloud-instance.statefulset.apiVersion" . }}
+kind: StatefulSet
+metadata:
+  name: {{ include "vibe-cloud-instance.couchdb.fullname" . }}
+  namespace: {{ include "vibe-cloud-instance.namespace" . }}
+  labels:
+    {{- include "vibe-cloud-instance.labels" . | nindent 4 }}
+    app.kubernetes.io/component: couchdb
+spec:
+  serviceName: {{ include "vibe-cloud-instance.couchdb.fullname" . }}
+  replicas: 1 # For now, single replica. Can be parameterized later if needed.
+  selector:
+    matchLabels:
+      {{- include "vibe-cloud-instance.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: couchdb
+  template:
+    metadata:
+      labels:
+        {{- include "vibe-cloud-instance.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: couchdb
+    spec:
+      containers:
+        - name: couchdb
+          image: {{ include "vibe-cloud-instance.couchdb.image" . }}
+          imagePullPolicy: {{ .Values.couchdb.image.pullPolicy }}
+          ports:
+            - name: couchdb
+              containerPort: {{ .Values.couchdb.service.port }}
+              protocol: TCP
+          env:
+            # TODO: It is STRONGLY recommended to use Kubernetes secrets for COUCHDB_PASSWORD.
+            # You can specify an existingSecret in values.yaml or create one.
+            - name: COUCHDB_USER
+              value: {{ .Values.couchdb.auth.username | quote }}
+            - name: COUCHDB_PASSWORD
+              value: "couchdb-password-placeholder" # Placeholder: This should come from a secret or secure value
+            # Add other CouchDB environment variables if needed
+          {{- if .Values.couchdb.persistence.enabled }}
+          volumeMounts:
+            - name: couchdb-data
+              mountPath: /opt/couchdb/data
+          {{- end }}
+          {{- if .Values.couchdb.resources }}
+          resources:
+            {{- toYaml .Values.couchdb.resources | nindent 12 }}
+          {{- end }}
+  {{- if .Values.couchdb.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: couchdb-data
+        labels:
+          {{- include "vibe-cloud-instance.labels" . | nindent 10 }}
+          app.kubernetes.io/component: couchdb
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.couchdb.persistence.size }}
+        {{- if .Values.couchdb.persistence.storageClassName }}
+        storageClassName: {{ .Values.couchdb.persistence.storageClassName | quote }}
+        {{- end }}
+  {{- end }}

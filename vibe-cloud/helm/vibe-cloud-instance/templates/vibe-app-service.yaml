@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vibe-cloud-instance.vibeApp.fullname" . }}
+  namespace: {{ include "vibe-cloud-instance.namespace" . }}
+  labels:
+    {{- include "vibe-cloud-instance.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vibe-app
+spec:
+  type: {{ .Values.vibeApp.service.type }}
+  ports:
+    - port: {{ .Values.vibeApp.service.port }}
+      targetPort: {{ .Values.vibeApp.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "vibe-cloud-instance.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: vibe-app

@@ -1,0 +1,93 @@
+# Default values for vibe-cloud-instance.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# -- A unique identifier for this instance. Used for naming resources.
+instanceIdentifier: "default-instance"
+
+# -- Override the namespace for all resources in this chart.
+# If not set, Helm's default namespace or the namespace provided with --namespace flag will be used.
+namespaceOverride: ""
+
+vibeApp:
+    nameOverride: "" # If you want to override the name of the vibe-app deployment/service
+    replicaCount: 1
+    image:
+        repository: your-docker-registry/vibe-cloud-app # TODO: Replace with your Vibe Cloud App image
+        pullPolicy: IfNotPresent
+        # Overrides the image tag whose default is the chart appVersion.
+        tag: "" # Defaults to .Chart.AppVersion
+    service:
+        type: ClusterIP
+        port: 80
+        targetPort: 3000 # The port your Vibe Cloud app listens on
+    # Environment variables for the Vibe App
+    # Example:
+    # env:
+    #   COUCHDB_URL: "http://{{ .Release.Name }}-couchdb:5984"
+    #   COUCHDB_USER: "{{ .Values.couchdb.auth.username }}"
+    #   COUCHDB_PASSWORD: "{{ .Values.couchdb.auth.password }}" # Consider using secrets for this
+    env: {}
+    resources:
+        # We usually recommend not to specify default resources and to leave this as a conscious
+        # choice for the user. This also increases chances charts run on environments with little
+        # resources, such as Minikube. If you do want to specify resources, uncomment the following
+        # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+        # limits:
+        #   cpu: 100m
+        #   memory: 128Mi
+        # requests:
+        #   cpu: 100m
+        #   memory: 128Mi
+        {} # No default resources
+
+couchdb:
+    nameOverride: "" # If you want to override the name of the couchdb statefulset/service
+    image:
+        repository: couchdb
+        pullPolicy: IfNotPresent
+        tag: "3.3.3" # Specify a stable CouchDB version
+    auth:
+        # It's STRONGLY recommended to use secrets for credentials.
+        # These values are for default setup only and should be overridden.
+        # You can create a secret manually and then reference it in the StatefulSet template.
+        username: "admin"
+        # password: "password" # This should be sourced from a Kubernetes secret
+        # existingSecret: "" # Name of an existing secret that contains username and password
+        # secretKeys:
+        #   usernameKey: "COUCHDB_USER"
+        #   passwordKey: "COUCHDB_PASSWORD"
+    persistence:
+        enabled: true
+        size: 5Gi # Default size for CouchDB data volume
+        # storageClassName: "" # If you want to specify a storage class, e.g., "standard", "gp2"
+        # existingClaim: "" # If you have an existing PVC
+    service:
+        type: ClusterIP
+        port: 5984 # Default CouchDB port
+    resources:
+        # limits:
+        #   cpu: 500m
+        #   memory: 512Mi
+        # requests:
+        #   cpu: 250m
+        #   memory: 256Mi
+        {} # No default resources
+
+ingress:
+    enabled: true
+    className: "nginx" # Explicitly use the nginx ingress controller
+    annotations:
+        "kubernetes.io/ingress.class": "nginx" # Common annotation for nginx
+        "cert-manager.io/cluster-issuer": "letsencrypt-prod" # Ensure this matches your ClusterIssuer name
+    # The host for the Ingress resource. This will typically be constructed.
+    # Example: host: "{{ .Values.instanceIdentifier }}.{{ .Values.mainDomain }}"
+    host: ""
+    mainDomain: "vibe.example.com" # TODO: Replace with your actual main domain
+    tls:
+        # Secrets must be manually created in the namespace.
+        # Or, if using cert-manager, it will create them.
+        # - secretName: chart-example-tls
+        #   hosts:
+        #     - chart-example.local
+        []

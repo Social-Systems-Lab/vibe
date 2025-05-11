@@ -1,0 +1,50 @@
+apiVersion: {{ include "vibe-cloud-instance.deployment.apiVersion" . }}
+kind: Deployment
+metadata:
+  name: {{ include "vibe-cloud-instance.vibeApp.fullname" . }}
+  namespace: {{ include "vibe-cloud-instance.namespace" . }}
+  labels:
+    {{- include "vibe-cloud-instance.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vibe-app
+spec:
+  replicas: {{ .Values.vibeApp.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "vibe-cloud-instance.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: vibe-app
+  template:
+    metadata:
+      labels:
+        {{- include "vibe-cloud-instance.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: vibe-app
+    spec:
+      containers:
+        - name: vibe-cloud-app
+          image: {{ include "vibe-cloud-instance.vibeApp.image" . }}
+          imagePullPolicy: {{ .Values.vibeApp.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.vibeApp.service.targetPort }}
+              protocol: TCP
+          env:
+            - name: APP_PORT
+              value: {{ .Values.vibeApp.service.targetPort | quote }}
+            # TODO: Consider creating a Kubernetes secret for CouchDB credentials and JWT_SECRET
+            # and referencing them here using valueFrom.secretKeyRef
+            - name: COUCHDB_URL
+              value: "http://{{ include "vibe-cloud-instance.couchdb.fullname" . }}:{{ .Values.couchdb.service.port }}"
+            - name: COUCHDB_USER
+              value: {{ .Values.couchdb.auth.username | quote }}
+            - name: COUCHDB_PASSWORD
+              value: "password-placeholder" # Placeholder: This should come from a secret or secure value
+            - name: JWT_SECRET
+              value: "jwt-secret-placeholder" # Placeholder: This should come from a secret or secure value
+            - name: S3_ENABLED
+              value: "false" # Defaulting to false as per current setup
+            {{- with .Values.vibeApp.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .Values.vibeApp.resources }}
+          resources:
+            {{- toYaml .Values.vibeApp.resources | nindent 12 }}
+          {{- end }}

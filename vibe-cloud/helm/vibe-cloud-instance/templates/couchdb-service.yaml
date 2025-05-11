@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vibe-cloud-instance.couchdb.fullname" . }}
+  namespace: {{ include "vibe-cloud-instance.namespace" . }}
+  labels:
+    {{- include "vibe-cloud-instance.labels" . | nindent 4 }}
+    app.kubernetes.io/component: couchdb
+spec:
+  type: {{ .Values.couchdb.service.type }}
+  ports:
+    - port: {{ .Values.couchdb.service.port }}
+      targetPort: {{ .Values.couchdb.service.port }} # Target port is same as service port for CouchDB
+      protocol: TCP
+      name: couchdb
+  selector:
+    {{- include "vibe-cloud-instance.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: couchdb

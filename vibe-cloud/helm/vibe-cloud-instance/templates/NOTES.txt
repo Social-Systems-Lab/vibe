@@ -1,0 +1,42 @@
+{{- define "vibe-cloud-instance.notes" }}
+Your Vibe Cloud instance {{ .Release.Name }} has been deployed.
+
+Access your Vibe Cloud App at:
+{{- if .Values.ingress.enabled }}
+  {{- $protocol := "http" }}
+  {{- if or .Values.ingress.tls (index .Values.ingress.annotations "cert-manager.io/cluster-issuer") }}
+    {{- $protocol = "https" }}
+  {{- end }}
+  {{ $protocol }}://{{ include "vibe-cloud-instance.ingress.host" . }}
+{{- else }}
+  Note: Ingress is not enabled. You may need to configure port-forwarding or another method to access the service.
+  Vibe App Service: {{ include "vibe-cloud-instance.vibeApp.fullname" . }} (Port: {{ .Values.vibeApp.service.port }})
+{{- end }}
+
+CouchDB is running internally at:
+  http://{{ include "vibe-cloud-instance.couchdb.fullname" . }}:{{ .Values.couchdb.service.port }}
+  Username: {{ .Values.couchdb.auth.username }}
+  Password: (Refer to your secret management for CouchDB password)
+
+To get the Vibe App URL:
+{{- if .Values.ingress.enabled }}
+  {{- $protocol := "http" }}
+  {{- if or .Values.ingress.tls (index .Values.ingress.annotations "cert-manager.io/cluster-issuer") }}
+    {{- $protocol = "https" }}
+  {{- end }}
+  echo {{ $protocol }}://{{ include "vibe-cloud-instance.ingress.host" . }}
+{{- else }}
+  export POD_NAME=$(kubectl get pods --namespace {{ include "vibe-cloud-instance.namespace" . }} -l "app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=vibe-app" -o jsonpath="{.items[0].metadata.name}")
+  echo "Access your Vibe App by running: kubectl port-forward $POD_NAME {{ .Values.vibeApp.service.port }}:{{ .Values.vibeApp.service.targetPort }} --namespace {{ include "vibe-cloud-instance.namespace" . }}"
+  echo "Then open http://localhost:{{ .Values.vibeApp.service.port }} in your browser."
+{{- end }}
+
+Remember to replace placeholder values for `COUCHDB_PASSWORD` and `JWT_SECRET` in your Vibe App configuration
+(ideally by using Kubernetes Secrets) and update your `values.yaml` or pass them during `helm install/upgrade`
+if you haven't configured them securely.
+
+The `instanceIdentifier` used for this deployment is: {{ .Values.instanceIdentifier }}
+The namespace for this deployment is: {{ include "vibe-cloud-instance.namespace" . }}
+{{- end }}
+
+{{- include "vibe-cloud-instance.notes" . }}
