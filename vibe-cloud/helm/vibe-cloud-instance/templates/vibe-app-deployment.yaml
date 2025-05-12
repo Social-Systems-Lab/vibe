@@ -37,16 +37,21 @@ spec:
             - name: COUCHDB_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-couchdb-creds
+                  # Use the secret name defined in _helpers.tpl
+                  name: {{ include "vibe-cloud-instance.couchdbSecretName" . | quote }}
                   key: username
             - name: COUCHDB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-couchdb-creds
+                  # Use the secret name defined in _helpers.tpl
+                  name: {{ include "vibe-cloud-instance.couchdbSecretName" . | quote }}
                   key: password
-            # TODO: JWT_SECRET should also come from a secret
             - name: JWT_SECRET
-              value: "jwt-secret-placeholder" # Placeholder: This should come from a secret or secure value
+              valueFrom:
+                secretKeyRef:
+                  # Use the secret name defined in _helpers.tpl
+                  name: {{ include "vibe-cloud-instance.jwtSecretName" . | quote }}
+                  key: secret
             - name: S3_ENABLED
               value: "false" # Defaulting to false as per current setup
             {{- with .Values.vibeApp.env }}

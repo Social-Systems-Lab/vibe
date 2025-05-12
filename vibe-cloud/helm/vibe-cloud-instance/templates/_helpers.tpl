@@ -5,8 +5,10 @@ Common labels
 helm.sh/chart: {{ include "vibe-cloud-instance.chart" . }}
 {{ include "vibe-cloud-instance.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
+
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
+
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
@@ -138,5 +140,31 @@ If namespaceOverride is set, use that. Otherwise, use the release namespace.
 {{- .Values.namespaceOverride -}}
 {{- else -}}
 {{- .Release.Namespace -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Determine the name of the CouchDB secret to use.
+If secrets.create is true, use the generated name.
+Otherwise, use the name provided in secrets.existingCouchdbSecret.
+*/}}
+{{- define "vibe-cloud-instance.couchdbSecretName" -}}
+{{- if .Values.secrets.create -}}
+{{- printf "%s-couchdb-creds" (include "vibe-cloud-instance.fullname" .) -}}
+{{- else -}}
+{{- required "If secrets.create is false, secrets.existingCouchdbSecret must be provided" .Values.secrets.existingCouchdbSecret -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Determine the name of the JWT secret to use.
+If secrets.create is true, use the generated name.
+Otherwise, use the name provided in secrets.existingJwtSecret.
+*/}}
+{{- define "vibe-cloud-instance.jwtSecretName" -}}
+{{- if .Values.secrets.create -}}
+{{- printf "%s-jwt-secret" (include "vibe-cloud-instance.fullname" .) -}}
+{{- else -}}
+{{- required "If secrets.create is false, secrets.existingJwtSecret must be provided" .Values.secrets.existingJwtSecret -}}
 {{- end -}}
 {{- end -}}

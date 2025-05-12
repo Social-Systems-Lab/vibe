@@ -3,20 +3,29 @@
 # Declare variables to be passed into your templates.
 
 # -- A unique identifier for this instance. Used for naming resources.
-instanceIdentifier: "default-instance"
+instanceIdentifier: "vibe-test-01" # Updated from temp values
 
 # -- Override the namespace for all resources in this chart.
 # If not set, Helm's default namespace or the namespace provided with --namespace flag will be used.
 namespaceOverride: ""
 
+# -- Configuration for Kubernetes Secrets
+secrets:
+    # -- If true, Helm will create secrets for CouchDB and JWT. If false, you must provide existing secrets.
+    create: true
+    # -- Name of an existing secret containing the CouchDB username and password. Used if secrets.create is false.
+    # existingCouchdbSecret: ""
+    # -- Name of an existing secret containing the JWT secret. Used if secrets.create is false.
+    # existingJwtSecret: ""
+
 vibeApp:
     nameOverride: "" # If you want to override the name of the vibe-app deployment/service
     replicaCount: 1
     image:
-        repository: your-docker-registry/vibe-cloud-app # TODO: Replace with your Vibe Cloud App image
+        repository: sslorg/vibe-cloud # Updated from temp values
         pullPolicy: IfNotPresent
         # Overrides the image tag whose default is the chart appVersion.
-        tag: "" # Defaults to .Chart.AppVersion
+        tag: "latest" # Updated from temp values
     service:
         type: ClusterIP
         port: 80
@@ -28,6 +37,11 @@ vibeApp:
     #   COUCHDB_USER: "{{ .Values.couchdb.auth.username }}"
     #   COUCHDB_PASSWORD: "{{ .Values.couchdb.auth.password }}" # Consider using secrets for this
     env: {}
+    # -- Configuration for Vibe App authentication
+    auth:
+        # -- JWT secret for signing tokens. If secrets.create is true and this is empty, a random secret will be generated.
+        # -- If secrets.create is false, this value is ignored, and existingJwtSecret must be set.
+        jwtSecret: ""
     resources:
         # We usually recommend not to specify default resources and to leave this as a conscious
         # choice for the user. This also increases chances charts run on environments with little
@@ -49,14 +63,13 @@ couchdb:
         tag: "3.3.3" # Specify a stable CouchDB version
     auth:
         # It's STRONGLY recommended to use secrets for credentials.
-        # These values are for default setup only and should be overridden.
-        # You can create a secret manually and then reference it in the StatefulSet template.
-        username: "admin"
-        # password: "password" # This should be sourced from a Kubernetes secret
-        # existingSecret: "" # Name of an existing secret that contains username and password
-        # secretKeys:
-        #   usernameKey: "COUCHDB_USER"
-        #   passwordKey: "COUCHDB_PASSWORD"
+        # -- CouchDB username. If secrets.create is true and this is empty, a random username will be generated.
+        # -- If secrets.create is false, this value is ignored, and existingCouchdbSecret must be set.
+        username: ""
+        # -- CouchDB password. If secrets.create is true and this is empty, a random password will be generated.
+        # -- If secrets.create is false, this value is ignored, and existingCouchdbSecret must be set.
+        password: ""
+        # Note: existingSecret functionality is handled by the top-level 'secrets.existingCouchdbSecret' now.
     persistence:
         enabled: true
         size: 5Gi # Default size for CouchDB data volume
@@ -76,18 +89,17 @@ couchdb:
 
 ingress:
     enabled: true
-    className: "nginx" # Default, will be overridden
+    className: "traefik" # Updated from temp values
     annotations:
-        # "kubernetes.io/ingress.class": "nginx" # REMOVED - Deprecated, use ingressClassName instead
-        "cert-manager.io/cluster-issuer": "letsencrypt-prod" # Ensure this matches your ClusterIssuer name
-    # The host for the Ingress resource. This will typically be constructed.
-    # Example: host: "{{ .Values.instanceIdentifier }}.{{ .Values.mainDomain }}"
-    host: ""
-    mainDomain: "vibe.example.com" # TODO: Replace with your actual main domain
+        # Only include annotations needed for the working setup
+        "cert-manager.io/cluster-issuer": "letsencrypt-prod"
+    # The host for the Ingress resource.
+    host: "test-cloud.vibeapp.dev" # Updated from temp values
+    # mainDomain: "vibe.example.com" # Removed, host is now explicit
     tls:
         # Secrets must be manually created in the namespace.
         # Or, if using cert-manager, it will create them.
         # - secretName: chart-example-tls
         #   hosts:
         #     - chart-example.local
-        []
+        [] # Keep empty, cert-manager handles this
