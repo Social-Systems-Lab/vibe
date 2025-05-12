@@ -5,13 +5,22 @@ on:
         branches:
             - main # Or your primary branch
         paths:
-            - "vibe-cloud/**" # Only run if vibe-cloud code changes
+            - "vibe-cloud/vibe-cloud-api/**" # Trigger on API changes
+            - "vibe-cloud/vibe-cloud-control-plane/**" # Trigger on Control Plane changes
 
 jobs:
     build-and-push-image:
         runs-on: ubuntu-latest
         permissions:
             contents: read # To checkout the repository
+        strategy:
+            matrix:
+                service: [api, control-plane] # Define the services to build
+                include: # Map service names to context paths
+                    - service: api
+                      context: ./vibe-cloud/vibe-cloud-api
+                    - service: control-plane
+                      context: ./vibe-cloud/vibe-cloud-control-plane
 
         steps:
             - name: Checkout repository
@@ -26,20 +35,20 @@ jobs:
                   username: ${{ secrets.DOCKER_HUB_USERNAME }}
                   password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
-            - name: Extract metadata (tags, labels) for Docker
+            - name: Extract metadata (tags, labels) for Docker - ${{ matrix.service }}
               id: meta
               uses: docker/metadata-action@v5
               with:
-                  images: sslorg/vibe-cloud
+                  images: sslorg/vibe-cloud-${{ matrix.service }} # Use matrix service name in image name
                   tags: |
                       type=sha,prefix=,suffix=,format=short
                       type=raw,value=latest,enable={{is_default_branch}}
 
-            - name: Build and push Docker image
+            - name: Build and push Docker image - ${{ matrix.service }}
               uses: docker/build-push-action@v5
               with:
-                  context: ./vibe-cloud # Path to the Dockerfile directory
-                  file: ./vibe-cloud/Dockerfile
+                  context: ${{ matrix.context }} # Use matrix context path
+                  file: ${{ matrix.context }}/Dockerfile # Point to Dockerfile within the context
                   push: true
                   tags: ${{ steps.meta.outputs.tags }}
                   labels: ${{ steps.meta.outputs.labels }}

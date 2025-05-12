@@ -1,37 +1,48 @@
 version: "3.8"
 
 services:
-    vibe-cloud:
+    vibe-cloud-api: # Renamed from vibe-cloud
         build:
-            context: ./vibe-cloud # Path to the directory containing the Dockerfile
+            context: ./vibe-cloud/vibe-cloud-api # Updated context path
             dockerfile: Dockerfile
         restart: unless-stopped
         env_file:
-            - ./vibe-cloud/.env # Load environment variables from .env file
+            - ./vibe-cloud/vibe-cloud-api/.env # Updated env_file path
         ports:
-            # Map host port (left) to container port (right, from APP_PORT in .env or default 3000)
-            # Use the format "HOST_PORT:CONTAINER_PORT"
-            # Example: "3000:3000" maps host port 3000 to container port 3000
-            # You can change the host port if 3000 is already in use on your machine.
-            - "${APP_PORT:-3000}:${APP_PORT:-3000}"
+            # API service port (default 3000)
+            - "${APP_PORT:-3000}:${APP_PORT:-3000}" # Keep using APP_PORT for API
         networks:
             - vibe-net
         depends_on:
             couchdb:
-                condition: service_started # Wait for CouchDB to be ready (basic check)
+                condition: service_started
             minio:
-                condition: service_started # Wait for Minio to be ready (basic check)
+                condition: service_started
 
-    couchdb:
-        image: couchdb:latest # Use the official CouchDB image
+    vibe-cloud-control-plane:
+        build:
+            context: ./vibe-cloud/vibe-cloud-control-plane
+            dockerfile: Dockerfile
         restart: unless-stopped
         env_file:
-            - ./vibe-cloud/.env # Load ALL variables from .env into the container environment
-        # environment: # Removed redundant block - CouchDB image reads COUCHDB_USER/PASSWORD from env loaded by env_file
-        #     - COUCHDB_USER=${COUCHDB_USER}
-        #     - COUCHDB_PASSWORD=${COUCHDB_PASSWORD}
+            # Assumes control plane might have its own .env or share API's
+            - ./vibe-cloud/vibe-cloud-control-plane/.env
         ports:
-            # Map host port 5984 to container port 5984 (CouchDB default)
+            # Control plane service port (default 3001)
+            - "${CONTROL_PLANE_PORT:-3001}:${CONTROL_PLANE_PORT:-3001}"
+        networks:
+            - vibe-net
+        depends_on:
+            couchdb: # Control plane uses DataService/AuthService which need CouchDB
+                condition: service_started
+
+    couchdb:
+        image: couchdb:latest
+        restart: unless-stopped
+        env_file:
+            - ./vibe-cloud/vibe-cloud-api/.env # Point to API's .env for credentials
+        ports:
+            # Map host port 5984 to container port 5984
             - "5984:5984"
         volumes:
             # Persist CouchDB data using a named volume
@@ -43,7 +54,7 @@ services:
         image: minio/minio:latest
         restart: unless-stopped
         env_file:
-            - ./vibe-cloud/.env # Load ALL variables from .env
+            - ./vibe-cloud/vibe-cloud-api/.env # Point to API's .env for credentials
         environment:
             # Use variables loaded by env_file for root credentials
             - MINIO_ROOT_USER=${MINIO_ACCESS_KEY}

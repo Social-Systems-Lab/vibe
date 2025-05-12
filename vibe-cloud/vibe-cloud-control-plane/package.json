@@ -1,0 +1,22 @@
+{
+    "name": "vibe-cloud-control-plane",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "start": "bun run src/index.ts",
+        "dev": "bun --watch src/index.ts"
+    },
+    "dependencies": {
+        "elysia": "latest",
+        "@elysiajs/cors": "^1.2.0",
+        "@elysiajs/jwt": "^1.2.0",
+        "nano": "^10.1.4",
+        "@noble/ed25519": "^2.2.3",
+        "jose": "^6.0.10"
+    },
+    "devDependencies": {
+        "bun-types": "latest",
+        "@types/nano": "^7.0.0"
+    }
+}

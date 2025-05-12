@@ -42,4 +42,15 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+vibe-cluster.kubeconfig
+
+# Terraform state and plan files
+*.tfstate
+*.tfstate.backup
+*.tfplan
+
+# Specific service .env files
+vibe-cloud/vibe-cloud-api/.env
+vibe-cloud/vibe-cloud-control-plane/.env
+
 vibe-browser-extension/icon-dev.png
