@@ -39,7 +39,7 @@ spec:
         - {{ include "vibe-cloud-instance.ingress.host" $ | quote }}
       secretName: {{ .secretName }}
     {{- end }}
-  {{- else if (index .Values.ingress.annotations "cert-manager.io/cluster-issuer") }}
+  {{- else if (hasKey .Values.ingress.annotations "cert-manager.io/cluster-issuer") }}
   # If cert-manager annotation is present, assume it will handle TLS
   tls:
     - hosts:

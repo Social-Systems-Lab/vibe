@@ -76,9 +76,9 @@ couchdb:
 
 ingress:
     enabled: true
-    className: "nginx" # Explicitly use the nginx ingress controller
+    className: "nginx" # Default, will be overridden
     annotations:
-        "kubernetes.io/ingress.class": "nginx" # Common annotation for nginx
+        # "kubernetes.io/ingress.class": "nginx" # REMOVED - Deprecated, use ingressClassName instead
         "cert-manager.io/cluster-issuer": "letsencrypt-prod" # Ensure this matches your ClusterIssuer name
     # The host for the Ingress resource. This will typically be constructed.
     # Example: host: "{{ .Values.instanceIdentifier }}.{{ .Values.mainDomain }}"

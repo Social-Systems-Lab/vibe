@@ -14,7 +14,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 Selector labels
 */}}
 {{- define "vibe-cloud-instance.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "vibe-cloud-instance.name" . }}
+app.kubernetes.io/name: {{ include "vibe-cloud-instance.fullname" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
