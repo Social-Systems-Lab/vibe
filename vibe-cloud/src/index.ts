@@ -13,6 +13,8 @@ import * as jose from "jose";
 import { ed25519FromDid, getUserDbName } from "./utils/identity.utils";
 import { verify } from "@noble/ed25519";
 import { Buffer } from "buffer";
+import { spawn } from "child_process"; // Added for script execution
+import path from "path"; // Added for path resolution
 import {
     AdminClaimSchema,
     BlobDownloadResponseSchema,
@@ -35,6 +37,7 @@ import {
     type PermissionSetting, // Keep type
     type User, // Import User type
     GrantsSchema, // Need this for validation/typing
+    ProvisionRequestSchema, // Added for provisioning endpoint
 } from "./models/models";
 import { SYSTEM_DB } from "./utils/constants";
 import { AuthService } from "./services/auth.service";
@@ -880,6 +883,127 @@ export const app = new Elysia()
                     // Only define the success response schema. Errors are handled by setting status/returning error object or throwing.
                     response: { 200: BlobDownloadResponseSchema, 403: ErrorResponseSchema, 404: ErrorResponseSchema },
                     detail: { summary: "Get a pre-signed URL to download a blob (requires ownership or 'read:blobs')" },
+                }
+            )
+    )
+    // --- Provisioning Routes (Admin Only) ---
+    .group("/api/v1/provision", (group) =>
+        group
+            // Derive JWT user context
+            .derive(async ({ jwt, request: { headers } }) => {
+                const authHeader = headers.get("authorization");
+                if (!authHeader || !authHeader.startsWith("Bearer ")) return { user: null };
+                const token = authHeader.substring(7);
+                try {
+                    const payload = await jwt.verify(token);
+                    return { user: payload as { userDid: string } };
+                } catch (error) {
+                    return { user: null };
+                }
+            })
+            // Middleware: Check User JWT and Admin status
+            .onBeforeHandle(async ({ user, authService, set }) => {
+                if (!user) {
+                    set.status = 401;
+                    return { error: "Unauthorized: Invalid or missing user token." };
+                }
+                // Check if the user is an admin
+                const isAdmin = await authService.isAdmin(user.userDid);
+                if (!isAdmin) {
+                    set.status = 403;
+                    logger.warn(`Provisioning attempt denied for non-admin user: ${user.userDid}`);
+                    return { error: "Forbidden: Only administrators can provision new instances." };
+                }
+                logger.info(`Admin user ${user.userDid} accessing provisioning endpoint.`);
+            })
+            // POST /api/v1/provision/request - Trigger a new instance provisioning
+            .post(
+                "/request",
+                async ({ user, body, set }) => {
+                    // User is guaranteed non-null and admin by onBeforeHandle
+                    const { userDid: requestingAdminDid } = user!;
+                    const { targetUserDid, instanceIdentifier } = body; // Assuming these are in the request body
+
+                    logger.info(
+                        `Provisioning request received from admin ${requestingAdminDid} for user ${targetUserDid} with identifier ${instanceIdentifier}`
+                    );
+
+                    // --- Execute Provisioning Script ---
+                    // Assuming the server runs from the project root (d:/Projects/ssl/vibe)
+                    const scriptPath = path.resolve(process.cwd(), "vibe-cloud/provisioning/provision.sh");
+                    const terraformDir = path.resolve(process.cwd(), "vibe-cloud/terraform");
+
+                    logger.info(`Executing provisioning script: ${scriptPath} in cwd: ${terraformDir}`);
+
+                    // Execute using bash. Ensure bash is available in the environment.
+                    // Pass necessary data via environment variables.
+                    const provisionProcess = spawn("bash", [scriptPath], {
+                        cwd: terraformDir, // Run script in the terraform directory
+                        env: {
+                            ...process.env, // Pass existing environment variables
+                            TARGET_USER_DID: targetUserDid,
+                            INSTANCE_IDENTIFIER: instanceIdentifier,
+                            // TODO: Securely pass Scaleway credentials (SCW_ACCESS_KEY, SCW_SECRET_KEY, SCW_DEFAULT_PROJECT_ID)
+                            // Consider using a secrets manager or injecting them securely into the environment
+                            // where this Node.js process runs, rather than passing directly here.
+                        },
+                        stdio: ["ignore", "pipe", "pipe"], // Ignore stdin, pipe stdout/stderr
+                    });
+
+                    // Log script output
+                    provisionProcess.stdout.on("data", (data) => {
+                        logger.info(`[Provision Script STDOUT - ${instanceIdentifier}]: ${data.toString().trim()}`);
+                    });
+
+                    provisionProcess.stderr.on("data", (data) => {
+                        logger.error(`[Provision Script STDERR - ${instanceIdentifier}]: ${data.toString().trim()}`);
+                    });
+
+                    // Log script completion status
+                    provisionProcess.on("close", (code) => {
+                        if (code === 0) {
+                            logger.info(`Provisioning script for instance '${instanceIdentifier}' finished successfully (exit code ${code}).`);
+                            // TODO: Implement post-provisioning steps:
+                            // - Update an internal registry/database with the new instance details (URL, status).
+                            // - Potentially notify the targetUserDid or requestingAdminDid.
+                        } else {
+                            logger.error(`Provisioning script for instance '${instanceIdentifier}' failed with exit code ${code}.`);
+                            // TODO: Implement failure handling:
+                            // - Update internal registry/database with failure status.
+                            // - Notify admin.
+                            // - Consider cleanup steps if partial resources were created.
+                        }
+                    });
+
+                    provisionProcess.on("error", (err) => {
+                        logger.error(`Failed to start provisioning script for instance '${instanceIdentifier}':`, err);
+                        // Handle failure to even start the script (e.g., script not found, permissions)
+                        // TODO: Update registry/notify admin about the failure to start.
+                        // We might want to return a 500 error here instead of 202 if the script *cannot* be started.
+                        // For now, we still return 202 as the request was accepted, even if execution fails later.
+                    });
+
+                    set.status = 202; // Accepted (provisioning started)
+                    return {
+                        message: "Provisioning request accepted and initiated.",
+                        instanceIdentifier: instanceIdentifier,
+                        targetUserDid: targetUserDid,
+                    };
+                },
+                {
+                    body: ProvisionRequestSchema, // Use the new schema
+                    response: {
+                        202: t.Object({
+                            message: t.String(),
+                            instanceIdentifier: t.String(),
+                            targetUserDid: t.String(),
+                        }),
+                        400: ErrorResponseSchema,
+                        401: ErrorResponseSchema,
+                        403: ErrorResponseSchema,
+                        500: ErrorResponseSchema,
+                    },
+                    detail: { summary: "Initiate provisioning of a new Vibe Cloud instance (Admin Only)." },
                 }
             )
     );

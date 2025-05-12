@@ -279,6 +279,30 @@ export class AuthService {
     }
 
     /**
+     * Checks if a user has the admin flag set in their user document.
+     * @param userDid - The DID of the user to check.
+     * @returns True if the user exists and has isAdmin set to true, false otherwise.
+     */
+    async isAdmin(userDid: string): Promise<boolean> {
+        const userDocId = `${USERS_COLLECTION}/${userDid}`;
+        try {
+            const userDoc = await this.dataService.getDocument<User>(SYSTEM_DB, userDocId);
+            // Check if the document exists and the isAdmin flag is explicitly true
+            return !!userDoc && userDoc.isAdmin === true;
+        } catch (error: any) {
+            if (error instanceof NotFoundError) {
+                // User document doesn't exist, so they are not an admin
+                logger.debug(`isAdmin check: User document ${userDocId} not found.`);
+                return false;
+            } else {
+                // Log other errors but treat as non-admin for safety
+                logger.error(`isAdmin check: Error fetching user document ${userDocId}:`, error);
+                return false;
+            }
+        }
+    }
+
+    /**
      * Creates a user directly for testing purposes and generates a JWT.
      * WARNING: Use only in test environments. Does not involve standard auth flows.
      * @param userDid - Optional: Specify a DID. If not provided, a test DID is generated.

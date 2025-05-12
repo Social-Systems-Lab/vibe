@@ -219,6 +219,13 @@ export const ErrorResponseSchema = t.Object({
 });
 export type ErrorResponse = Static<typeof ErrorResponseSchema>;
 
+// Provisioning Schemas
+export const ProvisionRequestSchema = t.Object({
+    targetUserDid: t.String({ description: "The DID of the user for whom the instance is being provisioned." }),
+    instanceIdentifier: t.String({ description: "A unique identifier for the new instance (e.g., subdomain part)." }),
+});
+export type ProvisionRequest = Static<typeof ProvisionRequestSchema>;
+
 //#endregion
 
 //#region --- WebSocket Types ---

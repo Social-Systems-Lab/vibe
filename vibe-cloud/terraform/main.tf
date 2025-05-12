@@ -52,6 +52,12 @@ variable "project_id" { # This should be named "project_id"
   # If your Scaleway CLI is configured with a default project_id, the provider might pick that up if this variable isn't explicitly set.
 }
 
+variable "instance_identifier" {
+  type        = string
+  description = "Unique identifier for the Vibe Cloud instance (e.g., 'test-cloud'). Used for naming resources and Helm release."
+  # No default, this should be passed by the provisioning script.
+}
+
 # Block 3: Scaleway VPC Private Network Resource
 resource "scaleway_vpc_private_network" "vibe-pn" {
   name = "vibe-private-network" # The name of the Private Network to be created in your Scaleway project
@@ -256,5 +262,61 @@ resource "kubectl_manifest" "letsencrypt_clusterissuer" {
 
   depends_on = [
     helm_release.cert_manager # Ensure cert-manager CRDs are installed
+  ]
+}
+
+
+# --- Vibe Cloud Instance Namespace and Helm Release ---
+
+# Namespace for the specific Vibe Cloud instance
+resource "kubernetes_namespace" "vibe_instance_ns" {
+  metadata {
+    # Use the instance identifier to create a unique namespace name
+    # e.g., instance_identifier = "test-cloud" -> namespace = "vibe-test-cloud"
+    name = "vibe-${var.instance_identifier}"
+  }
+
+  depends_on = [
+    scaleway_k8s_pool.vibe-pool # Ensure cluster is ready before creating namespace
+  ]
+}
+
+# Helm release for the Vibe Cloud Instance application
+resource "helm_release" "vibe_cloud_instance" {
+  name       = "vibe-${var.instance_identifier}" # Helm release name, matches namespace
+  chart      = "../helm/vibe-cloud-instance"     # Path to the local Helm chart directory
+  namespace  = kubernetes_namespace.vibe_instance_ns.metadata[0].name
+  timeout    = 600 # Increase timeout for potentially complex deployments
+
+  # Set values within the Helm chart
+  set {
+    name  = "instanceIdentifier"
+    value = var.instance_identifier
+  }
+  set {
+    name  = "ingress.host"
+    # Dynamically create the hostname, e.g., test-cloud.vibeapp.dev
+    value = "${var.instance_identifier}.vibeapp.dev"
+  }
+  # Add any other values that need to be overridden via Terraform
+  # For example, if secrets are managed outside Helm:
+  # set {
+  #   name = "secrets.create"
+  #   value = "false"
+  # }
+  # set {
+  #   name = "secrets.existingCouchdbSecret"
+  #   value = "my-existing-couchdb-secret" # Name of the secret created elsewhere
+  # }
+  # set {
+  #   name = "secrets.existingJwtSecret"
+  #   value = "my-existing-jwt-secret" # Name of the secret created elsewhere
+  # }
+
+  depends_on = [
+    kubernetes_namespace.vibe_instance_ns,
+    helm_release.traefik,      # Ensure Traefik (Ingress) is ready
+    helm_release.cert_manager, # Ensure Cert-Manager is ready
+    kubectl_manifest.letsencrypt_clusterissuer # Ensure ClusterIssuer is ready
   ]
 }
