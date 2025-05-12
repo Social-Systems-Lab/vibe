@@ -33,10 +33,18 @@ spec:
             # and referencing them here using valueFrom.secretKeyRef
             - name: COUCHDB_URL
               value: "http://{{ include "vibe-cloud-instance.couchdb.fullname" . }}:{{ .Values.couchdb.service.port }}"
+            # Source credentials from the Kubernetes secret
             - name: COUCHDB_USER
-              value: {{ .Values.couchdb.auth.username | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-couchdb-creds
+                  key: username
             - name: COUCHDB_PASSWORD
-              value: "password-placeholder" # Placeholder: This should come from a secret or secure value
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-couchdb-creds
+                  key: password
+            # TODO: JWT_SECRET should also come from a secret
             - name: JWT_SECRET
               value: "jwt-secret-placeholder" # Placeholder: This should come from a secret or secure value
             - name: S3_ENABLED

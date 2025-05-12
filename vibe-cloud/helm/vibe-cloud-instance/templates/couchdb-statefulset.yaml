@@ -28,12 +28,18 @@ spec:
               containerPort: {{ .Values.couchdb.service.port }}
               protocol: TCP
           env:
-            # TODO: It is STRONGLY recommended to use Kubernetes secrets for COUCHDB_PASSWORD.
-            # You can specify an existingSecret in values.yaml or create one.
+            # Source credentials from the Kubernetes secret
             - name: COUCHDB_USER
-              value: {{ .Values.couchdb.auth.username | quote }}
+              valueFrom:
+                secretKeyRef:
+                  # Use the release name to construct the secret name dynamically
+                  name: {{ .Release.Name }}-couchdb-creds
+                  key: username
             - name: COUCHDB_PASSWORD
-              value: "couchdb-password-placeholder" # Placeholder: This should come from a secret or secure value
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-couchdb-creds
+                  key: password
             # Add other CouchDB environment variables if needed
           {{- if .Values.couchdb.persistence.enabled }}
           volumeMounts:
