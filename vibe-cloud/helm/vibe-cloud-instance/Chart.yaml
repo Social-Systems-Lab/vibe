@@ -16,9 +16,9 @@ keywords:
     - cloud
     - couchdb
 
-home: https://github.com/your-repo/vibe # Replace with your actual project URL
+home: https://github.com/Social-Systems-Lab/vibe
 sources:
-    - https://github.com/your-repo/vibe # Replace with your actual project URL
+    - https://github.com/Social-Systems-Lab/vibe
 
 maintainers:
     - name: YourName # Replace with your name/org

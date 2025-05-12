@@ -99,42 +99,47 @@ output "kubeconfig" {
 # --- Helm Releases for Ingress Nginx and Cert-Manager ---
 
 # Namespace for Ingress Nginx
-resource "kubernetes_namespace" "ingress_nginx_ns" {
-  metadata {
-    name = "ingress-nginx"
-  }
-}
+# resource "kubernetes_namespace" "ingress_nginx_ns" {
+#   metadata {
+#     name = "ingress-nginx"
+#   }
+# }
 
 # Ingress Nginx Helm Release
-resource "helm_release" "ingress_nginx" {
-  name       = "ingress-nginx"
-  repository = "https://kubernetes.github.io/ingress-nginx"
-  chart      = "ingress-nginx"
-  namespace  = kubernetes_namespace.ingress_nginx_ns.metadata[0].name
-  version    = "4.10.0" # Specify a version for consistency
-  timeout    = 600      # Increase timeout to 10 minutes
-
-  set {
-    name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/scw-loadbalancer-id"
-    value = "" # For Scaleway, to provision a new LoadBalancer
-    type  = "string"
-  }
-  # Add other necessary values for ingress-nginx if needed
-  # For example, if you need to set a specific ingress class:
-  # set {
-  #   name  = "controller.ingressClassResource.name"
-  #   value = "nginx" # This will be the IngressClassName
-  # }
-  # set {
-  #   name = "controller.ingressClassResource.default"
-  #   value = "true" # Make this the default ingress class
-  # }
-
-  depends_on = [
-    scaleway_k8s_pool.vibe-pool, # Ensure cluster is ready
-    kubernetes_namespace.ingress_nginx_ns
-  ]
-}
+# resource "helm_release" "ingress_nginx" {
+#   name       = "ingress-nginx"
+#   repository = "https://kubernetes.github.io/ingress-nginx"
+#   chart      = "ingress-nginx"
+#   namespace  = "ingress-nginx" # Assuming namespace is created manually or by Helm
+#   version    = "4.10.0" # Specify a version for consistency
+#   timeout    = 600      # Increase timeout to 10 minutes
+# 
+#   set {
+#     name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/scw-loadbalancer-id"
+#     value = "" # For Scaleway, to provision a new LoadBalancer
+#     type  = "string"
+#   }
+#   set {
+#     name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/scw-loadbalancer-type"
+#     value = "lb-s" # Specify Scaleway LoadBalancer type (small)
+#     type = "string"
+#   }
+#   # Add other necessary values for ingress-nginx if needed
+#   # For example, if you need to set a specific ingress class:
+#   # set {
+#   #   name  = "controller.ingressClassResource.name"
+#   #   value = "nginx" # This will be the IngressClassName
+#   # }
+#   # set {
+#   #   name = "controller.ingressClassResource.default"
+#   #   value = "true" # Make this the default ingress class
+#   # }
+# 
+#   depends_on = [
+#     scaleway_k8s_pool.vibe-pool # Ensure cluster is ready
+#     # kubernetes_namespace.ingress_nginx_ns # Namespace managed manually or by Helm
+#   ]
+# }
 
 # Namespace for Cert-Manager
 resource "kubernetes_namespace" "cert_manager_ns" {
@@ -166,6 +171,53 @@ resource "helm_release" "cert_manager" {
   ]
 }
 
+# Namespace for Traefik (Optional, Helm might create it, but explicit is safer)
+resource "kubernetes_namespace" "traefik_ns" {
+  metadata {
+    name = "traefik"
+  }
+}
+
+# Traefik Ingress Controller Helm Release
+resource "helm_release" "traefik" {
+  name       = "traefik"
+  repository = "https://helm.traefik.io/traefik"
+  chart      = "traefik"
+  namespace  = kubernetes_namespace.traefik_ns.metadata[0].name
+  version    = "v25.0.0" # Use a recent, specific version
+
+  set {
+    name  = "service.type"
+    value = "LoadBalancer"
+  }
+  set {
+    name  = "service.annotations.service\\.beta\\.kubernetes\\.io/scw-loadbalancer-type"
+    value = "lb-s" # Specify Scaleway LoadBalancer type (small)
+    type  = "string"
+  }
+  # Optional: Enable PROXY protocol if needed (requires Traefik config adjustment too)
+  # set {
+  #   name  = "service.annotations.service\\.beta\\.kubernetes\\.io/scw-loadbalancer-proxy-protocol-v2"
+  #   value = "true"
+  #   type  = "string"
+  # }
+
+  # Ensure IngressClass is created (usually default)
+  set {
+    name = "ingressClass.enabled"
+    value = "true"
+  }
+  set {
+    name = "ingressClass.isDefaultClass"
+    value = "true" # Make Traefik the default Ingress controller
+  }
+
+  depends_on = [
+    scaleway_k8s_pool.vibe-pool, # Ensure cluster is ready
+    kubernetes_namespace.traefik_ns
+  ]
+}
+
 # --- ClusterIssuer for Cert-Manager ---
 
 variable "letsencrypt_email" {
@@ -192,9 +244,9 @@ spec:
         ingress:
           # The class field is deprecated in newer cert-manager versions with networking.k8s.io/v1 Ingress.
           # ingressClassName is preferred.
-          # Ensure this matches the IngressClass created by your Nginx Ingress controller.
-          # If Nginx Ingress controller creates an IngressClass named 'nginx', use that.
-          ingressClassName: nginx
+          # Ensure this matches the IngressClass created by your Traefik Ingress controller.
+          # If Traefik Ingress controller creates an IngressClass named 'traefik', use that.
+          ingressClassName: traefik
 EOT
 }
 

@@ -6,10 +6,10 @@ metadata:
     labels:
         app: vibe-cloud-app
 spec:
-    type: LoadBalancer # Exposes the service externally using a cloud provider's load balancer
+    type: ClusterIP # Internal access only since we are using Ingress
     ports:
-        - port: 80 # Port the LoadBalancer will listen on
-          targetPort: 3000 # Port the vibe-cloud-app container listens on
+        - port: 80
+          targetPort: 3000
           protocol: TCP
           name: http
     selector:
