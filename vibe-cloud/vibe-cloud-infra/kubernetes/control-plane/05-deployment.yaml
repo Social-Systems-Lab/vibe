@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: vibe-control-plane-deployment
+    namespace: vibe-control-plane
+    labels:
+        app: vibe-control-plane
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            app: vibe-control-plane
+    template:
+        metadata:
+            labels:
+                app: vibe-control-plane
+        spec:
+            serviceAccountName: vibe-control-plane-sa
+            containers:
+                - name: vibe-control-plane
+                  image: sslorg/vibe-cloud-control-plane:latest # Ensure this image and tag are correct
+                  ports:
+                      - containerPort: 3000 # Assuming the app listens on port 3000
+                  envFrom:
+                      - secretRef:
+                            name: vibe-control-plane-secrets
+                  livenessProbe:
+                      httpGet:
+                          path: /health # Assuming a /health endpoint exists
+                          port: 3000
+                      initialDelaySeconds: 30
+                      periodSeconds: 10
+                  readinessProbe:
+                      httpGet:
+                          path: /health # Assuming a /health endpoint exists
+                          port: 3000
+                      initialDelaySeconds: 15
+                      periodSeconds: 5
+                  # KUBECONFIG_PATH is not needed if the app uses in-cluster ServiceAccount auth
+                  # If it needed to explicitly point to a kubeconfig file mounted into the pod:
+                  # env:
+                  # - name: KUBECONFIG_PATH
+                  #   value: "/path/to/kubeconfig/in/pod" # This would require a volumeMount and volume

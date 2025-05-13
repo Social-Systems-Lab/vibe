@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+    name: vibe-control-plane-ingress
+    namespace: vibe-control-plane
+    annotations:
+        # Use Traefik as the Ingress controller
+        kubernetes.io/ingress.class: traefik
+        # Use cert-manager to issue a certificate from letsencrypt-prod ClusterIssuer
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+    rules:
+        - host: {{ CONTROL_PLANE_HOSTNAME }} # e.g., cp.yourdomain.com
+          http:
+              paths:
+                  - path: / # Route all paths
+                    pathType: Prefix
+                    backend:
+                        service:
+                            name: vibe-control-plane-service # Service created earlier
+                            port:
+                                name: http # Port name from the Service
+    tls: # TLS configuration
+        - hosts:
+              - {{ CONTROL_PLANE_HOSTNAME }}
+          secretName: vibe-control-plane-tls # cert-manager will store the certificate in this secret

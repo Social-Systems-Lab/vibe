@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+    name: vibe-control-plane-service
+    namespace: vibe-control-plane
+    labels:
+        app: vibe-control-plane
+spec:
+    type: ClusterIP # Default, but explicit
+    selector:
+        app: vibe-control-plane # Selects pods from the Deployment
+    ports:
+        - name: http
+          protocol: TCP
+          port: 80 # Port the Service listens on
+          targetPort: 3000 # Port on the pods (containerPort from Deployment)

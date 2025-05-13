@@ -1,0 +1,27 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+    name: vibe-control-plane-cluster-role
+rules:
+    - apiGroups: [""] # Core API group
+      resources: ["namespaces", "secrets", "pods", "pods/log", "services", "persistentvolumeclaims", "configmaps", "serviceaccounts"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    - apiGroups: ["apps"]
+      resources: ["deployments", "statefulsets"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    - apiGroups: ["batch"]
+      resources: ["jobs", "cronjobs"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    - apiGroups: ["networking.k8s.io"]
+      resources: ["ingresses"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    - apiGroups: ["rbac.authorization.k8s.io"]
+      resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "bind", "escalate"]
+# The provision.sh script uses helm directly.
+# Helm itself needs permissions to create these resources.
+# The ServiceAccount under which the control plane runs (which spawns provision.sh)
+# needs to be able to grant/impersonate permissions for Helm operations if Helm runs as that SA.
+# Or, if provision.sh uses its own kubeconfig/context, that context needs the perms.
+# Assuming provision.sh inherits the SA's context:
+# These permissions allow the SA to manage typical Helm chart resources across namespaces.
