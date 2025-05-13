@@ -14,7 +14,8 @@
         "nano": "^10.1.4",
         "@noble/ed25519": "^2.2.3",
         "jose": "^6.0.10",
-        "multibase": "latest"
+        "multibase": "latest",
+        "varint": "latest"
     },
     "devDependencies": {
         "bun-types": "latest",
