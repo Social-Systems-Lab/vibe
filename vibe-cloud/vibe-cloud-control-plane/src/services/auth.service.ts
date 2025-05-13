@@ -17,7 +17,9 @@ import type { PermissionService } from "./permission.service";
 // Removed BlobService type import
 import * as jose from "jose";
 import { randomUUIDv7 } from "bun";
-import { getUserDbName } from "../utils/identity.utils";
+import { getUserDbName, ed25519FromDid } from "../utils/identity.utils"; // Added ed25519FromDid
+import { verify } from "@noble/ed25519"; // Added for signature verification
+import { Buffer } from "buffer"; // Added for signature decoding
 
 export class AuthService {
     private dataService: DataService;
@@ -170,6 +172,7 @@ export class AuthService {
             userDid: userDid,
             isAdmin: true,
             collection: USERS_COLLECTION,
+            // tier: 0, // Admins could also have tiers, or this could be optional
         };
 
         let createResponse: any;
@@ -195,23 +198,18 @@ export class AuthService {
             throw error; // Re-throw original error
         }
 
-        // 2. Create the user-specific database
+        // 2. Create the user-specific database (for the control plane's system user records)
+        // This is NOT for the user's actual Vibe instance data, which will be in its own CouchDB.
         try {
-            const userDbName = getUserDbName(userDid);
-            await this.dataService.ensureDatabaseExists(userDbName);
-            logger.info(`User data database created for admin (from DID): ${userDbName}`);
+            const userSystemDbName = getUserDbName(userDid); // This refers to a DB in the *control plane's* CouchDB
+            await this.dataService.ensureDatabaseExists(userSystemDbName);
+            logger.info(`User system data database created for admin (from DID): ${userSystemDbName}`);
         } catch (error: any) {
-            logger.error(`Failed to create database for admin user ${userDid}:`, error);
-            // This is problematic. User doc exists, but DB doesn't. Should we compensate?
-            // For now, log critical error and throw. Manual cleanup might be needed.
-            // Consider deleting the user document created in step 1?
-            throw new InternalServerError(`Failed to create database for admin user ${userDid}.`);
+            logger.error(`Failed to create system database for admin user ${userDid}:`, error);
+            throw new InternalServerError(`Failed to create system database for admin user ${userDid}.`);
         }
 
         // 3. TODO: Grant default app grants if necessary?
-        // The concept of 'direct permissions' managed by PermissionService is removed.
-        // Admin status is handled by the 'isAdmin' flag on the User document.
-        // If specific default app grants are needed, they would be created as 'apps/{userDid}/{appId}' documents.
         logger.info(`Admin user ${userDid} created. Direct permission setting is skipped (handled by isAdmin flag).`);
 
         // 4. Return the created user object
@@ -221,8 +219,117 @@ export class AuthService {
             userDid: userDid,
             isAdmin: true,
             collection: USERS_COLLECTION,
+            // tier: newUser.tier,
         };
         return createdUser;
+    }
+
+    /**
+     * Creates a new tier 0 user for instance provisioning.
+     * This user is not an admin.
+     * @param userDid - The user's did:vibe identifier.
+     * @param instanceIdentifier - The unique identifier for the instance being provisioned for this user.
+     * @returns The newly created user document.
+     * @throws Error if user creation fails.
+     */
+    async provisionNewUser(userDid: string, instanceIdentifier: string): Promise<User> {
+        const userDocId = `${USERS_COLLECTION}/${userDid}`;
+
+        const newUser: User = {
+            userDid: userDid,
+            isAdmin: false,
+            tier: 0, // Default tier for new users
+            instanceId: instanceIdentifier, // Link user to their instance
+            collection: USERS_COLLECTION,
+        };
+
+        let createResponse: any;
+        try {
+            // Check if user already exists
+            try {
+                const existingUser = await dataService.getDocument<User>(SYSTEM_DB, userDocId);
+                if (existingUser) {
+                    logger.warn(
+                        `User ${userDid} already exists. Instance ID: ${existingUser.instanceId}. Provisioning request for new instance: ${instanceIdentifier}.`
+                    );
+                    // Decide on behavior: update existing user, error out, or allow multiple instances (current model is one instanceId per user doc)
+                    // For now, let's assume we update if instanceId is different, or just return existing if same.
+                    // This logic might need refinement based on product decisions (e.g. one instance per DID).
+                    if (existingUser.instanceId === instanceIdentifier) {
+                        return existingUser;
+                    }
+                    // If instanceId is different, this implies a re-provision or new instance for an existing DID.
+                    // This needs careful consideration. For now, let's throw an error if user exists but requests a new instance.
+                    throw new Error(
+                        `User ${userDid} already exists with instance ${existingUser.instanceId}. Cannot provision new instance ${instanceIdentifier} via this flow yet.`
+                    );
+                }
+            } catch (error: any) {
+                if (!(error instanceof NotFoundError)) {
+                    throw error; // Rethrow unexpected errors
+                }
+                // User not found, proceed to create
+            }
+
+            createResponse = await dataService.createDocument(SYSTEM_DB, USERS_COLLECTION, {
+                _id: userDocId,
+                ...newUser,
+            });
+
+            if (!createResponse.ok) {
+                throw new Error(`Failed to save user document for ${userDid}.`);
+            }
+            logger.info(`User ${userDid} created successfully for instance ${instanceIdentifier}.`);
+        } catch (error: any) {
+            if ((error as any).statusCode === 409) {
+                // Type assertion for statusCode
+                logger.error(`User creation failed: Document conflict for ID ${userDocId} (DID: ${userDid})`, error);
+                throw new Error(`User ${userDid} already exists or a conflict occurred.`);
+            }
+            logger.error(`Error saving user document for ${userDid}:`, error);
+            throw error;
+        }
+
+        // Note: We are NOT creating a user-specific database (like getUserDbName(userDid)) here in the control plane's CouchDB
+        // for the user's actual application data. That data will reside in the dedicated CouchDB instance
+        // deployed by Helm for their specific Vibe instance. This AuthService only manages the user record
+        // in the central SYSTEM_DB.
+
+        const createdUser: User = {
+            _id: createResponse.id,
+            _rev: createResponse.rev,
+            ...newUser,
+        };
+        return createdUser;
+    }
+
+    /**
+     * Verifies a signature made by a DID for a given challenge (nonce and timestamp).
+     * @param did - The DID of the signer.
+     * @param nonce - The client-generated nonce.
+     * @param timestamp - The client-generated timestamp (ISO format).
+     * @param signatureB64 - The base64 encoded signature of JSON.stringify({ did, nonce, timestamp }).
+     * @returns True if the signature is valid, false otherwise.
+     */
+    async verifyDidSignature(did: string, nonce: string, timestamp: string, signatureB64: string): Promise<boolean> {
+        try {
+            const payloadToSign = JSON.stringify({ did, nonce, timestamp });
+            const messageBytes = new TextEncoder().encode(payloadToSign);
+
+            const publicKeyBytes = ed25519FromDid(did);
+            const signatureBytes = Buffer.from(signatureB64, "base64");
+
+            const isValid = await verify(signatureBytes, messageBytes, publicKeyBytes);
+            if (!isValid) {
+                logger.warn(`Signature verification failed for DID ${did}, nonce ${nonce}.`);
+                return false;
+            }
+            logger.debug(`Signature verified successfully for DID ${did}, nonce ${nonce}.`);
+            return true;
+        } catch (error: any) {
+            logger.error(`Error during signature verification for DID ${did}:`, error);
+            return false;
+        }
     }
 
     /**

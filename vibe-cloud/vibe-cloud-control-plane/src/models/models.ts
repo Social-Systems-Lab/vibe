@@ -8,7 +8,8 @@ import type { DocumentInsertResponse, MaybeDocument } from "nano";
 export const USERS_COLLECTION = "users" as const;
 export const BLOBS_COLLECTION = "blobs" as const;
 export const CLAIM_CODES_COLLECTION = "claimCodes" as const;
-export const APPS_COLLECTION = "apps" as const; // New collection constant
+export const APPS_COLLECTION = "apps" as const;
+export const INSTANCES_COLLECTION = "instances" as const; // For tracking provisioned instances
 
 //#endregion
 
@@ -31,6 +32,8 @@ export const UserSchema = t.Object({
     _rev: t.Optional(t.String()),
     userDid: t.String(),
     isAdmin: t.Boolean(),
+    tier: t.Optional(t.Number({ default: 0, description: "User tier, e.g., 0 for standard, higher for privileged." })),
+    instanceId: t.Optional(t.String({ description: "Identifier of the Vibe Cloud instance provisioned for this user." })),
     collection: t.Literal(USERS_COLLECTION),
 });
 export type User = Static<typeof UserSchema>;
@@ -220,11 +223,74 @@ export const ErrorResponseSchema = t.Object({
 export type ErrorResponse = Static<typeof ErrorResponseSchema>;
 
 // Provisioning Schemas
-export const ProvisionRequestSchema = t.Object({
-    targetUserDid: t.String({ description: "The DID of the user for whom the instance is being provisioned." }),
-    instanceIdentifier: t.String({ description: "A unique identifier for the new instance (e.g., subdomain part)." }),
+
+// Schema for documents in the INSTANCES_COLLECTION
+export const InstanceSchema = t.Object({
+    _id: t.String({ description: "Instance identifier, typically derived from user DID." }), // instanceIdentifier becomes the _id
+    _rev: t.Optional(t.String()),
+    userDid: t.String({ description: "DID of the user this instance belongs to." }),
+    status: t.Union([t.Literal("pending"), t.Literal("provisioning"), t.Literal("completed"), t.Literal("failed")], {
+        description: "Current status of the instance provisioning.",
+    }),
+    instanceUrl: t.Optional(t.String({ format: "uri", description: "URL of the provisioned instance, available when status is 'completed'." })),
+    createdAt: t.String({ format: "date-time", description: "Timestamp of when the provisioning request was initiated." }),
+    updatedAt: t.Optional(t.String({ format: "date-time", description: "Timestamp of the last status update." })),
+    errorDetails: t.Optional(t.String({ description: "Details of the error if provisioning failed." })),
+    requestDetails: t.Optional(
+        t.Object({
+            // Store the request details for auditing/replay prevention
+            nonce: t.String(),
+            timestamp: t.String(),
+        })
+    ),
+    collection: t.Literal(INSTANCES_COLLECTION),
 });
-export type ProvisionRequest = Static<typeof ProvisionRequestSchema>;
+export type Instance = Static<typeof InstanceSchema>;
+
+// Schema for the new user-driven provisioning request
+export const ProvisionInstanceRequestSchema = t.Object({
+    did: t.String({ description: "User's DID for authentication." }),
+    nonce: t.String({ description: "Client-generated nonce for replay protection." }),
+    timestamp: t.String({ format: "date-time", description: "Client-generated timestamp for the request." }),
+    signature: t.String({ description: "Base64 encoded signature of {did, nonce, timestamp}." }),
+});
+export type ProvisionInstanceRequest = Static<typeof ProvisionInstanceRequestSchema>;
+
+// Schema for the 202 Accepted response from instance provisioning
+export const ProvisionInstanceResponseSchema = t.Object({
+    message: t.String(),
+    instanceIdentifier: t.String(),
+});
+export type ProvisionInstanceResponse = Static<typeof ProvisionInstanceResponseSchema>;
+
+// Schema for the instance status endpoint response
+export const InstanceStatusResponseSchema = t.Object({
+    instanceIdentifier: t.String(),
+    userDid: t.String(),
+    status: t.String(), // Should match one of the InstanceSchema status literals
+    instanceUrl: t.Optional(t.String({ format: "uri" })),
+    createdAt: t.String({ format: "date-time" }),
+    updatedAt: t.Optional(t.String({ format: "date-time" })),
+    errorDetails: t.Optional(t.String()),
+});
+export type InstanceStatusResponse = Static<typeof InstanceStatusResponseSchema>;
+
+// Schema for the internal callback to update provisioning status
+export const InternalProvisionUpdateRequestSchema = t.Object({
+    instanceIdentifier: t.String(),
+    status: t.Union([t.Literal("completed"), t.Literal("failed")]),
+    url: t.Optional(t.String({ format: "uri" })), // Required if status is 'completed'
+    error: t.Optional(t.String()), // Required if status is 'failed'
+});
+export type InternalProvisionUpdateRequest = Static<typeof InternalProvisionUpdateRequestSchema>;
+
+// This is the old admin-only provisioning request schema, can be removed or kept if admin provisioning is still needed.
+// For now, let's comment it out as the primary flow is user-driven.
+// export const ProvisionRequestSchema = t.Object({
+//     targetUserDid: t.String({ description: "The DID of the user for whom the instance is being provisioned." }),
+//     instanceIdentifier: t.String({ description: "A unique identifier for the new instance (e.g., subdomain part)." }),
+// });
+// export type ProvisionRequest = Static<typeof ProvisionRequestSchema>;
 
 //#endregion
 

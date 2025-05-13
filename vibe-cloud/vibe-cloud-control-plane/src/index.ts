@@ -1,4 +1,4 @@
-import { Elysia, t, NotFoundError, InternalServerError } from "elysia";
+import { Elysia, t, NotFoundError, InternalServerError, type Static } from "elysia";
 import { jwt } from "@elysiajs/jwt";
 import { cors } from "@elysiajs/cors";
 import { dataService, DataService } from "./services/data.service"; // Import service instance and type
@@ -18,11 +18,18 @@ import {
     CLAIM_CODES_COLLECTION,
     ErrorResponseSchema,
     JWTPayloadSchema,
-    ProvisionRequestSchema,
+    // ProvisionRequestSchema, // Old admin-only schema, removed from models
+    ProvisionInstanceRequestSchema, // New user-driven schema
+    ProvisionInstanceResponseSchema,
+    InstanceStatusResponseSchema,
+    InternalProvisionUpdateRequestSchema,
+    INSTANCES_COLLECTION, // For the new collection
     type ClaimCode,
     type User,
+    type Instance,
 } from "./models/models";
-import { SYSTEM_DB, USERS_COLLECTION } from "./utils/constants"; // Import USERS_COLLECTION
+import { SYSTEM_DB, USERS_COLLECTION } from "./utils/constants";
+import { randomUUID } from "crypto"; // For generating instanceIdentifier
 
 // Environment Variable Validation
 const jwtSecret = process.env.JWT_SECRET;
@@ -261,109 +268,320 @@ export const app = new Elysia()
             }
         )
     )
-    // --- Provisioning Routes (Admin Only) ---
+    // --- New User-Driven Provisioning Routes ---
     .group("/api/v1/provision", (group) =>
         group
-            // Derive JWT user context
-            .derive(async ({ jwt, request: { headers } }) => {
-                const authHeader = headers.get("authorization");
-                if (!authHeader || !authHeader.startsWith("Bearer ")) return { user: null };
-                const token = authHeader.substring(7);
-                try {
-                    const payload = await jwt.verify(token);
-                    return { user: payload as { userDid: string } };
-                } catch (error) {
-                    return { user: null };
-                }
-            })
-            // Middleware: Check User JWT and Admin status
-            .onBeforeHandle(async ({ user, authService, set }) => {
-                if (!user) {
-                    set.status = 401;
-                    return { error: "Unauthorized: Invalid or missing user token." };
-                }
-                const isAdmin = await authService.isAdmin(user.userDid);
-                if (!isAdmin) {
-                    set.status = 403;
-                    logger.warn(`Provisioning attempt denied for non-admin user: ${user.userDid}`);
-                    return { error: "Forbidden: Only administrators can provision new instances." };
-                }
-                logger.info(`Admin user ${user.userDid} accessing provisioning endpoint.`);
-            })
-            // POST /api/v1/provision/request - Trigger a new instance provisioning
+            // POST /api/v1/provision/instance - User requests a new instance
             .post(
-                "/request",
-                async ({ user, body, set }) => {
-                    const { userDid: requestingAdminDid } = user!;
-                    const { targetUserDid, instanceIdentifier } = body;
+                "/instance",
+                async ({ authService, dataService, body, set }) => {
+                    const { did, nonce, timestamp, signature } = body;
+                    logger.info(`Instance provisioning request received for DID: ${did}, Nonce: ${nonce}`);
 
-                    logger.info(
-                        `Provisioning request received from admin ${requestingAdminDid} for user ${targetUserDid} with identifier ${instanceIdentifier}`
-                    );
+                    // 1. Verify Signature
+                    const isSignatureValid = await authService.verifyDidSignature(did, nonce, timestamp, signature);
+                    if (!isSignatureValid) {
+                        set.status = 401;
+                        return { error: "Invalid signature or authentication failed." };
+                    }
 
-                    // --- Execute Provisioning Script ---
-                    // Resolve paths relative to the current working directory (vibe-cloud/vibe-cloud-control-plane)
+                    // 2. Check Timestamp Window (e.g., +/- 5 minutes)
+                    const requestTime = new Date(timestamp);
+                    const now = new Date();
+                    const fiveMinutes = 5 * 60 * 1000;
+                    if (Math.abs(now.getTime() - requestTime.getTime()) > fiveMinutes) {
+                        logger.warn(`Request timestamp ${timestamp} for DID ${did} is outside the valid window.`);
+                        set.status = 400;
+                        return { error: "Request timestamp is invalid or expired." };
+                    }
+
+                    // 3. Generate Instance Identifier (e.g., based on DID hash or UUID)
+                    // For simplicity, using a UUID for now. Ensure it's K8s/DNS compliant if used directly.
+                    // A more stable identifier might be `vibe-u-${did.substring(did.lastIndexOf(':') + 1).slice(0, 12)}`
+                    const instanceIdentifier = `vibe-${randomUUID().substring(0, 18)}`; // Example: vibe-1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed (shortened)
+
+                    // 4. Check for existing instance request with this DID and Nonce to prevent replay
+                    try {
+                        const existingInstanceQuery: nano.MangoQuery = {
+                            selector: {
+                                collection: INSTANCES_COLLECTION,
+                                userDid: did,
+                                "requestDetails.nonce": nonce,
+                            },
+                            limit: 1,
+                        };
+                        const existingRequests = await dataService.findDocuments<Instance>(SYSTEM_DB, existingInstanceQuery);
+                        if (existingRequests.docs && existingRequests.docs.length > 0) {
+                            logger.warn(`Replay attempt for DID ${did} with nonce ${nonce}. Instance already processed: ${existingRequests.docs[0]._id}`);
+                            set.status = 409; // Conflict
+                            return { error: "This provisioning request (nonce) has already been processed." };
+                        }
+                    } catch (error: any) {
+                        logger.error(`Error checking for existing instance request for DID ${did}, nonce ${nonce}:`, error);
+                        set.status = 500;
+                        return { error: "Internal server error while validating request." };
+                    }
+
+                    // 5. Create User Record (Tier 0)
+                    try {
+                        await authService.provisionNewUser(did, instanceIdentifier);
+                    } catch (error: any) {
+                        logger.error(`Failed to create user record for DID ${did}, instance ${instanceIdentifier}:`, error);
+                        // Handle specific errors like user already exists with a different instance if needed
+                        if (error.message?.includes("already exists")) {
+                            set.status = 409; // Conflict
+                            return { error: error.message };
+                        }
+                        set.status = 500;
+                        return { error: "Failed to initialize user for provisioning." };
+                    }
+
+                    // 6. Create "pending" Instance Record
+                    const nowISO = new Date().toISOString();
+                    const newInstanceRecord: Omit<Instance, "_rev"> = {
+                        _id: instanceIdentifier,
+                        userDid: did,
+                        status: "pending",
+                        createdAt: nowISO,
+                        requestDetails: { nonce, timestamp },
+                        collection: INSTANCES_COLLECTION,
+                    };
+                    try {
+                        await dataService.createDocument(SYSTEM_DB, INSTANCES_COLLECTION, newInstanceRecord);
+                        logger.info(`Instance record ${instanceIdentifier} created for DID ${did} with status 'pending'.`);
+                    } catch (error: any) {
+                        logger.error(`Failed to create instance record for ${instanceIdentifier}:`, error);
+                        set.status = 500;
+                        return { error: "Failed to record provisioning request." };
+                    }
+
+                    // 7. Asynchronously Trigger Provisioning Script/Process
+                    // TODO: Implement the actual call to a modified provision.sh or K8s client logic
+                    // 7. Asynchronously Trigger Provisioning Script/Process
                     const scriptPath = path.resolve(process.cwd(), "../vibe-cloud-infra/provisioning/provision.sh");
-                    const terraformDir = path.resolve(process.cwd(), "../vibe-cloud-infra/terraform");
+                    // The CWD for the script should be where it can find the Helm chart, e.g., `vibe-cloud-infra`
+                    const scriptCwd = path.resolve(process.cwd(), "../vibe-cloud-infra");
 
-                    logger.info(`Executing provisioning script: ${scriptPath} in cwd: ${terraformDir}`);
+                    logger.info(`Executing provisioning script: ${scriptPath} in cwd: ${scriptCwd} for instance ${instanceIdentifier}`);
+
+                    const controlPlaneBaseUrl = process.env.CONTROL_PLANE_BASE_URL || `http://localhost:${process.env.CONTROL_PLANE_PORT || 3001}`;
+
+                    const provisionEnv = {
+                        ...process.env, // Pass existing env vars
+                        TARGET_USER_DID: did,
+                        INSTANCE_IDENTIFIER: instanceIdentifier,
+                        CONTROL_PLANE_URL: controlPlaneBaseUrl,
+                        INTERNAL_SECRET_TOKEN: process.env.INTERNAL_SECRET_TOKEN || "dev-secret-token", // Use a proper secret in prod
+                        // KUBECONFIG_PATH: process.env.KUBECONFIG_PATH, // Optional, if set in CP env
+                    };
+
+                    // Remove undefined keys from env, spawn doesn't like them
+                    Object.keys(provisionEnv).forEach((key) => (provisionEnv as any)[key] === undefined && delete (provisionEnv as any)[key]);
 
                     const provisionProcess = spawn("bash", [scriptPath], {
-                        cwd: terraformDir,
-                        env: {
-                            ...process.env,
-                            TARGET_USER_DID: targetUserDid,
-                            INSTANCE_IDENTIFIER: instanceIdentifier,
-                            // TODO: Securely pass Scaleway credentials
-                        },
-                        stdio: ["ignore", "pipe", "pipe"],
+                        cwd: scriptCwd,
+                        env: provisionEnv,
+                        stdio: ["ignore", "pipe", "pipe"], // ignore stdin, pipe stdout/stderr
+                        detached: true, // Run independently of the parent
                     });
 
+                    provisionProcess.unref(); // Allow parent to exit independently
+
                     provisionProcess.stdout.on("data", (data) => {
-                        logger.info(`[Provision Script STDOUT - ${instanceIdentifier}]: ${data.toString().trim()}`);
+                        logger.info(`[Provision STDOUT - ${instanceIdentifier}]: ${data.toString().trim()}`);
                     });
 
                     provisionProcess.stderr.on("data", (data) => {
-                        logger.error(`[Provision Script STDERR - ${instanceIdentifier}]: ${data.toString().trim()}`);
+                        logger.error(`[Provision STDERR - ${instanceIdentifier}]: ${data.toString().trim()}`);
                     });
 
-                    provisionProcess.on("close", (code) => {
-                        if (code === 0) {
-                            logger.info(`Provisioning script for instance '${instanceIdentifier}' finished successfully (exit code ${code}).`);
-                            // TODO: Post-provisioning steps
-                        } else {
-                            logger.error(`Provisioning script for instance '${instanceIdentifier}' failed with exit code ${code}.`);
-                            // TODO: Failure handling
+                    provisionProcess.on("close", async (code) => {
+                        logger.info(`Provisioning script for instance '${instanceIdentifier}' exited with code ${code}.`);
+                        // If script exits non-zero *before* calling back, it's an early failure.
+                        if (code !== 0) {
+                            try {
+                                const instanceDoc = await dataService.getDocument<Instance>(SYSTEM_DB, `${INSTANCES_COLLECTION}/${instanceIdentifier}`);
+                                // Only update to failed if it's still pending/provisioning, to avoid overwriting a "completed" status from a successful callback
+                                if (instanceDoc && (instanceDoc.status === "pending" || instanceDoc.status === "provisioning")) {
+                                    const updatedFields: Partial<Instance> = {
+                                        status: "failed",
+                                        updatedAt: new Date().toISOString(),
+                                        errorDetails: `Provisioning script exited with code ${code}. Check script logs.`,
+                                    };
+                                    await dataService.updateDocument(SYSTEM_DB, INSTANCES_COLLECTION, instanceDoc._id!, instanceDoc._rev!, {
+                                        ...instanceDoc,
+                                        ...updatedFields,
+                                    });
+                                    logger.error(`Instance ${instanceIdentifier} marked as 'failed' due to script exit code ${code}.`);
+                                }
+                            } catch (dbError) {
+                                logger.error(`Failed to update instance ${instanceIdentifier} status after script error:`, dbError);
+                            }
                         }
                     });
 
-                    provisionProcess.on("error", (err) => {
+                    provisionProcess.on("error", async (err) => {
                         logger.error(`Failed to start provisioning script for instance '${instanceIdentifier}':`, err);
-                        // TODO: Handle failure to start
+                        try {
+                            const instanceDoc = await dataService.getDocument<Instance>(SYSTEM_DB, `${INSTANCES_COLLECTION}/${instanceIdentifier}`);
+                            if (instanceDoc && (instanceDoc.status === "pending" || instanceDoc.status === "provisioning")) {
+                                const updatedFields: Partial<Instance> = {
+                                    status: "failed",
+                                    updatedAt: new Date().toISOString(),
+                                    errorDetails: `Failed to start provisioning script: ${err.message}`,
+                                };
+                                await dataService.updateDocument(SYSTEM_DB, INSTANCES_COLLECTION, instanceDoc._id!, instanceDoc._rev!, {
+                                    ...instanceDoc,
+                                    ...updatedFields,
+                                });
+                                logger.error(`Instance ${instanceIdentifier} marked as 'failed' due to script start error.`);
+                            }
+                        } catch (dbError) {
+                            logger.error(`Failed to update instance ${instanceIdentifier} status after script start error:`, dbError);
+                        }
                     });
+
+                    // Update status to 'provisioning' immediately after attempting to spawn
+                    try {
+                        const pendingDoc = await dataService.getDocument<Instance>(SYSTEM_DB, `${INSTANCES_COLLECTION}/${instanceIdentifier}`);
+                        if (pendingDoc && pendingDoc.status === "pending") {
+                            // Ensure it's still pending
+                            const updatedDoc: Partial<Instance> = { status: "provisioning", updatedAt: new Date().toISOString() };
+                            await dataService.updateDocument(SYSTEM_DB, INSTANCES_COLLECTION, pendingDoc._id!, pendingDoc._rev!, {
+                                ...pendingDoc,
+                                ...updatedDoc,
+                            });
+                            logger.info(`Instance ${instanceIdentifier} status updated to 'provisioning'.`);
+                        }
+                    } catch (err) {
+                        logger.error(`Error updating instance ${instanceIdentifier} to 'provisioning':`, err);
+                        // If this fails, the instance record might remain 'pending'. The script callback should eventually correct it.
+                    }
 
                     set.status = 202; // Accepted
                     return {
                         message: "Provisioning request accepted and initiated.",
                         instanceIdentifier: instanceIdentifier,
-                        targetUserDid: targetUserDid,
                     };
                 },
                 {
-                    body: ProvisionRequestSchema,
+                    body: ProvisionInstanceRequestSchema,
                     response: {
-                        202: t.Object({
-                            message: t.String(),
-                            instanceIdentifier: t.String(),
-                            targetUserDid: t.String(),
-                        }),
-                        // Add other potential error responses
+                        202: ProvisionInstanceResponseSchema,
                         400: ErrorResponseSchema,
                         401: ErrorResponseSchema,
-                        403: ErrorResponseSchema,
+                        409: ErrorResponseSchema,
                         500: ErrorResponseSchema,
                     },
-                    detail: { summary: "Initiate provisioning of a new Vibe Cloud instance (Admin Only)." },
+                    detail: { summary: "User requests provisioning of a new Vibe Cloud instance." },
+                }
+            )
+            // GET /api/v1/provision/status/:instanceIdentifier - User checks status
+            .get(
+                "/status/:instanceIdentifier",
+                async ({ dataService, params, set }) => {
+                    const { instanceIdentifier } = params;
+                    try {
+                        const instanceDoc = await dataService.getDocument<Instance>(SYSTEM_DB, `${INSTANCES_COLLECTION}/${instanceIdentifier}`);
+                        if (!instanceDoc) {
+                            set.status = 404;
+                            return { error: "Instance not found." };
+                        }
+                        const response: Static<typeof InstanceStatusResponseSchema> = {
+                            instanceIdentifier: instanceDoc._id!,
+                            userDid: instanceDoc.userDid,
+                            status: instanceDoc.status,
+                            instanceUrl: instanceDoc.instanceUrl,
+                            createdAt: instanceDoc.createdAt,
+                            updatedAt: instanceDoc.updatedAt,
+                            errorDetails: instanceDoc.errorDetails,
+                        };
+                        return response;
+                    } catch (error: any) {
+                        if (error instanceof NotFoundError || error.message?.includes("not found")) {
+                            set.status = 404;
+                            return { error: "Instance not found." };
+                        }
+                        logger.error(`Error fetching status for instance ${instanceIdentifier}:`, error);
+                        set.status = 500;
+                        return { error: "Internal server error." };
+                    }
+                },
+                {
+                    params: t.Object({ instanceIdentifier: t.String() }),
+                    response: { 200: InstanceStatusResponseSchema, 404: ErrorResponseSchema, 500: ErrorResponseSchema },
+                    detail: { summary: "Get the provisioning status of a Vibe Cloud instance." },
+                }
+            )
+    )
+    // --- Internal Callback Route for Provisioning Updates ---
+    .group("/api/v1/internal", (group) =>
+        group
+            // TODO: Add security middleware for this internal route (e.g., IP whitelist, secret token)
+            .onBeforeHandle(async ({ request, set }) => {
+                const internalAuthToken = process.env.INTERNAL_SECRET_TOKEN;
+                const requestToken = request.headers.get("authorization")?.replace("Bearer ", "");
+                if (!internalAuthToken || !requestToken || requestToken !== internalAuthToken) {
+                    logger.warn("Unauthorized attempt to access internal provisioning update endpoint.");
+                    set.status = 401;
+                    return { error: "Unauthorized." };
+                }
+            })
+            .post(
+                "/provision/update",
+                async ({ dataService, body, set }) => {
+                    const { instanceIdentifier, status, url, error: errorMsg } = body;
+                    logger.info(`Internal provision update for ${instanceIdentifier}: status=${status}, url=${url}, error=${errorMsg}`);
+
+                    try {
+                        const instanceDoc = await dataService.getDocument<Instance>(SYSTEM_DB, `${INSTANCES_COLLECTION}/${instanceIdentifier}`);
+                        if (!instanceDoc) {
+                            logger.error(`Instance ${instanceIdentifier} not found for internal update.`);
+                            set.status = 404; // Or 400 if this should always exist
+                            return { error: "Instance to update not found." };
+                        }
+
+                        const updatedFields: Partial<Instance> = {
+                            status,
+                            updatedAt: new Date().toISOString(),
+                        };
+                        if (status === "completed" && url) {
+                            updatedFields.instanceUrl = url;
+                        } else if (status === "failed" && errorMsg) {
+                            updatedFields.errorDetails = errorMsg;
+                        } else if (status === "completed" && !url) {
+                            logger.error(`Internal update for ${instanceIdentifier} to 'completed' but missing URL.`);
+                            set.status = 400;
+                            return { error: "Completed status requires a URL." };
+                        }
+
+                        await dataService.updateDocument(SYSTEM_DB, INSTANCES_COLLECTION, instanceDoc._id!, instanceDoc._rev!, {
+                            ...instanceDoc,
+                            ...updatedFields,
+                        });
+                        logger.info(`Instance ${instanceIdentifier} updated to status '${status}'.`);
+                        set.status = 200;
+                        return { message: "Instance status updated." };
+                    } catch (error: any) {
+                        if (error instanceof NotFoundError || error.message?.includes("not found")) {
+                            set.status = 404;
+                            return { error: "Instance to update not found." };
+                        }
+                        logger.error(`Error updating instance ${instanceIdentifier} via internal callback:`, error);
+                        set.status = 500;
+                        return { error: "Internal server error during update." };
+                    }
+                },
+                {
+                    body: InternalProvisionUpdateRequestSchema,
+                    response: {
+                        200: t.Object({ message: t.String() }),
+                        400: ErrorResponseSchema,
+                        401: ErrorResponseSchema,
+                        404: ErrorResponseSchema,
+                        500: ErrorResponseSchema,
+                    },
+                    detail: { summary: "Internal callback to update the status of a provisioning process." },
                 }
             )
     );
