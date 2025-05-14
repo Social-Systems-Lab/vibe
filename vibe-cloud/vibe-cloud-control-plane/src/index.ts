@@ -339,7 +339,7 @@ export const app = new Elysia()
                     // 6. Create "pending" Instance Record
                     const nowISO = new Date().toISOString();
                     const newInstanceRecord: Omit<Instance, "_rev"> = {
-                        _id: instanceIdentifier,
+                        _id: `${INSTANCES_COLLECTION}/${instanceIdentifier}`,
                         userDid: did,
                         status: "pending",
                         createdAt: nowISO,
@@ -348,9 +348,9 @@ export const app = new Elysia()
                     };
                     try {
                         await dataService.createDocument(SYSTEM_DB, INSTANCES_COLLECTION, newInstanceRecord);
-                        logger.info(`Instance record ${instanceIdentifier} created for DID ${did} with status 'pending'.`);
+                        logger.info(`Instance record ${INSTANCES_COLLECTION}/${instanceIdentifier} created for DID ${did} with status 'pending'.`);
                     } catch (error: any) {
-                        logger.error(`Failed to create instance record for ${instanceIdentifier}:`, error);
+                        logger.error(`Failed to create instance record for ${INSTANCES_COLLECTION}/${instanceIdentifier}:`, error);
                         set.status = 500;
                         return { error: "Failed to record provisioning request." };
                     }
@@ -400,7 +400,8 @@ export const app = new Elysia()
                         // If script exits non-zero *before* calling back, it's an early failure.
                         if (code !== 0) {
                             try {
-                                const instanceDoc = await dataService.getDocument<Instance>(SYSTEM_DB, `${INSTANCES_COLLECTION}/${instanceIdentifier}`);
+                                const docIdToFetch = `${INSTANCES_COLLECTION}/${instanceIdentifier}`;
+                                const instanceDoc = await dataService.getDocument<Instance>(SYSTEM_DB, docIdToFetch);
                                 // Only update to failed if it's still pending/provisioning, to avoid overwriting a "completed" status from a successful callback
                                 if (instanceDoc && (instanceDoc.status === "pending" || instanceDoc.status === "provisioning")) {
                                     const updatedFields: Partial<Instance> = {
@@ -409,13 +410,14 @@ export const app = new Elysia()
                                         errorDetails: `Provisioning script exited with code ${code}. Check script logs.`,
                                     };
                                     await dataService.updateDocument(SYSTEM_DB, INSTANCES_COLLECTION, instanceDoc._id!, instanceDoc._rev!, {
+                                        // _id here is already prefixed
                                         ...instanceDoc,
                                         ...updatedFields,
                                     });
-                                    logger.error(`Instance ${instanceIdentifier} marked as 'failed' due to script exit code ${code}.`);
+                                    logger.error(`Instance ${docIdToFetch} marked as 'failed' due to script exit code ${code}.`);
                                 }
                             } catch (dbError) {
-                                logger.error(`Failed to update instance ${instanceIdentifier} status after script error:`, dbError);
+                                logger.error(`Failed to update instance ${INSTANCES_COLLECTION}/${instanceIdentifier} status after script error:`, dbError);
                             }
                         }
                     });
@@ -423,7 +425,8 @@ export const app = new Elysia()
                     provisionProcess.on("error", async (err) => {
                         logger.error(`Failed to start provisioning script for instance '${instanceIdentifier}':`, err);
                         try {
-                            const instanceDoc = await dataService.getDocument<Instance>(SYSTEM_DB, `${INSTANCES_COLLECTION}/${instanceIdentifier}`);
+                            const docIdToFetch = `${INSTANCES_COLLECTION}/${instanceIdentifier}`;
+                            const instanceDoc = await dataService.getDocument<Instance>(SYSTEM_DB, docIdToFetch);
                             if (instanceDoc && (instanceDoc.status === "pending" || instanceDoc.status === "provisioning")) {
                                 const updatedFields: Partial<Instance> = {
                                     status: "failed",
@@ -434,16 +437,17 @@ export const app = new Elysia()
                                     ...instanceDoc,
                                     ...updatedFields,
                                 });
-                                logger.error(`Instance ${instanceIdentifier} marked as 'failed' due to script start error.`);
+                                logger.error(`Instance ${docIdToFetch} marked as 'failed' due to script start error.`);
                             }
                         } catch (dbError) {
-                            logger.error(`Failed to update instance ${instanceIdentifier} status after script start error:`, dbError);
+                            logger.error(`Failed to update instance ${INSTANCES_COLLECTION}/${instanceIdentifier} status after script start error:`, dbError);
                         }
                     });
 
                     // Update status to 'provisioning' immediately after attempting to spawn
                     try {
-                        const pendingDoc = await dataService.getDocument<Instance>(SYSTEM_DB, `${INSTANCES_COLLECTION}/${instanceIdentifier}`);
+                        const docIdToFetch = `${INSTANCES_COLLECTION}/${instanceIdentifier}`;
+                        const pendingDoc = await dataService.getDocument<Instance>(SYSTEM_DB, docIdToFetch);
                         if (pendingDoc && pendingDoc.status === "pending") {
                             // Ensure it's still pending
                             const updatedDoc: Partial<Instance> = { status: "provisioning", updatedAt: new Date().toISOString() };
@@ -451,10 +455,10 @@ export const app = new Elysia()
                                 ...pendingDoc,
                                 ...updatedDoc,
                             });
-                            logger.info(`Instance ${instanceIdentifier} status updated to 'provisioning'.`);
+                            logger.info(`Instance ${docIdToFetch} status updated to 'provisioning'.`);
                         }
                     } catch (err) {
-                        logger.error(`Error updating instance ${instanceIdentifier} to 'provisioning':`, err);
+                        logger.error(`Error updating instance ${INSTANCES_COLLECTION}/${instanceIdentifier} to 'provisioning':`, err);
                         // If this fails, the instance record might remain 'pending'. The script callback should eventually correct it.
                     }
 
@@ -482,7 +486,8 @@ export const app = new Elysia()
                 async ({ dataService, params, set }) => {
                     const { instanceIdentifier } = params;
                     try {
-                        const instanceDoc = await dataService.getDocument<Instance>(SYSTEM_DB, `${INSTANCES_COLLECTION}/${instanceIdentifier}`);
+                        const docIdToFetch = `${INSTANCES_COLLECTION}/${instanceIdentifier}`;
+                        const instanceDoc = await dataService.getDocument<Instance>(SYSTEM_DB, docIdToFetch);
                         if (!instanceDoc) {
                             set.status = 404;
                             return { error: "Instance not found." };
@@ -534,9 +539,10 @@ export const app = new Elysia()
                     logger.info(`Internal provision update for ${instanceIdentifier}: status=${status}, url=${url}, error=${errorMsg}`);
 
                     try {
-                        const instanceDoc = await dataService.getDocument<Instance>(SYSTEM_DB, `${INSTANCES_COLLECTION}/${instanceIdentifier}`);
+                        const docIdToUpdate = `${INSTANCES_COLLECTION}/${instanceIdentifier}`;
+                        const instanceDoc = await dataService.getDocument<Instance>(SYSTEM_DB, docIdToUpdate);
                         if (!instanceDoc) {
-                            logger.error(`Instance ${instanceIdentifier} not found for internal update.`);
+                            logger.error(`Instance ${docIdToUpdate} not found for internal update.`);
                             set.status = 404; // Or 400 if this should always exist
                             return { error: "Instance to update not found." };
                         }
@@ -550,7 +556,7 @@ export const app = new Elysia()
                         } else if (status === "failed" && errorMsg) {
                             updatedFields.errorDetails = errorMsg;
                         } else if (status === "completed" && !url) {
-                            logger.error(`Internal update for ${instanceIdentifier} to 'completed' but missing URL.`);
+                            logger.error(`Internal update for ${docIdToUpdate} to 'completed' but missing URL.`);
                             set.status = 400;
                             return { error: "Completed status requires a URL." };
                         }
@@ -559,7 +565,7 @@ export const app = new Elysia()
                             ...instanceDoc,
                             ...updatedFields,
                         });
-                        logger.info(`Instance ${instanceIdentifier} updated to status '${status}'.`);
+                        logger.info(`Instance ${docIdToUpdate} updated to status '${status}'.`);
                         set.status = 200;
                         return { message: "Instance status updated." };
                     } catch (error: any) {
@@ -567,7 +573,7 @@ export const app = new Elysia()
                             set.status = 404;
                             return { error: "Instance to update not found." };
                         }
-                        logger.error(`Error updating instance ${instanceIdentifier} via internal callback:`, error);
+                        logger.error(`Error updating instance ${INSTANCES_COLLECTION}/${instanceIdentifier} via internal callback:`, error);
                         set.status = 500;
                         return { error: "Internal server error during update." };
                     }
