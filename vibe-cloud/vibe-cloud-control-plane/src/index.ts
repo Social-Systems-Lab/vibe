@@ -626,7 +626,7 @@ export function startServer(port: number = 3001): Server {
             // websocket: bunWsHandler, // Add back when needed
             fetch: app.fetch, // Use Elysia's fetch directly for now
         });
-        logger.info(`🚀 Vibe Cloud Control Plane started at http://${server.hostname}:${server.port}`);
+        logger.info(`🚀 Vibe Cloud Control Plane (Version: ${process.env.APP_VERSION || "unknown"}) started at http://${server.hostname}:${server.port}`);
         return server;
     } catch (error) {
         logger.error(`Failed to start control plane server on port ${port}:`, error);
