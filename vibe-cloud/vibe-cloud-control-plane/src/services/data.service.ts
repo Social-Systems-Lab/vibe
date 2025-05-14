@@ -41,7 +41,8 @@ export class DataService {
             logger.error("CRITICAL: CouchDB environment variables (URL, USER, PASSWORD) are not fully set.");
             throw new Error("CouchDB connection details missing in environment variables.");
         }
-        logger.debug(`DB Connection Details - User: ${dbUser}, Password (first 3): ${dbPassword?.substring(0, 3)}***, URL: ${dbUrl}`);
+        // Use logger.info to ensure this critical debug information is printed
+        logger.info(`DB Connection Details Check - User: [${dbUser}], Password (first 3 chars): [${dbPassword?.substring(0, 3)}***], URL: [${dbUrl}]`);
 
         this.isConnecting = true;
         this.connectionPromise = (async () => {
