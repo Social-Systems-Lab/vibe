@@ -8,6 +8,11 @@ COPY package.json bun.lockb* ./
 # Install dependencies
 RUN bun install --frozen-lockfile
 
+# Install bash for running provisioning scripts
+USER root 
+RUN apt-get update && apt-get install -y bash && rm -rf /var/lib/apt/lists/*
+USER bun 
+
 # Copy the rest of the application code
 COPY . .
 

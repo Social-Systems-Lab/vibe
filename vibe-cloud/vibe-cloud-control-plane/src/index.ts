@@ -409,15 +409,31 @@ export const app = new Elysia()
                                         updatedAt: new Date().toISOString(),
                                         errorDetails: `Provisioning script exited with code ${code}. Check script logs.`,
                                     };
-                                    await dataService.updateDocument(SYSTEM_DB, INSTANCES_COLLECTION, instanceDoc._id!, instanceDoc._rev!, {
-                                        // _id here is already prefixed
-                                        ...instanceDoc,
-                                        ...updatedFields,
-                                    });
+                                    try {
+                                        await dataService.updateDocument(SYSTEM_DB, INSTANCES_COLLECTION, instanceDoc._id!, instanceDoc._rev!, {
+                                            // _id here is already prefixed
+                                            ...instanceDoc,
+                                            ...updatedFields,
+                                        });
+                                    } catch (updateError: any) {
+                                        if (updateError.message === "Revision conflict") {
+                                            logger.warn(`Revision conflict on updating instance ${docIdToFetch} to failed (script close), retrying...`);
+                                            const freshInstanceDoc = await dataService.getDocument<Instance>(SYSTEM_DB, docIdToFetch);
+                                            await dataService.updateDocument(SYSTEM_DB, INSTANCES_COLLECTION, freshInstanceDoc._id!, freshInstanceDoc._rev!, {
+                                                ...freshInstanceDoc,
+                                                ...updatedFields,
+                                            });
+                                        } else {
+                                            throw updateError;
+                                        }
+                                    }
                                     logger.error(`Instance ${docIdToFetch} marked as 'failed' due to script exit code ${code}.`);
                                 }
                             } catch (dbError) {
-                                logger.error(`Failed to update instance ${INSTANCES_COLLECTION}/${instanceIdentifier} status after script error:`, dbError);
+                                logger.error(
+                                    `Failed to update instance ${INSTANCES_COLLECTION}/${instanceIdentifier} status after script error (exit code ${code}):`,
+                                    dbError
+                                );
                             }
                         }
                     });
@@ -433,10 +449,23 @@ export const app = new Elysia()
                                     updatedAt: new Date().toISOString(),
                                     errorDetails: `Failed to start provisioning script: ${err.message}`,
                                 };
-                                await dataService.updateDocument(SYSTEM_DB, INSTANCES_COLLECTION, instanceDoc._id!, instanceDoc._rev!, {
-                                    ...instanceDoc,
-                                    ...updatedFields,
-                                });
+                                try {
+                                    await dataService.updateDocument(SYSTEM_DB, INSTANCES_COLLECTION, instanceDoc._id!, instanceDoc._rev!, {
+                                        ...instanceDoc,
+                                        ...updatedFields,
+                                    });
+                                } catch (updateError: any) {
+                                    if (updateError.message === "Revision conflict") {
+                                        logger.warn(`Revision conflict on updating instance ${docIdToFetch} to failed (script error), retrying...`);
+                                        const freshInstanceDoc = await dataService.getDocument<Instance>(SYSTEM_DB, docIdToFetch);
+                                        await dataService.updateDocument(SYSTEM_DB, INSTANCES_COLLECTION, freshInstanceDoc._id!, freshInstanceDoc._rev!, {
+                                            ...freshInstanceDoc,
+                                            ...updatedFields,
+                                        });
+                                    } else {
+                                        throw updateError;
+                                    }
+                                }
                                 logger.error(`Instance ${docIdToFetch} marked as 'failed' due to script start error.`);
                             }
                         } catch (dbError) {
