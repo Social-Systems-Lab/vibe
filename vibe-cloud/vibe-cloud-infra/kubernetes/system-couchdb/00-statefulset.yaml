@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+    name: system-couchdb
+    namespace: vibe-system-db
+    labels:
+        app.kubernetes.io/name: system-couchdb
+        app.kubernetes.io/component: database
+spec:
+    serviceName: system-couchdb
+    replicas: 1
+    selector:
+        matchLabels:
+            app.kubernetes.io/name: system-couchdb
+            app.kubernetes.io/component: database
+    template:
+        metadata:
+            labels:
+                app.kubernetes.io/name: system-couchdb
+                app.kubernetes.io/component: database
+        spec:
+            containers:
+                - name: couchdb
+                  image: couchdb:3.3.3 # Using official CouchDB 3.3.3 image
+                  imagePullPolicy: IfNotPresent
+                  ports:
+                      - name: couchdb
+                        containerPort: 5984 # Standard CouchDB port
+                        protocol: TCP
+                  env:
+                      - name: COUCHDB_USER
+                        valueFrom:
+                            secretKeyRef:
+                                name: system-couchdb-credentials
+                                key: username
+                      - name: COUCHDB_PASSWORD
+                        valueFrom:
+                            secretKeyRef:
+                                name: system-couchdb-credentials
+                                key: password
+                      # For a single-node setup, these might be useful, but often not strictly necessary
+                      # if the entrypoint script handles single-node setup by default when clustered setup isn't forced.
+                      # - name: COUCHDB_SETUP_ACTION
+                      #   value: "enable_single_node" # or "finish_cluster" if part of a more complex setup
+                      # - name: COUCHDB_NODE_NAME
+                      #   value: "couchdb@127.0.0.1" # For single node, often defaults okay
+                  volumeMounts:
+                      - name: couchdb-data
+                        mountPath: /opt/couchdb/data
+                  # Add resources if needed, e.g.:
+                  # resources:
+                  #   limits:
+                  #     cpu: "1"
+                  #     memory: "1Gi"
+                  #   requests:
+                  #     cpu: "0.5"
+                  #     memory: "512Mi"
+    volumeClaimTemplates:
+        - metadata:
+              name: couchdb-data
+              labels:
+                  app.kubernetes.io/name: system-couchdb
+                  app.kubernetes.io/component: database
+          spec:
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                  requests:
+                      storage: 1Gi # Defaulting to 1Gi, same as before
+              # storageClassName: "your-storage-class" # Specify if not using default

@@ -41,16 +41,24 @@ export class DataService {
             logger.error("CRITICAL: CouchDB environment variables (URL, USER, PASSWORD) are not fully set.");
             throw new Error("CouchDB connection details missing in environment variables.");
         }
+        logger.debug(`DB Connection Details - User: ${dbUser}, Password (first 3): ${dbPassword?.substring(0, 3)}***, URL: ${dbUrl}`);
 
         this.isConnecting = true;
         this.connectionPromise = (async () => {
             try {
-                logger.info(`Attempting to connect to CouchDB at ${dbUrl}...`);
-                this.nano = nano({ url: dbUrl, requestDefaults: { jar: true } }); // Use cookie jar for sessions
+                // Construct URL with embedded credentials
+                const hostAndPath = dbUrl.startsWith("http://") ? dbUrl.substring(7) : dbUrl.startsWith("https://") ? dbUrl.substring(8) : dbUrl;
+                const authenticatedUrl = `http://${dbUser}:${dbPassword}@${hostAndPath}`;
 
-                // Authenticate
-                await this.nano.auth(dbUser, dbPassword);
-                logger.info("CouchDB authentication successful.");
+                const maskedAuthUrl = `http://${dbUser}:********@${hostAndPath}`;
+                logger.info(`Attempting to connect to CouchDB at ${maskedAuthUrl} (using authenticated URL directly with nano)`);
+
+                // Initialize nano with the fully authenticated URL.
+                // The requestDefaults for jar might still be useful for subsequent session management.
+                this.nano = nano({ url: authenticatedUrl, requestDefaults: { jar: true } });
+                // No separate this.nano.auth() call is needed when credentials are in the URL.
+
+                logger.info("CouchDB nano client initialized with authenticated URL.");
 
                 // Verify connection by listing databases (optional but good practice)
                 await this.nano.db.list();

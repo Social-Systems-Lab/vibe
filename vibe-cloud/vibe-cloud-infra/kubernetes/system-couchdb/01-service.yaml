@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+    name: system-couchdb # This will be the DNS name within the cluster, e.g., system-couchdb.vibe-system-db.svc.cluster.local
+    namespace: vibe-system-db
+    labels:
+        app.kubernetes.io/name: system-couchdb
+        app.kubernetes.io/component: database
+spec:
+    type: ClusterIP # Exposes the service on a cluster-internal IP.
+    ports:
+        - port: 5984
+          targetPort: 5984 # Port on the pods
+          protocol: TCP
+          name: couchdb
+    selector:
+        app.kubernetes.io/name: system-couchdb # Must match the labels of the CouchDB pods
+        app.kubernetes.io/component: database
