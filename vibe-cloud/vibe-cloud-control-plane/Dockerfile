@@ -9,9 +9,15 @@ COPY package.json bun.lockb* ./
 RUN bun install --frozen-lockfile
 
 # Install bash for running provisioning scripts
-USER root 
-RUN apt-get update && apt-get install -y bash && rm -rf /var/lib/apt/lists/*
-USER bun 
+USER root
+RUN apt-get update && \
+    apt-get install -y bash && \
+    rm -rf /var/lib/apt/lists/* && \
+    echo "--- Checking for bash after install ---" && \
+    which bash && \
+    ls -l /bin/bash /usr/bin/bash && \
+    echo "--- Bash check complete ---"
+USER bun
 
 # Copy the rest of the application code
 COPY . .
