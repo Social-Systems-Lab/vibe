@@ -102,7 +102,11 @@ export const app = new Elysia()
         set.status = 500;
         return { error: "An internal server error occurred." };
     })
-    .get("/health", () => ({ status: "ok", service: "control-plane" }))
+    .get("/health", () => ({
+        status: "ok",
+        service: "control-plane",
+        version: process.env.APP_VERSION || "unknown",
+    }))
     // --- Admin Claim Route (Unauthenticated) ---
     .group("/api/v1/admin", (group) =>
         group.post(
@@ -438,39 +442,23 @@ export const app = new Elysia()
                         }
                     });
 
-                    provisionProcess.on("error", async (err) => {
+                    provisionProcess.on("error", async (err: NodeJS.ErrnoException) => {
+                        // Added type for err
                         logger.error(`Failed to start provisioning script for instance '${instanceIdentifier}':`, err);
-                        try {
-                            const docIdToFetch = `${INSTANCES_COLLECTION}/${instanceIdentifier}`;
-                            const instanceDoc = await dataService.getDocument<Instance>(SYSTEM_DB, docIdToFetch);
-                            if (instanceDoc && (instanceDoc.status === "pending" || instanceDoc.status === "provisioning")) {
-                                const updatedFields: Partial<Instance> = {
-                                    status: "failed",
-                                    updatedAt: new Date().toISOString(),
-                                    errorDetails: `Failed to start provisioning script: ${err.message}`,
-                                };
-                                try {
-                                    await dataService.updateDocument(SYSTEM_DB, INSTANCES_COLLECTION, instanceDoc._id!, instanceDoc._rev!, {
-                                        ...instanceDoc,
-                                        ...updatedFields,
-                                    });
-                                } catch (updateError: any) {
-                                    if (updateError.message === "Revision conflict") {
-                                        logger.warn(`Revision conflict on updating instance ${docIdToFetch} to failed (script error), retrying...`);
-                                        const freshInstanceDoc = await dataService.getDocument<Instance>(SYSTEM_DB, docIdToFetch);
-                                        await dataService.updateDocument(SYSTEM_DB, INSTANCES_COLLECTION, freshInstanceDoc._id!, freshInstanceDoc._rev!, {
-                                            ...freshInstanceDoc,
-                                            ...updatedFields,
-                                        });
-                                    } else {
-                                        throw updateError;
-                                    }
-                                }
-                                logger.error(`Instance ${docIdToFetch} marked as 'failed' due to script start error.`);
-                            }
-                        } catch (dbError) {
-                            logger.error(`Failed to update instance ${INSTANCES_COLLECTION}/${instanceIdentifier} status after script start error:`, dbError);
+                        // If the error is a spawn error (like ENOENT), on('close') will also fire with a non-zero exit code.
+                        // Let on('close') handle the DB update to "failed" in such cases to avoid race conditions/conflicts.
+                        // We will only attempt a DB update here if it's an error from a *running* process,
+                        // though for simple script spawn, 'error' usually means it failed to start.
+                        // For ENOENT, err.code will be 'ENOENT'.
+                        if (err.code !== "ENOENT") {
+                            // Potentially handle other types of errors from a running process if necessary,
+                            // but for now, primary failure updates are via on('close').
+                            // This block can be expanded if other 'error' event scenarios need DB updates.
+                            logger.warn(
+                                `Provisioning process for '${instanceIdentifier}' emitted error (not ENOENT, might need specific handling): ${err.message}`
+                            );
                         }
+                        // The 'close' event will still fire and handle setting the status to 'failed'.
                     });
 
                     // Update status to 'provisioning' immediately after attempting to spawn

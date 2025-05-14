@@ -19,5 +19,9 @@ COPY . .
 # Expose the port the app runs on
 EXPOSE 3000
 
+# Application version ARG and ENV
+ARG APP_VERSION="unknown"
+ENV APP_VERSION=${APP_VERSION}
+
 # Define the command to run the app
 CMD ["bun", "run", "src/index.ts"]
