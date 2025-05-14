@@ -20,20 +20,20 @@ spec:
                 - name: vibe-control-plane
                   image: sslorg/vibe-cloud-control-plane:latest # Ensure this image and tag are correct
                   ports:
-                      - containerPort: 3000 # Assuming the app listens on port 3000
+                      - containerPort: 3001
                   envFrom:
                       - secretRef:
                             name: vibe-control-plane-secrets
                   livenessProbe:
                       httpGet:
                           path: /health # Assuming a /health endpoint exists
-                          port: 3000
+                          port: 3001
                       initialDelaySeconds: 30
                       periodSeconds: 10
                   readinessProbe:
                       httpGet:
                           path: /health # Assuming a /health endpoint exists
-                          port: 3000
+                          port: 3001
                       initialDelaySeconds: 15
                       periodSeconds: 5
                   # KUBECONFIG_PATH is not needed if the app uses in-cluster ServiceAccount auth

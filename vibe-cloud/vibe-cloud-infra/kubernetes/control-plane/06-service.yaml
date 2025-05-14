@@ -13,4 +13,4 @@ spec:
         - name: http
           protocol: TCP
           port: 80 # Port the Service listens on
-          targetPort: 3000 # Port on the pods (containerPort from Deployment)
+          targetPort: 3001 # Port on the pods (containerPort from Deployment)
