@@ -22,8 +22,8 @@ vibeApp:
     nameOverride: "" # If you want to override the name of the vibe-app deployment/service
     replicaCount: 1
     image:
-        repository: sslorg/vibe-cloud # Updated from temp values
-        pullPolicy: IfNotPresent
+        repository: sslorg/vibe-cloud-api # Corrected repository name
+        pullPolicy: Always # Ensure latest image is pulled
         # Overrides the image tag whose default is the chart appVersion.
         tag: "latest" # Updated from temp values
     service:

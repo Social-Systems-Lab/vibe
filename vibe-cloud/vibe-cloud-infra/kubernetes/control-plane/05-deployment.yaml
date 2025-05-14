@@ -19,6 +19,7 @@ spec:
             containers:
                 - name: vibe-control-plane
                   image: sslorg/vibe-cloud-control-plane:latest # Ensure this image and tag are correct
+                  imagePullPolicy: Always # Ensure Kubernetes always pulls the latest image
                   ports:
                       - containerPort: 3001
                   envFrom:
