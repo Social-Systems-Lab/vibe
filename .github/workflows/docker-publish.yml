@@ -44,6 +44,26 @@ jobs:
                       type=sha,prefix=,suffix=,format=short
                       type=raw,value=latest,enable={{is_default_branch}}
 
+            - name: Prepare App Version - ${{ matrix.service }}
+              id: prep_version
+              run: |
+                  GIT_SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+                  # Default to just SHA if package.json or its version is not found/valid
+                  EFFECTIVE_VERSION=$GIT_SHA_SHORT
+                  PKG_JSON_PATH="${{ matrix.context }}/package.json"
+                  if [ -f "$PKG_JSON_PATH" ]; then
+                    PKG_VERSION=$(jq -r .version "$PKG_JSON_PATH")
+                    if [ "$PKG_VERSION" != "null" ] && [ -n "$PKG_VERSION" ]; then
+                      EFFECTIVE_VERSION="${PKG_VERSION}-${GIT_SHA_SHORT}"
+                    else
+                      echo "Warning: Could not read version from $PKG_JSON_PATH, or version was null/empty."
+                    fi
+                  else
+                    echo "Warning: No package.json found at $PKG_JSON_PATH for service ${{ matrix.service }}."
+                  fi
+                  echo "EFFECTIVE_APP_VERSION=${EFFECTIVE_VERSION}" >> $GITHUB_ENV
+                  echo "Determined APP_VERSION for ${{ matrix.service }}: ${EFFECTIVE_VERSION}"
+
             - name: Build and push Docker image - ${{ matrix.service }}
               uses: docker/build-push-action@v5
               with:
@@ -53,6 +73,6 @@ jobs:
                   tags: ${{ steps.meta.outputs.tags }}
                   labels: ${{ steps.meta.outputs.labels }}
                   build-args: |
-                      APP_VERSION=${{ steps.meta.outputs.version }}
+                      APP_VERSION=${{ env.EFFECTIVE_APP_VERSION }}
                   cache-from: type=gha
                   cache-to: type=gha,mode=max
