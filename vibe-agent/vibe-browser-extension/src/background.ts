@@ -50,7 +50,7 @@ try {
 // --- End BIP39 Self-Test ---
 
 // --- Constants ---
-const OFFICIAL_VIBE_CLOUD_PROVISIONING_URL = "https://vibe-cloud-vp.vibeapp.dev"; // Define this constant
+const OFFICIAL_VIBE_CLOUD_PROVISIONING_URL = "https://vibe-cloud-cp.vibeapp.dev"; // Define this constant
 const SETUP_URL = chrome.runtime.getURL("setup.html");
 const STORAGE_KEY_SETUP_COMPLETE = "isSetupComplete";
 const STORAGE_KEY_VAULT = "vibeVault";

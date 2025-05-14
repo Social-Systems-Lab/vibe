@@ -4,11 +4,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { User, PlusCircle } from "lucide-react"; // ChevronDown removed
+import { User, PlusCircle, Loader2 } from "lucide-react"; // ChevronDown removed, Loader2 added
 // DropdownMenu imports removed
 
 // This should be a globally accessible constant or fetched from a config
-const OFFICIAL_VIBE_CLOUD_URL = "https://vibe-cloud-vp.vibeapp.dev"; // Official Vibe Cloud Provisioning Service
+const OFFICIAL_VIBE_CLOUD_URL = "https://vibe-cloud-cp.vibeapp.dev"; // Official Vibe Cloud Provisioning Service
 const OFFICIAL_VIBE_CLOUD_NAME = "Official Vibe Cloud (Recommended)";
 
 interface CloudServiceOption {
@@ -24,12 +24,13 @@ interface SetupIdentityStepProps {
         identityPicture: string | null;
         cloudUrl: string;
         claimCode: string | null; // Claim code is optional now
-    }) => void;
+    }) => Promise<void>; // Changed to Promise<void> to allow awaiting
 }
 
 export function SetupIdentityStep({ onIdentitySetup }: SetupIdentityStepProps) {
     const [identityName, setIdentityName] = useState("");
     const [picturePreview, setPicturePreview] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(false); // Added loading state
 
     // Cloud configuration state
     const [configuredCloudServices, setConfiguredCloudServices] = useState<CloudServiceOption[]>([
@@ -88,8 +89,11 @@ export function SetupIdentityStep({ onIdentitySetup }: SetupIdentityStepProps) {
     };
 
     const handleSubmit = useCallback(
-        (e: React.FormEvent) => {
+        async (e: React.FormEvent) => {
             e.preventDefault();
+            if (isLoading) return; // Prevent multiple submissions
+
+            setIsLoading(true);
             setFormError(null);
 
             let finalCloudUrl = selectedService.url;
@@ -133,14 +137,23 @@ export function SetupIdentityStep({ onIdentitySetup }: SetupIdentityStepProps) {
                 finalClaimCode = customClaimCode.trim() || null;
             }
 
-            onIdentitySetup({
-                identityName: identityName.trim() || null,
-                identityPicture: picturePreview,
-                cloudUrl: finalCloudUrl,
-                claimCode: finalClaimCode,
-            });
+            try {
+                await onIdentitySetup({
+                    // Added await here
+                    identityName: identityName.trim() || null,
+                    identityPicture: picturePreview,
+                    cloudUrl: finalCloudUrl,
+                    claimCode: finalClaimCode,
+                });
+            } catch (error) {
+                // Error should be handled by SetupWizard, but good to catch here too if needed
+                console.error("Error during onIdentitySetup call in SetupIdentityStep:", error);
+                setFormError(error instanceof Error ? error.message : "An unexpected error occurred during finalization.");
+            } finally {
+                setIsLoading(false);
+            }
         },
-        [identityName, picturePreview, selectedService, onIdentitySetup, showCustomCloudForm, customCloudUrl, customClaimCode]
+        [identityName, picturePreview, selectedService, onIdentitySetup, showCustomCloudForm, customCloudUrl, customClaimCode, isLoading]
     );
 
     // Reset form if user navigates away from adding new custom cloud
@@ -254,8 +267,15 @@ export function SetupIdentityStep({ onIdentitySetup }: SetupIdentityStepProps) {
 
                     {formError && <p className="text-sm text-red-600 text-center">{formError}</p>}
 
-                    <Button type="submit" className="w-full !mt-8">
-                        Finalize Setup
+                    <Button type="submit" className="w-full !mt-8" disabled={isLoading}>
+                        {isLoading ? (
+                            <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Finalizing...
+                            </>
+                        ) : (
+                            "Finalize Setup"
+                        )}
                     </Button>
                 </form>
             </CardContent>

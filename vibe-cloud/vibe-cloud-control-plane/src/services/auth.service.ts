@@ -308,13 +308,15 @@ export class AuthService {
      * @param did - The DID of the signer.
      * @param nonce - The client-generated nonce.
      * @param timestamp - The client-generated timestamp (ISO format).
-     * @param signatureB64 - The base64 encoded signature of JSON.stringify({ did, nonce, timestamp }).
+     * @param signatureB64 - The base64 encoded signature of (nonce + timestamp).
      * @returns True if the signature is valid, false otherwise.
      */
     async verifyDidSignature(did: string, nonce: string, timestamp: string, signatureB64: string): Promise<boolean> {
         try {
-            const payloadToSign = JSON.stringify({ did, nonce, timestamp });
-            const messageBytes = new TextEncoder().encode(payloadToSign);
+            // IMPORTANT: The client signs `nonce + timestamp` directly.
+            // The server must verify against the exact same string.
+            const messageToVerify = nonce + timestamp;
+            const messageBytes = new TextEncoder().encode(messageToVerify);
 
             const publicKeyBytes = ed25519FromDid(did);
             const signatureBytes = Buffer.from(signatureB64, "base64");

@@ -4,6 +4,7 @@
     "version": "1.0",
     "manifest_version": 3,
     "permissions": ["storage", "tabs", "scripting"],
+    "host_permissions": ["https://vibe-cloud-cp.vibeapp.dev/*"],
     "background": {
         "service_worker": "background.js"
     },
