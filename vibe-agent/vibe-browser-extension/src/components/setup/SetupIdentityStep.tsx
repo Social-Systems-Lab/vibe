@@ -8,7 +8,7 @@ import { User, PlusCircle } from "lucide-react"; // ChevronDown removed
 // DropdownMenu imports removed
 
 // This should be a globally accessible constant or fetched from a config
-const OFFICIAL_VIBE_CLOUD_URL = "https://cloud.vibe.id"; // Example official URL
+const OFFICIAL_VIBE_CLOUD_URL = "https://vibe-cloud-vp.vibeapp.dev"; // Official Vibe Cloud Provisioning Service
 const OFFICIAL_VIBE_CLOUD_NAME = "Official Vibe Cloud (Recommended)";
 
 interface CloudServiceOption {
@@ -199,7 +199,7 @@ export function SetupIdentityStep({ onIdentitySetup }: SetupIdentityStepProps) {
                     <div className="space-y-4">
                         <h3 className="text-lg font-medium">Connect to Vibe Cloud</h3>
                         <div>
-                            <Label htmlFor="cloud-service-select">Vibe Cloud Service</Label>
+                            <Label htmlFor="cloud-service-select">Vibe Cloud Provider</Label>
                             <select
                                 id="cloud-service-select"
                                 value={selectedCloudServiceId}

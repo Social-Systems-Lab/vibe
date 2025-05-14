@@ -221,3 +221,18 @@ export async function importEd25519Key(privateKeyBytes: Uint8Array, extractable:
         ["sign"] // Key usages: only signing for private keys
     );
 }
+
+/**
+ * Signs a message using a raw Ed25519 private key (seed).
+ * @param privateKeySeed - The 32-byte raw private key (seed).
+ * @param message - The string message to sign.
+ * @returns A Promise that resolves to the base64 encoded signature.
+ */
+export async function signMessage(privateKeySeed: Uint8Array, message: string): Promise<string> {
+    if (privateKeySeed.length !== 32) {
+        throw new Error("Ed25519 private key (seed) must be 32 bytes for signing.");
+    }
+    const messageBytes = new TextEncoder().encode(message);
+    const signatureBytes = await ed.sign(messageBytes, privateKeySeed);
+    return Buffer.from(signatureBytes).toString("base64");
+}

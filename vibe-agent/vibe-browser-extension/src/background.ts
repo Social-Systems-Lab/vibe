@@ -25,8 +25,10 @@ import {
     decryptData,
     importEd25519Key, // Ensure this is imported
     validateMnemonic, // Ensure validateMnemonic is imported for the test
+    signMessage, // Assuming a function to sign a message with a private key
 } from "./lib/crypto";
 import { didFromEd25519 } from "./lib/identity";
+// Removed incorrect import of öffentlicheVibeCloudUrl
 
 console.log("Vibe Background Service Worker started."); // Original log line
 
@@ -48,6 +50,7 @@ try {
 // --- End BIP39 Self-Test ---
 
 // --- Constants ---
+const OFFICIAL_VIBE_CLOUD_PROVISIONING_URL = "https://vibe-cloud-vp.vibeapp.dev"; // Define this constant
 const SETUP_URL = chrome.runtime.getURL("setup.html");
 const STORAGE_KEY_SETUP_COMPLETE = "isSetupComplete";
 const STORAGE_KEY_VAULT = "vibeVault";
@@ -300,22 +303,173 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }
                     case "SETUP_COMPLETE_AND_FINALIZE": {
                         console.log("Processing 'SETUP_COMPLETE_AND_FINALIZE'");
-                        const { identityName, identityPicture, cloudUrl, claimCode } = payload;
+                        const { identityName, identityPicture, cloudUrl, claimCode, password, mnemonic } = payload;
+
+                        if (!password || !mnemonic) {
+                            throw new Error("Password and mnemonic are required for finalization.");
+                        }
+
                         const vaultResult = await chrome.storage.local.get(STORAGE_KEY_VAULT);
-                        const vaultData = vaultResult[STORAGE_KEY_VAULT];
-                        if (!vaultData || !vaultData.identities || vaultData.identities.length === 0) throw new Error("Vault not found.");
+                        let vaultData = vaultResult[STORAGE_KEY_VAULT];
+
+                        if (!vaultData || !vaultData.identities || vaultData.identities.length === 0) {
+                            // This case implies SETUP_CREATE_VAULT or SETUP_IMPORT_VAULT might not have run or saved correctly.
+                            // For robustness, let's try to re-create the basic vault structure if missing,
+                            // using the provided mnemonic and password.
+                            console.warn("Vault data not found or incomplete during finalization. Attempting to reconstruct basic vault.");
+
+                            const salt = generateSalt();
+                            const saltHex = Buffer.from(salt).toString("hex");
+                            let encryptionKeyRecon: CryptoKey | null = null;
+                            let seedRecon: Buffer | null = null;
+                            try {
+                                encryptionKeyRecon = await deriveEncryptionKey(password, salt);
+                                const encryptedMnemonicData = await encryptData(mnemonic, encryptionKeyRecon);
+                                seedRecon = await seedFromMnemonic(mnemonic);
+                                const masterHDKey = getMasterHDKeyFromSeed(seedRecon);
+                                const firstIdentityKeys = deriveChildKeyPair(masterHDKey, 0);
+                                const firstDid = didFromEd25519(firstIdentityKeys.publicKey);
+
+                                vaultData = {
+                                    encryptedSeedPhrase: encryptedMnemonicData,
+                                    identities: [
+                                        { did: firstDid, derivationPath: firstIdentityKeys.derivationPath, profile_name: null, profile_picture: null },
+                                    ],
+                                    settings: { nextAccountIndex: 1, cloudUrl: null },
+                                };
+                                await chrome.storage.local.set({ [STORAGE_KEY_VAULT_SALT]: saltHex, [STORAGE_KEY_VAULT]: vaultData });
+                                console.log("Basic vault structure reconstructed and saved.");
+                            } finally {
+                                if (encryptionKeyRecon) encryptionKeyRecon = null; // Clear key from memory
+                                if (seedRecon) wipeMemory(seedRecon);
+                            }
+                        }
+
+                        const userDid = vaultData.identities[0].did;
+                        let finalCloudUrl = cloudUrl;
+
+                        if (cloudUrl === OFFICIAL_VIBE_CLOUD_PROVISIONING_URL && !claimCode) {
+                            console.log(`Official Vibe Cloud selected. Initiating provisioning for DID: ${userDid}`);
+
+                            // 1. Derive private key for signing
+                            // We need the raw private key bytes.
+                            // The `activeSigningKey` (CryptoKey) is for WebCrypto API, but we might need direct access
+                            // to the private key bytes if `signMessage` expects that, or use WebCrypto's sign.
+                            // Let's assume `deriveChildKeyPair` gives us the raw private key.
+                            let seedForSigning: Buffer | null = null;
+                            let privateKeyBytes: Uint8Array | null = null;
+                            try {
+                                seedForSigning = await seedFromMnemonic(mnemonic);
+                                const masterKey = getMasterHDKeyFromSeed(seedForSigning);
+                                const keyPair = deriveChildKeyPair(masterKey, 0); // Assuming first identity
+                                privateKeyBytes = keyPair.privateKey;
+
+                                if (!privateKeyBytes) {
+                                    throw new Error("Failed to derive private key for signing.");
+                                }
+
+                                const nonce = crypto.randomUUID();
+                                const timestamp = new Date().toISOString();
+                                const messageToSign = nonce + timestamp;
+
+                                // The signMessage function needs to be implemented in lib/crypto.ts
+                                // It should take Uint8Array privateKey and string message, return base64 signature
+                                const signature = await signMessage(privateKeyBytes, messageToSign);
+
+                                const provisionRequestPayload = {
+                                    did: userDid,
+                                    nonce,
+                                    timestamp,
+                                    signature,
+                                };
+
+                                console.log("Sending provisioning request:", provisionRequestPayload);
+                                const provisionResponse = await fetch(`${OFFICIAL_VIBE_CLOUD_PROVISIONING_URL}/api/v1/provision/instance`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify(provisionRequestPayload),
+                                });
+
+                                if (!provisionResponse.ok) {
+                                    const errorBody = await provisionResponse
+                                        .json()
+                                        .catch(() => ({ error: "Failed to parse error response from provisioning server." }));
+                                    throw new Error(
+                                        `Provisioning request failed: ${provisionResponse.status} ${provisionResponse.statusText} - ${
+                                            errorBody.error || "Unknown error"
+                                        }`
+                                    );
+                                }
+
+                                const provisionResult = await provisionResponse.json();
+                                if (provisionResponse.status !== 202 || !provisionResult.instanceIdentifier) {
+                                    throw new Error(`Provisioning not accepted: ${provisionResult.message || "Missing instance identifier"}`);
+                                }
+
+                                console.log("Provisioning accepted, instanceIdentifier:", provisionResult.instanceIdentifier);
+
+                                // Poll for status
+                                let attempts = 0;
+                                const maxAttempts = 30; // Poll for 5 minutes (30 attempts * 10 seconds)
+                                const pollInterval = 10000; // 10 seconds
+
+                                while (attempts < maxAttempts) {
+                                    attempts++;
+                                    console.log(`Polling status for ${provisionResult.instanceIdentifier}, attempt ${attempts}`);
+                                    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+
+                                    const statusResponse = await fetch(
+                                        `${OFFICIAL_VIBE_CLOUD_PROVISIONING_URL}/api/v1/provision/status/${provisionResult.instanceIdentifier}`
+                                    );
+                                    if (!statusResponse.ok) {
+                                        // Non-fatal, continue polling unless it's a clear permanent error
+                                        console.warn(`Status poll failed: ${statusResponse.status} ${statusResponse.statusText}. Retrying...`);
+                                        continue;
+                                    }
+                                    const statusData = await statusResponse.json();
+                                    console.log("Status poll response:", statusData);
+
+                                    if (statusData.status === "completed") {
+                                        if (!statusData.instanceUrl) {
+                                            throw new Error("Provisioning completed but instance URL is missing.");
+                                        }
+                                        finalCloudUrl = statusData.instanceUrl;
+                                        console.log(`Provisioning successful! Instance URL: ${finalCloudUrl}`);
+                                        break;
+                                    } else if (statusData.status === "failed") {
+                                        throw new Error(`Provisioning failed: ${statusData.errorDetails || "Unknown error from control plane."}`);
+                                    }
+                                    // If "pending" or "provisioning", continue loop
+                                }
+
+                                if (attempts >= maxAttempts) {
+                                    throw new Error("Provisioning timed out after several attempts.");
+                                }
+                            } finally {
+                                if (seedForSigning) wipeMemory(seedForSigning);
+                                if (privateKeyBytes) privateKeyBytes.fill(0); // Clear private key bytes
+                            }
+                        } else if (claimCode) {
+                            // Handle claim code logic if necessary (currently a TODO)
+                            console.log(`TODO: Implement Vibe Cloud claim with URL: ${cloudUrl} and Code: ${claimCode}`);
+                            // For now, if there's a claim code, we assume the provided cloudUrl is the final one.
+                            // This part might need adjustment based on how claim codes affect the final instance URL.
+                            finalCloudUrl = cloudUrl;
+                        }
+                        // If it's a custom URL without a claim code, finalCloudUrl is already set from payload.cloudUrl
+
                         vaultData.identities[0].profile_name = identityName || null;
                         vaultData.identities[0].profile_picture = identityPicture || null;
-                        vaultData.settings.cloudUrl = cloudUrl || null;
+                        vaultData.settings.cloudUrl = finalCloudUrl || null; // Use the potentially updated finalCloudUrl
+
                         await chrome.storage.local.set({ [STORAGE_KEY_VAULT]: vaultData, [STORAGE_KEY_SETUP_COMPLETE]: true });
-                        if (claimCode) console.log(`TODO: Implement Vibe Cloud claim with URL: ${cloudUrl} and Code: ${claimCode}`);
+
                         responsePayload = {
                             success: true,
-                            message: "Setup finalized and marked complete.",
+                            message: "Setup finalized and marked complete." + (finalCloudUrl ? ` Connected to ${finalCloudUrl}.` : ""),
                             identityName: vaultData.identities[0].profile_name,
                         };
                         console.log("Setup finalized, vault updated, and setup marked complete.");
-                        // Tab closing will be handled by a separate message from the frontend
                         break;
                     }
                     case "CLOSE_SETUP_TAB": {

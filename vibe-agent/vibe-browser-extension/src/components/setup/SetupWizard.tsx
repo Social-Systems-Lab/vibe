@@ -175,7 +175,7 @@ export function SetupWizard({ onSetupComplete }: SetupWizardProps) {
         console.log("User confirmed phrase backup.");
         // Mnemonic is now managed by ShowPhraseStep or cleared from state after use.
         // Background script handles the actual seed phrase.
-        setWizardState((prev) => ({ ...prev, mnemonic: undefined })); // Clear from wizard state
+        // setWizardState((prev) => ({ ...prev, mnemonic: undefined })); // Clear from wizard state // Intentionally kept for SETUP_COMPLETE_AND_FINALIZE
         setCurrentStep("setupIdentity"); // Changed to new step
     }, []);
 
@@ -213,6 +213,19 @@ export function SetupWizard({ onSetupComplete }: SetupWizardProps) {
                 error: undefined,
             }));
 
+            const { password, mnemonic, importedMnemonic } = wizardState;
+            const finalMnemonic = mnemonic || importedMnemonic;
+
+            if (!password || !finalMnemonic) {
+                console.error("Error finalizing setup: Password or mnemonic missing from wizard state.");
+                setWizardState((prev) => ({
+                    ...prev,
+                    error: "Critical error: Password or recovery phrase missing. Please restart setup.",
+                }));
+                setCurrentStep("error");
+                return;
+            }
+
             try {
                 console.log("Requesting setup finalization from background script...");
                 const response = await chrome.runtime.sendMessage({
@@ -224,6 +237,9 @@ export function SetupWizard({ onSetupComplete }: SetupWizardProps) {
                         identityPicture: details.identityPicture,
                         cloudUrl: details.cloudUrl,
                         claimCode: details.claimCode,
+                        // Pass sensitive data needed for key derivation and signing
+                        password: password,
+                        mnemonic: finalMnemonic,
                     },
                 });
 

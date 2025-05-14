@@ -184,10 +184,6 @@ export function CreatePasswordStep({ onPasswordSet, isImportFlow = false }: Crea
                     <Button type="submit" className="w-full" disabled={!canProceed}>
                         {isImportFlow ? "Set Password & Import" : "Set Device Password"}
                     </Button>
-                    <div>
-                        password: {password}
-                        strength: {JSON.stringify(strength)}
-                    </div>{" "}
                     {/* Debugging line, can be removed later */}
                 </form>
             </CardContent>
