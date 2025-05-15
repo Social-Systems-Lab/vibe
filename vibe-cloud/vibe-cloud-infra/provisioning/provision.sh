@@ -150,10 +150,10 @@ helm ${KUBECONFIG_ARG} install "${HELM_RELEASE_NAME}" "${HELM_CHART_PATH}" \
   --set "vibeApp.env.TARGET_USER_DID=${TARGET_USER_DID}" \
   --set "vibeApp.env.COUCHDB_DATABASE_NAME=${COUCHDB_DATABASE_NAME}" \
   --set "vibeApp.env.COUCHDB_URL=http://${HELM_RELEASE_NAME}-couchdb:5984" \
-  --set "vibeApp.env.COUCHDB_USER_FROM_SECRET=true" \ # Assuming chart can take user/pass from secret
+  --set "vibeApp.env.COUCHDB_USER_FROM_SECRET=true" \
   --set "vibeApp.env.COUCHDB_PASSWORD_FROM_SECRET=true" \
   --timeout 10m \
-  --wait # Wait for Helm release to be ready
+  --wait
 
 helm_exit_code=$?
 
