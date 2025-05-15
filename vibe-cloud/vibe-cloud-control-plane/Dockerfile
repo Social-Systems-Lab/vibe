@@ -8,15 +8,28 @@ COPY vibe-cloud/vibe-cloud-control-plane/package.json vibe-cloud/vibe-cloud-cont
 # Install dependencies
 RUN bun install --frozen-lockfile
 
-# Install bash for running provisioning scripts
+# Install tools needed for provisioning scripts (bash, curl, kubectl)
 USER root
 RUN apt-get update && \
-    apt-get install -y bash && \
+    apt-get install -y bash curl && \
+    echo "--- Installing kubectl ---" && \
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+    install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && \
+    rm kubectl && \
+    echo "--- Kubectl installed ---" && \
     rm -rf /var/lib/apt/lists/* && \
     echo "--- Checking for bash after install ---" && \
     which bash && \
     ls -l /bin/bash /usr/bin/bash && \
-    echo "--- Bash check complete ---"
+    echo "--- Bash check complete ---" && \
+    echo "--- Checking for curl ---" && \
+    which curl && \
+    curl --version && \
+    echo "--- Curl check complete ---" && \
+    echo "--- Checking for kubectl ---" && \
+    which kubectl && \
+    kubectl version --client && \
+    echo "--- Kubectl check complete ---"
 USER bun
 
 # Copy the rest of the application code from the control-plane directory

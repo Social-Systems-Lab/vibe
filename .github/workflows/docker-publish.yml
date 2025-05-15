@@ -52,7 +52,13 @@ jobs:
                   GIT_SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
                   # Default to just SHA if package.json or its version is not found/valid
                   EFFECTIVE_VERSION=$GIT_SHA_SHORT
-                  PKG_JSON_PATH="${{ matrix.context }}/package.json"
+                  # Adjust PKG_JSON_PATH based on service, as control-plane's context is now '.'
+                  if [ "${{ matrix.service }}" == "control-plane" ]; then
+                    PKG_JSON_PATH="./vibe-cloud/vibe-cloud-control-plane/package.json"
+                  else
+                    PKG_JSON_PATH="${{ matrix.context }}/package.json"
+                  fi
+
                   if [ -f "$PKG_JSON_PATH" ]; then
                     PKG_VERSION=$(jq -r .version "$PKG_JSON_PATH")
                     if [ "$PKG_VERSION" != "null" ] && [ -n "$PKG_VERSION" ]; then
