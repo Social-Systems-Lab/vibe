@@ -35,8 +35,8 @@ fi
 # Or this script is in `vibe-cloud/vibe-cloud-infra` and chart is in `./helm/vibe-cloud-instance`
 # Given the original script's context, let's adjust:
 # Original CWD for script was `vibe-cloud-infra/terraform`. If script is in `vibe-cloud-infra/provisioning`,
-# then `../helm/vibe-cloud-instance` is correct.
-HELM_CHART_PATH="../helm/vibe-cloud-instance" 
+# and CWD is `/usr/src/vibe-cloud-infra`, then the path should be relative to CWD.
+HELM_CHART_PATH="./helm/vibe-cloud-instance" 
 
 # Validate required variables
 if [ -z "$TARGET_USER_DID" ]; then
