@@ -22,6 +22,14 @@ USER bun
 # Copy the rest of the application code
 COPY . .
 
+# Check bash as USER bun before CMD
+USER bun
+RUN echo "--- [DIAGNOSTIC] Checking for bash as USER bun ---" && \
+    ls -l /usr/bin/bash && \
+    echo "--- [DIAGNOSTIC] Attempting to get bash version as USER bun ---" && \
+    /usr/bin/bash --version && \
+    echo "--- [DIAGNOSTIC] Bash check as USER bun complete ---"
+
 # Expose the port the app runs on
 EXPOSE 3000
 

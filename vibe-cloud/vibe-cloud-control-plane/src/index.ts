@@ -365,6 +365,11 @@ export const app = new Elysia()
                     // The CWD for the script should be where it can find the Helm chart, e.g., `vibe-cloud-infra`
                     const scriptCwd = path.resolve(process.cwd(), "../vibe-cloud-infra");
 
+                    // DIAGNOSTIC: Check if scriptCwd actually exists
+                    const fs = await import("node:fs"); // Dynamically import fs
+                    logger.info(`[DIAGNOSTIC] Resolved scriptCwd: ${scriptCwd}`);
+                    logger.info(`[DIAGNOSTIC] Does scriptCwd (${scriptCwd}) exist? ${fs.existsSync(scriptCwd)}`);
+
                     logger.info(`Executing provisioning script: ${scriptPath} in cwd: ${scriptCwd} for instance ${instanceIdentifier}`);
 
                     const controlPlaneBaseUrl = process.env.CONTROL_PLANE_BASE_URL || `http://localhost:${process.env.CONTROL_PLANE_PORT || 3001}`;
