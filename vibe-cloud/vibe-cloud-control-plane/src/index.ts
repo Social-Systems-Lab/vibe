@@ -361,7 +361,6 @@ export const app = new Elysia()
 
                     // 7. Asynchronously Trigger Provisioning Script/Process
                     // TODO: Implement the actual call to a modified provision.sh or K8s client logic
-                    // 7. Asynchronously Trigger Provisioning Script/Process
                     const scriptPath = path.resolve(process.cwd(), "../vibe-cloud-infra/provisioning/provision.sh");
                     // The CWD for the script should be where it can find the Helm chart, e.g., `vibe-cloud-infra`
                     const scriptCwd = path.resolve(process.cwd(), "../vibe-cloud-infra");
@@ -382,7 +381,8 @@ export const app = new Elysia()
                     // Remove undefined keys from env, spawn doesn't like them
                     Object.keys(provisionEnv).forEach((key) => (provisionEnv as any)[key] === undefined && delete (provisionEnv as any)[key]);
 
-                    const provisionProcess = spawn("bash", [scriptPath], {
+                    const provisionProcess = spawn("/usr/bin/bash", [scriptPath], {
+                        // Using absolute path
                         cwd: scriptCwd,
                         env: provisionEnv,
                         stdio: ["ignore", "pipe", "pipe"], // ignore stdin, pipe stdout/stderr
