@@ -17,10 +17,16 @@ RUN apt-get update && \
     install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && \
     rm kubectl && \
     echo "--- Kubectl installed ---" && \
-    rm -rf /var/lib/apt/lists/* && \
+    echo "--- Installing Helm ---" && \
+    curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 && \
+    chmod 700 get_helm.sh && \
+    ./get_helm.sh && \
+    rm get_helm.sh && \
+    echo "--- Helm installed ---" && \
     echo "--- Checking for bash after install ---" && \
     which bash && \
-    ls -l /bin/bash /usr/bin/bash && \
+    ls -l /bin/bash && \
+    ls -l /usr/bin/bash && \
     echo "--- Bash check complete ---" && \
     echo "--- Checking for curl ---" && \
     which curl && \
@@ -29,7 +35,11 @@ RUN apt-get update && \
     echo "--- Checking for kubectl ---" && \
     which kubectl && \
     kubectl version --client && \
-    echo "--- Kubectl check complete ---"
+    echo "--- Kubectl check complete ---" && \
+    echo "--- Checking for helm ---" && \
+    which helm && \
+    helm version && \
+    echo "--- Helm check complete ---"
 USER bun
 
 # Copy the rest of the application code from the control-plane directory
