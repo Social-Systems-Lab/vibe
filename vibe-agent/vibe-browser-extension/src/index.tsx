@@ -62,7 +62,7 @@ function Popup() {
             <h1 className="text-xl font-bold mb-4">Vibe</h1>
             {isSetupComplete ? (
                 <div>
-                    <p className="mb-4">Vibe has been set up.</p>
+                    <p className="mb-4">Vibe has been set up 3.</p>
                     {/* Add main UI elements here later */}
                     <button onClick={handleResetDev} className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-xs">
                         Reset (Dev Only)
