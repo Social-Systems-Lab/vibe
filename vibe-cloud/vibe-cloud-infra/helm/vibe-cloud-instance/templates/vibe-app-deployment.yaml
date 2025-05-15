@@ -31,8 +31,6 @@ spec:
               value: {{ .Values.vibeApp.service.targetPort | quote }}
             # TODO: Consider creating a Kubernetes secret for CouchDB credentials and JWT_SECRET
             # and referencing them here using valueFrom.secretKeyRef
-            - name: COUCHDB_URL
-              value: "http://{{ include "vibe-cloud-instance.couchdb.fullname" . }}:{{ .Values.couchdb.service.port }}"
             # Source credentials from the Kubernetes secret
             - name: COUCHDB_USER
               valueFrom:

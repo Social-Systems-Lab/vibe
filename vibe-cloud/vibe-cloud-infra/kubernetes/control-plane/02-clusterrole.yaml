@@ -7,7 +7,7 @@ rules:
       resources: ["namespaces", "secrets", "pods", "pods/log", "services", "persistentvolumeclaims", "configmaps", "serviceaccounts"]
       verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
     - apiGroups: ["apps"]
-      resources: ["deployments", "statefulsets"]
+      resources: ["deployments", "statefulsets", "replicasets"]
       verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
     - apiGroups: ["batch"]
       resources: ["jobs", "cronjobs"]
