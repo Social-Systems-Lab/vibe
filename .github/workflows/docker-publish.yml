@@ -19,8 +19,10 @@ jobs:
                 include: # Map service names to context paths
                     - service: api
                       context: ./vibe-cloud/vibe-cloud-api
+                      dockerfile_path: ./vibe-cloud/vibe-cloud-api/Dockerfile
                     - service: control-plane
-                      context: ./vibe-cloud/vibe-cloud-control-plane
+                      context: . # Build context for control-plane is now monorepo root
+                      dockerfile_path: ./vibe-cloud/vibe-cloud-control-plane/Dockerfile
 
         steps:
             - name: Checkout repository
@@ -68,7 +70,7 @@ jobs:
               uses: docker/build-push-action@v5
               with:
                   context: ${{ matrix.context }} # Use matrix context path
-                  file: ${{ matrix.context }}/Dockerfile # Point to Dockerfile within the context
+                  file: ${{ matrix.dockerfile_path }} # Use dockerfile_path from matrix
                   push: true
                   tags: ${{ steps.meta.outputs.tags }}
                   labels: ${{ steps.meta.outputs.labels }}

@@ -3,8 +3,8 @@ FROM oven/bun:1 as base
 WORKDIR /usr/src/app
 
 # Install dependencies first, in a separate step to leverage Docker cache
-# Copy package.json and bun.lockb
-COPY package.json bun.lockb* ./
+# Copy package.json and bun.lockb from the control-plane directory
+COPY vibe-cloud/vibe-cloud-control-plane/package.json vibe-cloud/vibe-cloud-control-plane/bun.lockb* ./
 # Install dependencies
 RUN bun install --frozen-lockfile
 
@@ -19,8 +19,11 @@ RUN apt-get update && \
     echo "--- Bash check complete ---"
 USER bun
 
-# Copy the rest of the application code
-COPY . .
+# Copy the rest of the application code from the control-plane directory
+COPY vibe-cloud/vibe-cloud-control-plane/. .
+
+# Copy the vibe-cloud-infra directory for the provisioning script and its context
+COPY vibe-cloud/vibe-cloud-infra /usr/src/vibe-cloud-infra
 
 # Check bash as USER bun before CMD
 USER bun
