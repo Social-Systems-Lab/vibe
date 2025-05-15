@@ -14,11 +14,11 @@ interface IdentityCardProps {
 
 export const IdentityCard: React.FC<IdentityCardProps> = ({ identity }) => {
     if (!identity) {
-        // Potentially show a loading state or a prompt to create/select an identity
         return (
-            <Card className="w-full">
-                <CardContent className="pt-6">
-                    <p className="text-center text-muted-foreground">No identity selected.</p>
+            <Card className="w-full border-dashed">
+                <CardContent className="pt-6 flex flex-col items-center justify-center h-24">
+                    <p className="text-center text-muted-foreground text-sm">No active identity.</p>
+                    <p className="text-center text-muted-foreground text-xs">Create or select one.</p>
                 </CardContent>
             </Card>
         );
@@ -34,19 +34,17 @@ export const IdentityCard: React.FC<IdentityCardProps> = ({ identity }) => {
     };
 
     return (
-        <Card className="w-full shadow-lg">
-            <CardHeader className="flex flex-row items-center gap-4 p-4">
-                <Avatar className="h-12 w-12">
+        <Card className="w-full shadow-md bg-card/50 backdrop-blur-sm border-border/50">
+            <CardContent className="pt-6 flex flex-col items-center text-center">
+                <Avatar className="h-16 w-16 mb-3">
                     <AvatarImage src={identity.avatarUrl} alt={identity.displayName || "User Avatar"} />
-                    <AvatarFallback>{getInitials(identity.displayName)}</AvatarFallback>
+                    <AvatarFallback className="text-xl">{getInitials(identity.displayName)}</AvatarFallback>
                 </Avatar>
-                <div className="grid gap-1">
-                    <CardTitle className="text-lg font-semibold">{identity.displayName || "Unnamed Identity"}</CardTitle>
-                    <p className="text-xs text-muted-foreground truncate" title={identity.did}>
-                        {identity.did}
-                    </p>
-                </div>
-            </CardHeader>
+                <h2 className="text-lg font-semibold text-card-foreground">{identity.displayName || "Unnamed Identity"}</h2>
+                <p className="text-xs text-muted-foreground break-all" title={identity.did}>
+                    {identity.did}
+                </p>
+            </CardContent>
         </Card>
     );
 };

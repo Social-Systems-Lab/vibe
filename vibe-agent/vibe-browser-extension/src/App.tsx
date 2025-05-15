@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react"; // Added useEffect
 import "./index.css";
 import { IdentityCard } from "./components/identity/IdentityCard";
 import { IdentitySwitcher } from "./components/identity/IdentitySwitcher";
@@ -11,11 +11,19 @@ interface AppProps {
     onResetDev: () => Promise<void>; // Or () => void if preferred
 }
 
-// Mock data types - ensure these match the component prop types
+// Matches the structure in background.ts (profile_name, profile_picture)
+interface StoredIdentity {
+    did: string;
+    profile_name: string | null;
+    profile_picture?: string | null;
+    derivationPath?: string; // Optional, from vault
+}
+
+// UI-facing Identity type
 interface Identity {
     did: string;
-    displayName?: string;
-    avatarUrl?: string;
+    displayName: string | null;
+    avatarUrl?: string | null;
 }
 
 type ConnectionStatus = "connected" | "disconnected" | "connecting" | "error";
@@ -25,38 +33,104 @@ interface CloudResources {
     storageTotal?: string;
 }
 
-// Mock data
-const mockIdentities: Identity[] = [
-    { did: "did:example:123456789abcdefghi", displayName: "Alice Wonderland", avatarUrl: "https://i.pravatar.cc/150?u=alice" },
-    { did: "did:example:abcdefghi123456789", displayName: "Bob The Builder" },
-    { did: "did:example:qwertyuiopasdfghjkl", avatarUrl: "https://i.pravatar.cc/150?u=charlie" },
-];
-
 export function App({ onResetDev }: AppProps) {
-    const [currentIdentity, setCurrentIdentity] = useState<Identity | null>(mockIdentities[0] || null);
-    const [identities, setIdentities] = useState<Identity[]>(mockIdentities);
+    const [currentIdentity, setCurrentIdentity] = useState<Identity | null>(null); // Initialize with null
+    const [identities, setIdentities] = useState<Identity[]>([]); // Initialize with empty array
+    const [isLoadingIdentity, setIsLoadingIdentity] = useState(true); // Loading state for identity
     const [cloudStatus, setCloudStatus] = useState<ConnectionStatus>("connected");
     const [cloudResources, setCloudResources] = useState<CloudResources>({ storageUsed: "2.3 GB", storageTotal: "10 GB" });
     const [cloudErrorMessage, setCloudErrorMessage] = useState<string | undefined>(undefined);
 
+    useEffect(() => {
+        const loadIdentityData = async () => {
+            setIsLoadingIdentity(true);
+            try {
+                // Fetch from "vibeVault" and "currentIdentityDID"
+                const result = await chrome.storage.local.get(["vibeVault", "currentIdentityDID"]);
+                const vault = result.vibeVault;
+                const storedCurrentDID: string | undefined = result.currentIdentityDID;
+
+                let uiIdentities: Identity[] = [];
+                if (vault && vault.identities && Array.isArray(vault.identities)) {
+                    uiIdentities = vault.identities.map((id: StoredIdentity) => ({
+                        did: id.did,
+                        displayName: id.profile_name,
+                        avatarUrl: id.profile_picture,
+                    }));
+                }
+                setIdentities(uiIdentities);
+
+                if (storedCurrentDID) {
+                    const foundCurrent = uiIdentities.find((id) => id.did === storedCurrentDID);
+                    setCurrentIdentity(foundCurrent || (uiIdentities.length > 0 ? uiIdentities[0] : null));
+                } else if (uiIdentities.length > 0) {
+                    // If no current DID is set (e.g., first time after setup), default to the first one
+                    setCurrentIdentity(uiIdentities[0]);
+                    // Persist this choice
+                    await chrome.storage.local.set({ currentIdentityDID: uiIdentities[0].did });
+                } else {
+                    setCurrentIdentity(null); // No identities found
+                }
+                console.log("Loaded vault identities, mapped to UI:", uiIdentities);
+                console.log("Current DID from storage:", storedCurrentDID);
+            } catch (error) {
+                console.error("Error loading identity data from storage:", error);
+                // Optionally set an error state to display to the user
+            } finally {
+                setIsLoadingIdentity(false);
+            }
+        };
+
+        loadIdentityData();
+    }, []);
+
     const handleSwitchIdentity = (did: string) => {
         const newIdentity = identities.find((id) => id.did === did);
-        setCurrentIdentity(newIdentity || null);
-        // In a real app, you'd persist this change
-        console.log("Switched to identity:", did);
+        if (newIdentity) {
+            setCurrentIdentity(newIdentity);
+            chrome.storage.local.set({ currentIdentityDID: newIdentity.did });
+            console.log("Switched to identity:", newIdentity.did);
+        }
     };
 
-    const handleAddIdentity = () => {
-        // Placeholder for add identity flow
-        const newId = `did:example:new${Math.random().toString(36).substring(2, 15)}`;
-        const newIdentity: Identity = {
-            did: newId,
-            displayName: `New User ${identities.length + 1}`,
-        };
-        setIdentities([...identities, newIdentity]);
-        setCurrentIdentity(newIdentity);
-        console.log("Add new identity clicked. New identity:", newIdentity);
-        // This would typically trigger a setup flow
+    const handleAddIdentity = async () => {
+        // This placeholder needs to be updated to interact with background.ts
+        // to properly create and store a new identity within the vault structure.
+        console.log("Add new identity action triggered. Needs full implementation via background script.");
+        alert("Add new identity functionality is not fully implemented yet. It requires interaction with the background script to update the vault.");
+
+        // // --- TEMPORARY MOCK ADDITION (REMOVE/REPLACE WITH BACKGROUND SCRIPT INTERACTION) ---
+        // const newId = `did:example:temp${Date.now().toString().slice(-6)}`;
+        // const tempNewUiIdentity: Identity = { // UI type
+        //     did: newId,
+        //     displayName: `Temp User ${identities.length + 1}`,
+        //     avatarUrl: undefined,
+        // };
+        // const tempNewStoredIdentity: StoredIdentity = { // Stored type
+        //     did: newId,
+        //     profile_name: tempNewUiIdentity.displayName,
+        //     profile_picture: undefined,
+        //     derivationPath: `m/0'/0'/${identities.length}'` // Example path
+        // };
+
+        // const updatedUiIdentities = [...identities, tempNewUiIdentity];
+        // setIdentities(updatedUiIdentities);
+        // setCurrentIdentity(tempNewUiIdentity);
+
+        // try {
+        //     const vaultResult = await chrome.storage.local.get("vibeVault");
+        //     const vault = vaultResult.vibeVault || { identities: [], settings: {} };
+        //     const updatedStoredIdentities = [...(vault.identities || []), tempNewStoredIdentity];
+
+        //     await chrome.storage.local.set({
+        //         vibeVault: { ...vault, identities: updatedStoredIdentities },
+        //         currentIdentityDID: tempNewUiIdentity.did,
+        //     });
+        //     console.log("Temporarily added and saved new identity (MOCK):", tempNewUiIdentity);
+        // } catch (error) {
+        //     console.error("Error saving temporary new identity (MOCK):", error);
+        // }
+        // // --- END TEMPORARY MOCK ADDITION ---
     };
 
     // Example functions to simulate cloud status changes (for testing)
@@ -75,27 +149,40 @@ export function App({ onResetDev }: AppProps) {
         }
     };
 
+    if (isLoadingIdentity) {
+        return (
+            <div className="w-[350px] p-4 bg-background text-foreground flex flex-col items-center justify-center h-48">
+                <p>Loading identity...</p> {/* Add a spinner later */}
+            </div>
+        );
+    }
+
+    // Main render logic
     return (
-        <div className="w-[350px] p-4 bg-background text-foreground flex flex-col gap-3">
-            <header className="flex justify-between items-center mb-1">
+        <div className="w-[380px] bg-transparent text-foreground flex flex-col shadow-2xl rounded-lg overflow-hidden">
+            {" "}
+            {/* Increased width, bg-transparent */}
+            <header className="flex justify-between items-center p-4 border-b border-border bg-card/80 backdrop-blur-sm">
+                {" "}
+                {/* Header with slight bg */}
                 <h1 className="text-lg font-semibold">Vibe Identity</h1>
                 <Button variant="ghost" size="icon" onClick={() => console.log("Settings clicked")}>
-                    <Settings className="h-5 w-5" />
+                    <Settings className="h-5 w-5 text-muted-foreground hover:text-foreground" />
                 </Button>
             </header>
-
-            <IdentityCard identity={currentIdentity} />
-
-            <IdentitySwitcher
-                identities={identities}
-                currentIdentity={currentIdentity}
-                onSwitchIdentity={handleSwitchIdentity}
-                onAddIdentity={handleAddIdentity}
-            />
-
-            <CloudStatus status={cloudStatus} resources={cloudResources} errorMessage={cloudErrorMessage} />
-
-            <div className="mt-auto flex flex-col gap-2 pt-4 border-t border-muted">
+            <div className="p-4 flex flex-col gap-4">
+                {" "}
+                {/* Content area with padding and gap */}
+                <IdentityCard identity={currentIdentity} />
+                <IdentitySwitcher
+                    identities={identities}
+                    currentIdentity={currentIdentity}
+                    onSwitchIdentity={handleSwitchIdentity}
+                    onAddIdentity={handleAddIdentity}
+                />
+                <CloudStatus status={cloudStatus} resources={cloudResources} errorMessage={cloudErrorMessage} />
+            </div>
+            <div className="mt-auto flex flex-col gap-2 p-4 border-t border-border bg-muted/30">
                 {/* Temporary button to test cloud status cycling */}
                 <Button onClick={cycleCloudStatus} variant="outline" size="sm">
                     Cycle Cloud Status (Test)
