@@ -70,12 +70,12 @@ export function SetupWizard({ onSetupComplete }: SetupWizardProps) {
 
             try {
                 const response = await chrome.runtime.sendMessage({
-                    type: "VIBE_AGENT_REQUEST", // Consistent with other agent messages
-                    action: "SETUP_IMPORT_VAULT",
+                    type: "VIBE_AGENT_REQUEST",
+                    action: "SETUP_IMPORT_SEED_AND_RECOVER_IDENTITIES", // Changed action
                     payload: { importedMnemonic, password },
                 });
 
-                console.log("Background response from SETUP_IMPORT_VAULT:", response);
+                console.log("Background response from SETUP_IMPORT_SEED_AND_RECOVER_IDENTITIES:", response);
 
                 if (response?.error) {
                     throw new Error(response.error.message || "Failed to import vault via background.");

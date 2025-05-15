@@ -8,7 +8,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, UserPlus, Users } from "lucide-react";
+import { ChevronDown, UserPlus, Users, LogIn } from "lucide-react";
 
 interface Identity {
     did: string;
@@ -21,14 +21,18 @@ interface IdentitySwitcherProps {
     currentIdentity: Identity | null;
     onSwitchIdentity: (did: string) => void;
     onAddIdentity: () => void;
+    onImportIdentity: () => void; // New prop for import
 }
 
-export const IdentitySwitcher: React.FC<IdentitySwitcherProps> = ({ identities, currentIdentity, onSwitchIdentity, onAddIdentity }) => {
+export const IdentitySwitcher: React.FC<IdentitySwitcherProps> = ({ identities, currentIdentity, onSwitchIdentity, onAddIdentity, onImportIdentity }) => {
     if (!currentIdentity && identities.length === 0) {
         return (
-            <div className="mt-4">
+            <div className="mt-4 flex flex-col gap-2">
                 <Button onClick={onAddIdentity} className="w-full">
                     <UserPlus className="mr-2 h-4 w-4" /> Add New Identity
+                </Button>
+                <Button onClick={onImportIdentity} variant="outline" className="w-full">
+                    <LogIn className="mr-2 h-4 w-4" /> Import Identity
                 </Button>
             </div>
         );
@@ -58,6 +62,9 @@ export const IdentitySwitcher: React.FC<IdentitySwitcherProps> = ({ identities, 
             )}
             <Button onClick={onAddIdentity} variant="secondary" className="w-full">
                 <UserPlus className="mr-2 h-4 w-4" /> Add New Identity
+            </Button>
+            <Button onClick={onImportIdentity} variant="outline" className="w-full">
+                <LogIn className="mr-2 h-4 w-4" /> Import Identity
             </Button>
         </div>
     );
