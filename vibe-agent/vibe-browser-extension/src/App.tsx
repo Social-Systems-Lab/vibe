@@ -4,7 +4,12 @@ import { IdentityCard } from "./components/identity/IdentityCard";
 import { IdentitySwitcher } from "./components/identity/IdentitySwitcher";
 import { CloudStatus } from "./components/cloud/CloudStatus";
 import { Button } from "@/components/ui/button"; // For a potential settings button
-import { Settings } from "lucide-react";
+import { Settings, RotateCcw } from "lucide-react"; // Added RotateCcw for reset icon
+
+// Prop types for App component
+interface AppProps {
+    onResetDev: () => Promise<void>; // Or () => void if preferred
+}
 
 // Mock data types - ensure these match the component prop types
 interface Identity {
@@ -27,7 +32,7 @@ const mockIdentities: Identity[] = [
     { did: "did:example:qwertyuiopasdfghjkl", avatarUrl: "https://i.pravatar.cc/150?u=charlie" },
 ];
 
-export function App() {
+export function App({ onResetDev }: AppProps) {
     const [currentIdentity, setCurrentIdentity] = useState<Identity | null>(mockIdentities[0] || null);
     const [identities, setIdentities] = useState<Identity[]>(mockIdentities);
     const [cloudStatus, setCloudStatus] = useState<ConnectionStatus>("connected");
@@ -90,10 +95,15 @@ export function App() {
 
             <CloudStatus status={cloudStatus} resources={cloudResources} errorMessage={cloudErrorMessage} />
 
-            {/* Temporary button to test cloud status cycling */}
-            <Button onClick={cycleCloudStatus} variant="outline" size="sm" className="mt-auto">
-                Cycle Cloud Status (Test)
-            </Button>
+            <div className="mt-auto flex flex-col gap-2 pt-4 border-t border-muted">
+                {/* Temporary button to test cloud status cycling */}
+                <Button onClick={cycleCloudStatus} variant="outline" size="sm">
+                    Cycle Cloud Status (Test)
+                </Button>
+                <Button onClick={onResetDev} variant="destructive" size="sm">
+                    <RotateCcw className="mr-2 h-4 w-4" /> Reset (Dev Only)
+                </Button>
+            </div>
         </div>
     );
 }

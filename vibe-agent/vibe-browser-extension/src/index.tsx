@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css"; // Assuming Tailwind/CSS setup is handled by the build
+import { App } from "./App"; // Import the main App component
 
 const STORAGE_KEY_SETUP_COMPLETE = "isSetupComplete";
 const SETUP_URL = chrome.runtime.getURL("setup.html");
@@ -58,25 +59,19 @@ function Popup() {
     }
 
     return (
-        <div className="p-6 min-w-[300px] text-center">
-            <h1 className="text-xl font-bold mb-4">Vibe</h1>
+        <>
             {isSetupComplete ? (
-                <div>
-                    <p className="mb-4">Vibe has been set up 3.</p>
-                    {/* Add main UI elements here later */}
-                    <button onClick={handleResetDev} className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-xs">
-                        Reset (Dev Only)
-                    </button>
-                </div>
+                <App onResetDev={handleResetDev} /> // Pass the reset handler to App
             ) : (
-                <div>
+                <div className="p-6 min-w-[300px] text-center">
+                    <h1 className="text-xl font-bold mb-4">Vibe</h1>
                     <p className="mb-4">Welcome to Vibe! Setup is required.</p>
                     <button onClick={handleStartSetup} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
                         Start Setup
                     </button>
                 </div>
             )}
-        </div>
+        </> // Close the fragment
     );
 }
 
