@@ -54,8 +54,9 @@ spec:
                   key: secret
             - name: S3_ENABLED
               value: "false" # Defaulting to false as per current setup
-            {{- with .Values.vibeApp.env }}
-            {{- toYaml . | nindent 12 }}
+            {{- range $key, $value := .Values.vibeApp.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
             {{- end }}
           {{- if .Values.vibeApp.resources }}
           resources:
