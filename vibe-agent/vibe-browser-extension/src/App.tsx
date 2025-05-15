@@ -159,17 +159,10 @@ export function App({ onResetDev }: AppProps) {
 
     // Main render logic
     return (
-        <div className="w-[380px] bg-transparent text-foreground flex flex-col shadow-2xl rounded-lg overflow-hidden">
+        <div className="w-[380px] bg-background text-foreground flex flex-col shadow-2xl rounded-lg overflow-hidden">
             {" "}
-            {/* Increased width, bg-transparent */}
-            <header className="flex justify-between items-center p-4 border-b border-border bg-card/80 backdrop-blur-sm">
-                {" "}
-                {/* Header with slight bg */}
-                <h1 className="text-lg font-semibold">Vibe Identity</h1>
-                <Button variant="ghost" size="icon" onClick={() => console.log("Settings clicked")}>
-                    <Settings className="h-5 w-5 text-muted-foreground hover:text-foreground" />
-                </Button>
-            </header>
+            {/* Solid background */}
+            {/* Header removed */}
             <div className="p-4 flex flex-col gap-4">
                 {" "}
                 {/* Content area with padding and gap */}

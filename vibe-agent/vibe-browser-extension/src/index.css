@@ -7,7 +7,7 @@
 
     body {
         /* @apply grid place-items-center min-w-[320px] min-h-screen relative m-0 bg-background text-foreground; */
-        @apply relative m-0 bg-transparent text-foreground; /* Changed for popup: transparent bg, no grid/min-h-screen */
+        @apply relative m-0 bg-background text-foreground; /* Reverted to bg-background for a solid fill */
     }
 }
 
