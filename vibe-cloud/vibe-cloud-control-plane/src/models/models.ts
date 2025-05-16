@@ -27,18 +27,53 @@ export const GrantsSchema = t.Record(t.String({ description: "Permission string 
 // Corrected Permission Schema
 export interface PermissionUpdateResponse extends CouchDbModificationResponse {} // Alias for CouchDB response - UNCOMMENTED
 
-export const UserSchema = t.Object({
-    _id: t.Optional(t.String()),
+// Renamed UserSchema to IdentitySchema and merged instance details
+export const IdentityInstanceStatusSchema = t.Union(
+    [
+        t.Literal("pending"),
+        t.Literal("provisioning"),
+        t.Literal("completed"),
+        t.Literal("failed"),
+        t.Literal("deprovisioning"),
+        t.Literal("deprovisioned"),
+        t.Literal("failed_deprovision"),
+    ],
+    {
+        description: "Current status of the instance lifecycle.",
+    }
+);
+export type IdentityInstanceStatus = Static<typeof IdentityInstanceStatusSchema>;
+
+export const IdentitySchema = t.Object({
+    _id: t.Optional(t.String()), // Typically `${IDENTITIES_COLLECTION}/${identityDid}`
     _rev: t.Optional(t.String()),
-    userDid: t.String(),
-    isAdmin: t.Boolean(),
-    tier: t.Optional(t.Number({ default: 0, description: "User tier, e.g., 0 for standard, higher for privileged." })),
-    instanceId: t.Optional(t.String({ description: "Identifier of the Vibe Cloud instance provisioned for this user." })),
-    profileName: t.Optional(t.String({ description: "User's chosen display name." })),
-    profilePictureUrl: t.Optional(t.String({ format: "uri", description: "URL to the user's profile picture." })),
-    collection: t.Literal(USERS_COLLECTION),
+    identityDid: t.String({ description: "The DID of the identity." }), // Renamed from userDid
+    isAdmin: t.Boolean({ default: false }),
+    tier: t.Optional(t.Number({ default: 0, description: "Identity tier." })),
+
+    // Profile information
+    profileName: t.Optional(t.String({ description: "Identity's chosen display name." })),
+    profilePictureUrl: t.Optional(t.String({ format: "uri", description: "URL to the identity's profile picture." })),
+
+    // Instance information - tightly coupled
+    instanceId: t.Optional(t.String({ description: "Unique identifier for the provisioned Vibe Cloud instance." })),
+    instanceStatus: t.Optional(IdentityInstanceStatusSchema),
+    instanceUrl: t.Optional(t.String({ format: "uri", description: "URL of the provisioned instance." })),
+    instanceCreatedAt: t.Optional(t.String({ format: "date-time", description: "Timestamp of when instance provisioning was initiated." })),
+    instanceUpdatedAt: t.Optional(t.String({ format: "date-time", description: "Timestamp of the last instance status update." })),
+    instanceErrorDetails: t.Optional(t.String({ description: "Details of the error if instance provisioning/operation failed." })),
+
+    // Original request details for provisioning, might be useful for idempotency or audit
+    provisioningRequestDetails: t.Optional(
+        t.Object({
+            nonce: t.String(),
+            timestamp: t.String(),
+        })
+    ),
+
+    collection: t.Literal(USERS_COLLECTION), // Or rename to IDENTITIES_COLLECTION if DB collection name changes
 });
-export type User = Static<typeof UserSchema>;
+export type Identity = Static<typeof IdentitySchema>;
 
 export const BlobMetadataSchema = t.Object({
     _id: t.String(), // Required: objectId (UUID for the blob)
@@ -155,17 +190,106 @@ export type AuthCredentials = Static<typeof AuthCredentialsSchema>;
 
 export const JWTPayloadSchema = t.Object(
     {
-        userDid: t.String(),
+        identityDid: t.String(), // Renamed from userDid
+        isAdmin: t.Boolean({ default: false }),
     },
     {
-        // Allow standard JWT claims like iat, exp, aud, iss etc.
         additionalProperties: true,
-        description: "Schema for JWT payload, requires userDid, allows standard claims.",
+        description: "Schema for JWT payload, requires identityDid and isAdmin flag, allows standard claims.",
     }
 );
 export type JWTPayload = Static<typeof JWTPayloadSchema>;
 
-// Admin Claim Schema
+// --- Auth Schemas ---
+export const LoginRequestSchema = t.Object({
+    did: t.String({ description: "Identity's DID for authentication." }),
+    nonce: t.String({ description: "Client-generated nonce." }),
+    timestamp: t.String({ format: "date-time", description: "Client-generated timestamp." }),
+    signature: t.String({ description: "Base64 encoded signature of {did}|{nonce}|{timestamp}." }),
+});
+export type LoginRequest = Static<typeof LoginRequestSchema>;
+
+export const LoginResponseSchema = t.Object({
+    token: t.String(),
+    identityDid: t.String(),
+    isAdmin: t.Boolean(),
+});
+export type LoginResponse = Static<typeof LoginResponseSchema>;
+
+export const RegisterRequestSchema = t.Object({
+    did: t.String({ description: "Identity's DID." }),
+    nonce: t.String({ description: "Client-generated nonce." }),
+    timestamp: t.String({ format: "date-time", description: "Client-generated timestamp." }),
+    signature: t.String({ description: "Base64 encoded signature of {did}|{nonce}|{timestamp}|{claimCode?}." }), // Signature covers claimCode if present
+    profileName: t.Optional(t.String()),
+    profilePictureUrl: t.Optional(t.String({ format: "uri" })),
+    claimCode: t.Optional(t.String({ description: "Optional claim code for admin promotion." })),
+});
+export type RegisterRequest = Static<typeof RegisterRequestSchema>;
+
+// Register response could be the full Identity object or a subset + token
+export const RegisterResponseSchema = t.Object({
+    identity: IdentitySchema,
+    token: t.String({ description: "JWT token for the newly registered identity." }),
+});
+export type RegisterResponse = Static<typeof RegisterResponseSchema>;
+
+// --- Identity Schemas (for API interaction) ---
+
+// For GET /identities (Admin) - returns an array of full Identity objects
+export const IdentityListResponseSchema = t.Array(IdentitySchema);
+export type IdentityListResponse = Static<typeof IdentityListResponseSchema>;
+
+// For GET /identities/:did/status (Anyone)
+export const IdentityStatusResponseSchema = t.Object({
+    isActive: t.Boolean(),
+    // Optionally include instance status if known and public
+    instanceStatus: t.Optional(IdentityInstanceStatusSchema),
+});
+export type IdentityStatusResponse = Static<typeof IdentityStatusResponseSchema>;
+
+// For GET /identities/:did (Admin or Owner) - returns full Identity object
+// IdentitySchema itself can be used as the response schema.
+
+// For PUT /identities/:did
+export const UpdateIdentityOwnerRequestSchema = t.Object({
+    profileName: t.Optional(t.String()),
+    profilePictureUrl: t.Optional(t.String({ format: "uri" })),
+    claimCode: t.Optional(t.String({ description: "Claim code for admin promotion." })),
+    // Owner should sign the update request payload
+    nonce: t.String(),
+    timestamp: t.String({ format: "date-time" }),
+    signature: t.String({ description: "Signature of the update payload by the owner." }),
+});
+export type UpdateIdentityOwnerRequest = Static<typeof UpdateIdentityOwnerRequestSchema>;
+
+export const UpdateIdentityAdminRequestSchema = t.Partial(
+    // Admins can update most fields
+    t.Pick(IdentitySchema, [
+        "isAdmin",
+        "tier",
+        "profileName",
+        "profilePictureUrl",
+        "instanceStatus",
+        "instanceUrl",
+        "instanceErrorDetails",
+        // instanceId should generally not be changed post-creation by admin directly, managed by provisioning flow
+    ]),
+    { additionalProperties: false } // No other fields allowed for admin update via this schema
+);
+export type UpdateIdentityAdminRequest = Static<typeof UpdateIdentityAdminRequestSchema>;
+
+export const UpdateIdentityInternalRequestSchema = t.Object({
+    // For provisioning script callback
+    instanceStatus: IdentityInstanceStatusSchema,
+    instanceUrl: t.Optional(t.String({ format: "uri" })),
+    instanceErrorDetails: t.Optional(t.String()),
+});
+export type UpdateIdentityInternalRequest = Static<typeof UpdateIdentityInternalRequestSchema>;
+
+// Response for PUT /identities/:did is the updated IdentitySchema object.
+
+// Admin Claim Schema (still used for initial bootstrap if env var is set)
 export const AdminClaimSchema = t.Object({
     did: t.String({ error: "Missing required field: did" }),
     claimCode: t.String({ error: "Missing required field: claimCode" }),
@@ -173,7 +297,7 @@ export const AdminClaimSchema = t.Object({
 });
 export type AdminClaimBody = Static<typeof AdminClaimSchema>;
 
-// Blob Schemas (for API interaction)
+// Blob Schemas (for API interaction) - Unchanged for now
 export const BlobUploadBodySchema = t.Object({
     file: t.File({ error: "File upload is required." }),
 });
@@ -224,99 +348,19 @@ export const ErrorResponseSchema = t.Object({
 });
 export type ErrorResponse = Static<typeof ErrorResponseSchema>;
 
-// Provisioning Schemas
+// Provisioning Schemas (Now part of Identity or removed)
+// InstanceSchema is removed as its fields are merged into IdentitySchema.
+// INSTANCES_COLLECTION constant might be removed if not used for a separate DB collection anymore.
+// ProvisionInstanceRequestSchema is replaced by RegisterRequestSchema.
+// ProvisionInstanceResponseSchema is replaced by RegisterResponseSchema.
+// InstanceStatusResponseSchema is replaced by fields in IdentitySchema or specific parts of IdentityStatusResponseSchema.
+// InternalProvisionUpdateRequestSchema is replaced by UpdateIdentityInternalRequestSchema.
+// InstanceListResponseSchema is replaced by IdentityListResponseSchema.
 
-// Schema for documents in the INSTANCES_COLLECTION
-export const InstanceSchema = t.Object({
-    _id: t.String({ description: "Instance identifier, typically derived from user DID." }), // instanceIdentifier becomes the _id
-    _rev: t.Optional(t.String()),
-    userDid: t.String({ description: "DID of the user this instance belongs to." }),
-    status: t.Union([t.Literal("pending"), t.Literal("provisioning"), t.Literal("completed"), t.Literal("failed")], {
-        description: "Current status of the instance provisioning.",
-    }),
-    instanceUrl: t.Optional(t.String({ format: "uri", description: "URL of the provisioned instance, available when status is 'completed'." })),
-    createdAt: t.String({ format: "date-time", description: "Timestamp of when the provisioning request was initiated." }),
-    updatedAt: t.Optional(t.String({ format: "date-time", description: "Timestamp of the last status update." })),
-    errorDetails: t.Optional(t.String({ description: "Details of the error if provisioning failed." })),
-    requestDetails: t.Optional(
-        t.Object({
-            // Store the request details for auditing/replay prevention
-            nonce: t.String(),
-            timestamp: t.String(),
-        })
-    ),
-    collection: t.Literal(INSTANCES_COLLECTION),
-});
-export type Instance = Static<typeof InstanceSchema>;
-
-// Schema for the new user-driven provisioning request
-export const ProvisionInstanceRequestSchema = t.Object({
-    did: t.String({ description: "User's DID for authentication." }),
-    nonce: t.String({ description: "Client-generated nonce for replay protection." }),
-    timestamp: t.String({ format: "date-time", description: "Client-generated timestamp for the request." }),
-    signature: t.String({ description: "Base64 encoded signature of {did, nonce, timestamp}." }),
-    profileName: t.Optional(t.String({ description: "User's desired display name for the initial identity." })),
-    profilePictureUrl: t.Optional(t.String({ format: "uri", description: "URL to the user's profile picture for the initial identity." })),
-});
-export type ProvisionInstanceRequest = Static<typeof ProvisionInstanceRequestSchema>;
-
-// Schema for the 202 Accepted response from instance provisioning
-export const ProvisionInstanceResponseSchema = t.Object({
-    message: t.String(),
-    instanceIdentifier: t.String(),
-});
-export type ProvisionInstanceResponse = Static<typeof ProvisionInstanceResponseSchema>;
-
-// Schema for the instance status endpoint response
-export const InstanceStatusResponseSchema = t.Object({
-    instanceIdentifier: t.String(),
-    userDid: t.String(),
-    status: t.String(), // Should match one of the InstanceSchema status literals
-    instanceUrl: t.Optional(t.String({ format: "uri" })),
-    createdAt: t.String({ format: "date-time" }),
-    updatedAt: t.Optional(t.String({ format: "date-time" })),
-    errorDetails: t.Optional(t.String()),
-});
-export type InstanceStatusResponse = Static<typeof InstanceStatusResponseSchema>;
-
-// Schema for the internal callback to update provisioning status
-export const InternalProvisionUpdateRequestSchema = t.Object({
-    instanceIdentifier: t.String(),
-    status: t.Union([t.Literal("completed"), t.Literal("failed")]),
-    url: t.Optional(t.String({ format: "uri" })), // Required if status is 'completed'
-    error: t.Optional(t.String()), // Required if status is 'failed'
-});
-export type InternalProvisionUpdateRequest = Static<typeof InternalProvisionUpdateRequestSchema>;
-
-// This is the old admin-only provisioning request schema, can be removed or kept if admin provisioning is still needed.
-// For now, let's comment it out as the primary flow is user-driven.
-// export const ProvisionRequestSchema = t.Object({
-//     targetUserDid: t.String({ description: "The DID of the user for whom the instance is being provisioned." }),
-//     instanceIdentifier: t.String({ description: "A unique identifier for the new instance (e.g., subdomain part)." }),
-// });
-// export type ProvisionRequest = Static<typeof ProvisionRequestSchema>;
-
-// --- Identity Recovery Schemas ---
-export const IdentityStatusResponseSchema = t.Object({
-    isActive: t.Boolean(),
-});
-export type IdentityStatusResponse = Static<typeof IdentityStatusResponseSchema>;
-
-export const IdentityMetadataResponseSchema = t.Object({
-    did: t.String(),
-    instanceUrl: t.Optional(t.String({ format: "uri" })),
-    // Placeholder for profile data - to be confirmed if stored in CP
-    profileName: t.Optional(t.String()),
-    profilePictureUrl: t.Optional(t.String({ format: "uri" })),
-});
-export type IdentityMetadataResponse = Static<typeof IdentityMetadataResponseSchema>;
-
-// Schema for updating user profile information
-export const UpdateProfileRequestSchema = t.Object({
-    profileName: t.Optional(t.String({ description: "User's new display name. Null to clear." })),
-    profilePictureUrl: t.Optional(t.String({ format: "uri", description: "New URL to the user's profile picture. Null to clear." })),
-});
-export type UpdateProfileRequest = Static<typeof UpdateProfileRequestSchema>;
+// --- Identity Recovery Schemas --- (Now part of general Identity Schemas)
+// IdentityStatusResponseSchema is updated above.
+// IdentityMetadataResponseSchema is covered by returning the IdentitySchema object.
+// UpdateProfileRequestSchema is part of UpdateIdentityOwnerRequestSchema.
 
 //#endregion
 

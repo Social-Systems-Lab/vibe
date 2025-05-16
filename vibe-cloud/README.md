@@ -13,7 +13,7 @@ The Vibe Cloud backend is structured as a multi-service application:
     -   `helm/`: Helm charts for deploying services (currently `vibe-cloud-instance`, which packages the `vibe-cloud-api`).
     -   `provisioning/`: Scripts used by the control plane to automate instance provisioning (e.g., running Terraform).
     -   `kubernetes/`: Raw Kubernetes manifest files (if any, for components not managed by Helm).
--   **`vibe-cloud-selfhost`**: (Future) This directory will contain configurations and documentation for self-hosting Vibe Cloud.
+-   **`vibe-cloud-selfhost`**: This directory will contain configurations and documentation for self-hosting Vibe Cloud.
 
 ## Local Development
 
@@ -25,8 +25,8 @@ To run the Vibe Cloud services locally for development:
 4.  Update the `.env` file(s) with your desired settings (e.g., CouchDB credentials, JWT secret, Minio credentials).
 5.  From the root of the `vibe` project (`d:/Projects/ssl/vibe`), run:
     `bash
-    docker-compose up --build
-    `
+docker-compose up --build
+`
     This will build the Docker images for `vibe-cloud-api` and `vibe-cloud-control-plane` and start them along with CouchDB and Minio services.
 
 -   The API service will typically be available at `http://localhost:3000` (or the port specified by `APP_PORT`).
