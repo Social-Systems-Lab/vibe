@@ -21,7 +21,7 @@ import {
     deriveChildKeyPair,
     wipeMemory,
     decryptData,
-    importEd25519Key, // Ensure this is imported
+    // importEd25519Key, // No longer used as it was causing errors and signMessage uses noble directly
     validateMnemonic, // Ensure validateMnemonic is imported for the test
     signMessage, // Assuming a function to sign a message with a private key
 } from "./lib/crypto";
@@ -57,7 +57,7 @@ const SESSION_STORAGE_ACTIVE_IDENTITY_INDEX = "activeIdentityIndex";
 const GAP_LIMIT = 20; // Standard gap limit for address discovery
 
 // --- Global State ---
-let activeSigningKey: CryptoKey | null = null;
+// let activeSigningKey: CryptoKey | null = null; // This was causing issues and isn't used by the current signing flow
 let currentActiveDid: string | null = null;
 let isUnlocked: boolean = false;
 
@@ -69,26 +69,30 @@ async function loadActiveIdentityFromSessionInternal() {
         const activeIndex = sessionData[SESSION_STORAGE_ACTIVE_IDENTITY_INDEX];
 
         if (decryptedSeed && typeof activeIndex === "number") {
-            const seedBuffer = await seedFromMnemonic(decryptedSeed);
-            const masterKey = getMasterHDKeyFromSeed(seedBuffer);
-            const identityKeyPair = deriveChildKeyPair(masterKey, activeIndex);
-            activeSigningKey = await importEd25519Key(identityKeyPair.privateKey, false);
-            currentActiveDid = didFromEd25519(identityKeyPair.publicKey);
-            isUnlocked = true;
-            wipeMemory(seedBuffer);
-            console.log("Active identity loaded from session:", currentActiveDid);
-            return true;
+            let seedBuffer: Buffer | null = null;
+            try {
+                seedBuffer = await seedFromMnemonic(decryptedSeed);
+                const masterKey = getMasterHDKeyFromSeed(seedBuffer);
+                const identityKeyPair = deriveChildKeyPair(masterKey, activeIndex);
+                // activeSigningKey = await importEd25519Key(identityKeyPair.privateKey, false); // Removed: problematic and not used for noble/ed25519 signing
+                currentActiveDid = didFromEd25519(identityKeyPair.publicKey);
+                isUnlocked = true;
+                console.log("Active identity loaded from session:", currentActiveDid);
+                return true;
+            } finally {
+                if (seedBuffer) wipeMemory(seedBuffer);
+            }
         }
     } catch (error) {
         console.error("Error loading active identity from session:", error);
-        await clearSessionStateInternal();
+        await clearSessionStateInternal(); // Ensure session is cleared on error
     }
-    isUnlocked = false;
+    isUnlocked = false; // Ensure state is consistent if loading fails
     return false;
 }
 
 async function clearSessionStateInternal() {
-    activeSigningKey = null;
+    // activeSigningKey = null; // No longer used
     currentActiveDid = null;
     isUnlocked = false;
     await chrome.storage.session.remove([SESSION_STORAGE_DECRYPTED_SEED_PHRASE, SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]);

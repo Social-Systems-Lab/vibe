@@ -209,18 +209,21 @@ export function wipeMemory(sensitiveData: Buffer | Uint8Array): void {
  * @param extractable - Whether the key should be extractable. Defaults to false for security.
  * @returns A Promise that resolves to the imported CryptoKey.
  */
-export async function importEd25519Key(privateKeyBytes: Uint8Array, extractable: boolean = false): Promise<CryptoKey> {
-    if (privateKeyBytes.length !== 32) {
-        throw new Error("Ed25519 private key (seed) must be 32 bytes.");
-    }
-    return crypto.subtle.importKey(
-        "raw",
-        privateKeyBytes,
-        { name: "Ed25519" }, // Algorithm identifier for Ed25519
-        extractable,
-        ["sign"] // Key usages: only signing for private keys
-    );
-}
+// export async function importEd25519Key(privateKeyBytes: Uint8Array, extractable: boolean = false): Promise<CryptoKey> {
+//     if (privateKeyBytes.length !== 32) {
+//         throw new Error("Ed25519 private key (seed) must be 32 bytes.");
+//     }
+//     // This was causing "Algorithm: Unrecognized name" error as "Ed25519" is not a standard
+//     // algorithm name for crypto.subtle.importKey in all environments for raw private keys.
+//     // The current signing flow uses noble/ed25519 directly via signMessage, so this CryptoKey is not strictly needed.
+//     return crypto.subtle.importKey(
+//         "raw",
+//         privateKeyBytes,
+//         { name: "Ed25519" },
+//         extractable,
+//         ["sign"]
+//     );
+// }
 
 /**
  * Signs a message using a raw Ed25519 private key (seed).
