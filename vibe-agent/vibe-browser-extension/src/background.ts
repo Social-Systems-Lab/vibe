@@ -413,6 +413,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                     message: `Successfully imported and recovered ${recoveredIdentities.length} identities.`,
                                     recoveredCount: recoveredIdentities.length,
                                     primaryDid: recoveredIdentities[0].did,
+                                    primaryProfileName: recoveredIdentities[0].profile_name, // Add profile name
                                 };
                             } else {
                                 await chrome.storage.local.set({ [STORAGE_KEY_SETUP_COMPLETE]: true });
@@ -559,7 +560,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 const messageToSign = `${userDid}|${nonce}|${timestamp}`;
                                 const signature = await signMessage(privateKeyBytes, messageToSign);
 
-                                const provisionRequestPayload = { did: userDid, nonce, timestamp, signature };
+                                const provisionRequestPayload: any = {
+                                    did: userDid,
+                                    nonce,
+                                    timestamp,
+                                    signature,
+                                };
+                                if (identityName) provisionRequestPayload.profileName = identityName;
+                                if (identityPicture) provisionRequestPayload.profilePictureUrl = identityPicture;
+
                                 console.log("Sending provisioning request:", provisionRequestPayload);
 
                                 const provisionResponse = await fetch(`${OFFICIAL_VIBE_CLOUD_PROVISIONING_URL}/api/v1/provision/instance`, {

@@ -25,6 +25,7 @@ type SetupStep =
     // | "confirmPhrase"
     | "setupIdentity" // Replaces nameIdentity and configureCloud
     | "importPhrase"
+    | "noIdentitiesFound" // New step
     | "setupComplete"
     // | "complete" // Removed, handled by handleCloudConfigured
     | "error";
@@ -88,26 +89,27 @@ export function SetupWizard({ onSetupComplete }: SetupWizardProps) {
                 setWizardState((prev) => ({ ...prev, importedMnemonic: undefined })); // Clear imported mnemonic
 
                 // Mark setup complete (background script handles storage)
-                // The background script for SETUP_IMPORT_VAULT doesn't mark setup complete.
-                // It only creates the vault. The "SETUP_COMPLETE_AND_FINALIZE" is for new vault flow.
-                // For import, we might need a separate "mark complete" or just call onSetupComplete.
-                // Let's assume for now that after import, the user might still go through naming/cloud.
-                // OR, if import is the *final* step, we tell background to mark complete.
-                // The original code called localStorage.setItem("vibe_agent_setup_complete", "true");
-                // and then onSetupComplete().
-                // Let's send a message to background to mark setup complete.
-                // await chrome.runtime.sendMessage({ type: "MARK_SETUP_COMPLETE" }); // This is now handled by SETUP_COMPLETE_AND_FINALIZE
-                // console.log("MARK_SETUP_COMPLETE message sent to background.");
-                // onSetupComplete(); // This is also handled later
+                console.log("Import vault successful via background script.");
+                setWizardState((prev) => ({ ...prev, importedMnemonic: undefined })); // Clear imported mnemonic
 
-                // Instead, transition to the setupIdentity step to configure the imported identity
-                console.log("Vault import successful, proceeding to identity setup step.");
-                // Optionally, pass the DID from response.payload.did to wizardState if needed by SetupIdentityStep
-                // For now, SetupIdentityStep doesn't require it directly, but it's good to have in wizardState
-                if (response.payload?.did) {
-                    setWizardState((prev) => ({ ...prev /* importedIdentityDid: response.payload.did */ }));
+                if (response.payload?.recoveredCount > 0) {
+                    console.log(`${response.payload.recoveredCount} identities recovered. Proceeding to setup complete.`);
+                    // If identities were recovered, set the first one as active (done by background)
+                    // and go to complete step.
+                    // The background script already sets STORAGE_KEY_SETUP_COMPLETE to true.
+                    // It also sets currentIdentityDID and session storage.
+                    setWizardState((prev) => ({
+                        ...prev,
+                        // Attempt to get a name if possible from the background response.
+                        identityName:
+                            response.payload?.primaryProfileName ||
+                            (response.payload?.primaryDid ? `Identity (${response.payload.primaryDid.slice(0, 12)}...)` : "Recovered Identity"),
+                    }));
+                    setCurrentStep("setupComplete");
+                } else {
+                    console.log("No identities recovered from seed. Proceeding to inform user.");
+                    setCurrentStep("noIdentitiesFound");
                 }
-                setCurrentStep("setupIdentity");
             } catch (error) {
                 console.error("Error during background import finalization:", error);
                 setWizardState((prev) => ({
@@ -291,6 +293,26 @@ export function SetupWizard({ onSetupComplete }: SetupWizardProps) {
             // nameIdentity and configureCloud cases removed
             case "importPhrase":
                 return <ImportPhraseStep onPhraseVerified={handlePhraseImported} />;
+            case "noIdentitiesFound":
+                // Placeholder for the new step component
+                return (
+                    <div>
+                        <h2 className="text-xl font-semibold mb-4">No Identities Found</h2>
+                        <p className="mb-6">We couldn't find any active Vibe identities associated with the recovery phrase you provided.</p>
+                        <div className="flex space-x-4">
+                            <Button onClick={() => setCurrentStep("setupIdentity")}>Create New Identity</Button>
+                            <Button
+                                variant="outline"
+                                onClick={() => {
+                                    setWizardState({}); // Clear state
+                                    setCurrentStep("welcome");
+                                }}
+                            >
+                                Cancel Setup
+                            </Button>
+                        </div>
+                    </div>
+                );
             case "setupComplete":
                 return (
                     <SetupCompleteStep

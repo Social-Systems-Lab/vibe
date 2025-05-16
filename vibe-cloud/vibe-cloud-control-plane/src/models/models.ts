@@ -34,6 +34,8 @@ export const UserSchema = t.Object({
     isAdmin: t.Boolean(),
     tier: t.Optional(t.Number({ default: 0, description: "User tier, e.g., 0 for standard, higher for privileged." })),
     instanceId: t.Optional(t.String({ description: "Identifier of the Vibe Cloud instance provisioned for this user." })),
+    profileName: t.Optional(t.String({ description: "User's chosen display name." })),
+    profilePictureUrl: t.Optional(t.String({ format: "uri", description: "URL to the user's profile picture." })),
     collection: t.Literal(USERS_COLLECTION),
 });
 export type User = Static<typeof UserSchema>;
@@ -253,6 +255,8 @@ export const ProvisionInstanceRequestSchema = t.Object({
     nonce: t.String({ description: "Client-generated nonce for replay protection." }),
     timestamp: t.String({ format: "date-time", description: "Client-generated timestamp for the request." }),
     signature: t.String({ description: "Base64 encoded signature of {did, nonce, timestamp}." }),
+    profileName: t.Optional(t.String({ description: "User's desired display name for the initial identity." })),
+    profilePictureUrl: t.Optional(t.String({ format: "uri", description: "URL to the user's profile picture for the initial identity." })),
 });
 export type ProvisionInstanceRequest = Static<typeof ProvisionInstanceRequestSchema>;
 

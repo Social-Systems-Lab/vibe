@@ -232,7 +232,7 @@ export class AuthService {
      * @returns The newly created user document.
      * @throws Error if user creation fails.
      */
-    async provisionNewUser(userDid: string, instanceIdentifier: string): Promise<User> {
+    async provisionNewUser(userDid: string, instanceIdentifier: string, profileName?: string, profilePictureUrl?: string): Promise<User> {
         const userDocId = `${USERS_COLLECTION}/${userDid}`;
 
         const newUser: User = {
@@ -240,6 +240,8 @@ export class AuthService {
             isAdmin: false,
             tier: 0, // Default tier for new users
             instanceId: instanceIdentifier, // Link user to their instance
+            profileName: profileName, // Store profile name
+            profilePictureUrl: profilePictureUrl, // Store profile picture URL
             collection: USERS_COLLECTION,
         };
 

@@ -283,8 +283,8 @@ export const app = new Elysia()
             .post(
                 "/instance",
                 async ({ authService, dataService, body, set }) => {
-                    const { did, nonce, timestamp, signature } = body;
-                    logger.info(`Instance provisioning request received for DID: ${did}, Nonce: ${nonce}`);
+                    const { did, nonce, timestamp, signature, profileName, profilePictureUrl } = body; // Extract profile fields
+                    logger.info(`Instance provisioning request received for DID: ${did}, Nonce: ${nonce}, ProfileName: ${profileName}`);
 
                     // 1. Verify Signature
                     const isSignatureValid = await authService.verifyDidSignature(did, nonce, timestamp, signature);
@@ -332,7 +332,7 @@ export const app = new Elysia()
 
                     // 5. Create User Record (Tier 0)
                     try {
-                        await authService.provisionNewUser(did, instanceIdentifier);
+                        await authService.provisionNewUser(did, instanceIdentifier, profileName, profilePictureUrl); // Pass profile fields
                     } catch (error: any) {
                         logger.error(`Failed to create user record for DID ${did}, instance ${instanceIdentifier}:`, error);
                         // Handle specific errors like user already exists with a different instance if needed
@@ -726,8 +726,8 @@ export const app = new Elysia()
                         const response: IdentityMetadataResponse = {
                             did: user.userDid,
                             instanceUrl: instance.instanceUrl,
-                            // profileName and profilePictureUrl are not currently stored in CP.
-                            // These would be populated if UserSchema or a related Profile schema included them.
+                            profileName: user.profileName, // Populate from User document
+                            profilePictureUrl: user.profilePictureUrl, // Populate from User document
                         };
                         return response;
                     } catch (error: any) {
