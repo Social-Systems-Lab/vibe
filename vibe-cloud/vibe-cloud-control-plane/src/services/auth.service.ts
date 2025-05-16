@@ -313,9 +313,9 @@ export class AuthService {
      */
     async verifyDidSignature(did: string, nonce: string, timestamp: string, signatureB64: string): Promise<boolean> {
         try {
-            // IMPORTANT: The client signs `nonce + timestamp` directly.
-            // The server must verify against the exact same string.
-            const messageToVerify = nonce + timestamp;
+            // Message format: DID, nonce, and timestamp, concatenated with a delimiter (e.g., '|')
+            // This ensures the signature is bound to the DID, nonce, and timestamp.
+            const messageToVerify = `${did}|${nonce}|${timestamp}`;
             const messageBytes = new TextEncoder().encode(messageToVerify);
 
             const publicKeyBytes = ed25519FromDid(did);

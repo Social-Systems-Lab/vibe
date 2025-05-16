@@ -486,31 +486,173 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         break;
                     }
                     case "SETUP_COMPLETE_AND_FINALIZE": {
-                        // ... (existing SETUP_COMPLETE_AND_FINALIZE logic) ...
+                        console.log("Processing 'SETUP_COMPLETE_AND_FINALIZE'");
                         const { identityName, identityPicture, cloudUrl, claimCode, password, mnemonic } = payload;
-                        if (!password || !mnemonic) throw new Error("Password and mnemonic are required for finalization.");
-                        // (Full logic as previously provided)
-                        // For brevity, assuming it correctly updates the first identity in vaultData
-                        // and sets STORAGE_KEY_SETUP_COMPLETE and currentIdentityDID
+
+                        if (!password || !mnemonic) {
+                            throw new Error("Password and mnemonic are required for finalization.");
+                        }
+
                         const vaultResult = await chrome.storage.local.get(STORAGE_KEY_VAULT);
                         let vaultData = vaultResult[STORAGE_KEY_VAULT];
-                        // ... (rest of the logic including provisioning if official cloud)
-                        // Ensure vaultData.identities[0] is updated and vaultData.settings.cloudUrl (for that identity)
-                        // For this reconstruction, assume it completes and sets:
-                        vaultData.identities[0].profile_name = identityName;
-                        vaultData.identities[0].profile_picture = identityPicture;
-                        vaultData.identities[0].cloudUrl = cloudUrl; // Simplified, actual provisioning sets this
+
+                        if (!vaultData || !vaultData.identities || vaultData.identities.length === 0) {
+                            console.warn("Vault data not found or incomplete during finalization. Attempting to reconstruct basic vault.");
+                            const salt = generateSalt();
+                            const saltHex = Buffer.from(salt).toString("hex");
+                            let encryptionKeyRecon: CryptoKey | null = null;
+                            let seedRecon: Buffer | null = null;
+                            try {
+                                encryptionKeyRecon = await deriveEncryptionKey(password, salt);
+                                const encryptedMnemonicData = await encryptData(mnemonic, encryptionKeyRecon);
+                                seedRecon = await seedFromMnemonic(mnemonic);
+                                const masterHDKey = getMasterHDKeyFromSeed(seedRecon);
+                                const firstIdentityKeys = deriveChildKeyPair(masterHDKey, 0);
+                                const firstDid = didFromEd25519(firstIdentityKeys.publicKey);
+
+                                vaultData = {
+                                    encryptedSeedPhrase: encryptedMnemonicData,
+                                    identities: [
+                                        {
+                                            did: firstDid,
+                                            derivationPath: firstIdentityKeys.derivationPath,
+                                            profile_name: null,
+                                            profile_picture: null,
+                                            cloudUrl: null, // Ensure cloudUrl is part of the identity object
+                                        },
+                                    ],
+                                    settings: { nextAccountIndex: 1, activeIdentityIndex: 0 }, // Ensure activeIdentityIndex is set
+                                };
+                                await chrome.storage.local.set({ [STORAGE_KEY_VAULT_SALT]: saltHex, [STORAGE_KEY_VAULT]: vaultData });
+                                console.log("Basic vault structure reconstructed and saved.");
+                            } finally {
+                                if (encryptionKeyRecon) encryptionKeyRecon = null;
+                                if (seedRecon) wipeMemory(seedRecon);
+                            }
+                        }
+
+                        const userDid = vaultData.identities[0].did;
+                        let finalCloudUrl = cloudUrl; // Default to provided cloudUrl
+
+                        // Check if provisioning is needed (Official Vibe Cloud URL and no claim code)
+                        if (cloudUrl === OFFICIAL_VIBE_CLOUD_PROVISIONING_URL && !claimCode) {
+                            console.log(`Official Vibe Cloud selected. Initiating provisioning for DID: ${userDid}`);
+                            let seedForSigning: Buffer | null = null;
+                            let privateKeyBytes: Uint8Array | null = null;
+                            try {
+                                seedForSigning = await seedFromMnemonic(mnemonic);
+                                const masterKey = getMasterHDKeyFromSeed(seedForSigning);
+                                const keyPair = deriveChildKeyPair(masterKey, vaultData.settings.activeIdentityIndex || 0);
+                                privateKeyBytes = keyPair.privateKey;
+
+                                if (!privateKeyBytes) {
+                                    throw new Error("Failed to derive private key for signing.");
+                                }
+
+                                const nonce = crypto.randomUUID().toString();
+                                const timestamp = new Date().toISOString();
+                                // Corrected message format for provisioning, matching control plane expectation
+                                const messageToSign = `${userDid}|${nonce}|${timestamp}`;
+                                const signature = await signMessage(privateKeyBytes, messageToSign);
+
+                                const provisionRequestPayload = { did: userDid, nonce, timestamp, signature };
+                                console.log("Sending provisioning request:", provisionRequestPayload);
+
+                                const provisionResponse = await fetch(`${OFFICIAL_VIBE_CLOUD_PROVISIONING_URL}/api/v1/provision/instance`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify(provisionRequestPayload),
+                                });
+
+                                if (!provisionResponse.ok) {
+                                    const errorBody = await provisionResponse.json().catch(() => ({ error: "Failed to parse error response." }));
+                                    throw new Error(
+                                        `Provisioning request failed: ${provisionResponse.status} ${provisionResponse.statusText} - ${
+                                            errorBody.error || "Unknown error"
+                                        }`
+                                    );
+                                }
+
+                                const provisionResult = await provisionResponse.json();
+                                if (provisionResponse.status !== 202 || !provisionResult.instanceIdentifier) {
+                                    throw new Error(`Provisioning not accepted: ${provisionResult.message || "Missing instance identifier"}`);
+                                }
+                                console.log("Provisioning accepted, instanceIdentifier:", provisionResult.instanceIdentifier);
+
+                                // Polling for status
+                                let attempts = 0;
+                                const maxAttempts = 30; // 5 minutes (30 * 10s)
+                                const pollInterval = 10000; // 10 seconds
+                                while (attempts < maxAttempts) {
+                                    attempts++;
+                                    console.log(`Polling status for ${provisionResult.instanceIdentifier}, attempt ${attempts}`);
+                                    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+
+                                    const statusResponse = await fetch(
+                                        `${OFFICIAL_VIBE_CLOUD_PROVISIONING_URL}/api/v1/provision/status/${provisionResult.instanceIdentifier}`
+                                    );
+                                    if (!statusResponse.ok) {
+                                        console.warn(`Status poll failed: ${statusResponse.status} ${statusResponse.statusText}. Retrying...`);
+                                        continue;
+                                    }
+                                    const statusData = await statusResponse.json();
+                                    console.log("Status poll response:", statusData);
+
+                                    if (statusData.status === "completed") {
+                                        if (!statusData.instanceUrl) {
+                                            throw new Error("Provisioning completed but instance URL is missing.");
+                                        }
+                                        finalCloudUrl = statusData.instanceUrl; // Update finalCloudUrl with the one from CP
+                                        console.log(`Provisioning successful! Instance URL: ${finalCloudUrl}`);
+                                        break;
+                                    } else if (statusData.status === "failed") {
+                                        throw new Error(`Provisioning failed: ${statusData.errorDetails || "Unknown error from control plane."}`);
+                                    }
+                                }
+                                if (attempts >= maxAttempts && finalCloudUrl === cloudUrl) {
+                                    // Check if still default
+                                    throw new Error("Provisioning timed out after several attempts.");
+                                }
+                            } finally {
+                                if (seedForSigning) wipeMemory(seedForSigning);
+                                if (privateKeyBytes) privateKeyBytes.fill(0);
+                            }
+                        } else if (claimCode) {
+                            console.log(`TODO: Implement Vibe Cloud claim with URL: ${cloudUrl} and Code: ${claimCode}`);
+                            // Assuming claim code implies the provided cloudUrl is final or will be handled by a different flow.
+                            finalCloudUrl = cloudUrl;
+                        }
+                        // If it's a custom URL without a claim code, finalCloudUrl is already set from payload.cloudUrl
+
+                        // Update vault with identity details and final cloud URL
+                        vaultData.identities[0].profile_name = identityName || null;
+                        vaultData.identities[0].profile_picture = identityPicture || null;
+                        vaultData.identities[0].cloudUrl = finalCloudUrl || null; // Store the final URL
+
+                        // Persist updated vault and mark setup as complete
                         await chrome.storage.local.set({
                             [STORAGE_KEY_VAULT]: vaultData,
                             [STORAGE_KEY_SETUP_COMPLETE]: true,
-                            currentIdentityDID: vaultData.identities[0].did,
+                            currentIdentityDID: vaultData.identities[0].did, // Store current DID for quick access
                         });
 
-                        responsePayload = { success: true, message: "Setup finalized.", identityName };
+                        // Set session for immediate unlock
+                        await chrome.storage.session.set({
+                            [SESSION_STORAGE_DECRYPTED_SEED_PHRASE]: mnemonic,
+                            [SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: vaultData.settings.activeIdentityIndex || 0,
+                        });
+                        await loadActiveIdentityFromSessionInternal(); // Load into global state
+
+                        responsePayload = {
+                            success: true,
+                            message: "Setup finalized and marked complete." + (finalCloudUrl ? ` Connected to ${finalCloudUrl}.` : ""),
+                            identityName: vaultData.identities[0].profile_name,
+                            did: vaultData.identities[0].did,
+                        };
+                        console.log("Setup finalized, vault updated, and setup marked complete.");
                         break;
                     }
                     case "CLOSE_SETUP_TAB": {
-                        // ... (existing CLOSE_SETUP_TAB logic) ...
                         if (sender.tab && sender.tab.id) {
                             chrome.tabs.remove(sender.tab.id);
                             responsePayload = { success: true, message: "Setup tab closed." };
