@@ -150,8 +150,190 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             let responseType = "VIBE_AGENT_RESPONSE";
             try {
                 switch (action) {
-                    // ... (init, UNLOCK_VAULT, SETUP_CREATE_VAULT, SETUP_IMPORT_VAULT remain largely similar for local vault ops) ...
-                    // Cases to refactor: SETUP_IMPORT_SEED_AND_RECOVER_IDENTITIES, SETUP_COMPLETE_AND_FINALIZE, UPDATE_IDENTITY_PROFILE
+                    case "init":
+                        if (!isUnlocked) await loadActiveIdentityFromSessionInternal();
+                        if (!isUnlocked || !currentActiveDid) {
+                            responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                            responsePayload = { error: { message: "Vault is locked. Please unlock.", code: "VAULT_LOCKED" } };
+                        } else {
+                            // TODO: Check for JWT and potentially guide to login if missing for cloud features
+                            responsePayload = { did: currentActiveDid, permissions: { "profile:read": "always" }, message: "Successfully initialized." };
+                        }
+                        break;
+
+                    case "UNLOCK_VAULT": {
+                        console.log("Processing 'UNLOCK_VAULT'");
+                        const { password } = payload;
+                        if (!password || typeof password !== "string") throw new Error("Password is required for UNLOCK_VAULT.");
+                        const localData = await chrome.storage.local.get([STORAGE_KEY_VAULT, STORAGE_KEY_VAULT_SALT]);
+                        const vaultData = localData[STORAGE_KEY_VAULT];
+                        const saltHex = localData[STORAGE_KEY_VAULT_SALT];
+                        if (!vaultData || !saltHex) throw new Error("Vault or salt not found. Setup may not be complete.");
+                        const salt = Buffer.from(saltHex, "hex");
+                        let encryptionKey: CryptoKey | null = null; // For scoping, ensure it's not accidentally reused
+                        let decryptedSeedAttempt: string | null = null;
+                        try {
+                            encryptionKey = await deriveEncryptionKey(password, salt);
+                            decryptedSeedAttempt = await decryptData(vaultData.encryptedSeedPhrase, encryptionKey);
+                            if (!decryptedSeedAttempt) throw new Error("Decryption failed, returned null seed.");
+
+                            const activeIdentityIndex = vaultData.settings?.activeIdentityIndex ?? 0;
+                            await chrome.storage.session.set({
+                                [SESSION_STORAGE_DECRYPTED_SEED_PHRASE]: decryptedSeedAttempt,
+                                [SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: activeIdentityIndex,
+                            });
+                            await loadActiveIdentityFromSessionInternal(); // This sets currentActiveDid and isUnlocked
+                            if (!isUnlocked || !currentActiveDid) throw new Error("Failed to load active identity into global state after unlock.");
+
+                            // After unlocking, attempt to get JWT for the active DID
+                            const jwt = await getStoredJwt(currentActiveDid);
+                            if (!jwt) {
+                                console.warn(`Vault unlocked for ${currentActiveDid}, but no JWT found. Login may be required for cloud operations.`);
+                            }
+
+                            responsePayload = { success: true, did: currentActiveDid, message: "Vault unlocked." };
+                        } catch (error) {
+                            await clearSessionStateInternal(); // Clear session on any unlock error
+                            throw new Error(`Failed to unlock vault. ${error instanceof Error ? error.message : String(error)}`);
+                        } finally {
+                            // encryptionKey is a CryptoKey object, no explicit wipe method. It will be garbage collected.
+                            if (decryptedSeedAttempt) decryptedSeedAttempt = null; // Clear sensitive data from memory
+                        }
+                        break;
+                    }
+
+                    case "LOCK_VAULT":
+                        await clearSessionStateInternal(); // This clears seed, active index, and all JWTs
+                        responsePayload = { success: true, message: "Vault locked." };
+                        break;
+
+                    case "GET_LOCK_STATE":
+                        // isUnlocked reflects the state of the seed phrase being in session.
+                        // For full functionality (cloud), a JWT for currentActiveDid is also needed.
+                        responsePayload = { isUnlocked, did: currentActiveDid };
+                        break;
+
+                    case "SETUP_CREATE_VAULT": {
+                        await clearSessionStateInternal();
+                        const { password } = payload;
+                        if (!password || typeof password !== "string") throw new Error("Password is required for SETUP_CREATE_VAULT.");
+                        const mnemonic = generateMnemonic();
+                        const salt = generateSalt();
+                        const saltHex = Buffer.from(salt).toString("hex");
+                        let encryptionKey: CryptoKey | null = null;
+                        let seed: Buffer | null = null;
+                        try {
+                            encryptionKey = await deriveEncryptionKey(password, salt);
+                            const encryptedMnemonicData = await encryptData(mnemonic, encryptionKey);
+                            seed = await seedFromMnemonic(mnemonic);
+                            const masterHDKey = getMasterHDKeyFromSeed(seed);
+                            const firstIdentityKeys = deriveChildKeyPair(masterHDKey, 0);
+                            const firstDid = didFromEd25519(firstIdentityKeys.publicKey);
+                            const vaultData = {
+                                encryptedSeedPhrase: encryptedMnemonicData,
+                                identities: [
+                                    // Stored with snake_case as per original structure
+                                    {
+                                        did: firstDid,
+                                        derivationPath: firstIdentityKeys.derivationPath,
+                                        profile_name: null, // Will be set during SETUP_COMPLETE_AND_FINALIZE
+                                        profile_picture: null,
+                                        cloudUrl: null, // This will become instanceUrl after registration
+                                    },
+                                ],
+                                settings: { nextAccountIndex: 1, activeIdentityIndex: 0 },
+                            };
+                            await chrome.storage.local.set({ [STORAGE_KEY_VAULT_SALT]: saltHex, [STORAGE_KEY_VAULT]: vaultData });
+                            responsePayload = { mnemonic }; // Return mnemonic for user to backup
+                        } finally {
+                            if (seed) wipeMemory(seed);
+                            // encryptionKey will be garbage collected
+                        }
+                        break;
+                    }
+
+                    case "SETUP_IMPORT_VAULT": {
+                        // Simpler import: new vault from existing mnemonic
+                        const { importedMnemonic, password } = payload;
+                        if (!importedMnemonic || !password) throw new Error("Mnemonic and password required.");
+                        if (!validateMnemonic(importedMnemonic)) throw new Error("Invalid mnemonic provided.");
+
+                        await clearSessionStateInternal(); // Clear previous session
+                        const salt = generateSalt();
+                        const saltHex = Buffer.from(salt).toString("hex");
+                        let encryptionKey: CryptoKey | null = null;
+                        let seed: Buffer | null = null;
+                        try {
+                            encryptionKey = await deriveEncryptionKey(password, salt);
+                            const encryptedMnemonicData = await encryptData(importedMnemonic, encryptionKey);
+                            seed = await seedFromMnemonic(importedMnemonic);
+                            const masterHDKey = getMasterHDKeyFromSeed(seed);
+                            const firstIdentityKeys = deriveChildKeyPair(masterHDKey, 0);
+                            const firstDid = didFromEd25519(firstIdentityKeys.publicKey);
+                            const vaultData = {
+                                encryptedSeedPhrase: encryptedMnemonicData,
+                                identities: [
+                                    {
+                                        did: firstDid,
+                                        derivationPath: firstIdentityKeys.derivationPath,
+                                        profile_name: "Imported Identity", // Placeholder name
+                                        profile_picture: null,
+                                        cloudUrl: null,
+                                    },
+                                ],
+                                settings: { nextAccountIndex: 1, activeIdentityIndex: 0 },
+                            };
+                            await chrome.storage.local.set({ [STORAGE_KEY_VAULT_SALT]: saltHex, [STORAGE_KEY_VAULT]: vaultData });
+                            // Do not mark setup complete here, user needs to go through finalization for this identity
+                            responsePayload = {
+                                success: true,
+                                did: firstDid,
+                                message: "Vault imported with provided seed. Proceed to finalize setup for this identity.",
+                            };
+                        } finally {
+                            if (seed) wipeMemory(seed);
+                        }
+                        break;
+                    }
+
+                    case "GET_ACTIVE_IDENTITY_DETAILS": {
+                        console.log("Processing 'GET_ACTIVE_IDENTITY_DETAILS'");
+                        if (!isUnlocked || !currentActiveDid) {
+                            throw new Error("Vault is locked or no active DID.");
+                        }
+                        const vaultResult = await chrome.storage.local.get(STORAGE_KEY_VAULT);
+                        const vault = vaultResult[STORAGE_KEY_VAULT];
+                        if (!vault || !vault.identities) {
+                            throw new Error("Vault data not found or identities array is missing.");
+                        }
+                        const activeIdentityData = vault.identities.find((idObj: any) => idObj.did === currentActiveDid);
+                        if (!activeIdentityData) {
+                            throw new Error(`Active DID ${currentActiveDid} not found in vault identities.`);
+                        }
+                        // Return data consistent with local vault structure (snake_case)
+                        responsePayload = {
+                            did: activeIdentityData.did,
+                            profileName: activeIdentityData.profile_name,
+                            profilePictureUrl: activeIdentityData.profile_picture,
+                            cloudUrl: activeIdentityData.cloudUrl, // This is the instanceUrl
+                            instanceStatus: (activeIdentityData as any).instanceStatus, // If stored
+                            isAdmin: (activeIdentityData as any).isAdmin, // If stored
+                        };
+                        break;
+                    }
+
+                    case "CLOSE_SETUP_TAB": {
+                        if (sender.tab && sender.tab.id) {
+                            chrome.tabs.remove(sender.tab.id);
+                            responsePayload = { success: true, message: "Setup tab closed." };
+                        } else {
+                            responsePayload = { success: false, message: "No tab ID to close." };
+                            responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                        }
+                        break;
+                    }
+
+                    // --- Refactored Cloud-Interacting Cases Follow ---
 
                     case "SETUP_IMPORT_SEED_AND_RECOVER_IDENTITIES": {
                         console.log("Processing 'SETUP_IMPORT_SEED_AND_RECOVER_IDENTITIES'");
@@ -273,15 +455,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 const messageToSign = `${identityDid}|${nonce}|${timestamp}|${claimCode || ""}`;
                                 const signature = await signMessage(keyPair.privateKey, messageToSign);
 
-                                const registerPayload = {
+                                const registerPayload: any = {
+                                    // Use 'any' for easier conditional property adding
                                     did: identityDid,
                                     nonce,
                                     timestamp,
                                     signature,
-                                    profileName: identityName,
-                                    profilePictureUrl: identityPicture,
-                                    claimCode,
                                 };
+                                if (identityName) registerPayload.profileName = identityName;
+                                if (identityPicture) registerPayload.profilePictureUrl = identityPicture; // Only add if truthy (not null/undefined/empty string)
+                                if (claimCode) registerPayload.claimCode = claimCode; // Only add if truthy
 
                                 const registerResponse = await fetch(`${OFFICIAL_VIBE_CLOUD_URL}/api/v1/auth/register`, {
                                     method: "POST",
