@@ -650,6 +650,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         break;
                     }
 
+                    case "REQUEST_LOGIN_FLOW": {
+                        const { did } = payload;
+                        console.log(`Placeholder: REQUEST_LOGIN_FLOW received for DID: ${did}. Full login UI and logic to be implemented.`);
+                        // In a full implementation, this might:
+                        // 1. Open a modal or new tab for password entry if vault is locked or if login requires re-auth.
+                        // 2. Call an internal function to perform API login (e.g., POST /auth/login).
+                        // 3. Store the new JWT.
+                        // 4. Send a message back to UI to indicate success/failure or to refresh.
+                        responsePayload = { success: true, message: "Login flow initiated (placeholder)." };
+                        // For now, this action doesn't change any state that would automatically resolve the JWT issue.
+                        // The UI would need to re-poll or be explicitly told to re-fetch after a real login.
+                        break;
+                    }
+
                     default:
                         console.warn(`[BG_WARN_UnknownAction] Unknown action: ${action}`);
                         responsePayload = { error: { message: `Unknown action: ${action}` } };

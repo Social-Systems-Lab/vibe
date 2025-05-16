@@ -48,12 +48,14 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
     const [identityDetails, setIdentityDetails] = useState<Identity | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
+    const [isLoginRequired, setIsLoginRequired] = useState<boolean>(false); // New state for login
     const [pollingIntervalId, setPollingIntervalId] = useState<NodeJS.Timeout | null>(null);
 
     const fetchIdentityDetails = useCallback(async (did: string) => {
         if (!did) return;
         setIsLoading(true);
         setError(null);
+        setIsLoginRequired(false); // Reset login required flag on new fetch
         try {
             const data = await sendMessageToBackground("FETCH_FULL_IDENTITY_DETAILS", { did });
             if (data && data.identity) {
@@ -67,7 +69,13 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
             }
         } catch (err: any) {
             console.error("Error fetching identity details:", err);
-            setError(err.message || "Failed to fetch status.");
+            const errorMessage = err.message || "Failed to fetch status.";
+            if (errorMessage.includes("JWT missing")) {
+                setError("Login required to view cloud status.");
+                setIsLoginRequired(true);
+            } else {
+                setError(errorMessage);
+            }
             setIdentityDetails(null); // Clear previous details on error
         } finally {
             setIsLoading(false);
@@ -112,16 +120,40 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
     let iconColor = "text-slate-500";
     let statusDescription = "Attempting to retrieve Vibe Cloud instance status...";
 
+    const handleLoginClick = () => {
+        if (activeDid) {
+            console.log(`Login button clicked for DID: ${activeDid}. Requesting login flow.`);
+            sendMessageToBackground("REQUEST_LOGIN_FLOW", { did: activeDid })
+                .then(() => {
+                    // Optionally, re-fetch details or wait for a signal after login flow completes
+                    // For now, we can just log or let polling handle it if JWT becomes available
+                    console.log("REQUEST_LOGIN_FLOW message sent.");
+                    // Potentially re-trigger fetch after a delay or if login flow signals completion
+                    // fetchIdentityDetails(activeDid); // Or rely on next poll
+                })
+                .catch((err) => {
+                    console.error("Error sending REQUEST_LOGIN_FLOW:", err);
+                    setError("Failed to initiate login. Please try again.");
+                });
+        }
+    };
+
     if (!activeDid) {
         displayStatus = "No Active Identity";
         StatusIcon = AlertTriangle;
         iconColor = "text-amber-500";
         statusDescription = "Please select or create an identity.";
-    } else if (isLoading && !identityDetails) {
-        // Show loading only on initial load or if no details yet
+    } else if (isLoading && !identityDetails && !isLoginRequired) {
+        // Added !isLoginRequired here
+        // Show loading only on initial load or if no details yet, and not if login is required
         displayStatus = "Loading Status...";
         StatusIcon = Loader2; // Loader2 will be animated by className
         iconColor = "text-blue-500";
+    } else if (isLoginRequired) {
+        displayStatus = "Login Required";
+        StatusIcon = AlertTriangle;
+        iconColor = "text-amber-500"; // Use a warning color
+        statusDescription = error || "Your session may have expired. Please log in."; // Error already set to "Login required..."
     } else if (error) {
         displayStatus = "Error";
         StatusIcon = AlertTriangle;
@@ -178,7 +210,13 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
             <CardContent className="pt-2 pb-4 text-sm space-y-2">
                 <p className="text-xs text-muted-foreground">{statusDescription}</p>
 
-                {identityDetails && (
+                {isLoginRequired && (
+                    <Button onClick={handleLoginClick} size="sm" className="mt-2 w-full">
+                        Login
+                    </Button>
+                )}
+
+                {!isLoginRequired && identityDetails && (
                     <>
                         {identityDetails.profileName && (
                             <p className="text-xs">
@@ -208,7 +246,8 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
                     </>
                 )}
                 {isLoading &&
-                    pollingIntervalId && ( // Show subtle loading indicator during polling updates
+                    pollingIntervalId &&
+                    !isLoginRequired && ( // Show subtle loading indicator during polling updates, but not if login is required
                         <p className="text-xs text-blue-500 flex items-center">
                             <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Checking for updates...
                         </p>
