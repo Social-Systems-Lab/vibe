@@ -583,7 +583,73 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         }
                         break;
                     }
-                    // ... (GET_ACTIVE_IDENTITY_DETAILS, CLOSE_SETUP_TAB, default remain similar) ...
+
+                    case "FETCH_FULL_IDENTITY_DETAILS": {
+                        console.log("Processing 'FETCH_FULL_IDENTITY_DETAILS'");
+                        const { did } = payload;
+                        if (!did || typeof did !== "string") {
+                            throw new Error("DID is required for FETCH_FULL_IDENTITY_DETAILS.");
+                        }
+
+                        // No need to check isUnlocked here, as this might be called by a polling UI
+                        // even if the vault is locked for other operations. The JWT check is key.
+                        const jwtToken = await getStoredJwt(did);
+                        if (!jwtToken) {
+                            // If no JWT, we can't fetch. The UI should handle this by prompting login.
+                            throw new Error(`Not logged in to cloud for identity ${did}. JWT missing.`);
+                        }
+
+                        const fetchUrl = `${OFFICIAL_VIBE_CLOUD_URL}/api/v1/identities/${did}`;
+                        const fetchResponse = await fetch(fetchUrl, {
+                            method: "GET",
+                            headers: {
+                                "Content-Type": "application/json",
+                                Authorization: `Bearer ${jwtToken}`,
+                            },
+                        });
+
+                        if (!fetchResponse.ok) {
+                            const errorBody = await fetchResponse.json().catch(() => ({
+                                error: `Failed to fetch identity details for ${did}. Status: ${fetchResponse.status}`,
+                            }));
+                            throw new Error(errorBody.error || `API error: ${fetchResponse.status}`);
+                        }
+
+                        const serverIdentity = (await fetchResponse.json()) as Identity; // Assuming Identity type matches server response
+
+                        // Update local vault with the fetched details
+                        const vaultResult = await chrome.storage.local.get(STORAGE_KEY_VAULT);
+                        let vaultData = vaultResult[STORAGE_KEY_VAULT];
+
+                        if (vaultData && vaultData.identities) {
+                            const identityIndex = vaultData.identities.findIndex((idObj: any) => idObj.did === did);
+                            if (identityIndex !== -1) {
+                                const localIdentity = vaultData.identities[identityIndex];
+                                localIdentity.profile_name = serverIdentity.profileName || localIdentity.profile_name;
+                                localIdentity.profile_picture = serverIdentity.profilePictureUrl || localIdentity.profile_picture; // Keep existing if server sends null/undefined
+                                localIdentity.cloudUrl = serverIdentity.instanceUrl || localIdentity.cloudUrl; // instanceUrl from server maps to cloudUrl in vault
+
+                                // Ensure these fields exist before assigning, or cast to any if flexible
+                                (localIdentity as any).instanceStatus = serverIdentity.instanceStatus;
+                                (localIdentity as any).instanceId = serverIdentity.instanceId;
+                                (localIdentity as any).isAdmin = serverIdentity.isAdmin;
+                                (localIdentity as any).instanceCreatedAt = serverIdentity.instanceCreatedAt;
+                                (localIdentity as any).instanceUpdatedAt = serverIdentity.instanceUpdatedAt;
+                                (localIdentity as any).instanceErrorDetails = serverIdentity.instanceErrorDetails;
+
+                                await chrome.storage.local.set({ [STORAGE_KEY_VAULT]: vaultData });
+                                console.log(`Local vault updated for DID ${did} with new details.`);
+                            } else {
+                                console.warn(`DID ${did} not found in local vault during FETCH_FULL_IDENTITY_DETAILS. Cannot update.`);
+                            }
+                        } else {
+                            console.warn("Vault data not found. Cannot update identity details.");
+                        }
+
+                        responsePayload = { success: true, identity: serverIdentity };
+                        break;
+                    }
+
                     default:
                         console.warn(`[BG_WARN_UnknownAction] Unknown action: ${action}`);
                         responsePayload = { error: { message: `Unknown action: ${action}` } };

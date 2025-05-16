@@ -28,20 +28,10 @@ interface Identity {
     avatarUrl?: string | null;
 }
 
-type ConnectionStatus = "connected" | "disconnected" | "connecting" | "error";
-
-interface CloudResources {
-    storageUsed?: string;
-    storageTotal?: string;
-}
-
 export function App({ onResetDev }: AppProps) {
     const [currentIdentity, setCurrentIdentity] = useState<Identity | null>(null); // Initialize with null
     const [identities, setIdentities] = useState<Identity[]>([]); // Initialize with empty array
     const [isLoadingIdentity, setIsLoadingIdentity] = useState(true); // Loading state for identity
-    const [cloudStatus, setCloudStatus] = useState<ConnectionStatus>("connected");
-    const [cloudResources, setCloudResources] = useState<CloudResources>({ storageUsed: "2.3 GB", storageTotal: "10 GB" });
-    const [cloudErrorMessage, setCloudErrorMessage] = useState<string | undefined>(undefined);
     const [showImportWizard, setShowImportWizard] = useState(false); // State for wizard visibility
     const [showIdentitySettings, setShowIdentitySettings] = useState(false); // State for settings visibility
 
@@ -202,22 +192,6 @@ export function App({ onResetDev }: AppProps) {
         loadIdentityData(); // Refresh data when closing settings
     };
 
-    // Example functions to simulate cloud status changes (for testing)
-    const cycleCloudStatus = () => {
-        const statuses: ConnectionStatus[] = ["connected", "connecting", "disconnected", "error"];
-        const currentIndex = statuses.indexOf(cloudStatus);
-        const nextIndex = (currentIndex + 1) % statuses.length;
-        setCloudStatus(statuses[nextIndex]);
-        if (statuses[nextIndex] === "error") {
-            setCloudErrorMessage("Failed to sync with the Vibe Cloud. Please check your connection.");
-        } else {
-            setCloudErrorMessage(undefined);
-        }
-        if (statuses[nextIndex] === "connected") {
-            setCloudResources({ storageUsed: `${(Math.random() * 10).toFixed(1)} GB`, storageTotal: "10 GB" });
-        }
-    };
-
     if (isLoadingIdentity) {
         return (
             <div className="w-[380px] p-4 bg-background text-foreground flex flex-col items-center justify-center h-48 rounded-lg shadow-2xl">
@@ -262,13 +236,9 @@ export function App({ onResetDev }: AppProps) {
                     onAddIdentity={handleAddIdentity}
                     onImportIdentity={handleImportIdentity} // Pass the new handler
                 />
-                <CloudStatus status={cloudStatus} resources={cloudResources} errorMessage={cloudErrorMessage} />
+                <CloudStatus activeDid={currentIdentity?.did || null} />
             </div>
             <div className="mt-auto flex flex-col gap-2 p-4 border-t border-border bg-muted/30">
-                {/* Temporary button to test cloud status cycling */}
-                <Button onClick={cycleCloudStatus} variant="outline" size="sm">
-                    Cycle Cloud Status (Test)
-                </Button>
                 <Button onClick={handleOpenSettings} variant="secondary" size="sm">
                     <Settings className="mr-2 h-4 w-4" /> Identity Settings
                 </Button>
