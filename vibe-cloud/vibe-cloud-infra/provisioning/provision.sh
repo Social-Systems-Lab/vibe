@@ -64,21 +64,28 @@ callback_control_plane() {
   local error_msg="$3"
   local payload
 
-  echo "Calling back control plane: Status=${status}, URL=${url}, Error=${error_msg}"
+  echo "Calling back control plane for identity ${TARGET_USER_DID}: Status=${status}, URL=${url}, Error=${error_msg}"
 
   if [ "$status" == "completed" ]; then
-    payload="{\"instanceIdentifier\": \"${INSTANCE_IDENTIFIER}\", \"status\": \"completed\", \"url\": \"${url}\"}"
+    # Payload for PUT /api/v1/identities/:did using UpdateIdentityInternalRequestSchema
+    payload="{\"instanceStatus\": \"completed\", \"instanceUrl\": \"${url}\"}"
   else
-    payload="{\"instanceIdentifier\": \"${INSTANCE_IDENTIFIER}\", \"status\": \"failed\", \"error\": \"${error_msg}\"}"
+    # Payload for PUT /api/v1/identities/:did using UpdateIdentityInternalRequestSchema
+    payload="{\"instanceStatus\": \"failed\", \"instanceErrorDetails\": \"${error_msg}\"}"
   fi
 
-  curl -s -X POST \
+  # TARGET_USER_DID is the identity's DID
+  # INSTANCE_IDENTIFIER is the instanceId field within the Identity document
+  # The endpoint is now PUT /api/v1/identities/:did
+  # The internal auth uses X-Internal-Secret header
+  curl -s -X PUT \
     -H "Content-Type: application/json" \
-    -H "Authorization: Bearer ${INTERNAL_SECRET_TOKEN}" \
+    -H "X-Internal-Secret: ${INTERNAL_SECRET_TOKEN}" \
     -d "${payload}" \
-    "${CONTROL_PLANE_URL}/api/v1/internal/provision/update"
+    "${CONTROL_PLANE_URL}/api/v1/identities/${TARGET_USER_DID}"
   
-  if [ $? -ne 0 ]; then
+  curl_exit_code=$?
+  if [ $curl_exit_code -ne 0 ]; then
     echo "ERROR: Callback to control plane failed." >&2
     # This is a problem, as the control plane won't know the final status.
     # Consider retry logic or more persistent error logging.
