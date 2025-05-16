@@ -311,6 +311,13 @@ export const IdentityMetadataResponseSchema = t.Object({
 });
 export type IdentityMetadataResponse = Static<typeof IdentityMetadataResponseSchema>;
 
+// Schema for updating user profile information
+export const UpdateProfileRequestSchema = t.Object({
+    profileName: t.Optional(t.String({ description: "User's new display name. Null to clear." })),
+    profilePictureUrl: t.Optional(t.String({ format: "uri", description: "New URL to the user's profile picture. Null to clear." })),
+});
+export type UpdateProfileRequest = Static<typeof UpdateProfileRequestSchema>;
+
 //#endregion
 
 //#region --- WebSocket Types ---

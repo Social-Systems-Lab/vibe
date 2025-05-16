@@ -25,12 +25,15 @@ import {
     InternalProvisionUpdateRequestSchema,
     IdentityStatusResponseSchema, // Added for identity recovery
     IdentityMetadataResponseSchema, // Added for identity recovery
+    UpdateProfileRequestSchema, // Added for profile updates
     INSTANCES_COLLECTION, // For the new collection
     type ClaimCode,
+    type UpdateProfileRequest, // Added for profile updates
     type User,
     type Instance,
     type IdentityStatusResponse, // Added for identity recovery
     type IdentityMetadataResponse, // Added for identity recovery
+    UserSchema, // For response of profile update
 } from "./models/models";
 import { SYSTEM_DB, USERS_COLLECTION } from "./utils/constants";
 import { randomUUID } from "crypto"; // For generating instanceIdentifier
@@ -751,6 +754,86 @@ export const app = new Elysia()
                         500: ErrorResponseSchema,
                     },
                     detail: { summary: "Get metadata for a DID, protected by a signed challenge." },
+                }
+            )
+            // PUT /api/v1/identity/:did/profile - Update profile information for a DID (protected)
+            .put(
+                "/:did/profile",
+                async ({ authService, params, body, request, set }) => {
+                    const { did } = params;
+                    const { profileName, profilePictureUrl } = body;
+                    const authHeader = request.headers.get("Authorization");
+
+                    if (!authHeader || !authHeader.startsWith("VibeAuth ")) {
+                        set.status = 401;
+                        return { error: "Missing or invalid Authorization header." };
+                    }
+
+                    const authParams = authHeader
+                        .substring("VibeAuth ".length)
+                        .split(",")
+                        .reduce((acc, part) => {
+                            const [key, value] = part.trim().split("=");
+                            if (key && value) {
+                                acc[key] = value.replace(/"/g, "");
+                            }
+                            return acc;
+                        }, {} as Record<string, string>);
+
+                    const { did: authDid, nonce, timestamp, signature } = authParams;
+
+                    if (authDid !== did) {
+                        set.status = 401;
+                        return { error: "Authorization DID does not match path DID." };
+                    }
+                    if (!nonce || !timestamp || !signature) {
+                        set.status = 400;
+                        return { error: "Missing nonce, timestamp, or signature in Authorization header." };
+                    }
+
+                    const isSignatureValid = await authService.verifyDidSignature(did, nonce, timestamp, signature);
+                    if (!isSignatureValid) {
+                        set.status = 401;
+                        return { error: "Invalid signature or authentication failed." };
+                    }
+
+                    const requestTime = new Date(timestamp);
+                    const now = new Date();
+                    const fiveMinutes = 5 * 60 * 1000;
+                    if (Math.abs(now.getTime() - requestTime.getTime()) > fiveMinutes) {
+                        logger.warn(`Request timestamp ${timestamp} for DID ${did} (profile update) is outside the valid window.`);
+                        set.status = 400;
+                        return { error: "Request timestamp is invalid or expired." };
+                    }
+
+                    // Nonce replay prevention (logging for now)
+                    logger.info(`Nonce received for DID ${did} (profile update): ${nonce}. Nonce replay check would occur here.`);
+
+                    try {
+                        const updatedUser = await authService.updateUserProfile(did, profileName, profilePictureUrl);
+                        // Return the updated user document, which includes profileName and profilePictureUrl
+                        return updatedUser;
+                    } catch (error: any) {
+                        if (error instanceof NotFoundError) {
+                            set.status = 404;
+                            return { error: "User not found." };
+                        }
+                        logger.error(`Error updating profile for DID ${did}:`, error);
+                        set.status = 500;
+                        return { error: "Internal server error while updating profile." };
+                    }
+                },
+                {
+                    params: t.Object({ did: t.String() }),
+                    body: UpdateProfileRequestSchema,
+                    response: {
+                        200: UserSchema, // Return the full User object
+                        400: ErrorResponseSchema,
+                        401: ErrorResponseSchema,
+                        404: ErrorResponseSchema,
+                        500: ErrorResponseSchema,
+                    },
+                    detail: { summary: "Update profile information for a DID, protected by a signed challenge." },
                 }
             )
     );

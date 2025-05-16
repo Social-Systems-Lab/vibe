@@ -340,8 +340,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                         return {
                                             did: data.did || didToFetch, // Ensure DID is present
                                             derivationPath: keyPairForSigning.derivationPath,
-                                            profile_name: data.profile_name,
-                                            profile_picture: data.profile_picture,
+                                            profile_name: data.profileName, // Corrected to camelCase
+                                            profile_picture: data.profilePictureUrl, // Corrected to camelCase
                                             cloudUrl: data.cloudUrl, // Specific Vibe Cloud instance URL for this DID
                                         };
                                     } else {
@@ -663,6 +663,138 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             did: vaultData.identities[0].did,
                         };
                         console.log("Setup finalized, vault updated, and setup marked complete.");
+                        break;
+                    }
+                    case "UPDATE_IDENTITY_PROFILE": {
+                        console.log("Processing 'UPDATE_IDENTITY_PROFILE'");
+                        const { did, profileName, profilePictureUrl } = payload;
+
+                        if (!did || typeof did !== "string") {
+                            throw new Error("DID is required for UPDATE_IDENTITY_PROFILE.");
+                        }
+                        if (profileName === undefined && profilePictureUrl === undefined) {
+                            throw new Error("At least profileName or profilePictureUrl must be provided.");
+                        }
+
+                        // 1. Get Decrypted Seed and Active/Target Identity Index
+                        const sessionData = await chrome.storage.session.get([SESSION_STORAGE_DECRYPTED_SEED_PHRASE]);
+                        const decryptedSeed = sessionData[SESSION_STORAGE_DECRYPTED_SEED_PHRASE];
+                        if (!decryptedSeed) {
+                            throw new Error("Vault is locked or seed phrase not available in session.");
+                        }
+
+                        const localVaultData = await chrome.storage.local.get(STORAGE_KEY_VAULT);
+                        const vault = localVaultData[STORAGE_KEY_VAULT];
+                        if (!vault || !vault.identities) {
+                            throw new Error("Vault data not found or identities array is missing.");
+                        }
+
+                        const identityIndex = vault.identities.findIndex((idObj: any) => idObj.did === did);
+                        if (identityIndex === -1) {
+                            throw new Error(`Identity with DID ${did} not found in local vault.`);
+                        }
+
+                        // 2. Derive Key Pair for Signing
+                        let seedBufferForSigning: Buffer | null = null;
+                        let privateKeyForSigning: Uint8Array | null = null;
+                        try {
+                            seedBufferForSigning = await seedFromMnemonic(decryptedSeed);
+                            const masterKey = getMasterHDKeyFromSeed(seedBufferForSigning);
+                            const keyPair = deriveChildKeyPair(masterKey, identityIndex); // Use the specific identity's index
+                            privateKeyForSigning = keyPair.privateKey;
+
+                            if (!privateKeyForSigning) {
+                                throw new Error("Failed to derive private key for signing the profile update.");
+                            }
+
+                            // 3. Prepare and Send Request to Control Plane
+                            const controlPlaneBaseUrl = OFFICIAL_VIBE_CLOUD_PROVISIONING_URL; // Assuming same base URL
+                            const updateUrl = `${controlPlaneBaseUrl}/api/v1/identity/${did}/profile`;
+
+                            const nonce = crypto.randomUUID().toString();
+                            const timestamp = new Date().toISOString();
+                            const messageToSign = `${did}|${nonce}|${timestamp}`;
+                            const signature = await signMessage(privateKeyForSigning, messageToSign);
+
+                            const updatePayload: any = {};
+                            if (profileName !== undefined) updatePayload.profileName = profileName;
+                            if (profilePictureUrl !== undefined) updatePayload.profilePictureUrl = profilePictureUrl;
+
+                            console.log(`[ProfileUpdate] Attempting to update profile for ${did} at ${updateUrl}`);
+                            const updateResponse = await fetch(updateUrl, {
+                                method: "PUT",
+                                headers: {
+                                    "Content-Type": "application/json",
+                                    Authorization: `VibeAuth did="${did}",nonce="${nonce}",timestamp="${timestamp}",signature="${signature}"`,
+                                },
+                                body: JSON.stringify(updatePayload),
+                            });
+
+                            if (!updateResponse.ok) {
+                                const errorBodyText = await updateResponse.text().catch(() => "Failed to read error body");
+                                console.error(`[ProfileUpdate] Failed: ${updateResponse.status} ${updateResponse.statusText}. Body: ${errorBodyText}`);
+                                throw new Error(
+                                    `Failed to update profile on server: ${updateResponse.status} ${updateResponse.statusText} - ${errorBodyText.substring(
+                                        0,
+                                        200
+                                    )}`
+                                );
+                            }
+
+                            const updatedUserFromServer = await updateResponse.json();
+                            console.log("[ProfileUpdate] Successfully updated profile on server:", updatedUserFromServer);
+
+                            // 4. Update Local Vault
+                            const vaultToUpdate = localVaultData[STORAGE_KEY_VAULT];
+                            const identityToUpdate = vaultToUpdate.identities.find((idObj: any) => idObj.did === did);
+                            if (identityToUpdate) {
+                                if (profileName !== undefined) {
+                                    identityToUpdate.profile_name = profileName; // Ensure local vault uses snake_case if that's its convention
+                                }
+                                if (profilePictureUrl !== undefined) {
+                                    identityToUpdate.profile_picture = profilePictureUrl; // Ensure local vault uses snake_case
+                                }
+                                await chrome.storage.local.set({ [STORAGE_KEY_VAULT]: vaultToUpdate });
+                                console.log("[ProfileUpdate] Local vault updated successfully.");
+                            } else {
+                                console.warn(`[ProfileUpdate] DID ${did} not found in local vault for update, though server update succeeded.`);
+                            }
+
+                            responsePayload = {
+                                success: true,
+                                message: "Profile updated successfully.",
+                                updatedProfile: {
+                                    // Return what the server confirmed, or what was sent
+                                    profileName: updatedUserFromServer.profileName,
+                                    profilePictureUrl: updatedUserFromServer.profilePictureUrl,
+                                },
+                            };
+                        } finally {
+                            if (seedBufferForSigning) wipeMemory(seedBufferForSigning);
+                            // privateKeyForSigning is part of keyPair which is derived from seedBufferForSigning,
+                            // so wiping seedBufferForSigning should be sufficient.
+                        }
+                        break;
+                    }
+                    case "GET_ACTIVE_IDENTITY_DETAILS": {
+                        console.log("Processing 'GET_ACTIVE_IDENTITY_DETAILS'");
+                        if (!isUnlocked || !currentActiveDid) {
+                            throw new Error("Vault is locked or no active DID.");
+                        }
+                        const vaultData = await chrome.storage.local.get(STORAGE_KEY_VAULT);
+                        const vault = vaultData[STORAGE_KEY_VAULT];
+                        if (!vault || !vault.identities) {
+                            throw new Error("Vault data not found or identities array is missing.");
+                        }
+                        const activeIdentity = vault.identities.find((idObj: any) => idObj.did === currentActiveDid);
+                        if (!activeIdentity) {
+                            throw new Error(`Active DID ${currentActiveDid} not found in vault identities.`);
+                        }
+                        responsePayload = {
+                            did: activeIdentity.did,
+                            profileName: activeIdentity.profile_name, // Assuming snake_case in vault
+                            profilePictureUrl: activeIdentity.profile_picture, // Assuming snake_case in vault
+                        };
                         break;
                     }
                     case "CLOSE_SETUP_TAB": {

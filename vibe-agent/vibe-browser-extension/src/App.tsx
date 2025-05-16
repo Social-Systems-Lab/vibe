@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react"; // Added useCal
 import "./index.css";
 import { IdentityCard } from "./components/identity/IdentityCard";
 import { IdentitySwitcher } from "./components/identity/IdentitySwitcher";
+import IdentitySettings from "./components/identity/IdentitySettings"; // Import IdentitySettings as default
 import { CloudStatus } from "./components/cloud/CloudStatus";
 import { ImportIdentityWizard } from "./components/identity/ImportIdentityWizard"; // Import the new wizard
 import { Button } from "@/components/ui/button"; // For a potential settings button
@@ -42,8 +43,10 @@ export function App({ onResetDev }: AppProps) {
     const [cloudResources, setCloudResources] = useState<CloudResources>({ storageUsed: "2.3 GB", storageTotal: "10 GB" });
     const [cloudErrorMessage, setCloudErrorMessage] = useState<string | undefined>(undefined);
     const [showImportWizard, setShowImportWizard] = useState(false); // State for wizard visibility
+    const [showIdentitySettings, setShowIdentitySettings] = useState(false); // State for settings visibility
 
     const loadIdentityData = useCallback(async () => {
+        console.log("App.tsx: loadIdentityData triggered"); // Diagnostic log
         setIsLoadingIdentity(true);
         try {
             // Fetch from "vibeVault" and "currentIdentityDID"
@@ -80,11 +83,25 @@ export function App({ onResetDev }: AppProps) {
         } finally {
             setIsLoadingIdentity(false);
         }
-    }, [setIsLoadingIdentity, setIdentities, setCurrentIdentity]); // Add dependencies for useCallback
+    }, []); // Removed dependencies as it's meant to run once or be manually called
 
     useEffect(() => {
         loadIdentityData();
-    }, [loadIdentityData]); // useEffect now depends on the memoized loadIdentityData
+    }, [loadIdentityData]);
+
+    // Listen for storage changes to auto-refresh identity data
+    useEffect(() => {
+        const storageChangedListener = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
+            if (areaName === "local" && (changes.vibeVault || changes.currentIdentityDID)) {
+                console.log("App.tsx: Detected vibeVault or currentIdentityDID change, reloading identity data.");
+                loadIdentityData();
+            }
+        };
+        chrome.storage.onChanged.addListener(storageChangedListener);
+        return () => {
+            chrome.storage.onChanged.removeListener(storageChangedListener);
+        };
+    }, [loadIdentityData]);
 
     const handleSwitchIdentity = (did: string) => {
         const newIdentity = identities.find((id) => id.did === did);
@@ -176,6 +193,15 @@ export function App({ onResetDev }: AppProps) {
         setShowImportWizard(false); // Hide the wizard
     };
 
+    const handleOpenSettings = () => {
+        setShowIdentitySettings(true);
+    };
+
+    const handleCloseSettings = () => {
+        setShowIdentitySettings(false);
+        loadIdentityData(); // Refresh data when closing settings
+    };
+
     // Example functions to simulate cloud status changes (for testing)
     const cycleCloudStatus = () => {
         const statuses: ConnectionStatus[] = ["connected", "connecting", "disconnected", "error"];
@@ -208,6 +234,19 @@ export function App({ onResetDev }: AppProps) {
         );
     }
 
+    if (showIdentitySettings) {
+        return (
+            <div className="w-[380px] bg-background text-foreground flex flex-col shadow-2xl rounded-lg overflow-hidden">
+                <div className="p-4 border-b border-border">
+                    <Button onClick={handleCloseSettings} variant="outline" size="sm">
+                        &larr; Back to Main
+                    </Button>
+                </div>
+                <IdentitySettings />
+            </div>
+        );
+    }
+
     // Main render logic
     return (
         <div className="w-[380px] bg-background text-foreground flex flex-col shadow-2xl rounded-lg overflow-hidden">
@@ -229,6 +268,9 @@ export function App({ onResetDev }: AppProps) {
                 {/* Temporary button to test cloud status cycling */}
                 <Button onClick={cycleCloudStatus} variant="outline" size="sm">
                     Cycle Cloud Status (Test)
+                </Button>
+                <Button onClick={handleOpenSettings} variant="secondary" size="sm">
+                    <Settings className="mr-2 h-4 w-4" /> Identity Settings
                 </Button>
                 <Button onClick={onResetDev} variant="destructive" size="sm">
                     <RotateCcw className="mr-2 h-4 w-4" /> Reset (Dev Only)

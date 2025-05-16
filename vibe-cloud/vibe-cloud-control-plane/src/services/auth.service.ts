@@ -361,6 +361,65 @@ export class AuthService {
     }
 
     /**
+     * Updates the profile information for a given user.
+     * @param userDid - The DID of the user to update.
+     * @param profileName - The new profile name (optional).
+     * @param profilePictureUrl - The new profile picture URL (optional).
+     * @returns The updated user document.
+     * @throws NotFoundError if the user is not found.
+     * @throws InternalServerError if the update fails.
+     */
+    async updateUserProfile(userDid: string, profileName?: string, profilePictureUrl?: string): Promise<User> {
+        const userDocId = `${USERS_COLLECTION}/${userDid}`;
+        logger.info(`Attempting to update profile for user: ${userDid}`);
+
+        try {
+            const userDoc = await this.dataService.getDocument<User>(SYSTEM_DB, userDocId);
+            if (!userDoc) {
+                logger.warn(`User document '${userDocId}' not found during profile update.`);
+                throw new NotFoundError(`User ${userDid} not found.`);
+            }
+
+            // Update only provided fields
+            let updated = false;
+            if (profileName !== undefined) {
+                userDoc.profileName = profileName;
+                updated = true;
+            }
+            if (profilePictureUrl !== undefined) {
+                userDoc.profilePictureUrl = profilePictureUrl;
+                updated = true;
+            }
+
+            if (!updated) {
+                logger.info(`No profile fields to update for user ${userDid}. Returning existing document.`);
+                return userDoc;
+            }
+
+            // Ensure _rev is present
+            if (!userDoc._rev) {
+                logger.error(`User document ${userDocId} is missing _rev. Cannot update.`);
+                throw new InternalServerError(`User document for ${userDid} is missing revision information.`);
+            }
+
+            const updateResponse = await this.dataService.updateDocument(SYSTEM_DB, USERS_COLLECTION, userDocId, userDoc._rev, userDoc);
+            if (!updateResponse.ok) {
+                logger.error(`Failed to update profile for user ${userDid}. Response: ${JSON.stringify(updateResponse)}`);
+                throw new InternalServerError(`Failed to update profile for user ${userDid}.`);
+            }
+
+            logger.info(`Successfully updated profile for user ${userDid}. New rev: ${updateResponse.rev}`);
+            return { ...userDoc, _rev: updateResponse.rev }; // Return the document with the new revision
+        } catch (error: any) {
+            if (error instanceof NotFoundError || error instanceof InternalServerError) {
+                throw error; // Re-throw known errors
+            }
+            logger.error(`Unexpected error updating profile for user ${userDid}:`, error.message || error);
+            throw new InternalServerError(`An unexpected error occurred while updating profile for user ${userDid}.`);
+        }
+    }
+
+    /**
      * Creates a user directly for testing purposes and generates a JWT.
      * WARNING: Use only in test environments. Does not involve standard auth flows.
      * @param userDid - Optional: Specify a DID. If not provided, a test DID is generated.
