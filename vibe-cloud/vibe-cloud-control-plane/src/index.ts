@@ -23,10 +23,14 @@ import {
     ProvisionInstanceResponseSchema,
     InstanceStatusResponseSchema,
     InternalProvisionUpdateRequestSchema,
+    IdentityStatusResponseSchema, // Added for identity recovery
+    IdentityMetadataResponseSchema, // Added for identity recovery
     INSTANCES_COLLECTION, // For the new collection
     type ClaimCode,
     type User,
     type Instance,
+    type IdentityStatusResponse, // Added for identity recovery
+    type IdentityMetadataResponse, // Added for identity recovery
 } from "./models/models";
 import { SYSTEM_DB, USERS_COLLECTION } from "./utils/constants";
 import { randomUUID } from "crypto"; // For generating instanceIdentifier
@@ -610,6 +614,143 @@ export const app = new Elysia()
                         500: ErrorResponseSchema,
                     },
                     detail: { summary: "Internal callback to update the status of a provisioning process." },
+                }
+            )
+    )
+    // --- Identity Recovery Routes ---
+    .group("/api/v1/identity", (group) =>
+        group
+            // GET /api/v1/identity/:did/status - Check if a DID is active/known
+            .get(
+                "/:did/status",
+                async ({ dataService, params, set }) => {
+                    const { did } = params;
+                    try {
+                        // A DID is "active" if a user record exists for it.
+                        await dataService.getDocument<User>(SYSTEM_DB, `${USERS_COLLECTION}/${did}`);
+                        // If getDocument doesn't throw, the user exists.
+                        const response: IdentityStatusResponse = { isActive: true };
+                        return response;
+                    } catch (error: any) {
+                        if (error instanceof NotFoundError || error.message?.includes("not found")) {
+                            // User not found, so DID is not active in this control plane.
+                            const response: IdentityStatusResponse = { isActive: false };
+                            return response;
+                        }
+                        logger.error(`Error checking status for DID ${did}:`, error);
+                        set.status = 500;
+                        return { error: "Internal server error while checking DID status." };
+                    }
+                },
+                {
+                    params: t.Object({ did: t.String() }),
+                    response: {
+                        200: IdentityStatusResponseSchema,
+                        500: ErrorResponseSchema,
+                    },
+                    detail: { summary: "Check if a DID is known and active in the control plane." },
+                }
+            )
+            // GET /api/v1/identity/:did - Get metadata for a DID (protected)
+            .get(
+                "/:did",
+                async ({ authService, dataService, params, request, set }) => {
+                    const { did } = params;
+                    const authHeader = request.headers.get("Authorization");
+
+                    if (!authHeader || !authHeader.startsWith("VibeAuth ")) {
+                        set.status = 401;
+                        return { error: "Missing or invalid Authorization header." };
+                    }
+
+                    // Parse VibeAuth header: VibeAuth did="...",nonce="...",timestamp="...",signature="..."
+                    const authParams = authHeader
+                        .substring("VibeAuth ".length)
+                        .split(",")
+                        .reduce((acc, part) => {
+                            const [key, value] = part.trim().split("=");
+                            if (key && value) {
+                                acc[key] = value.replace(/"/g, "");
+                            }
+                            return acc;
+                        }, {} as Record<string, string>);
+
+                    const { did: authDid, nonce, timestamp, signature } = authParams;
+
+                    if (authDid !== did) {
+                        set.status = 401;
+                        return { error: "Authorization DID does not match path DID." };
+                    }
+                    if (!nonce || !timestamp || !signature) {
+                        set.status = 400;
+                        return { error: "Missing nonce, timestamp, or signature in Authorization header." };
+                    }
+
+                    // 1. Verify Signature (using authService.verifyDidSignature)
+                    const isSignatureValid = await authService.verifyDidSignature(did, nonce, timestamp, signature);
+                    if (!isSignatureValid) {
+                        set.status = 401;
+                        return { error: "Invalid signature or authentication failed." };
+                    }
+
+                    // 2. Check Timestamp Window (e.g., +/- 5 minutes from authService or define here)
+                    const requestTime = new Date(timestamp);
+                    const now = new Date();
+                    const fiveMinutes = 5 * 60 * 1000;
+                    if (Math.abs(now.getTime() - requestTime.getTime()) > fiveMinutes) {
+                        logger.warn(`Request timestamp ${timestamp} for DID ${did} (metadata) is outside the valid window.`);
+                        set.status = 400;
+                        return { error: "Request timestamp is invalid or expired." };
+                    }
+
+                    // 3. Prevent Nonce Replay (Conceptual - requires storing used nonces)
+                    // For this phase, we'll log it. A robust implementation needs a nonce store.
+                    // Example: await authService.checkAndStoreNonce(did, nonce);
+                    logger.info(`Nonce received for DID ${did}: ${nonce}. Nonce replay check would occur here.`);
+
+                    try {
+                        // Fetch User to get instanceId
+                        const user = await dataService.getDocument<User>(SYSTEM_DB, `${USERS_COLLECTION}/${did}`);
+                        if (!user || !user.instanceId) {
+                            set.status = 404;
+                            return { error: "User or associated instance not found for this DID." };
+                        }
+
+                        // Fetch Instance to get instanceUrl
+                        const instance = await dataService.getDocument<Instance>(SYSTEM_DB, `${INSTANCES_COLLECTION}/${user.instanceId}`);
+                        if (!instance || instance.status !== "completed") {
+                            set.status = 404;
+                            return { error: "Instance not found or not in a completed state." };
+                        }
+
+                        const response: IdentityMetadataResponse = {
+                            did: user.userDid,
+                            instanceUrl: instance.instanceUrl,
+                            // profileName and profilePictureUrl are not currently stored in CP.
+                            // These would be populated if UserSchema or a related Profile schema included them.
+                        };
+                        return response;
+                    } catch (error: any) {
+                        if (error instanceof NotFoundError || error.message?.includes("not found")) {
+                            set.status = 404;
+                            return { error: "Identity metadata not found." };
+                        }
+                        logger.error(`Error fetching metadata for DID ${did}:`, error);
+                        set.status = 500;
+                        return { error: "Internal server error while fetching identity metadata." };
+                    }
+                },
+                {
+                    params: t.Object({ did: t.String() }),
+                    response: {
+                        200: IdentityMetadataResponseSchema,
+                        400: ErrorResponseSchema,
+                        401: ErrorResponseSchema,
+                        403: ErrorResponseSchema, // For future permission checks if any
+                        404: ErrorResponseSchema,
+                        500: ErrorResponseSchema,
+                    },
+                    detail: { summary: "Get metadata for a DID, protected by a signed challenge." },
                 }
             )
     );

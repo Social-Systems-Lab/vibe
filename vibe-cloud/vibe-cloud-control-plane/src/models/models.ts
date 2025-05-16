@@ -292,6 +292,21 @@ export type InternalProvisionUpdateRequest = Static<typeof InternalProvisionUpda
 // });
 // export type ProvisionRequest = Static<typeof ProvisionRequestSchema>;
 
+// --- Identity Recovery Schemas ---
+export const IdentityStatusResponseSchema = t.Object({
+    isActive: t.Boolean(),
+});
+export type IdentityStatusResponse = Static<typeof IdentityStatusResponseSchema>;
+
+export const IdentityMetadataResponseSchema = t.Object({
+    did: t.String(),
+    instanceUrl: t.Optional(t.String({ format: "uri" })),
+    // Placeholder for profile data - to be confirmed if stored in CP
+    profileName: t.Optional(t.String()),
+    profilePictureUrl: t.Optional(t.String({ format: "uri" })),
+});
+export type IdentityMetadataResponse = Static<typeof IdentityMetadataResponseSchema>;
+
 //#endregion
 
 //#region --- WebSocket Types ---
