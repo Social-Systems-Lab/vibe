@@ -1,4 +1,4 @@
-import { Elysia, t, NotFoundError, InternalServerError, UnauthorizedError, type Static } from "elysia";
+import { Elysia, t, NotFoundError, InternalServerError, type Static } from "elysia";
 import { jwt as jwtPlugin } from "@elysiajs/jwt";
 import { cors } from "@elysiajs/cors";
 import { dataService } from "./services/data.service";
@@ -39,7 +39,8 @@ import {
     type UpdateIdentityAdminRequest,
     type UpdateIdentityInternalRequest,
     type JWTPayload as JWTPayloadType, // Type for JWT payload
-    type AdminClaimBody, // Added import
+    type AdminClaimBody,
+    UnauthorizedError, // Added import
 } from "./models/models";
 import { SYSTEM_DB } from "./utils/constants";
 import { randomUUID } from "crypto";

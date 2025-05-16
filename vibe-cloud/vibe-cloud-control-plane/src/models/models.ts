@@ -435,3 +435,12 @@ export type ChangeWithDoc<TDocSchema extends TSchema> = nano.DatabaseChangesResu
 };
 
 //#endregion
+
+export class UnauthorizedError extends Error {
+    public status: number;
+    constructor(message: string = "Unauthorized") {
+        super(message);
+        this.name = "UnauthorizedError";
+        this.status = 401;
+    }
+}

@@ -3,13 +3,14 @@ import { DataService } from "./data.service";
 import { logger } from "../utils/logger";
 import { SYSTEM_DB, USERS_COLLECTION, CLAIM_CODES_COLLECTION, REFRESH_TOKENS_COLLECTION } from "../utils/constants"; // Added REFRESH_TOKENS_COLLECTION
 import {
+    UnauthorizedError,
     type ClaimCode,
     type Identity,
     type StoredRefreshToken,
     type TokenResponse, // For return type
     // IdentitySchema, // Already imported if used, else add
 } from "../models/models";
-import { InternalServerError, NotFoundError, UnauthorizedError } from "elysia";
+import { InternalServerError, NotFoundError } from "elysia";
 import type { PermissionService } from "./permission.service";
 import * as jose from "jose";
 import { randomUUIDv7 } from "bun";
@@ -413,7 +414,7 @@ export class AuthService {
      * Handles profile updates, admin promotion via claim code, and instance status updates.
      * @param identityDid The DID of the identity to update.
      * @param updates The partial identity data to update.
-     * @param callingRole 'owner', 'admin', or 'internal' to determine allowed updates.
+     * @param callingRole 'owner', 'admin' or 'internal' to determine allowed updates.
      * @param claimCodeForPromotion Optional claim code if owner is attempting to promote.
      * @returns The updated Identity document.
      */
