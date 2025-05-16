@@ -1,4 +1,4 @@
-import { Elysia, t, NotFoundError, InternalServerError, type Static } from "elysia";
+import { Elysia, t, NotFoundError, InternalServerError, UnauthorizedError, type Static } from "elysia";
 import { jwt as jwtPlugin } from "@elysiajs/jwt";
 import { cors } from "@elysiajs/cors";
 import { dataService } from "./services/data.service";
@@ -18,9 +18,12 @@ import {
     ErrorResponseSchema,
     JWTPayloadSchema, // Schema for JWT structure
     LoginRequestSchema,
-    LoginResponseSchema,
+    // LoginResponseSchema, // Will be replaced by LoginFinalResponseSchema for the response
+    TokenResponseSchema, // For refresh and new login/register responses
+    RefreshTokenRequestSchema, // For refresh request
+    LoginFinalResponseSchema, // New response for login
     RegisterRequestSchema,
-    RegisterResponseSchema,
+    RegisterResponseSchema, // Already updated in models.ts to use TokenResponseSchema
     IdentitySchema,
     IdentityListResponseSchema,
     IdentityStatusResponseSchema,
@@ -116,7 +119,7 @@ export const app = new Elysia()
         authGroup
             .post(
                 "/login",
-                async ({ authService, dataService, jwt, body, set }) => {
+                async ({ authService, body, set, request }) => {
                     const { did, nonce, timestamp, signature } = body as LoginRequest;
                     logger.info(`Login attempt for identity DID: ${did}`);
 
@@ -128,51 +131,54 @@ export const app = new Elysia()
 
                     const requestTime = new Date(timestamp);
                     if (Math.abs(Date.now() - requestTime.getTime()) > 5 * 60 * 1000) {
+                        // 5 minutes window
                         set.status = 400;
                         return { error: "Request timestamp is invalid or expired." };
                     }
                     // TODO: Nonce replay prevention
 
-                    let identity: Identity | null = null;
                     try {
-                        identity = await dataService.getDocument<Identity>(SYSTEM_DB, `${USERS_COLLECTION}/${did}`);
-                        if (!identity) {
-                            set.status = 404;
-                            return { error: "Identity not found. Please register first." };
-                        }
+                        const userAgent = request.headers.get("user-agent") ?? undefined;
+                        const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? (request as any).ip; // Bun specific for direct IP
+
+                        const loginResult = await authService.loginIdentity(did, userAgent, ipAddress);
+                        set.status = 200;
+                        return loginResult; // Contains { identity, tokenDetails }
                     } catch (error: any) {
                         if (error instanceof NotFoundError) {
                             set.status = 404;
                             return { error: "Identity not found. Please register first." };
                         }
-                        logger.error(`Error fetching identity ${did} during login:`, error);
+                        if (error instanceof UnauthorizedError) {
+                            set.status = 401;
+                            return { error: error.message };
+                        }
+                        logger.error(`Error during login for ${did}:`, error);
                         set.status = 500;
-                        return { error: "Internal server error during login." };
+                        return { error: "Login failed due to an internal error." };
                     }
-
-                    const token = await jwt.sign({ identityDid: identity.identityDid, isAdmin: identity.isAdmin });
-                    logger.debug(`JWT generated for identity ${identity.identityDid}, isAdmin: ${identity.isAdmin}`);
-
-                    set.status = 200;
-                    return { token, identityDid: identity.identityDid, isAdmin: identity.isAdmin };
                 },
                 {
                     body: LoginRequestSchema,
                     response: {
-                        200: LoginResponseSchema,
+                        200: LoginFinalResponseSchema, // Use the new schema with tokenDetails
                         400: ErrorResponseSchema,
                         401: ErrorResponseSchema,
                         404: ErrorResponseSchema,
                         500: ErrorResponseSchema,
                     },
-                    detail: { summary: "Login an identity with DID and signed challenge." },
+                    detail: { summary: "Login an identity with DID and signed challenge, returns access and refresh tokens." },
                 }
             )
             .post(
                 "/register",
-                async ({ authService, jwt, body, set }) => {
+                async ({ authService, body, set, request }) => {
+                    // Removed jwt from here as authService handles token generation
                     const { did, nonce, timestamp, signature, profileName, profilePictureUrl, claimCode } = body as RegisterRequest;
                     logger.info(`Registration attempt for identity DID: ${did}`);
+
+                    const userAgent = request.headers.get("user-agent") ?? undefined;
+                    const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? (request as any).ip;
 
                     const isSignatureValid = await authService.verifyDidSignature(did, nonce, timestamp, signature, [claimCode || ""]);
                     if (!isSignatureValid) {
@@ -187,13 +193,19 @@ export const app = new Elysia()
                     }
                     // TODO: Nonce replay check
 
-                    const instanceId = `vibe-${randomUUID().substring(0, 18)}`;
+                    const instanceId = `vibe-${randomUUID().substring(0, 18)}`; // Consider making this more robust or configurable
 
                     try {
-                        const registeredIdentity = await authService.registerIdentity(did, instanceId, profileName, profilePictureUrl, claimCode, {
-                            nonce,
-                            timestamp,
-                        });
+                        const registrationResult = await authService.registerIdentity(
+                            did,
+                            instanceId,
+                            profileName,
+                            profilePictureUrl,
+                            claimCode,
+                            { nonce, timestamp },
+                            userAgent,
+                            ipAddress
+                        );
 
                         const scriptPath = path.resolve(process.cwd(), "../vibe-cloud-infra/provisioning/provision.sh");
                         const scriptCwd = path.resolve(process.cwd(), "../vibe-cloud-infra");
@@ -240,12 +252,16 @@ export const app = new Elysia()
                             }
                         });
 
-                        const provisioningIdentity = await authService.updateIdentity(did, { instanceStatus: "provisioning" }, "internal");
-                        const token = await jwt.sign({ identityDid: provisioningIdentity.identityDid, isAdmin: provisioningIdentity.isAdmin });
+                        // Update identity status to provisioning after starting the script
+                        // The registerIdentity already sets it to pending, this confirms script has started attempt
+                        await authService.updateIdentity(registrationResult.identity.identityDid, { instanceStatus: "provisioning" }, "internal");
+
                         set.status = 201;
-                        return { identity: provisioningIdentity, token };
+                        // registrationResult already contains { identity, tokenDetails }
+                        return registrationResult;
                     } catch (error: any) {
-                        if (error.message?.includes("already exists")) {
+                        if (error.message?.includes("already exists") || error.message?.includes("Conflict")) {
+                            // Handle conflict error from DB
                             set.status = 409;
                             return { error: "Identity already exists." };
                         }
@@ -257,20 +273,55 @@ export const app = new Elysia()
                 {
                     body: RegisterRequestSchema,
                     response: {
-                        201: RegisterResponseSchema,
+                        201: RegisterResponseSchema, // This schema now expects { identity, tokenDetails }
                         400: ErrorResponseSchema,
                         401: ErrorResponseSchema,
                         409: ErrorResponseSchema,
                         500: ErrorResponseSchema,
                     },
-                    detail: { summary: "Register a new identity; provisions an instance and handles optional admin promotion." },
+                    detail: {
+                        summary: "Register a new identity; provisions an instance and handles optional admin promotion. Returns access and refresh tokens.",
+                    },
+                }
+            )
+            .post(
+                "/refresh",
+                async ({ authService, body, set, request }) => {
+                    const { refreshToken } = body;
+                    logger.info(`Token refresh attempt.`);
+                    try {
+                        const userAgent = request.headers.get("user-agent") ?? undefined;
+                        const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? (request as any).ip;
+
+                        const tokenDetails = await authService.refreshAccessToken(refreshToken, userAgent, ipAddress);
+                        set.status = 200;
+                        return tokenDetails;
+                    } catch (error: any) {
+                        if (error instanceof UnauthorizedError) {
+                            set.status = 401;
+                            return { error: error.message };
+                        }
+                        logger.error("Error during token refresh:", error);
+                        set.status = 500;
+                        return { error: "Token refresh failed." };
+                    }
+                },
+                {
+                    body: RefreshTokenRequestSchema,
+                    response: {
+                        200: TokenResponseSchema,
+                        401: ErrorResponseSchema,
+                        500: ErrorResponseSchema,
+                    },
+                    detail: { summary: "Refresh an access token using a refresh token." },
                 }
             )
     )
     // --- Initial Admin Claim Route (Bootstrap only, if ADMIN_CLAIM_CODE is set) ---
     .post(
         "/api/v1/admin/claim",
-        async ({ authService, jwt, body, set }) => {
+        async ({ authService, body, set, request }) => {
+            // Removed jwt, authService now handles token generation
             const { did, claimCode, signature } = body as AdminClaimBody;
             logger.info(`Initial admin claim attempt for DID: ${did}`);
 
@@ -280,25 +331,54 @@ export const app = new Elysia()
                 return { error: "Invalid or non-initial admin claim code." };
             }
 
-            const messageBytes = new TextEncoder().encode(claimCode);
-            const publicKeyBytes = ed25519FromDid(did); // Ensure ed25519FromDid is imported
+            const messageBytes = new TextEncoder().encode(claimCode); // Signature should be on claimCode for this specific route
+            const publicKeyBytes = ed25519FromDid(did);
             const signatureBytes = Buffer.from(signature, "base64");
-            const isSignatureValid = await verify(signatureBytes, messageBytes, publicKeyBytes); // Ensure verify is imported
+            const isSignatureValid = await verify(signatureBytes, messageBytes, publicKeyBytes);
             if (!isSignatureValid) {
                 set.status = 401;
                 return { error: "Invalid signature for admin claim." };
             }
-            // Use registerIdentity for consistency, it handles admin promotion via claim code
-            const instanceId = `admin-instance-${randomUUID().substring(0, 8)}`;
-            const adminIdentity = await authService.registerIdentity(did, instanceId, "Admin", undefined, claimCode);
 
-            const token = await jwt.sign({ identityDid: adminIdentity.identityDid, isAdmin: adminIdentity.isAdmin });
-            set.status = 201;
-            return { message: "Admin account claimed successfully.", identityDid: adminIdentity.identityDid, isAdmin: adminIdentity.isAdmin, token };
+            const userAgent = request.headers.get("user-agent") ?? undefined;
+            const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? (request as any).ip;
+
+            const instanceId = `admin-instance-${randomUUID().substring(0, 8)}`; // Admin instances might be special or not needed
+            const { identity, tokenDetails } = await authService.registerIdentity(
+                did,
+                instanceId,
+                "Admin User", // Default name for claimed admin
+                undefined,
+                claimCode, // Pass claim code to ensure admin promotion
+                { nonce: randomUUID(), timestamp: new Date().toISOString() },
+                userAgent,
+                ipAddress
+            );
+
+            if (!identity.isAdmin) {
+                // This should not happen if claimCode logic in registerIdentity is correct
+                logger.error(`Admin claim for ${did} processed, but identity was not flagged as admin.`);
+                set.status = 500;
+                return { error: "Admin claim processing failed to set admin status." };
+            }
+
+            set.status = 201; // 201 Created (for the identity) or 200 OK if identity might exist
+            // The response should align with LoginFinalResponseSchema or RegisterResponseSchema
+            return {
+                message: "Admin account claimed successfully.", // Custom message for this specific route
+                identity: identity, // Send full identity object
+                tokenDetails: tokenDetails, // Send new tokens
+            };
         },
         {
             body: AdminClaimSchema,
-            response: { 201: LoginResponseSchema, 400: ErrorResponseSchema, 401: ErrorResponseSchema, 500: ErrorResponseSchema },
+            // Response should be consistent, e.g., using a modified LoginFinalResponseSchema or a specific AdminClaimResponseSchema
+            response: {
+                201: t.Intersect([LoginFinalResponseSchema, t.Object({ message: t.String() })]),
+                400: ErrorResponseSchema,
+                401: ErrorResponseSchema,
+                500: ErrorResponseSchema,
+            },
             detail: { summary: "Claim an admin account (initial bootstrap)." },
         }
     )

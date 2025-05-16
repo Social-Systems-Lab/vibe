@@ -1,106 +1,156 @@
 // auth.service.ts
-import { DataService, dataService } from "./data.service";
+import { DataService } from "./data.service";
 import { logger } from "../utils/logger";
-import { SYSTEM_DB, USERS_COLLECTION, CLAIM_CODES_COLLECTION } from "../utils/constants"; // Removed APPS_COLLECTION
+import { SYSTEM_DB, USERS_COLLECTION, CLAIM_CODES_COLLECTION, REFRESH_TOKENS_COLLECTION } from "../utils/constants"; // Added REFRESH_TOKENS_COLLECTION
 import {
-    type App as AppModel, // This will be unused if APPS_COLLECTION logic is removed
     type ClaimCode,
-    type Identity, // Changed from User
-    IdentitySchema, // Added
+    type Identity,
+    type StoredRefreshToken,
+    type TokenResponse, // For return type
+    // IdentitySchema, // Already imported if used, else add
 } from "../models/models";
-import { InternalServerError, NotFoundError } from "elysia";
+import { InternalServerError, NotFoundError, UnauthorizedError } from "elysia";
 import type { PermissionService } from "./permission.service";
 import * as jose from "jose";
-import { randomUUIDv7 } from "bun"; // For test identity DID generation
+import { randomUUIDv7 } from "bun";
 import { getUserDbName, ed25519FromDid } from "../utils/identity.utils";
 import { verify } from "@noble/ed25519";
 import { Buffer } from "buffer";
+import crypto from "crypto"; // For hashing refresh tokens
+
+const ACCESS_TOKEN_EXPIRY_SECONDS = parseInt(process.env.ACCESS_TOKEN_EXPIRY_SECONDS || "900"); // 15 minutes
+const REFRESH_TOKEN_EXPIRY_DAYS = parseInt(process.env.REFRESH_TOKEN_EXPIRY_DAYS || "30");
 
 export class AuthService {
     private dataService: DataService;
     private permissionService: PermissionService;
+    private jwtSecretKey: Uint8Array;
 
     constructor(dataService: DataService, permissionService: PermissionService) {
         this.dataService = dataService;
         this.permissionService = permissionService;
+        const secret = process.env.JWT_SECRET;
+        if (!secret) {
+            logger.error("JWT_SECRET environment variable is not set. AuthService cannot operate securely.");
+            throw new Error("JWT_SECRET is not configured.");
+        }
+        this.jwtSecretKey = new TextEncoder().encode(secret);
         logger.info("AuthService initialized.");
     }
 
+    private async generateAccessToken(identityDid: string, isAdmin: boolean): Promise<{ token: string; expiresAt: number }> {
+        const now = Math.floor(Date.now() / 1000);
+        const expiresAt = now + ACCESS_TOKEN_EXPIRY_SECONDS;
+        const token = await new jose.SignJWT({ identityDid, isAdmin, type: "access" })
+            .setProtectedHeader({ alg: "HS256" })
+            .setIssuedAt(now)
+            .setExpirationTime(expiresAt) // Using direct timestamp
+            .setSubject(identityDid)
+            .setIssuer(process.env.JWT_ISSUER || "vibe-cloud-control-plane")
+            // .setAudience(process.env.JWT_AUDIENCE || "vibe-api") // Consider audience
+            .sign(this.jwtSecretKey);
+        return { token, expiresAt };
+    }
+
+    private generateRefreshTokenString(): string {
+        return crypto.randomBytes(40).toString("hex");
+    }
+
+    private hashRefreshToken(token: string): string {
+        return crypto.createHash("sha256").update(token).digest("hex");
+    }
+
+    private async storeRefreshToken(
+        did: string,
+        refreshToken: string,
+        userAgent?: string,
+        ipAddress?: string
+    ): Promise<{ refreshToken: string; expiresAt: number }> {
+        const tokenHash = this.hashRefreshToken(refreshToken);
+        const now = Date.now();
+        const expiresAt = now + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000; // Milliseconds
+
+        const storedToken: Omit<StoredRefreshToken, "_id" | "_rev"> = {
+            did,
+            tokenHash,
+            expiresAt: Math.floor(expiresAt / 1000), // Store as UNIX timestamp (seconds)
+            createdAt: Math.floor(now / 1000),
+            revoked: false,
+            userAgent,
+            ipAddress,
+            collection: REFRESH_TOKENS_COLLECTION,
+        };
+        // Ensure REFRESH_TOKENS_COLLECTION exists
+        await this.dataService.ensureDatabaseExists(SYSTEM_DB); // SYSTEM_DB should exist
+        // await this.dataService.ensureCollectionExists(SYSTEM_DB, REFRESH_TOKENS_COLLECTION); // If using specific collections
+
+        const docId = `${REFRESH_TOKENS_COLLECTION}/${randomUUIDv7()}`; // Unique ID for each refresh token
+        await this.dataService.createDocument(SYSTEM_DB, REFRESH_TOKENS_COLLECTION, { _id: docId, ...storedToken });
+
+        return { refreshToken, expiresAt: storedToken.expiresAt };
+    }
+
+    private async generateAndStoreTokens(identity: Identity, userAgent?: string, ipAddress?: string): Promise<TokenResponse> {
+        const { token: accessToken, expiresAt: accessTokenExpiresAt } = await this.generateAccessToken(identity.identityDid, identity.isAdmin);
+        const plainRefreshToken = this.generateRefreshTokenString();
+        const { refreshToken, expiresAt: refreshTokenExpiresAt } = await this.storeRefreshToken(identity.identityDid, plainRefreshToken, userAgent, ipAddress);
+
+        return {
+            accessToken,
+            accessTokenExpiresIn: accessTokenExpiresAt, // This is absolute timestamp
+            refreshToken,
+            refreshTokenExpiresAt, // This is absolute timestamp
+            tokenType: "Bearer",
+        };
+    }
+
     /**
-     * Deletes an identity and their associated data.
+     * Deletes an identity and their associated data, including refresh tokens.
      * @param identityDid - The DID of the identity to delete.
      */
     async deleteIdentity(identityDid: string): Promise<void> {
         logger.info(`Attempting to delete identity and data for identityDid: ${identityDid}`);
+        const identityDocId = `${USERS_COLLECTION}/${identityDid}`;
+        const identitySystemDbName = getUserDbName(identityDid);
 
-        const identityDocId = `${USERS_COLLECTION}/${identityDid}`; // USERS_COLLECTION might be an anachronism now
-        const identitySystemDbName = getUserDbName(identityDid); // This DB was for user-specific system data in CP's CouchDB
-
-        // 1. Delete the identity document from SYSTEM_DB
+        // 1. Delete identity document
         try {
             const identityDoc = await this.dataService.getDocument<Identity>(SYSTEM_DB, identityDocId);
-            if (!identityDoc) {
-                logger.warn(`Identity document '${identityDid}' not found in '${SYSTEM_DB}' during deletion.`);
-                // If the main identity doc is gone, other cleanup might still be relevant or might fail gracefully.
+            if (identityDoc?._rev) {
+                await this.dataService.deleteDocument(SYSTEM_DB, identityDocId, identityDoc._rev);
+                logger.info(`Successfully deleted identity document '${identityDocId}'.`);
             } else {
-                await this.dataService.deleteDocument(SYSTEM_DB, identityDocId, identityDoc._rev!);
-                logger.info(`Successfully deleted identity document '${identityDocId}' from '${SYSTEM_DB}'.`);
+                logger.warn(`Identity document '${identityDid}' not found or no _rev in '${SYSTEM_DB}'.`);
             }
-        } catch (error: any) {
-            if (error instanceof NotFoundError) {
-                logger.warn(`Identity document '${identityDocId}' not found in '${SYSTEM_DB}' during deletion.`);
-            } else {
-                logger.error(`Error deleting identity document '${identityDocId}' from '${SYSTEM_DB}':`, error.message || error);
-                // Potentially rethrow if this is critical and should halt further deletion attempts
-            }
+        } catch (error) {
+            if (error instanceof NotFoundError) logger.warn(`Identity document '${identityDocId}' not found.`);
+            else logger.error(`Error deleting identity document '${identityDocId}':`, error);
         }
 
-        // 2. Delete the identity's system data database (if it was used)
+        // 2. Delete identity's system data database
         try {
             await this.dataService.getConnection().db.destroy(identitySystemDbName);
             logger.info(`Successfully deleted identity system data database '${identitySystemDbName}'.`);
         } catch (error: any) {
-            if (error.statusCode === 404 || error.message?.includes("not_found")) {
-                logger.warn(`Identity system data database '${identitySystemDbName}' not found during deletion.`);
-            } else {
-                logger.error(`Error deleting identity system data database '${identitySystemDbName}':`, error.message || error);
-            }
+            if (error.statusCode === 404 || error.message?.includes("not_found"))
+                logger.warn(`Identity system data database '${identitySystemDbName}' not found.`);
+            else logger.error(`Error deleting identity system data database '${identitySystemDbName}':`, error);
         }
 
-        // 3. Delete identity's app registrations - REMOVED as APPS_COLLECTION is not in control-plane constants
-        // try {
-        //     logger.debug(`Finding app registrations for identity ${identityDid} in ${SYSTEM_DB}...`);
-        //     // Assuming AppModel still uses userDid, this needs to be updated if AppModel changes
-        //     const appQuery = { selector: { collection: APPS_COLLECTION, userDid: identityDid } };
-        //     const appRegs = await this.dataService.findDocuments<AppModel>(SYSTEM_DB, appQuery);
-
-        //     if (appRegs.docs && appRegs.docs.length > 0) {
-        //         logger.info(`Found ${appRegs.docs.length} app registrations for identity ${identityDid}. Deleting...`);
-        //         const bulkDeletePayload = appRegs.docs.map((doc) => ({
-        //             _id: doc._id!,
-        //             _rev: doc._rev!,
-        //             _deleted: true,
-        //         }));
-        //         const db = await this.dataService.ensureDatabaseExists(SYSTEM_DB);
-        //         const bulkResult = await db.bulk({ docs: bulkDeletePayload });
-
-        //         const errors = bulkResult.filter((item) => !!item.error);
-        //         if (errors.length > 0) {
-        //             logger.error(`Errors encountered during bulk deletion of app registrations for identity ${identityDid}:`, errors);
-        //         } else {
-        //             logger.info(`Successfully deleted ${bulkDeletePayload.length} app registrations for identity ${identityDid}.`);
-        //         }
-        //     } else {
-        //         logger.info(`No app registrations found for identity ${identityDid}.`);
-        //     }
-        // } catch (error: any) {
-        //     logger.error(`Error deleting app registrations for identity ${identityDid}:`, error.message || error);
-        // }
-
-        // Note: Actual Vibe Cloud Instance deprovisioning (Helm, K8s) is handled by a script triggered from index.ts
-        logger.info(
-            `Identity data cleanup process completed for identityDid: ${identityDid}. Instance deprovisioning is separate. App registrations not handled by this service.`
-        );
+        // 3. Delete refresh tokens for the identity
+        try {
+            const query = { selector: { collection: REFRESH_TOKENS_COLLECTION, did: identityDid } };
+            const refreshTokens = await this.dataService.findDocuments<StoredRefreshToken>(SYSTEM_DB, query);
+            if (refreshTokens.docs && refreshTokens.docs.length > 0) {
+                const bulkDeletePayload = refreshTokens.docs.map((doc) => ({ _id: doc._id!, _rev: doc._rev!, _deleted: true }));
+                const db = await this.dataService.ensureDatabaseExists(SYSTEM_DB); // Should already exist
+                await db.bulk({ docs: bulkDeletePayload });
+                logger.info(`Successfully deleted ${bulkDeletePayload.length} refresh tokens for identity ${identityDid}.`);
+            }
+        } catch (error) {
+            logger.error(`Error deleting refresh tokens for identity ${identityDid}:`, error);
+        }
+        logger.info(`Identity data cleanup process completed for ${identityDid}.`);
     }
 
     async ensureInitialAdminClaimCode(): Promise<void> {
@@ -149,7 +199,9 @@ export class AuthService {
      * @param profilePictureUrl Optional profile picture URL.
      * @param claimCodeValue Optional claim code for admin promotion.
      * @param provisioningRequestDetails Optional details from the original request for audit/idempotency.
-     * @returns The created or updated Identity document.
+     * @param userAgent Optional user agent string from the client.
+     * @param ipAddress Optional IP address from the client.
+     * @returns The created/updated Identity document and token details.
      */
     async registerIdentity(
         identityDid: string,
@@ -157,9 +209,11 @@ export class AuthService {
         profileName?: string,
         profilePictureUrl?: string,
         claimCodeValue?: string,
-        provisioningRequestDetails?: { nonce: string; timestamp: string }
-    ): Promise<Identity> {
-        const identityDocId = `${USERS_COLLECTION}/${identityDid}`; // Using USERS_COLLECTION as per current DB schema
+        provisioningRequestDetails?: { nonce: string; timestamp: string },
+        userAgent?: string,
+        ipAddress?: string
+    ): Promise<{ identity: Identity; tokenDetails: TokenResponse }> {
+        const identityDocId = `${USERS_COLLECTION}/${identityDid}`;
         let isPromotedToAdmin = false;
 
         if (claimCodeValue) {
@@ -167,13 +221,12 @@ export class AuthService {
             if (initialAdminCode && claimCodeValue === initialAdminCode) {
                 isPromotedToAdmin = true;
                 logger.info(`Identity ${identityDid} will be promoted to admin via initial claim code.`);
-                // Note: For MVP, we assume initial admin claim code doesn't need to be marked "spent" or is dev-reusable.
-                // A full system would fetch the ClaimCode doc, validate, and mark as spent.
             } else {
-                logger.warn(`Claim code '${claimCodeValue}' provided by ${identityDid} did not match initial admin code. Not promoting.`);
+                logger.warn(`Claim code '${claimCodeValue}' provided by ${identityDid} did not match. Not promoting.`);
             }
         }
 
+        let identityRecord: Identity;
         let existingIdentity: Identity | null = null;
         try {
             existingIdentity = await this.dataService.getDocument<Identity>(SYSTEM_DB, identityDocId);
@@ -184,45 +237,123 @@ export class AuthService {
         const now = new Date().toISOString();
 
         if (existingIdentity) {
-            logger.info(`Identity ${identityDid} already exists. Updating profile and instance details for new/re-provisioning.`);
+            logger.info(`Identity ${identityDid} already exists. Updating profile and instance details.`);
             existingIdentity.profileName = profileName ?? existingIdentity.profileName;
             existingIdentity.profilePictureUrl = profilePictureUrl ?? existingIdentity.profilePictureUrl;
-            if (isPromotedToAdmin) existingIdentity.isAdmin = true;
+            if (isPromotedToAdmin) existingIdentity.isAdmin = true; // Promote if applicable
 
-            // If instanceId is different, it implies a new instance is being requested for an existing identity.
-            // The old instance should ideally be deprovisioned. This service method focuses on the DB record.
             if (existingIdentity.instanceId !== instanceId) {
-                logger.warn(
-                    `Identity ${identityDid} is getting a new instanceId ${instanceId} (old: ${existingIdentity.instanceId}). Old instance may need manual cleanup if not deprovisioned.`
-                );
+                logger.warn(`Identity ${identityDid} getting new instanceId ${instanceId} (old: ${existingIdentity.instanceId}).`);
             }
             existingIdentity.instanceId = instanceId;
-            existingIdentity.instanceStatus = "pending"; // Reset for new provisioning
+            existingIdentity.instanceStatus = "pending";
             existingIdentity.instanceUrl = undefined;
             existingIdentity.instanceErrorDetails = undefined;
-            existingIdentity.instanceCreatedAt = now;
+            existingIdentity.instanceCreatedAt = now; // Reset creation time for new instance logic
             existingIdentity.instanceUpdatedAt = now;
             existingIdentity.provisioningRequestDetails = provisioningRequestDetails;
 
             const updateResponse = await this.dataService.updateDocument(SYSTEM_DB, USERS_COLLECTION, identityDocId, existingIdentity._rev!, existingIdentity);
-            return { ...existingIdentity, _rev: updateResponse.rev };
+            identityRecord = { ...existingIdentity, _rev: updateResponse.rev };
         } else {
             const newIdentityData: Omit<Identity, "_id" | "_rev"> = {
-                identityDid: identityDid,
+                identityDid,
                 isAdmin: isPromotedToAdmin,
-                profileName: profileName,
-                profilePictureUrl: profilePictureUrl,
-                instanceId: instanceId,
+                profileName,
+                profilePictureUrl,
+                instanceId,
                 instanceStatus: "pending",
                 instanceCreatedAt: now,
                 instanceUpdatedAt: now,
-                provisioningRequestDetails: provisioningRequestDetails,
+                provisioningRequestDetails,
                 collection: USERS_COLLECTION,
             };
             const createResponse = await this.dataService.createDocument(SYSTEM_DB, USERS_COLLECTION, { _id: identityDocId, ...newIdentityData });
-            logger.info(`New identity ${identityDid} registered, isAdmin: ${isPromotedToAdmin}. Instance ${instanceId} set to pending.`);
-            return { ...newIdentityData, _id: createResponse.id, _rev: createResponse.rev };
+            logger.info(`New identity ${identityDid} registered, isAdmin: ${isPromotedToAdmin}. Instance ${instanceId} pending.`);
+            identityRecord = { ...newIdentityData, _id: createResponse.id, _rev: createResponse.rev };
         }
+
+        const tokenDetails = await this.generateAndStoreTokens(identityRecord, userAgent, ipAddress);
+        return { identity: identityRecord, tokenDetails };
+    }
+
+    /**
+     * Authenticates an identity and issues new tokens.
+     * @param did The DID of the identity.
+     * @param userAgent Optional user agent string from the client.
+     * @param ipAddress Optional IP address from the client.
+     * @returns The Identity document and token details.
+     */
+    async loginIdentity(did: string, userAgent?: string, ipAddress?: string): Promise<{ identity: Identity; tokenDetails: TokenResponse }> {
+        const identityDocId = `${USERS_COLLECTION}/${did}`;
+        const identityRecord = await this.dataService.getDocument<Identity>(SYSTEM_DB, identityDocId);
+        if (!identityRecord) {
+            throw new NotFoundError(`Identity ${did} not found for login.`);
+        }
+
+        const tokenDetails = await this.generateAndStoreTokens(identityRecord, userAgent, ipAddress);
+        logger.info(`Identity ${did} logged in successfully.`);
+        return { identity: identityRecord, tokenDetails };
+    }
+
+    /**
+     * Refreshes an access token using a valid refresh token.
+     * Implements refresh token rotation.
+     * @param refreshTokenString The refresh token provided by the client.
+     * @param userAgent Optional user agent string from the client.
+     * @param ipAddress Optional IP address from the client.
+     * @returns New token details (access and potentially new refresh token).
+     */
+    async refreshAccessToken(refreshTokenString: string, userAgent?: string, ipAddress?: string): Promise<TokenResponse> {
+        const tokenHash = this.hashRefreshToken(refreshTokenString);
+        const query = { selector: { collection: REFRESH_TOKENS_COLLECTION, tokenHash } };
+        const results = await this.dataService.findDocuments<StoredRefreshToken>(SYSTEM_DB, query);
+
+        if (!results.docs || results.docs.length === 0) {
+            throw new UnauthorizedError("Invalid refresh token.");
+        }
+        const storedToken = results.docs[0];
+
+        if (storedToken.revoked) {
+            // Potential token theft attempt - invalidate all tokens for this user?
+            logger.warn(`Attempt to use a revoked refresh token for DID: ${storedToken.did}.`);
+            throw new UnauthorizedError("Refresh token has been revoked.");
+        }
+        if (storedToken.expiresAt < Math.floor(Date.now() / 1000)) {
+            throw new UnauthorizedError("Refresh token expired.");
+        }
+
+        // Fetch identity to get isAdmin status for the new access token
+        const identity = await this.dataService.getDocument<Identity>(SYSTEM_DB, `${USERS_COLLECTION}/${storedToken.did}`);
+        if (!identity) {
+            logger.error(`Identity ${storedToken.did} not found during refresh token grant for token ID ${storedToken._id}.`);
+            throw new InternalServerError("Associated identity not found.");
+        }
+
+        // Generate new access token
+        const { token: newAccessToken, expiresAt: newAccessTokenExpiresAt } = await this.generateAccessToken(identity.identityDid, identity.isAdmin);
+
+        // Refresh Token Rotation: Invalidate old, issue new
+        storedToken.revoked = true;
+        storedToken.lastUsedAt = Math.floor(Date.now() / 1000);
+        await this.dataService.updateDocument(SYSTEM_DB, REFRESH_TOKENS_COLLECTION, storedToken._id!, storedToken._rev!, storedToken);
+
+        const newPlainRefreshToken = this.generateRefreshTokenString();
+        const { refreshToken: newRefreshToken, expiresAt: newRefreshTokenExpiresAt } = await this.storeRefreshToken(
+            identity.identityDid,
+            newPlainRefreshToken,
+            userAgent,
+            ipAddress
+        );
+
+        logger.info(`Access token refreshed for DID: ${identity.identityDid}. New refresh token issued.`);
+        return {
+            accessToken: newAccessToken,
+            accessTokenExpiresIn: newAccessTokenExpiresAt,
+            refreshToken: newRefreshToken,
+            refreshTokenExpiresAt: newRefreshTokenExpiresAt,
+            tokenType: "Bearer",
+        };
     }
 
     /**
@@ -372,52 +503,36 @@ export class AuthService {
     ): Promise<{ identityDid: string; token: string; identityRev: string }> {
         logger.warn(`Executing createTestIdentityAndToken helper. Use only in testing!`);
 
-        const jwtSecret = process.env.JWT_SECRET;
-        if (!jwtSecret) throw new Error("JWT_SECRET environment variable not configured.");
-        const secretKey = new TextEncoder().encode(jwtSecret);
-
         const testIdentityDid = identityDidInput || `did:vibe:test:${randomUUIDv7()}`;
-        const identityDocId = `${USERS_COLLECTION}/${testIdentityDid}`;
+        // const identityDocId = `${USERS_COLLECTION}/${testIdentityDid}`; // Not needed if registerIdentity handles it
 
-        const newIdentityData: Omit<Identity, "_id" | "_rev"> = {
-            identityDid: testIdentityDid,
-            isAdmin: isAdminFlag,
-            collection: USERS_COLLECTION,
-            instanceId: `test-instance-${randomUUIDv7().substring(0, 8)}`,
-            instanceStatus: "completed",
-            instanceUrl: `http://test-${testIdentityDid}.vibe.dev`,
-            instanceCreatedAt: new Date().toISOString(),
-        };
-        newIdentityData.instanceUpdatedAt = newIdentityData.instanceCreatedAt;
+        const instanceId = `test-instance-${randomUUIDv7().substring(0, 8)}`;
+        const profileName = `Test User ${testIdentityDid.slice(-5)}`;
 
-        let identityCreateResponse;
-        try {
-            identityCreateResponse = await this.dataService.createDocument(SYSTEM_DB, USERS_COLLECTION, { _id: identityDocId, ...newIdentityData });
-        } catch (error: any) {
-            if (error.statusCode === 409) {
-                // Conflict, identity likely exists
-                logger.warn(`Test identity ${testIdentityDid} already exists, fetching...`);
-                const existing = await this.dataService.getDocument<Identity>(SYSTEM_DB, identityDocId);
-                if (!existing._rev) throw new Error("Existing test identity missing _rev");
-                identityCreateResponse = { id: existing._id, rev: existing._rev }; // Mimic create response for rev
-            } else {
-                throw error;
-            }
+        // Use registerIdentity to create the identity and initial tokens
+        const { identity, tokenDetails } = await this.registerIdentity(
+            testIdentityDid,
+            instanceId,
+            profileName,
+            undefined, // profilePictureUrl
+            undefined, // claimCodeValue
+            { nonce: randomUUIDv7(), timestamp: new Date().toISOString() }, // provisioningRequestDetails
+            "test-user-agent",
+            "127.0.0.1"
+        );
+
+        // If a specific isAdmin flag was requested for the test that differs from default registration
+        if (isAdminFlag !== identity.isAdmin) {
+            identity.isAdmin = isAdminFlag;
+            const updatedIdentity = await this.updateIdentity(testIdentityDid, { isAdmin: isAdminFlag }, "admin");
+            // Re-issue tokens if admin status changed critical identity aspect for token
+            // For simplicity, we'll assume the initial tokens from registerIdentity are sufficient for test context
+            // or that test setup will handle specific admin promotion if needed via claim codes.
+            // If direct admin flag setting needs new tokens, re-call generateAndStoreTokens here.
+            logger.info(`Test identity ${testIdentityDid} admin status set to ${isAdminFlag}. Original registration tokens used.`);
         }
 
-        const identityRev = identityCreateResponse.rev!;
-
-        // User-specific DB (if needed by control plane for this identity)
-        try {
-            const identitySystemDbName = getUserDbName(testIdentityDid);
-            await this.dataService.ensureDatabaseExists(identitySystemDbName);
-        } catch (error: any) {
-            logger.error(`[Test Helper] Failed to create system database for test identity ${testIdentityDid}:`, error);
-            // Not cleaning up identity doc here, as it might be an acceptable partial success for some tests.
-        }
-
-        const token = await new jose.SignJWT({ identityDid: testIdentityDid, isAdmin: isAdminFlag }).setProtectedHeader({ alg: "HS256" }).sign(secretKey);
-
-        return { identityDid: testIdentityDid, token, identityRev };
+        // The access token is in tokenDetails.accessToken
+        return { identityDid: testIdentityDid, token: tokenDetails.accessToken, identityRev: identity._rev! };
     }
 }

@@ -68,24 +68,117 @@ const STORAGE_KEY_VAULT = "vibeVault";
 const STORAGE_KEY_VAULT_SALT = "vibeVaultSalt";
 const SESSION_STORAGE_DECRYPTED_SEED_PHRASE = "decryptedSeedPhrase";
 const SESSION_STORAGE_ACTIVE_IDENTITY_INDEX = "activeIdentityIndex";
-const SESSION_STORAGE_JWT_PREFIX = "vibe_jwt_"; // For storing JWTs per DID
+// const SESSION_STORAGE_JWT_PREFIX = "vibe_jwt_"; // Old, replaced by specific token keys
 const GAP_LIMIT = 20;
+
+// New Token Storage Keys
+const SESSION_STORAGE_CP_ACCESS_TOKEN_PREFIX = "cp_access_token_";
+const SESSION_STORAGE_CP_ACCESS_TOKEN_EXPIRES_AT_PREFIX = "cp_access_token_expires_at_";
+const LOCAL_STORAGE_CP_REFRESH_TOKEN_PREFIX = "cp_refresh_token_";
+const LOCAL_STORAGE_CP_REFRESH_TOKEN_EXPIRES_AT_PREFIX = "cp_refresh_token_expires_at_";
+
+// API response type for tokenDetails (align with CP models.ts TokenResponseSchema)
+interface TokenDetails {
+    accessToken: string;
+    accessTokenExpiresIn: number; // Absolute UNIX timestamp (seconds)
+    refreshToken: string;
+    refreshTokenExpiresAt: number; // Absolute UNIX timestamp (seconds)
+    tokenType: "Bearer";
+}
 
 // --- Global State ---
 let currentActiveDid: string | null = null;
 let isUnlocked: boolean = false;
 
-// --- Utility Functions ---
-async function getStoredJwt(identityDid: string): Promise<string | null> {
-    const key = `${SESSION_STORAGE_JWT_PREFIX}${identityDid}`;
-    try {
-        const result = await chrome.storage.session.get(key);
-        return result[key] || null;
-    } catch (error) {
-        console.error(`Error getting JWT for ${identityDid}:`, error);
-        return null;
-    }
+// --- Token Management Utility Functions ---
+
+async function storeCpTokens(did: string, tokenDetails: TokenDetails): Promise<void> {
+    const accessTokenKey = `${SESSION_STORAGE_CP_ACCESS_TOKEN_PREFIX}${did}`;
+    const accessTokenExpiresAtKey = `${SESSION_STORAGE_CP_ACCESS_TOKEN_EXPIRES_AT_PREFIX}${did}`;
+    const refreshTokenKey = `${LOCAL_STORAGE_CP_REFRESH_TOKEN_PREFIX}${did}`;
+    const refreshTokenExpiresAtKey = `${LOCAL_STORAGE_CP_REFRESH_TOKEN_EXPIRES_AT_PREFIX}${did}`;
+
+    await chrome.storage.session.set({
+        [accessTokenKey]: tokenDetails.accessToken,
+        [accessTokenExpiresAtKey]: tokenDetails.accessTokenExpiresIn,
+    });
+    await chrome.storage.local.set({
+        [refreshTokenKey]: tokenDetails.refreshToken,
+        [refreshTokenExpiresAtKey]: tokenDetails.refreshTokenExpiresAt,
+    });
+    console.info(`Stored CP tokens for DID: ${did}`);
 }
+
+async function clearCpTokens(did: string): Promise<void> {
+    const accessTokenKey = `${SESSION_STORAGE_CP_ACCESS_TOKEN_PREFIX}${did}`;
+    const accessTokenExpiresAtKey = `${SESSION_STORAGE_CP_ACCESS_TOKEN_EXPIRES_AT_PREFIX}${did}`;
+    const refreshTokenKey = `${LOCAL_STORAGE_CP_REFRESH_TOKEN_PREFIX}${did}`;
+    const refreshTokenExpiresAtKey = `${LOCAL_STORAGE_CP_REFRESH_TOKEN_EXPIRES_AT_PREFIX}${did}`;
+
+    await chrome.storage.session.remove([accessTokenKey, accessTokenExpiresAtKey]);
+    await chrome.storage.local.remove([refreshTokenKey, refreshTokenExpiresAtKey]);
+    console.info(`Cleared CP tokens for DID: ${did}`);
+}
+
+async function getValidCpAccessToken(did: string): Promise<string> {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+
+    // 1. Try session access token
+    const accessTokenKey = `${SESSION_STORAGE_CP_ACCESS_TOKEN_PREFIX}${did}`;
+    const accessTokenExpiresAtKey = `${SESSION_STORAGE_CP_ACCESS_TOKEN_EXPIRES_AT_PREFIX}${did}`;
+    const sessionData = await chrome.storage.session.get([accessTokenKey, accessTokenExpiresAtKey]);
+    const sessionAccessToken = sessionData[accessTokenKey];
+    const sessionAccessTokenExpiresAt = sessionData[accessTokenExpiresAtKey];
+
+    if (sessionAccessToken && sessionAccessTokenExpiresAt && sessionAccessTokenExpiresAt > nowSeconds) {
+        console.debug(`Using valid session CP access token for DID: ${did}`);
+        return sessionAccessToken;
+    }
+
+    // 2. Try using refresh token from local storage
+    const refreshTokenKey = `${LOCAL_STORAGE_CP_REFRESH_TOKEN_PREFIX}${did}`;
+    const refreshTokenExpiresAtKey = `${LOCAL_STORAGE_CP_REFRESH_TOKEN_EXPIRES_AT_PREFIX}${did}`;
+    const localData = await chrome.storage.local.get([refreshTokenKey, refreshTokenExpiresAtKey]);
+    const storedRefreshToken = localData[refreshTokenKey];
+    const storedRefreshTokenExpiresAt = localData[refreshTokenExpiresAtKey];
+
+    if (storedRefreshToken && storedRefreshTokenExpiresAt && storedRefreshTokenExpiresAt > nowSeconds) {
+        console.info(`Session CP access token missing or expired for ${did}. Attempting refresh...`);
+        try {
+            const refreshResponse = await fetch(`${OFFICIAL_VIBE_CLOUD_URL}/api/v1/auth/refresh`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ refreshToken: storedRefreshToken }),
+            });
+
+            if (!refreshResponse.ok) {
+                const errorBody = await refreshResponse.json().catch(() => ({ error: "Refresh failed with status: " + refreshResponse.status }));
+                console.warn(`CP token refresh failed for ${did}: ${refreshResponse.status}, ${errorBody.error}`);
+                if (refreshResponse.status === 401) {
+                    // Unauthorized, refresh token likely invalid/revoked
+                    await clearCpTokens(did); // Clear out bad tokens
+                    throw new Error(`FULL_LOGIN_REQUIRED: Refresh token invalid for ${did}.`);
+                }
+                throw new Error(errorBody.error || `Token refresh failed: ${refreshResponse.status}`);
+            }
+
+            const newTokenDetails = (await refreshResponse.json()) as TokenDetails;
+            await storeCpTokens(did, newTokenDetails);
+            console.info(`CP token refreshed successfully for DID: ${did}`);
+            return newTokenDetails.accessToken;
+        } catch (error: any) {
+            console.error(`Error during token refresh for ${did}:`, error);
+            if (error.message.startsWith("FULL_LOGIN_REQUIRED")) throw error; // Re-throw specific error
+            throw new Error(`Token refresh process failed for ${did}: ${error.message}`);
+        }
+    }
+
+    // 3. No valid session token, no valid refresh token
+    console.warn(`No valid CP session or refresh token for DID: ${did}. Full login required.`);
+    throw new Error(`FULL_LOGIN_REQUIRED: No valid tokens for ${did}.`);
+}
+
+// --- Core Identity and Session Management ---
 
 async function loadActiveIdentityFromSessionInternal() {
     try {
@@ -100,14 +193,9 @@ async function loadActiveIdentityFromSessionInternal() {
                 const masterKey = getMasterHDKeyFromSeed(seedBuffer);
                 const identityKeyPair = deriveChildKeyPair(masterKey, activeIndex);
                 currentActiveDid = didFromEd25519(identityKeyPair.publicKey);
-                isUnlocked = true; // Requires JWT to be also present for full "cloud unlocked" state
+                isUnlocked = true;
                 console.log("Active identity loaded from session:", currentActiveDid);
-                // Check for JWT for this DID
-                const jwt = await getStoredJwt(currentActiveDid);
-                if (!jwt) {
-                    console.warn(`Identity ${currentActiveDid} loaded, but no JWT found in session. User may need to login.`);
-                    // isUnlocked might be true for local operations, but cloud operations will fail/require login.
-                }
+                // We don't proactively check/fetch JWT here anymore. getValidCpAccessToken will handle it on demand.
                 return true;
             } finally {
                 if (seedBuffer) wipeMemory(seedBuffer);
@@ -115,20 +203,29 @@ async function loadActiveIdentityFromSessionInternal() {
         }
     } catch (error) {
         console.error("Error loading active identity from session:", error);
-        await clearSessionStateInternal();
+        await clearSessionStateInternal(); // This will also clear access tokens from session
     }
     isUnlocked = false;
     return false;
 }
 
 async function clearSessionStateInternal() {
-    currentActiveDid = null;
-    isUnlocked = false;
-    // Clear all JWTs as well
+    currentActiveDid = null; // Keep this
+    isUnlocked = false; // Keep this
+
+    // Clear decrypted seed and active index
+    const itemsToClearFromSession = [SESSION_STORAGE_DECRYPTED_SEED_PHRASE, SESSION_STORAGE_ACTIVE_IDENTITY_INDEX];
+
+    // Also clear all CP Access Tokens from session storage
     const allSessionItems = await chrome.storage.session.get(null);
-    const jwtKeysToRemove = Object.keys(allSessionItems).filter((key) => key.startsWith(SESSION_STORAGE_JWT_PREFIX));
-    await chrome.storage.session.remove([SESSION_STORAGE_DECRYPTED_SEED_PHRASE, SESSION_STORAGE_ACTIVE_IDENTITY_INDEX, ...jwtKeysToRemove]);
-    console.log("Session state (seed, active index, all JWTs) cleared.");
+    for (const key in allSessionItems) {
+        if (key.startsWith(SESSION_STORAGE_CP_ACCESS_TOKEN_PREFIX) || key.startsWith(SESSION_STORAGE_CP_ACCESS_TOKEN_EXPIRES_AT_PREFIX)) {
+            itemsToClearFromSession.push(key);
+        }
+    }
+    // Note: Refresh tokens in chrome.storage.local are NOT cleared here. They persist until explicitly cleared by clearCpTokens or logout.
+    await chrome.storage.session.remove(itemsToClearFromSession);
+    console.log("Session state (seed, active index, all CP access tokens) cleared.");
 }
 
 // --- Event Listeners ---
@@ -185,11 +282,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             await loadActiveIdentityFromSessionInternal(); // This sets currentActiveDid and isUnlocked
                             if (!isUnlocked || !currentActiveDid) throw new Error("Failed to load active identity into global state after unlock.");
 
-                            // After unlocking, attempt to get JWT for the active DID
-                            const jwt = await getStoredJwt(currentActiveDid);
-                            if (!jwt) {
-                                console.warn(`Vault unlocked for ${currentActiveDid}, but no JWT found. Login may be required for cloud operations.`);
-                            }
+                            // JWT is no longer proactively checked here. It will be handled by getValidCpAccessToken on demand.
+                            console.info(`Vault unlocked for ${currentActiveDid}. API calls will attempt to use/refresh tokens.`);
 
                             responsePayload = { success: true, did: currentActiveDid, message: "Vault unlocked." };
                         } catch (error) {
@@ -476,11 +570,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                     const errBody = await registerResponse.json().catch(() => ({ error: "Unknown registration error" }));
                                     throw new Error(`Registration failed: ${errBody.error}`);
                                 }
-                                const result = await registerResponse.json();
-                                const serverIdentity = result.identity as Identity;
-                                const token = result.token;
+                                const result = await registerResponse.json(); // This now returns { identity, tokenDetails }
+                                const serverIdentity = result.identity as Identity; // This is IdentitySchema
+                                const tokenDetails = result.tokenDetails as TokenDetails;
 
-                                await chrome.storage.session.set({ [`${SESSION_STORAGE_JWT_PREFIX}${identityDid}`]: token });
+                                await storeCpTokens(identityDid, tokenDetails); // Store new access and refresh tokens
 
                                 // Update local vault with server data
                                 vaultData.identities[0].profile_name = serverIdentity.profileName;
@@ -545,13 +639,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             const messageToSign = `${did}|${nonce}|${timestamp}|${fieldsToSign.join("|")}`;
                             updateOwnerPayload.signature = await signMessage(keyPair.privateKey, messageToSign);
 
-                            const jwtToken = await getStoredJwt(did);
-                            if (!jwtToken) throw new Error("Not logged in to cloud for this identity.");
+                            let accessTokenToUse: string;
+                            try {
+                                accessTokenToUse = await getValidCpAccessToken(did);
+                            } catch (tokenError: any) {
+                                // If token fetch fails (e.g. needs login), this operation cannot proceed.
+                                throw new Error(`Authentication required to update profile: ${tokenError.message}`);
+                            }
 
                             const updateUrl = `${OFFICIAL_VIBE_CLOUD_URL}/api/v1/identities/${did}`;
                             const updateResponse = await fetch(updateUrl, {
                                 method: "PUT",
-                                headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwtToken}` },
+                                headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessTokenToUse}` },
                                 body: JSON.stringify(updateOwnerPayload),
                             });
 
@@ -567,10 +666,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             if (updatedServerIdentity.isAdmin) (localVault.identities[identityIndex] as any).isAdmin = true; // Update admin status
                             await chrome.storage.local.set({ [STORAGE_KEY_VAULT]: localVault });
 
-                            // If a new token was issued (e.g., due to admin promotion)
-                            if (updatedServerIdentity.token) {
-                                await chrome.storage.session.set({ [`${SESSION_STORAGE_JWT_PREFIX}${did}`]: updatedServerIdentity.token });
-                                console.log("New JWT stored after profile update/promotion.");
+                            // The CP's updateIdentity endpoint currently does not return new tokens.
+                            // If it did, we would call storeCpTokens here with the full tokenDetails.
+                            // For now, if updatedServerIdentity.token (old field) were present, it's an access token only.
+                            // This part is less likely to be hit now as CP doesn't return 'token' on this response.
+                            if ((updatedServerIdentity as any).token) {
+                                console.warn(
+                                    "Received a standalone token on profile update, which is deprecated. Full tokenDetails expected for refresh logic."
+                                );
+                                // Storing it directly to session as a fallback, but this won't have refresh capabilities.
+                                const sessionAccessTokenKey = `${SESSION_STORAGE_CP_ACCESS_TOKEN_PREFIX}${did}`;
+                                const sessionAccessTokenExpiresAtKey = `${SESSION_STORAGE_CP_ACCESS_TOKEN_EXPIRES_AT_PREFIX}${did}`;
+                                // Assume a short default expiry if only token is provided
+                                const defaultExpiry = Math.floor(Date.now() / 1000) + 900; // 15 mins
+                                await chrome.storage.session.set({
+                                    [sessionAccessTokenKey]: (updatedServerIdentity as any).token,
+                                    [sessionAccessTokenExpiresAtKey]: defaultExpiry,
+                                });
+                                console.log("Stored standalone access token from profile update to session.");
                             }
 
                             responsePayload = {
@@ -591,12 +704,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             throw new Error("DID is required for FETCH_FULL_IDENTITY_DETAILS.");
                         }
 
-                        // No need to check isUnlocked here, as this might be called by a polling UI
-                        // even if the vault is locked for other operations. The JWT check is key.
-                        const jwtToken = await getStoredJwt(did);
-                        if (!jwtToken) {
-                            // If no JWT, we can't fetch. The UI should handle this by prompting login.
-                            throw new Error(`Not logged in to cloud for identity ${did}. JWT missing.`);
+                        let accessToken: string;
+                        try {
+                            accessToken = await getValidCpAccessToken(did);
+                        } catch (error: any) {
+                            // Propagate specific errors like FULL_LOGIN_REQUIRED
+                            if (error.message.startsWith("FULL_LOGIN_REQUIRED")) {
+                                responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                                responsePayload = { error: { message: error.message, code: "LOGIN_REQUIRED" } };
+                                sendResponse({ type: responseType, requestId, error: responsePayload.error });
+                                return; // Important to return here
+                            }
+                            throw error; // Re-throw other errors
                         }
 
                         const fetchUrl = `${OFFICIAL_VIBE_CLOUD_URL}/api/v1/identities/${did}`;
@@ -604,7 +723,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             method: "GET",
                             headers: {
                                 "Content-Type": "application/json",
-                                Authorization: `Bearer ${jwtToken}`,
+                                Authorization: `Bearer ${accessToken}`,
                             },
                         });
 
@@ -612,10 +731,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             const errorBody = await fetchResponse.json().catch(() => ({
                                 error: `Failed to fetch identity details for ${did}. Status: ${fetchResponse.status}`,
                             }));
+                            // Check for 401 specifically, could mean token expired despite refresh attempt (e.g. clock skew, or refresh failed silently before)
+                            if (fetchResponse.status === 401) {
+                                await clearCpTokens(did); // Clear potentially bad tokens
+                                throw new Error(`FULL_LOGIN_REQUIRED: Access token rejected for ${did}.`);
+                            }
                             throw new Error(errorBody.error || `API error: ${fetchResponse.status}`);
                         }
 
-                        const serverIdentity = (await fetchResponse.json()) as Identity; // Assuming Identity type matches server response
+                        const serverIdentity = (await fetchResponse.json()) as Identity;
 
                         // Update local vault with the fetched details
                         const vaultResult = await chrome.storage.local.get(STORAGE_KEY_VAULT);
@@ -651,16 +775,86 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }
 
                     case "REQUEST_LOGIN_FLOW": {
-                        const { did } = payload;
-                        console.log(`Placeholder: REQUEST_LOGIN_FLOW received for DID: ${did}. Full login UI and logic to be implemented.`);
-                        // In a full implementation, this might:
-                        // 1. Open a modal or new tab for password entry if vault is locked or if login requires re-auth.
-                        // 2. Call an internal function to perform API login (e.g., POST /auth/login).
-                        // 3. Store the new JWT.
-                        // 4. Send a message back to UI to indicate success/failure or to refresh.
-                        responsePayload = { success: true, message: "Login flow initiated (placeholder)." };
-                        // For now, this action doesn't change any state that would automatically resolve the JWT issue.
-                        // The UI would need to re-poll or be explicitly told to re-fetch after a real login.
+                        // This will now attempt a full login
+                        const { did, password } = payload; // UI might pass password if vault was locked
+                        if (!did) throw new Error("DID is required for login flow.");
+
+                        console.log(`REQUEST_LOGIN_FLOW received for DID: ${did}.`);
+
+                        if (!isUnlocked || currentActiveDid !== did) {
+                            // Attempt to unlock if password provided
+                            if (password) {
+                                console.log("Vault locked or DID not active, attempting unlock with provided password...");
+                                // Simplified unlock sequence for login context
+                                const localData = await chrome.storage.local.get([STORAGE_KEY_VAULT, STORAGE_KEY_VAULT_SALT]);
+                                const vaultData = localData[STORAGE_KEY_VAULT];
+                                const saltHex = localData[STORAGE_KEY_VAULT_SALT];
+                                if (!vaultData || !saltHex) throw new Error("Vault or salt not found for unlock.");
+                                const salt = Buffer.from(saltHex, "hex");
+                                const encryptionKey = await deriveEncryptionKey(password, salt);
+                                const decryptedSeedAttempt = await decryptData(vaultData.encryptedSeedPhrase, encryptionKey);
+                                if (!decryptedSeedAttempt) throw new Error("Decryption failed, invalid password for unlock.");
+
+                                const identityIndex = vaultData.identities.findIndex((idObj: any) => idObj.did === did);
+                                if (identityIndex === -1) throw new Error(`DID ${did} not found in vault for unlock.`);
+
+                                await chrome.storage.session.set({
+                                    [SESSION_STORAGE_DECRYPTED_SEED_PHRASE]: decryptedSeedAttempt,
+                                    [SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: identityIndex,
+                                });
+                                await loadActiveIdentityFromSessionInternal(); // This sets currentActiveDid and isUnlocked
+                                if (!isUnlocked || currentActiveDid !== did) {
+                                    throw new Error("Failed to unlock or set active identity correctly for login.");
+                                }
+                                console.log(`Vault unlocked successfully for ${did} during login flow.`);
+                            } else {
+                                // Vault is locked, and no password provided by UI yet.
+                                // Signal UI to request password.
+                                responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                                responsePayload = { error: { message: "Vault is locked. Password required to login.", code: "VAULT_LOCKED_FOR_LOGIN" } };
+                                sendResponse({ type: responseType, requestId, error: responsePayload.error });
+                                return;
+                            }
+                        }
+
+                        // At this point, vault should be unlocked and seed phrase available in session
+                        const decryptedSeed = (await chrome.storage.session.get(SESSION_STORAGE_DECRYPTED_SEED_PHRASE))[SESSION_STORAGE_DECRYPTED_SEED_PHRASE];
+                        const activeIdx = (await chrome.storage.session.get(SESSION_STORAGE_ACTIVE_IDENTITY_INDEX))[SESSION_STORAGE_ACTIVE_IDENTITY_INDEX];
+
+                        if (!decryptedSeed || typeof activeIdx !== "number") {
+                            throw new Error("Critical: Decrypted seed or active index not found in session despite unlock.");
+                        }
+
+                        let seedForSigning: Buffer | null = null;
+                        try {
+                            seedForSigning = await seedFromMnemonic(decryptedSeed);
+                            const masterKey = getMasterHDKeyFromSeed(seedForSigning);
+                            const keyPair = deriveChildKeyPair(masterKey, activeIdx);
+
+                            const nonce = crypto.randomUUID().toString();
+                            const timestamp = new Date().toISOString();
+                            const messageToSign = `${did}|${nonce}|${timestamp}`; // Login signature does not include claimCode
+                            const signature = await signMessage(keyPair.privateKey, messageToSign);
+
+                            const loginApiPayload = { did, nonce, timestamp, signature };
+                            const loginResponse = await fetch(`${OFFICIAL_VIBE_CLOUD_URL}/api/v1/auth/login`, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(loginApiPayload),
+                            });
+
+                            if (!loginResponse.ok) {
+                                const errBody = await loginResponse.json().catch(() => ({ error: "Unknown login API error" }));
+                                throw new Error(`Login API call failed: ${errBody.error || loginResponse.status}`);
+                            }
+                            const result = await loginResponse.json(); // Expects { identity, tokenDetails }
+                            const tokenDetails = result.tokenDetails as TokenDetails;
+                            await storeCpTokens(did, tokenDetails);
+
+                            responsePayload = { success: true, message: "Successfully logged in and tokens refreshed.", identity: result.identity };
+                        } finally {
+                            if (seedForSigning) wipeMemory(seedForSigning);
+                        }
                         break;
                     }
 

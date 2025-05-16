@@ -216,6 +216,38 @@ export const LoginResponseSchema = t.Object({
 });
 export type LoginResponse = Static<typeof LoginResponseSchema>;
 
+// --- Schemas for Refresh Token Functionality ---
+export const TokenResponseSchema = t.Object({
+    accessToken: t.String({ description: "Short-lived JWT access token." }),
+    accessTokenExpiresIn: t.Number({ description: "Expiry time of the access token in seconds from issuance, or a UNIX timestamp." }),
+    refreshToken: t.String({ description: "Longer-lived refresh token." }),
+    refreshTokenExpiresAt: t.Number({ description: "Expiry UNIX timestamp for the refresh token." }), // Using absolute timestamp for refresh token
+    tokenType: t.Literal("Bearer", { default: "Bearer" }),
+});
+export type TokenResponse = Static<typeof TokenResponseSchema>;
+
+export const RefreshTokenRequestSchema = t.Object({
+    refreshToken: t.String(),
+});
+export type RefreshTokenRequest = Static<typeof RefreshTokenRequestSchema>;
+
+// Schema for storing refresh tokens in DB (example, adjust to your DB needs)
+export const StoredRefreshTokenSchema = t.Object({
+    _id: t.Optional(t.String()), // e.g., refreshTokens/some_uuid
+    _rev: t.Optional(t.String()),
+    did: t.String({ description: "The DID of the identity this token belongs to." }),
+    tokenHash: t.String({ description: "SHA-256 hash of the refresh token." }),
+    expiresAt: t.Number({ description: "UNIX timestamp when this refresh token expires." }),
+    createdAt: t.Number({ description: "UNIX timestamp when this refresh token was created." }),
+    lastUsedAt: t.Optional(t.Number({ description: "UNIX timestamp when this refresh token was last used." })),
+    revoked: t.Boolean({ default: false }),
+    userAgent: t.Optional(t.String({ description: "User agent of the client that obtained the token." })), // For auditing
+    ipAddress: t.Optional(t.String({ description: "IP address of the client." })), // For auditing
+    collection: t.Literal("refreshTokens"), // Dedicated collection for refresh tokens
+});
+export type StoredRefreshToken = Static<typeof StoredRefreshTokenSchema>;
+// --- End Schemas for Refresh Token Functionality ---
+
 export const RegisterRequestSchema = t.Object({
     did: t.String({ description: "Identity's DID." }),
     nonce: t.String({ description: "Client-generated nonce." }),
@@ -227,12 +259,20 @@ export const RegisterRequestSchema = t.Object({
 });
 export type RegisterRequest = Static<typeof RegisterRequestSchema>;
 
-// Register response could be the full Identity object or a subset + token
+// Register response now includes detailed token information
 export const RegisterResponseSchema = t.Object({
     identity: IdentitySchema,
-    token: t.String({ description: "JWT token for the newly registered identity." }),
+    tokenDetails: TokenResponseSchema,
 });
 export type RegisterResponse = Static<typeof RegisterResponseSchema>;
+
+// Login response should also use TokenResponseSchema
+export const LoginFinalResponseSchema = t.Object({
+    // Renaming to avoid conflict if LoginResponseSchema is used elsewhere for request
+    identity: IdentitySchema, // Or a subset like { did, isAdmin, profileName }
+    tokenDetails: TokenResponseSchema,
+});
+export type LoginFinalResponse = Static<typeof LoginFinalResponseSchema>;
 
 // --- Identity Schemas (for API interaction) ---
 
