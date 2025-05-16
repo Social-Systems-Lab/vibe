@@ -194,7 +194,34 @@ export const app = new Elysia()
                     }
                     // TODO: Nonce replay check
 
-                    const instanceId = `instance-${randomUUID().substring(0, 18)}`; // Consider making this more robust or configurable
+                    // Generate instanceId from DID:
+                    // Strip "did:<scheme>:" prefix and sanitize the rest.
+                    let rawDidSuffix = did; // Default to full DID if pattern doesn't match
+                    const didPrefixMatch = did.match(/^did:[^:]+:(.*)$/);
+                    if (didPrefixMatch && didPrefixMatch[1]) {
+                        rawDidSuffix = didPrefixMatch[1];
+                    }
+
+                    // Sanitize: lowercase, replace colons with hyphens.
+                    // Other invalid K8s/DNS characters could be handled here if necessary.
+                    let sanitizedId = rawDidSuffix.toLowerCase().replace(/:/g, "-");
+
+                    // Ensure doesn't start or end with a hyphen, and no double hyphens
+                    sanitizedId = sanitizedId.replace(/-+/g, "-").replace(/^-+|-+$/g, "");
+
+                    // Truncate to a max length to keep overall K8s names (e.g., "vibe-[instanceId]") within limits.
+                    // Max K8s namespace length is 63. "vibe-" is 5 chars. So, 58 for instanceId.
+                    // Let's use 50 for a good margin.
+                    const instanceId = sanitizedId.substring(0, 50);
+
+                    if (!instanceId) {
+                        // Should not happen if DID is valid
+                        logger.error(`Failed to generate a valid instanceId from DID: ${did}. Resulted in empty string.`);
+                        set.status = 500;
+                        return { error: "Failed to generate instance identifier from DID." };
+                    }
+
+                    logger.info(`Generated instanceId: '${instanceId}' from DID: '${did}'`);
 
                     try {
                         const registrationResult = await authService.registerIdentity(
