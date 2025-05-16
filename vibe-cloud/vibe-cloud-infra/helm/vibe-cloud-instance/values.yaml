@@ -72,7 +72,7 @@ couchdb:
         # Note: existingSecret functionality is handled by the top-level 'secrets.existingCouchdbSecret' now.
     persistence:
         enabled: true
-        size: 5Gi # Default size for CouchDB data volume
+        size: 1Gi # Default size for CouchDB data volume, reduced for cost optimization
         # storageClassName: "" # If you want to specify a storage class, e.g., "standard", "gp2"
         # existingClaim: "" # If you have an existing PVC
     service:

@@ -194,7 +194,7 @@ export const app = new Elysia()
                     }
                     // TODO: Nonce replay check
 
-                    const instanceId = `vibe-${randomUUID().substring(0, 18)}`; // Consider making this more robust or configurable
+                    const instanceId = `instance-${randomUUID().substring(0, 18)}`; // Consider making this more robust or configurable
 
                     try {
                         const registrationResult = await authService.registerIdentity(
