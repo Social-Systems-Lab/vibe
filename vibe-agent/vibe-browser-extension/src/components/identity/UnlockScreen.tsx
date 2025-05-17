@@ -27,12 +27,12 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({ lastActiveDidHint, o
 
     return (
         <div className="w-full h-full flex flex-col items-center justify-center p-4 bg-background">
-            <Card className="w-full max-w-sm">
-                <CardHeader className="text-center">
+            <div className="w-full max-w-sm">
+                <div className="text-center flex flex-col items-center mb-8 mt-8">
                     <div className="mx-auto mb-4">
                         <VibeLogo className="h-12 w-auto" />
                     </div>
-                    <CardTitle className="text-2xl">Welcome Back!</CardTitle>
+                    <div className="text-2xl">Welcome Back!</div>
                     {lastActiveDidHint && (
                         <CardDescription>
                             Unlock to access your Vibe Identity
@@ -40,8 +40,8 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({ lastActiveDidHint, o
                         </CardDescription>
                     )}
                     {!lastActiveDidHint && <CardDescription>Unlock your Vibe Vault to continue.</CardDescription>}
-                </CardHeader>
-                <CardContent>
+                </div>
+                <div>
                     <form onSubmit={handleSubmit} className="space-y-4">
                         <div className="space-y-2">
                             <Label htmlFor="password">Password</Label>
@@ -60,12 +60,12 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({ lastActiveDidHint, o
                             {isUnlocking ? "Unlocking..." : "Unlock"}
                         </Button>
                     </form>
-                </CardContent>
+                </div>
                 {/* Optional: Add a footer for links like "Forgot password?" or "Import existing seed?" if applicable */}
                 {/* <CardFooter>
                     <p className="text-xs text-muted-foreground">...</p>
                 </CardFooter> */}
-            </Card>
+            </div>
         </div>
     );
 };

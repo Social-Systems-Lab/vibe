@@ -1,160 +1,323 @@
-import React, { useState } from "react";
-import { NameIdentityStep } from "@/components/setup/NameIdentityStep";
-import { ConfigureCloudStep } from "@/components/setup/ConfigureCloudStep";
+import React, { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input"; // Added for password
-import { Label } from "@/components/ui/label"; // Added for password
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { User, Loader2 } from "lucide-react";
+import { VibeLogo } from "@/components/ui/VibeLogo"; // For completion step
+
+// Constants from SetupIdentityStep
+const OFFICIAL_VIBE_CLOUD_URL = "https://vibe-cloud-cp.vibeapp.dev";
+const OFFICIAL_VIBE_CLOUD_NAME = "Official Vibe Cloud (Recommended)";
+
+interface CloudServiceOption {
+    id: string;
+    name: string;
+    url: string;
+    isDefault?: boolean;
+}
 
 interface NewIdentitySetupWizardProps {
-    identityDid: string;
-    accountIndex: number; // For deriving keys if needed for registration signature
+    accountIndex: number;
+    isVaultInitiallyUnlocked: boolean; // Added new prop
     onSetupComplete: (details: {
-        didToFinalize: string;
         accountIndex: number;
-        identityName: string;
-        identityPicture?: string; // Optional
+        identityName: string | null;
+        identityPicture?: string | null;
         cloudUrl: string;
-        claimCode?: string; // Optional
-        password?: string; // Password to re-decrypt seed for signing - THIS IS THE VAULT PASSWORD
+        claimCode?: string | null;
+        password?: string;
     }) => Promise<void>;
     onCancel: () => void;
 }
 
-type WizardStep = "name" | "configureCloud" | "confirmAndFinalize" | "finalizing";
+type WizardStep = "enterDetails" | "creating" | "creationComplete";
 
-export const NewIdentitySetupWizard: React.FC<NewIdentitySetupWizardProps> = ({ identityDid, accountIndex, onSetupComplete, onCancel }) => {
-    const [currentStep, setCurrentStep] = useState<WizardStep>("name");
-    const [identityName, setIdentityName] = useState<string>("");
-    const [identityPicture, setIdentityPicture] = useState<string | undefined>(undefined); // Optional
-    const [cloudUrl, setCloudUrl] = useState<string>("");
-    const [claimCode, setClaimCode] = useState<string | undefined>(undefined);
-    const [vaultPassword, setVaultPassword] = useState<string>(""); // Explicit state for vault password
+export const NewIdentitySetupWizard: React.FC<NewIdentitySetupWizardProps> = ({ accountIndex, isVaultInitiallyUnlocked, onSetupComplete, onCancel }) => {
+    const [currentStep, setCurrentStep] = useState<WizardStep>("enterDetails");
+
+    // Form field states
+    const [identityName, setIdentityName] = useState("");
+    const [picturePreview, setPicturePreview] = useState<string | null>(null);
+    const [vaultPassword, setVaultPassword] = useState("");
+
+    // Cloud configuration states (from SetupIdentityStep)
+    const [configuredCloudServices, setConfiguredCloudServices] = useState<CloudServiceOption[]>([
+        { id: "default", name: OFFICIAL_VIBE_CLOUD_NAME, url: OFFICIAL_VIBE_CLOUD_URL, isDefault: true },
+    ]);
+    const [selectedCloudServiceId, setSelectedCloudServiceId] = useState<string>("default");
+    const [showCustomCloudForm, setShowCustomCloudForm] = useState(false);
+    const [customCloudUrl, setCustomCloudUrl] = useState("");
+    const [customClaimCode, setCustomClaimCode] = useState("");
+
     const [error, setError] = useState<string | null>(null);
-    const [isFinalizing, setIsFinalizing] = useState(false);
+    const [isCreating, setIsCreating] = useState(false);
 
-    const handleNameComplete = (name: string, picture?: string) => {
-        setIdentityName(name);
-        setIdentityPicture(picture);
-        setCurrentStep("configureCloud");
+    const selectedService = configuredCloudServices.find((s) => s.id === selectedCloudServiceId) || configuredCloudServices[0];
+
+    const handlePictureChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => setPicturePreview(reader.result as string);
+            reader.readAsDataURL(file);
+        }
     };
 
-    const handleCloudConfigComplete = (selectedCloudUrl: string, enteredClaimCode?: string) => {
-        setCloudUrl(selectedCloudUrl);
-        setClaimCode(enteredClaimCode);
-        setCurrentStep("confirmAndFinalize"); // Move to new confirmation step
-        setError(null);
+    const handleSelectCloudService = (serviceId: string) => {
+        setSelectedCloudServiceId(serviceId);
+        if (serviceId !== "add_new_custom") {
+            setShowCustomCloudForm(false);
+        } else {
+            setShowCustomCloudForm(true);
+        }
     };
 
-    const handleConfirmAndFinalize = async (event: React.FormEvent) => {
+    // Reset custom cloud form fields if user navigates away from adding new custom cloud
+    useEffect(() => {
+        if (!showCustomCloudForm && selectedCloudServiceId !== "add_new_custom") {
+            setCustomCloudUrl("");
+            setCustomClaimCode("");
+        }
+    }, [showCustomCloudForm, selectedCloudServiceId]);
+
+    const handleCreateIdentitySubmit = async (event: React.FormEvent) => {
         event.preventDefault();
-        if (!vaultPassword) {
-            setError("Vault password is required to finalize the identity.");
+        setError(null);
+
+        if (!isVaultInitiallyUnlocked && !vaultPassword) {
+            // Only require password if vault is locked
+            setError("Vault password is required to create the identity.");
             return;
         }
-        setIsFinalizing(true);
-        setError(null);
-        setCurrentStep("finalizing");
+
+        setIsCreating(true);
+        setCurrentStep("creating");
+
+        let finalCloudUrl = selectedService.url;
+        let finalClaimCode: string | null = null;
+
+        if (selectedCloudServiceId === "add_new_custom" || (showCustomCloudForm && customCloudUrl)) {
+            if (!customCloudUrl) {
+                setError("Custom Vibe Cloud URL is required if adding a new one.");
+                setIsCreating(false);
+                setCurrentStep("enterDetails");
+                return;
+            }
+            try {
+                new URL(customCloudUrl); // Validate URL
+            } catch (_) {
+                setError("Invalid Custom Vibe Cloud URL format.");
+                setIsCreating(false);
+                setCurrentStep("enterDetails");
+                return;
+            }
+            finalCloudUrl = customCloudUrl;
+            finalClaimCode = customClaimCode.trim() || null;
+        } else {
+            finalCloudUrl = selectedService.url;
+            // For default or previously saved custom services, claim code isn't re-entered here
+            // unless a specific logic for it is added.
+            finalClaimCode = selectedService.id.startsWith("custom-") ? customClaimCode.trim() || null : null;
+            if (selectedService.isDefault) {
+                finalClaimCode = null;
+            }
+        }
 
         try {
             await onSetupComplete({
-                didToFinalize: identityDid,
                 accountIndex,
-                identityName,
-                identityPicture,
-                cloudUrl: cloudUrl,
-                claimCode: claimCode,
-                password: vaultPassword, // Use the explicitly collected vault password
+                identityName: identityName.trim() || null,
+                identityPicture: picturePreview,
+                cloudUrl: finalCloudUrl,
+                claimCode: finalClaimCode,
+                password: isVaultInitiallyUnlocked ? undefined : vaultPassword, // Send password only if vault was locked
             });
-            // On success, App.tsx handles closing.
+            setCurrentStep("creationComplete");
         } catch (e: any) {
-            setError(e.message || "An unknown error occurred during finalization.");
-            setIsFinalizing(false);
-            setCurrentStep("confirmAndFinalize"); // Revert to confirmation step on error
+            setError(e.message || "An unknown error occurred during identity creation.");
+            setCurrentStep("enterDetails"); // Revert to details step on error
+        } finally {
+            setIsCreating(false);
         }
     };
 
-    const renderStep = () => {
-        switch (currentStep) {
-            case "name":
-                return <NameIdentityStep onIdentityNamed={handleNameComplete} />;
-            case "configureCloud":
-                return <ConfigureCloudStep onCloudConfigured={(url, claim) => handleCloudConfigComplete(url, claim)} />;
-            case "confirmAndFinalize":
-                return (
-                    <form onSubmit={handleConfirmAndFinalize} className="p-6 space-y-4">
+    const handleCloseTab = () => {
+        // Try to message background to close, fallback to window.close()
+        if (chrome.runtime && chrome.runtime.sendMessage) {
+            chrome.runtime.sendMessage({ type: "CLOSE_SETUP_TAB" }, (response) => {
+                if (chrome.runtime.lastError || !response || !response.success) {
+                    window.close(); // Fallback if messaging fails or not handled
+                }
+                // If response.success, tab should be closed by background
+            });
+        } else {
+            window.close();
+        }
+    };
+
+    const renderEnterDetailsStep = () => (
+        <form onSubmit={handleCreateIdentitySubmit} className="p-6 space-y-6">
+            {/* Identity Profile Section */}
+            <div className="space-y-4">
+                <h3 className="text-lg font-medium">Identity Profile (Optional)</h3>
+                <div className="flex flex-col items-center space-y-2">
+                    <Avatar className="h-24 w-24 mb-2">
+                        <AvatarImage src={picturePreview ?? undefined} alt={identityName || "Identity Avatar"} />
+                        <AvatarFallback>
+                            <User className="h-12 w-12" />
+                        </AvatarFallback>
+                    </Avatar>
+                    <Input id="picture-upload" type="file" accept="image/*" onChange={handlePictureChange} className="hidden" />
+                    <Button type="button" variant="outline" size="sm" onClick={() => document.getElementById("picture-upload")?.click()}>
+                        {picturePreview ? "Change Picture" : "Upload Picture"}
+                    </Button>
+                    {picturePreview && (
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setPicturePreview(null)}>
+                            Remove Picture
+                        </Button>
+                    )}
+                </div>
+                <div>
+                    <Label htmlFor="identity-name">Display Name</Label>
+                    <Input
+                        id="identity-name"
+                        type="text"
+                        value={identityName}
+                        onChange={(e) => setIdentityName(e.target.value)}
+                        placeholder="e.g., My Main Vibe"
+                        autoComplete="nickname"
+                    />
+                </div>
+            </div>
+
+            <hr />
+
+            {/* Vibe Cloud Configuration Section */}
+            <div className="space-y-4">
+                <h3 className="text-lg font-medium">Connect to Vibe Cloud</h3>
+                <div>
+                    <Label htmlFor="cloud-service-select">Vibe Cloud Provider</Label>
+                    <select
+                        id="cloud-service-select"
+                        value={selectedCloudServiceId}
+                        onChange={(e) => handleSelectCloudService(e.target.value)}
+                        className="w-full p-2 border rounded-md bg-background text-foreground mt-1"
+                    >
+                        {configuredCloudServices.map((service) => (
+                            <option key={service.id} value={service.id}>
+                                {service.name}
+                            </option>
+                        ))}
+                        <option value="add_new_custom">+ Add Custom Vibe Cloud</option>
+                    </select>
+                </div>
+
+                {(selectedCloudServiceId === "add_new_custom" || showCustomCloudForm) && (
+                    <div className="space-y-4 p-4 border rounded-md mt-2">
+                        <h4 className="text-md font-medium">Add Custom Vibe Cloud</h4>
                         <div>
-                            <h3 className="text-lg font-medium">Confirm Details</h3>
-                            <p className="text-sm text-muted-foreground">
-                                Please review the identity details and enter your current vault password to complete the setup.
-                            </p>
-                        </div>
-                        <div>
-                            <p>
-                                <strong>Name:</strong> {identityName || "Not set"}
-                            </p>
-                            <p>
-                                <strong>Cloud Server:</strong> {cloudUrl || "Not set"}
-                            </p>
-                            {claimCode && (
-                                <p>
-                                    <strong>Claim Code:</strong> {claimCode}
-                                </p>
-                            )}
-                        </div>
-                        <div className="space-y-1">
-                            <Label htmlFor="vault-password">Current Vault Password</Label>
+                            <Label htmlFor="custom-cloud-url">Custom Vibe Cloud URL</Label>
                             <Input
-                                id="vault-password"
-                                type="password"
-                                value={vaultPassword}
-                                onChange={(e) => setVaultPassword(e.target.value)}
-                                placeholder="Enter your vault password"
-                                required
-                                autoFocus
+                                id="custom-cloud-url"
+                                type="url"
+                                value={customCloudUrl}
+                                onChange={(e) => setCustomCloudUrl(e.target.value)}
+                                placeholder="https://your-custom-vibe.cloud"
+                                className="mt-1"
                             />
                         </div>
-                        {error && <p className="text-red-500 text-sm">{error}</p>}
-                        <Button type="submit" className="w-full" disabled={isFinalizing || !vaultPassword}>
-                            {isFinalizing ? "Finalizing..." : "Confirm and Finalize Identity"}
-                        </Button>
-                    </form>
-                );
-            case "finalizing":
-                return (
-                    <div className="p-6 text-center">
-                        <p>Finalizing identity setup...</p>
-                        {error && !isFinalizing && <p className="text-red-500 mt-2">{error}</p>}
+                        <div>
+                            <Label htmlFor="custom-claim-code">Claim Code (Optional)</Label>
+                            <Input
+                                id="custom-claim-code"
+                                type="text"
+                                value={customClaimCode}
+                                onChange={(e) => setCustomClaimCode(e.target.value)}
+                                placeholder="Provided by your custom cloud admin"
+                                autoComplete="off"
+                                className="mt-1"
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">Only needed if your custom Vibe Cloud instance requires it.</p>
+                        </div>
                     </div>
-                );
-            default:
-                return <p>Unknown setup step.</p>;
-        }
-    };
-
-    return (
-        <div className="w-full h-full flex flex-col">
-            <div className="p-4 border-b border-border">
-                <h2 className="text-lg font-semibold text-center">Setup New Identity</h2>
+                )}
             </div>
-            <div className="flex-grow p-2 overflow-y-auto">{renderStep()}</div>
-            {currentStep !== "finalizing" && currentStep !== "confirmAndFinalize" && !isFinalizing && (
-                <div className="p-4 border-t border-border">
-                    <Button onClick={onCancel} variant="outline" className="w-full">
-                        Cancel Setup
-                    </Button>
+
+            <hr />
+
+            {/* Vault Password Section - Conditional */}
+            {!isVaultInitiallyUnlocked && (
+                <div className="space-y-2">
+                    <Label htmlFor="vault-password">Current Vault Password</Label>
+                    <Input
+                        id="vault-password"
+                        type="password"
+                        value={vaultPassword}
+                        onChange={(e) => setVaultPassword(e.target.value)}
+                        placeholder="Enter your vault password"
+                        required={!isVaultInitiallyUnlocked} // Required only if shown
+                    />
                 </div>
             )}
-            {/* Cancel button for confirmAndFinalize step, if not finalizing */}
-            {currentStep === "confirmAndFinalize" && !isFinalizing && (
+
+            {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+
+            <Button type="submit" className="w-full !mt-8" disabled={isCreating || (!isVaultInitiallyUnlocked && !vaultPassword)}>
+                {isCreating ? (
+                    <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Creating...
+                    </>
+                ) : (
+                    "Create Identity"
+                )}
+            </Button>
+        </form>
+    );
+
+    const renderCreatingStep = () => (
+        <div className="p-6 text-center flex flex-col items-center justify-center space-y-2">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-muted-foreground">Creating identity...</p>
+        </div>
+    );
+
+    const renderCreationCompleteStep = () => (
+        <div className="p-6 flex flex-col items-center text-center space-y-4">
+            <VibeLogo width={60} height={60} />
+            <h3 className="text-2xl font-semibold">Identity Created!</h3>
+            <p className="text-muted-foreground">Your new identity {identityName ? `"${identityName}"` : ""} has been successfully set up.</p>
+            <Button onClick={handleCloseTab} className="w-full max-w-xs">
+                Done
+            </Button>
+        </div>
+    );
+
+    const renderCancelButton = () => {
+        if (currentStep === "enterDetails" && !isCreating) {
+            return (
                 <div className="p-4 border-t border-border">
                     <Button onClick={onCancel} variant="outline" className="w-full">
                         Cancel
                     </Button>
                 </div>
-            )}
-            {error && currentStep !== "finalizing" && currentStep !== "confirmAndFinalize" && (
-                <div className="p-4 text-red-500 text-sm text-center">{error}</div>
-            )}
+            );
+        }
+        return null;
+    };
+
+    return (
+        <div className="w-full h-full flex flex-col bg-card">
+            <div className="p-4 border-b border-border">
+                <h2 className="text-lg font-semibold text-center">{currentStep === "creationComplete" ? "Setup Complete" : "Setup New Identity"}</h2>
+            </div>
+            <div className="flex-grow p-2 overflow-y-auto">
+                {currentStep === "enterDetails" && renderEnterDetailsStep()}
+                {currentStep === "creating" && renderCreatingStep()}
+                {currentStep === "creationComplete" && renderCreationCompleteStep()}
+            </div>
+            {renderCancelButton()}
         </div>
     );
 };

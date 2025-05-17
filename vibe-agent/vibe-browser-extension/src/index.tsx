@@ -58,12 +58,13 @@ function Popup() {
         return <div className="p-4 text-red-600">{error}</div>;
     }
 
+    // Apply popup-specific dimensions here
     return (
-        <>
+        <div className="w-[380px] min-h-[400px] flex flex-col">
             {isSetupComplete ? (
-                <App onResetDev={handleResetDev} /> // Pass the reset handler to App
+                <App onResetDev={handleResetDev} /> // App component will fill this sized container
             ) : (
-                <div className="p-6 min-w-[300px] text-center">
+                <div className="p-6 text-center flex-grow flex flex-col justify-center items-center">
                     <h1 className="text-xl font-bold mb-4">Vibe</h1>
                     <p className="mb-4">Welcome to Vibe! Setup is required.</p>
                     <button onClick={handleStartSetup} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
@@ -71,7 +72,7 @@ function Popup() {
                     </button>
                 </div>
             )}
-        </> // Close the fragment
+        </div>
     );
 }
 

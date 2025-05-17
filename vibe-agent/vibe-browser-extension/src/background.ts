@@ -168,28 +168,38 @@ async function loadActiveIdentityFromSessionInternal() {
     try {
         const sessionData = await chrome.storage.session.get([SESSION_STORAGE_DECRYPTED_SEED_PHRASE, SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]);
         const decryptedSeed = sessionData[SESSION_STORAGE_DECRYPTED_SEED_PHRASE];
-        const activeIndex = sessionData[SESSION_STORAGE_ACTIVE_IDENTITY_INDEX];
+        const activeIndex = sessionData[SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]; // Can be -1
 
-        if (decryptedSeed && typeof activeIndex === "number") {
-            let seedBuffer: Buffer | null = null;
-            try {
-                seedBuffer = await seedFromMnemonic(decryptedSeed);
-                const masterKey = getMasterHDKeyFromSeed(seedBuffer);
-                const identityKeyPair = deriveChildKeyPair(masterKey, activeIndex);
-                currentActiveDid = didFromEd25519(identityKeyPair.publicKey);
-                isUnlocked = true;
-                console.log("Active identity loaded from session:", currentActiveDid);
-                // We don't proactively check/fetch JWT here anymore. getValidCpAccessToken will handle it on demand.
-                return true;
-            } finally {
-                if (seedBuffer) wipeMemory(seedBuffer);
+        if (decryptedSeed) {
+            // Seed is present, so vault is considered "unlocked" at a basic level
+            isUnlocked = true; // Set this based on seed presence
+            if (typeof activeIndex === "number" && activeIndex >= 0) {
+                // Only proceed if activeIndex is valid
+                let seedBuffer: Buffer | null = null;
+                try {
+                    seedBuffer = await seedFromMnemonic(decryptedSeed);
+                    const masterKey = getMasterHDKeyFromSeed(seedBuffer);
+                    const identityKeyPair = deriveChildKeyPair(masterKey, activeIndex);
+                    currentActiveDid = didFromEd25519(identityKeyPair.publicKey);
+                    console.log("Active identity loaded from session:", currentActiveDid);
+                    return true; // Successfully loaded an active DID
+                } finally {
+                    if (seedBuffer) wipeMemory(seedBuffer);
+                }
+            } else {
+                // Seed is present, but no valid active identity index (e.g., -1 or undefined)
+                currentActiveDid = null;
+                console.log("Vault unlocked (seed in session), but no valid active identity index set.");
+                return true; // Still true in the sense that session is partially loaded (unlocked)
             }
         }
     } catch (error) {
         console.error("Error loading active identity from session:", error);
         await clearSessionStateInternal(); // This will also clear access tokens from session
     }
+    // If we reach here, it's an error or no seed
     isUnlocked = false;
+    currentActiveDid = null; // Ensure currentActiveDid is null if isUnlocked is false
     return false;
 }
 
@@ -262,12 +272,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 };
                             } else {
                                 // Vault is locked, and we don't even know the last active DID (e.g., fresh install, or storage cleared)
-                                // This could also mean setup is not complete.
+                                // This could also mean setup is not complete, or setup is complete but no identities exist.
                                 const setupCompleteResult = await chrome.storage.local.get(STORAGE_KEY_SETUP_COMPLETE);
+                                const vaultAfterSetupCheck = (await chrome.storage.local.get(STORAGE_KEY_VAULT))[STORAGE_KEY_VAULT];
+
                                 if (!setupCompleteResult[STORAGE_KEY_SETUP_COMPLETE]) {
                                     responseType = "VIBE_AGENT_RESPONSE_ERROR";
                                     responsePayload = { error: { message: "Setup not complete.", code: "SETUP_NOT_COMPLETE" } };
+                                } else if (
+                                    setupCompleteResult[STORAGE_KEY_SETUP_COMPLETE] &&
+                                    (!vaultAfterSetupCheck || !vaultAfterSetupCheck.identities || vaultAfterSetupCheck.identities.length === 0)
+                                ) {
+                                    // Setup is marked complete, but no identities exist. This happens if user cancels first identity creation.
+                                    responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                                    responsePayload = {
+                                        error: {
+                                            message: "Setup is complete but no identities found. Please create your first identity.",
+                                            code: "FIRST_IDENTITY_CREATION_REQUIRED",
+                                        },
+                                    };
                                 } else {
+                                    // Setup complete, identities exist, but vault is locked and no last active DID.
                                     responseType = "VIBE_AGENT_RESPONSE_ERROR";
                                     responsePayload = { error: { message: "Vault is locked. Please unlock.", code: "VAULT_LOCKED_NO_LAST_ACTIVE" } };
                                 }
@@ -366,23 +391,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             const encryptedMnemonicData = await encryptData(mnemonic, encryptionKey);
                             seed = await seedFromMnemonic(mnemonic);
                             const masterHDKey = getMasterHDKeyFromSeed(seed);
-                            const firstIdentityKeys = deriveChildKeyPair(masterHDKey, 0);
-                            const firstDid = didFromEd25519(firstIdentityKeys.publicKey);
+                            // const firstIdentityKeys = deriveChildKeyPair(masterHDKey, 0); // No longer creating first identity here
+                            // const firstDid = didFromEd25519(firstIdentityKeys.publicKey); // No firstDid at this stage
                             const vaultData = {
                                 encryptedSeedPhrase: encryptedMnemonicData,
-                                identities: [
-                                    // Stored with snake_case as per original structure
-                                    {
-                                        did: firstDid,
-                                        derivationPath: firstIdentityKeys.derivationPath,
-                                        profile_name: null, // Will be set during SETUP_COMPLETE_AND_FINALIZE
-                                        profile_picture: null,
-                                        cloudUrl: null, // This will become instanceUrl after registration
-                                    },
-                                ],
-                                settings: { nextAccountIndex: 1, activeIdentityIndex: 0 },
+                                identities: [], // Initialize with an empty identities array
+                                settings: { nextAccountIndex: 0, activeIdentityIndex: -1 }, // Adjusted settings
                             };
-                            await chrome.storage.local.set({ [STORAGE_KEY_VAULT_SALT]: saltHex, [STORAGE_KEY_VAULT]: vaultData });
+                            await chrome.storage.local.set({
+                                [STORAGE_KEY_VAULT_SALT]: saltHex,
+                                [STORAGE_KEY_VAULT]: vaultData,
+                                [STORAGE_KEY_SETUP_COMPLETE]: true,
+                            });
+
+                            // Pre-unlock the vault for the first identity creation flow
+                            await chrome.storage.session.set({
+                                [SESSION_STORAGE_DECRYPTED_SEED_PHRASE]: mnemonic,
+                                [SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: -1, // Set to -1 as no identity is active yet
+                            });
+                            // Set global state
+                            currentActiveDid = null; // No active DID yet
+                            isUnlocked = true; // Vault is "unlocked" because seed is in session
+                            console.log("SETUP_CREATE_VAULT: Vault created, pre-unlocked (seed in session), no identities yet.");
+
                             responsePayload = { mnemonic }; // Return mnemonic for user to backup
                         } finally {
                             if (seed) wipeMemory(seed);
@@ -1082,7 +1113,174 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         break;
                     }
 
+                    case "GET_NEXT_ACCOUNT_INDEX": {
+                        console.log("Processing 'GET_NEXT_ACCOUNT_INDEX'");
+                        const vaultResult = await chrome.storage.local.get(STORAGE_KEY_VAULT);
+                        const vault = vaultResult[STORAGE_KEY_VAULT];
+                        if (!vault || !vault.settings || typeof vault.settings.nextAccountIndex !== "number") {
+                            throw new Error("Vault data or settings (nextAccountIndex) not found or invalid.");
+                        }
+                        responsePayload = { accountIndex: vault.settings.nextAccountIndex };
+                        break;
+                    }
+
+                    case "SETUP_NEW_IDENTITY_AND_FINALIZE": {
+                        console.log("Processing 'SETUP_NEW_IDENTITY_AND_FINALIZE'");
+                        const { accountIndexToUse, identityName, identityPicture, cloudUrl, claimCode, password } = payload;
+
+                        if (typeof accountIndexToUse !== "number" || !password) {
+                            throw new Error("Account index and password are required.");
+                        }
+
+                        // 1. Ensure vault is unlocked (or unlock it) to get the seed
+                        if (!isUnlocked) {
+                            console.log("Vault locked, attempting unlock with provided password for SETUP_NEW_IDENTITY_AND_FINALIZE...");
+                            const localDataForUnlock = await chrome.storage.local.get([STORAGE_KEY_VAULT, STORAGE_KEY_VAULT_SALT]);
+                            const vaultDataForUnlock = localDataForUnlock[STORAGE_KEY_VAULT];
+                            const saltHexForUnlock = localDataForUnlock[STORAGE_KEY_VAULT_SALT];
+                            if (!vaultDataForUnlock || !saltHexForUnlock) throw new Error("Vault or salt not found for unlock.");
+                            const saltForUnlock = Buffer.from(saltHexForUnlock, "hex");
+                            const encryptionKeyForUnlock = await deriveEncryptionKey(password, saltForUnlock);
+                            const decryptedSeedAttempt = await decryptData(vaultDataForUnlock.encryptedSeedPhrase, encryptionKeyForUnlock);
+                            if (!decryptedSeedAttempt) throw new Error("Decryption failed, invalid password for unlock.");
+                            await chrome.storage.session.set({ [SESSION_STORAGE_DECRYPTED_SEED_PHRASE]: decryptedSeedAttempt });
+                            // isUnlocked will be set by loadActiveIdentityFromSessionInternal later if successful
+                            console.log("Vault temporarily unlocked for new identity creation.");
+                        }
+
+                        const sessionDataForSeed = await chrome.storage.session.get(SESSION_STORAGE_DECRYPTED_SEED_PHRASE);
+                        const decryptedSeed = sessionDataForSeed[SESSION_STORAGE_DECRYPTED_SEED_PHRASE];
+                        if (!decryptedSeed) {
+                            throw new Error("Vault is locked or seed phrase not available in session. Unlock is required.");
+                        }
+
+                        // 2. Create the new identity locally
+                        const vaultResult = await chrome.storage.local.get(STORAGE_KEY_VAULT);
+                        let vaultData = vaultResult[STORAGE_KEY_VAULT];
+                        if (!vaultData || !vaultData.settings || typeof vaultData.settings.nextAccountIndex !== "number") {
+                            throw new Error("Vault data or settings (nextAccountIndex) not found or invalid.");
+                        }
+                        // Ensure the provided accountIndexToUse matches the expected nextAccountIndex
+                        if (accountIndexToUse !== vaultData.settings.nextAccountIndex) {
+                            console.warn(
+                                `Provided accountIndexToUse (${accountIndexToUse}) does not match vault's nextAccountIndex (${vaultData.settings.nextAccountIndex}). Using vault's value.`
+                            );
+                            // Potentially throw an error or use vault.settings.nextAccountIndex
+                            // For now, let's be strict, this implies a mismatch in frontend logic or stale data.
+                            // throw new Error(`Account index mismatch. Expected ${vaultData.settings.nextAccountIndex}, got ${accountIndexToUse}.`);
+                        }
+                        const newAccountIndex = vaultData.settings.nextAccountIndex; // Use the one from vault to be safe
+
+                        let seedBuffer: Buffer | null = null;
+                        let newIdentityDid = "";
+                        let newIdentityDerivationPath = "";
+
+                        try {
+                            seedBuffer = await seedFromMnemonic(decryptedSeed);
+                            const masterHDKey = getMasterHDKeyFromSeed(seedBuffer);
+                            const newKeyPair = deriveChildKeyPair(masterHDKey, newAccountIndex);
+                            newIdentityDid = didFromEd25519(newKeyPair.publicKey);
+                            newIdentityDerivationPath = newKeyPair.derivationPath;
+
+                            const newIdentityEntry = {
+                                did: newIdentityDid,
+                                derivationPath: newIdentityDerivationPath,
+                                profile_name: identityName || `Identity ${newAccountIndex + 1}`, // Use provided name or default
+                                profile_picture: identityPicture || null,
+                                cloudUrl: null, // Will be set after registration
+                            };
+
+                            vaultData.identities.push(newIdentityEntry);
+                            vaultData.settings.nextAccountIndex = newAccountIndex + 1;
+                            // Do not set activeIdentityIndex yet, will do after successful cloud registration
+
+                            // 3. Register with cloud (if applicable) and update local entry
+                            let finalCloudUrl: string | undefined = undefined;
+                            if (cloudUrl === OFFICIAL_VIBE_CLOUD_URL) {
+                                console.log(`Official Vibe Cloud: Registering new DID: ${newIdentityDid}`);
+                                const nonce = crypto.randomUUID().toString();
+                                const timestamp = new Date().toISOString();
+                                const messageToSign = `${newIdentityDid}|${nonce}|${timestamp}|${claimCode || ""}`;
+                                const signature = await signMessage(newKeyPair.privateKey, messageToSign);
+
+                                const registerPayload: any = { did: newIdentityDid, nonce, timestamp, signature };
+                                if (identityName) registerPayload.profileName = identityName;
+                                if (identityPicture) registerPayload.profilePictureUrl = identityPicture;
+                                if (claimCode) registerPayload.claimCode = claimCode;
+
+                                const registerResponse = await fetch(`${OFFICIAL_VIBE_CLOUD_URL}/api/v1/auth/register`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify(registerPayload),
+                                });
+
+                                if (!registerResponse.ok) {
+                                    const errBody = await registerResponse.json().catch(() => ({ error: "Unknown registration error" }));
+                                    throw new Error(`Registration for ${newIdentityDid} failed: ${errBody.error}`);
+                                }
+                                const result = await registerResponse.json();
+                                const serverIdentity = result.identity as Identity; // Assuming Identity type is defined
+                                const tokenDetails = result.tokenDetails as TokenDetails; // Assuming TokenDetails type
+
+                                await storeCpTokens(newIdentityDid, tokenDetails);
+
+                                // Update the newIdentityEntry with server data before saving to vault
+                                newIdentityEntry.profile_name = serverIdentity.profileName || newIdentityEntry.profile_name;
+                                newIdentityEntry.profile_picture = serverIdentity.profilePictureUrl || newIdentityEntry.profile_picture;
+                                newIdentityEntry.cloudUrl = serverIdentity.instanceUrl;
+                                (newIdentityEntry as any).instanceId = serverIdentity.instanceId;
+                                (newIdentityEntry as any).instanceStatus = serverIdentity.instanceStatus;
+                                (newIdentityEntry as any).isAdmin = serverIdentity.isAdmin;
+                                finalCloudUrl = serverIdentity.instanceUrl;
+                            } else if (cloudUrl) {
+                                console.warn(`Custom cloud URL ${cloudUrl} for ${newIdentityDid}. No automatic registration.`);
+                                newIdentityEntry.cloudUrl = cloudUrl;
+                            }
+
+                            // 4. Set new identity as active
+                            const newIdentityEntryIndexInVault = vaultData.identities.length - 1; // It's the last one pushed
+                            vaultData.settings.activeIdentityIndex = newIdentityEntryIndexInVault;
+                            await chrome.storage.local.set({ [STORAGE_KEY_VAULT]: vaultData });
+
+                            // Update session storage for active identity
+                            await chrome.storage.session.set({ [SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: newIdentityEntryIndexInVault });
+                            // The decryptedSeed should still be in session from the unlock check
+                            await loadActiveIdentityFromSessionInternal(); // This will set currentActiveDid to the new one and isUnlocked to true
+
+                            if (currentActiveDid) {
+                                await chrome.storage.local.set({ [STORAGE_KEY_LAST_ACTIVE_DID]: currentActiveDid });
+                            }
+
+                            // Mark setup as complete now that the first identity is successfully created and finalized
+                            await chrome.storage.local.set({ [STORAGE_KEY_SETUP_COMPLETE]: true });
+                            console.log("SETUP_NEW_IDENTITY_AND_FINALIZE: Setup marked as complete.");
+
+                            responsePayload = {
+                                success: true,
+                                message: `New identity ${newIdentityDid} created, finalized, and set as active.`,
+                                did: newIdentityDid,
+                                identityName: newIdentityEntry.profile_name,
+                            };
+                        } finally {
+                            if (seedBuffer) wipeMemory(seedBuffer);
+                            // If vault was temporarily unlocked for this operation, re-lock it by clearing session seed
+                            // This check is simplified: if password was in payload, assume it was a temporary unlock.
+                            if (payload.password && !isUnlocked) {
+                                // Check if global isUnlocked is still false
+                                await chrome.storage.session.remove(SESSION_STORAGE_DECRYPTED_SEED_PHRASE);
+                                console.log("Temporary unlock for new identity creation reverted.");
+                            } else if (payload.password && isUnlocked) {
+                                // Vault was unlocked by this operation and loadActiveIdentityFromSessionInternal set isUnlocked=true
+                                // It should remain unlocked.
+                                console.log("Vault was unlocked by this operation and remains unlocked.");
+                            }
+                        }
+                        break;
+                    }
+
                     case "FINALIZE_NEW_IDENTITY_SETUP": {
+                        // This case might become deprecated or less used if SETUP_NEW_IDENTITY_AND_FINALIZE is preferred.
+                        // For now, keeping it as it might be used by the initial full setup.
                         console.log("Processing 'FINALIZE_NEW_IDENTITY_SETUP'");
                         const { didToFinalize, accountIndex, identityName, identityPicture, cloudUrl, claimCode, password } = payload;
 

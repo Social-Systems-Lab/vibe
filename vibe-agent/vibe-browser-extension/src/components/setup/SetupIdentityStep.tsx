@@ -271,10 +271,10 @@ export function SetupIdentityStep({ onIdentitySetup }: SetupIdentityStepProps) {
                         {isLoading ? (
                             <>
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Finalizing...
+                                Processing...
                             </>
                         ) : (
-                            "Finalize Setup"
+                            "Continue"
                         )}
                     </Button>
                 </form>

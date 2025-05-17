@@ -147,6 +147,7 @@ const entrypoints = [
     "src/background.ts", // Background service worker
     "src/content.ts", // Content script
     "src/vibe-inpage.ts", // In-page script (window.vibe API)
+    "src/addIdentity.tsx", // For the new add identity page
 ];
 
 async function performBuild() {

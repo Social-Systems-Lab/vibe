@@ -176,9 +176,11 @@ export function SetupWizard({ onSetupComplete }: SetupWizardProps) {
     const handlePhraseConfirmed = useCallback(() => {
         console.log("User confirmed phrase backup.");
         // Mnemonic is now managed by ShowPhraseStep or cleared from state after use.
-        // Background script handles the actual seed phrase.
-        // setWizardState((prev) => ({ ...prev, mnemonic: undefined })); // Clear from wizard state // Intentionally kept for SETUP_COMPLETE_AND_FINALIZE
-        setCurrentStep("setupIdentity"); // Changed to new step
+        // Background script's SETUP_CREATE_VAULT has already put the mnemonic in session storage.
+        console.log("User confirmed phrase backup. Redirecting to addIdentity.html for first identity setup.");
+        // Redirect to the addIdentity page.
+        window.location.href = chrome.runtime.getURL("addIdentity.html");
+        // No need to change currentStep here as the page will navigate away.
     }, []);
 
     // handleIdentityNamed and handleCloudConfigured are replaced by handleIdentitySetup

@@ -6,7 +6,8 @@
     }
 
     html {
-        @apply w-[380px] min-h-[400px]; /* Explicit width and min-height for the popup document */
+        /* @apply w-[380px]; */ /* Removed: Explicit width for popup document, will be applied by popup's root component */
+        /* min-height will be handled by body or specific page components */
     }
 
     body {

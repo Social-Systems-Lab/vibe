@@ -36,18 +36,20 @@ export function App({ onResetDev }: AppProps) {
     const [isLoadingIdentity, setIsLoadingIdentity] = useState(true); // Loading state for identity
     const [showImportWizard, setShowImportWizard] = useState(false); // State for wizard visibility
     const [showIdentitySettings, setShowIdentitySettings] = useState(false); // State for settings visibility
-    const [showNewIdentitySetupWizard, setShowNewIdentitySetupWizard] = useState(false);
-    const [identityForSetup, setIdentityForSetup] = useState<{ did: string; accountIndex: number; currentPassword?: string } | null>(null); // Added currentPassword for re-use
+    // const [showNewIdentitySetupWizard, setShowNewIdentitySetupWizard] = useState(false); // No longer used for add identity flow
+    // const [identityForSetup, setIdentityForSetup] = useState<{ did: string; accountIndex: number; currentPassword?: string } | null>(null); // No longer used for add identity flow
     const [showUnlockScreen, setShowUnlockScreen] = useState(false);
     const [unlockError, setUnlockError] = useState<string | null>(null);
     const [isUnlocking, setIsUnlocking] = useState(false);
     const [lastActiveDidHint, setLastActiveDidHint] = useState<string | undefined>(undefined);
+    const [showCreateFirstIdentityPrompt, setShowCreateFirstIdentityPrompt] = useState(false); // New state
 
     const initializeApp = useCallback(async () => {
         console.log("App.tsx: initializeApp triggered");
         setIsLoadingIdentity(true);
         setShowUnlockScreen(false); // Reset unlock screen visibility
         setUnlockError(null);
+        setShowCreateFirstIdentityPrompt(false); // Reset prompt
 
         try {
             const initResponse = await chrome.runtime.sendMessage({
@@ -66,11 +68,12 @@ export function App({ onResetDev }: AppProps) {
                     setLastActiveDidHint(initResponse.error?.lastActiveDid);
                     setShowUnlockScreen(true);
                 } else if (errorCode === "SETUP_NOT_COMPLETE") {
-                    // This case should ideally redirect to the main setup wizard (setup.html)
-                    // For now, it might show a minimal message or rely on existing setup checks.
-                    // The main setup flow is typically handled by chrome.runtime.getURL("setup.html") redirection.
-                    console.error("Setup not complete. Extension should redirect to setup page.");
-                    // Potentially render a "Please complete setup" message if not redirected.
+                    // This case is handled by src/index.tsx which shows "Start Setup" button
+                    console.error("Setup not complete. Popup should show 'Start Setup'.");
+                    // App.tsx won't be rendered by Popup if setup is not complete.
+                } else if (errorCode === "FIRST_IDENTITY_CREATION_REQUIRED") {
+                    console.log("First identity creation required.");
+                    setShowCreateFirstIdentityPrompt(true);
                 } else {
                     // Generic vault locked or other error
                     setUnlockError(initResponse.error?.message || "Failed to initialize.");
@@ -219,36 +222,9 @@ export function App({ onResetDev }: AppProps) {
         }
     };
 
-    const handleAddIdentity = async () => {
-        console.log("Attempting to create new identity via background script.");
-        try {
-            const response = await chrome.runtime.sendMessage({
-                type: "VIBE_AGENT_REQUEST",
-                action: "CREATE_NEW_IDENTITY_FROM_SEED",
-                requestId: crypto.randomUUID().toString(),
-            });
-
-            if (response && response.type === "VIBE_AGENT_RESPONSE" && response.payload?.success) {
-                const newIdentity = response.payload.newIdentity; // Contains did, derivationPath, profile_name
-                console.log("New identity created locally:", newIdentity);
-                // Find the accountIndex from derivationPath (e.g., "m/0'/0'/X'")
-                const pathParts = newIdentity.derivationPath.split("/");
-                const accountIndexString = pathParts[pathParts.length - 1].replace("'", "");
-                const accountIndex = parseInt(accountIndexString, 10);
-
-                setIdentityForSetup({ did: newIdentity.did, accountIndex });
-                setShowNewIdentitySetupWizard(true);
-                // loadIdentityData(); // Reload to update the list, though setup wizard will take over
-            } else if (response && response.type === "VIBE_AGENT_RESPONSE_ERROR") {
-                console.error("Error creating new identity:", response.error);
-                alert(`Error creating new identity: ${response.error.message}`);
-            } else {
-                alert("Received an unexpected response from the background script during identity creation.");
-            }
-        } catch (error: any) {
-            console.error("Error sending CREATE_NEW_IDENTITY_FROM_SEED message to background:", error);
-            alert(`Failed to communicate with the background script for identity creation: ${error.message}`);
-        }
+    const handleAddIdentity = () => {
+        console.log("Opening add identity page.");
+        chrome.tabs.create({ url: chrome.runtime.getURL("addIdentity.html") });
     };
 
     const handleImportIdentity = async () => {
@@ -298,55 +274,47 @@ export function App({ onResetDev }: AppProps) {
         claimCode?: string;
         password?: string; // Password to re-decrypt seed for signing
     }) => {
-        console.log("Finalizing new identity setup in App.tsx:", details);
+        // This handler is no longer called by NewIdentitySetupWizard when adding a new identity,
+        // as that flow is now handled in addIdentity.html.
+        // It might still be used by other flows if NewIdentitySetupWizard is rendered directly by App.tsx for other purposes.
+        // For now, keeping its logic but noting its reduced usage for "add identity".
+        console.log("Finalizing new identity setup in App.tsx (potentially old flow):", details);
         try {
-            // Password for FINALIZE_NEW_IDENTITY_SETUP should be the current vault password
-            // This needs to be obtained securely if not already available (e.g. if vault was auto-unlocked by session seed)
-            // For now, we assume 'details.password' is provided by the wizard if it had to ask.
-            // If the background script's FINALIZE_NEW_IDENTITY_SETUP requires password and it's not in `details`, it will fail.
-            // A more robust solution would be to prompt for password here if `details.password` is empty and background needs it.
-
             const response = await chrome.runtime.sendMessage({
                 type: "VIBE_AGENT_REQUEST",
-                action: "FINALIZE_NEW_IDENTITY_SETUP",
-                payload: {
-                    ...details,
-                    // Ensure password is the current vault password if needed for re-encryption/signing
-                    // This might require prompting the user if the vault is locked or if the wizard didn't capture it.
-                    // The `FINALIZE_NEW_IDENTITY_SETUP` handler in background.ts expects a password to unlock the seed.
-                },
+                action: "FINALIZE_NEW_IDENTITY_SETUP", // This action might need to be re-evaluated or deprecated if SETUP_NEW_IDENTITY_AND_FINALIZE covers all cases
+                payload: details,
                 requestId: crypto.randomUUID().toString(),
             });
 
             if (response && response.type === "VIBE_AGENT_RESPONSE" && response.payload?.success) {
                 alert(`New identity "${details.identityName}" finalized and set as active!`);
-                setShowNewIdentitySetupWizard(false);
-                setIdentityForSetup(null);
-                loadIdentityData(); // Reload all data, active identity should now be the new one.
+                // setShowNewIdentitySetupWizard(false); // State removed
+                // setIdentityForSetup(null); // State removed
+                loadIdentityData();
             } else if (response && response.type === "VIBE_AGENT_RESPONSE_ERROR") {
                 console.error("Error finalizing new identity setup:", response.error);
                 alert(`Error finalizing setup: ${response.error.message}`);
-                // Optionally, keep the wizard open for retry, or close it.
-                // For now, we'll close it. User can try "Add Identity" again.
-                setShowNewIdentitySetupWizard(false);
-                setIdentityForSetup(null);
+                // setShowNewIdentitySetupWizard(false); // State removed
+                // setIdentityForSetup(null); // State removed
             } else {
                 alert("Unexpected response during finalization.");
-                setShowNewIdentitySetupWizard(false);
-                setIdentityForSetup(null);
+                // setShowNewIdentitySetupWizard(false); // State removed
+                // setIdentityForSetup(null); // State removed
             }
         } catch (error: any) {
             console.error("Failed to send FINALIZE_NEW_IDENTITY_SETUP message:", error);
             alert(`Failed to finalize setup: ${error.message}`);
-            setShowNewIdentitySetupWizard(false);
-            setIdentityForSetup(null);
+            // setShowNewIdentitySetupWizard(false); // State removed
+            // setIdentityForSetup(null); // State removed
         }
     };
 
     const handleNewIdentitySetupCancel = () => {
-        setShowNewIdentitySetupWizard(false);
-        setIdentityForSetup(null);
-        loadIdentityData(); // Refresh the identity list
+        // This handler is no longer called by NewIdentitySetupWizard when adding a new identity.
+        // setShowNewIdentitySetupWizard(false); // State removed
+        // setIdentityForSetup(null); // State removed
+        loadIdentityData(); // Refresh the identity list, just in case
     };
 
     const handleOpenSettings = () => {
@@ -370,6 +338,16 @@ export function App({ onResetDev }: AppProps) {
         return <UnlockScreen onUnlock={handleUnlock} isUnlocking={isUnlocking} unlockError={unlockError} lastActiveDidHint={lastActiveDidHint} />;
     }
 
+    if (showCreateFirstIdentityPrompt) {
+        return (
+            <div className="w-[380px] p-6 text-center flex-grow flex flex-col justify-center items-center bg-background text-foreground">
+                <h2 className="text-xl font-semibold mb-2">Welcome to Vibe!</h2>
+                <p className="mb-4 text-sm">Your vault is set up. Now, let's create your first identity to get started.</p>
+                <Button onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL("addIdentity.html") })}>Create First Identity</Button>
+            </div>
+        );
+    }
+
     if (showImportWizard) {
         return (
             <div className="w-[380px] bg-background text-foreground flex flex-col shadow-2xl rounded-lg overflow-hidden">
@@ -391,18 +369,19 @@ export function App({ onResetDev }: AppProps) {
         );
     }
 
-    if (showNewIdentitySetupWizard && identityForSetup) {
-        return (
-            <div className="w-[380px] bg-background text-foreground flex flex-col shadow-2xl rounded-lg overflow-hidden h-[600px]">
-                <NewIdentitySetupWizard
-                    identityDid={identityForSetup.did}
-                    accountIndex={identityForSetup.accountIndex}
-                    onSetupComplete={handleNewIdentitySetupComplete}
-                    onCancel={handleNewIdentitySetupCancel}
-                />
-            </div>
-        );
-    }
+    // The direct rendering of NewIdentitySetupWizard for adding identities is removed.
+    // if (showNewIdentitySetupWizard && identityForSetup) {
+    //     return (
+    //         <div className="w-[380px] bg-background text-foreground flex flex-col shadow-2xl rounded-lg overflow-hidden h-[600px]">
+    //             <NewIdentitySetupWizard
+    //                 identityDid={identityForSetup.did} // This was causing the TS error, but the whole block is removed
+    //                 accountIndex={identityForSetup.accountIndex}
+    //                 onSetupComplete={handleNewIdentitySetupComplete}
+    //                 onCancel={handleNewIdentitySetupCancel}
+    //             />
+    //         </div>
+    //     );
+    // }
 
     // Main render logic
     return (
