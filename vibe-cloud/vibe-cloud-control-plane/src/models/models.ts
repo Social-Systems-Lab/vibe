@@ -191,8 +191,8 @@ export type AuthCredentials = Static<typeof AuthCredentialsSchema>;
 export const JWTPayloadSchema = t.Object(
     {
         identityDid: t.String(), // Renamed from userDid
-        isAdmin: t.Boolean({ default: false }),
-        type: t.String({ pattern: "^(access)$", description: "Type of the token, e.g., 'access'" }), // Added type claim
+        isAdmin: t.Boolean({ default: false }), // Restore default as it's a good practice for schema definition
+        type: t.String({ pattern: "^(access)$", description: "Type of the token, e.g., 'access'" }),
     },
     {
         additionalProperties: true, // To allow standard JWT claims like exp, iat, iss, sub
