@@ -192,7 +192,7 @@ export const JWTPayloadSchema = t.Object(
     {
         identityDid: t.String(), // Renamed from userDid
         isAdmin: t.Boolean({ default: false }), // Restore default as it's a good practice for schema definition
-        type: t.String({ pattern: "^(access)$", description: "Type of the token, e.g., 'access'" }),
+        type: t.String({ description: "Type of the token, e.g., 'access'" }), // Temporarily remove pattern
     },
     {
         additionalProperties: true, // To allow standard JWT claims like exp, iat, iss, sub

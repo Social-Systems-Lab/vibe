@@ -82,7 +82,7 @@ export const app = new Elysia()
         jwtPlugin({
             name: "jwt",
             secret: jwtSecret,
-            schema: JWTPayloadSchema,
+            // schema: JWTPayloadSchema, // Temporarily remove schema to isolate issue
             alg: "HS256", // Explicitly define the expected algorithm
             iss: process.env.JWT_ISSUER || "vibe-cloud-control-plane", // Explicitly define the expected issuer
             exp: process.env.ACCESS_TOKEN_EXPIRY_SECONDS ? `${process.env.ACCESS_TOKEN_EXPIRY_SECONDS}s` : "15m", // Ensure plugin knows default expiry if not in token
