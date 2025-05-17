@@ -192,10 +192,11 @@ export const JWTPayloadSchema = t.Object(
     {
         identityDid: t.String(), // Renamed from userDid
         isAdmin: t.Boolean({ default: false }),
+        type: t.String({ pattern: "^(access)$", description: "Type of the token, e.g., 'access'" }), // Added type claim
     },
     {
-        additionalProperties: true,
-        description: "Schema for JWT payload, requires identityDid and isAdmin flag, allows standard claims.",
+        additionalProperties: true, // To allow standard JWT claims like exp, iat, iss, sub
+        description: "Schema for JWT payload, requires identityDid, isAdmin, and type. Allows standard claims.",
     }
 );
 export type JWTPayload = Static<typeof JWTPayloadSchema>;

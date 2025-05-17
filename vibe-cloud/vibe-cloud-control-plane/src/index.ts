@@ -515,7 +515,8 @@ export const app = new Elysia()
 
                         let responseToken: string | undefined = undefined;
                         if (callingRole === "owner" && claimCodeForPromotion && updatedIdentity.isAdmin && !identityBeforeUpdate.isAdmin) {
-                            responseToken = await jwt.sign({ identityDid: updatedIdentity.identityDid, isAdmin: true });
+                            // When owner promotes to admin, issue a new access token with the 'type' claim
+                            responseToken = await jwt.sign({ identityDid: updatedIdentity.identityDid, isAdmin: true, type: "access" });
                         }
                         // Return type for Elysia needs to match schema, so ensure token is part of the object if defined
                         const responsePayload: Static<typeof IdentitySchema> & { token?: string } = { ...updatedIdentity };
