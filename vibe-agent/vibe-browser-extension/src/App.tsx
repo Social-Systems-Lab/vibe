@@ -3,6 +3,8 @@ import "./index.css";
 import { IdentityCard } from "./components/identity/IdentityCard";
 import { IdentitySwitcher } from "./components/identity/IdentitySwitcher";
 import IdentitySettings from "./components/identity/IdentitySettings"; // Import IdentitySettings as default
+import { NewIdentitySetupWizard } from "./components/identity/NewIdentitySetupWizard"; // Import the new wizard
+import { UnlockScreen } from "./components/identity/UnlockScreen"; // Import UnlockScreen
 import { CloudStatus } from "./components/cloud/CloudStatus";
 import { ImportIdentityWizard } from "./components/identity/ImportIdentityWizard"; // Import the new wizard
 import { Button } from "@/components/ui/button"; // For a potential settings button
@@ -34,12 +36,62 @@ export function App({ onResetDev }: AppProps) {
     const [isLoadingIdentity, setIsLoadingIdentity] = useState(true); // Loading state for identity
     const [showImportWizard, setShowImportWizard] = useState(false); // State for wizard visibility
     const [showIdentitySettings, setShowIdentitySettings] = useState(false); // State for settings visibility
+    const [showNewIdentitySetupWizard, setShowNewIdentitySetupWizard] = useState(false);
+    const [identityForSetup, setIdentityForSetup] = useState<{ did: string; accountIndex: number; currentPassword?: string } | null>(null); // Added currentPassword for re-use
+    const [showUnlockScreen, setShowUnlockScreen] = useState(false);
+    const [unlockError, setUnlockError] = useState<string | null>(null);
+    const [isUnlocking, setIsUnlocking] = useState(false);
+    const [lastActiveDidHint, setLastActiveDidHint] = useState<string | undefined>(undefined);
+
+    const initializeApp = useCallback(async () => {
+        console.log("App.tsx: initializeApp triggered");
+        setIsLoadingIdentity(true);
+        setShowUnlockScreen(false); // Reset unlock screen visibility
+        setUnlockError(null);
+
+        try {
+            const initResponse = await chrome.runtime.sendMessage({
+                type: "VIBE_AGENT_REQUEST",
+                action: "init",
+                requestId: crypto.randomUUID().toString(),
+            });
+
+            if (initResponse.type === "VIBE_AGENT_RESPONSE" && initResponse.payload?.code === "INITIALIZED_UNLOCKED") {
+                console.log("App initialized successfully, vault unlocked.");
+                await loadIdentityData(); // Load full identity data
+            } else if (initResponse.type === "VIBE_AGENT_RESPONSE_ERROR") {
+                const errorCode = initResponse.error?.code;
+                console.log("App init error code:", errorCode);
+                if (errorCode === "UNLOCK_REQUIRED_FOR_LAST_ACTIVE" || errorCode === "VAULT_LOCKED_NO_LAST_ACTIVE") {
+                    setLastActiveDidHint(initResponse.error?.lastActiveDid);
+                    setShowUnlockScreen(true);
+                } else if (errorCode === "SETUP_NOT_COMPLETE") {
+                    // This case should ideally redirect to the main setup wizard (setup.html)
+                    // For now, it might show a minimal message or rely on existing setup checks.
+                    // The main setup flow is typically handled by chrome.runtime.getURL("setup.html") redirection.
+                    console.error("Setup not complete. Extension should redirect to setup page.");
+                    // Potentially render a "Please complete setup" message if not redirected.
+                } else {
+                    // Generic vault locked or other error
+                    setUnlockError(initResponse.error?.message || "Failed to initialize.");
+                    setShowUnlockScreen(true); // Show unlock screen for generic lock state too
+                }
+            }
+        } catch (error: any) {
+            console.error("Critical error during app initialization:", error);
+            setUnlockError("A critical error occurred. Please try again or reset the extension.");
+            setShowUnlockScreen(true); // Show unlock screen with critical error
+        } finally {
+            setIsLoadingIdentity(false);
+        }
+    }, []);
 
     const loadIdentityData = useCallback(async () => {
-        console.log("App.tsx: loadIdentityData triggered");
+        console.log("App.tsx: loadIdentityData triggered after init/unlock");
+        // This function now assumes the vault is (or has just been) unlocked if it's called.
+        // It focuses on loading the actual identity details.
         setIsLoadingIdentity(true);
         try {
-            // Get all identities from background script
             const getAllIdentitiesResponse = await chrome.runtime.sendMessage({
                 type: "VIBE_AGENT_REQUEST",
                 action: "GET_ALL_IDENTITIES",
@@ -98,26 +150,53 @@ export function App({ onResetDev }: AppProps) {
     }, []); // No dependencies, relies on manual calls or storage listener
 
     useEffect(() => {
-        loadIdentityData();
-    }, [loadIdentityData]); // loadIdentityData is stable due to useCallback([])
+        initializeApp(); // Call initializeApp on mount
+    }, [initializeApp]);
 
     // Listen for storage changes to auto-refresh identity data
     useEffect(() => {
         const storageChangedListener = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
-            // Check for changes in local storage (vibeVault) or session storage (activeIdentityIndex)
             if (
-                (areaName === "local" && changes.vibeVault) ||
-                (areaName === "session" && changes.activeIdentityIndex) // Key used in background.ts for session
+                (areaName === "local" && (changes.vibeVault || changes.lastActiveDid)) || // Listen for lastActiveDid change too
+                (areaName === "session" && changes.activeIdentityIndex)
             ) {
-                console.log("App.tsx: Detected vault or activeIdentityIndex change, reloading identity data.");
-                loadIdentityData();
+                console.log("App.tsx: Detected storage change, re-initializing app state.");
+                // Re-initialize, which will call loadIdentityData if unlock is successful or not needed
+                initializeApp();
             }
         };
         chrome.storage.onChanged.addListener(storageChangedListener);
         return () => {
             chrome.storage.onChanged.removeListener(storageChangedListener);
         };
-    }, [loadIdentityData]);
+    }, [initializeApp]); // Depend on initializeApp
+
+    const handleUnlock = async (password: string) => {
+        setIsUnlocking(true);
+        setUnlockError(null);
+        try {
+            const response = await chrome.runtime.sendMessage({
+                type: "VIBE_AGENT_REQUEST",
+                action: "UNLOCK_VAULT",
+                payload: { password },
+                requestId: crypto.randomUUID().toString(),
+            });
+
+            if (response && response.type === "VIBE_AGENT_RESPONSE" && response.payload?.success) {
+                console.log("Vault unlocked successfully via UnlockScreen.");
+                setShowUnlockScreen(false); // Hide unlock screen
+                await loadIdentityData(); // Load identities now that vault is unlocked
+            } else if (response && response.type === "VIBE_AGENT_RESPONSE_ERROR") {
+                setUnlockError(response.error?.message || "Failed to unlock vault.");
+            } else {
+                setUnlockError("Unexpected response from unlock operation.");
+            }
+        } catch (error: any) {
+            setUnlockError(error.message || "An error occurred during unlock.");
+        } finally {
+            setIsUnlocking(false);
+        }
+    };
 
     const handleSwitchIdentity = async (did: string) => {
         try {
@@ -150,10 +229,16 @@ export function App({ onResetDev }: AppProps) {
             });
 
             if (response && response.type === "VIBE_AGENT_RESPONSE" && response.payload?.success) {
-                alert(`New identity created: ${response.payload.newIdentity.did}. You may need to switch to it and finalize setup (e.g., name it).`);
-                // loadIdentityData will be triggered by the storage listener due to vault change.
-                // Optionally, could switch to the new identity:
-                // handleSwitchIdentity(response.payload.newIdentity.did);
+                const newIdentity = response.payload.newIdentity; // Contains did, derivationPath, profile_name
+                console.log("New identity created locally:", newIdentity);
+                // Find the accountIndex from derivationPath (e.g., "m/0'/0'/X'")
+                const pathParts = newIdentity.derivationPath.split("/");
+                const accountIndexString = pathParts[pathParts.length - 1].replace("'", "");
+                const accountIndex = parseInt(accountIndexString, 10);
+
+                setIdentityForSetup({ did: newIdentity.did, accountIndex });
+                setShowNewIdentitySetupWizard(true);
+                // loadIdentityData(); // Reload to update the list, though setup wizard will take over
             } else if (response && response.type === "VIBE_AGENT_RESPONSE_ERROR") {
                 console.error("Error creating new identity:", response.error);
                 alert(`Error creating new identity: ${response.error.message}`);
@@ -204,6 +289,66 @@ export function App({ onResetDev }: AppProps) {
         setShowImportWizard(false); // Hide the wizard
     };
 
+    const handleNewIdentitySetupComplete = async (details: {
+        didToFinalize: string;
+        accountIndex: number;
+        identityName: string;
+        identityPicture?: string;
+        cloudUrl: string;
+        claimCode?: string;
+        password?: string; // Password to re-decrypt seed for signing
+    }) => {
+        console.log("Finalizing new identity setup in App.tsx:", details);
+        try {
+            // Password for FINALIZE_NEW_IDENTITY_SETUP should be the current vault password
+            // This needs to be obtained securely if not already available (e.g. if vault was auto-unlocked by session seed)
+            // For now, we assume 'details.password' is provided by the wizard if it had to ask.
+            // If the background script's FINALIZE_NEW_IDENTITY_SETUP requires password and it's not in `details`, it will fail.
+            // A more robust solution would be to prompt for password here if `details.password` is empty and background needs it.
+
+            const response = await chrome.runtime.sendMessage({
+                type: "VIBE_AGENT_REQUEST",
+                action: "FINALIZE_NEW_IDENTITY_SETUP",
+                payload: {
+                    ...details,
+                    // Ensure password is the current vault password if needed for re-encryption/signing
+                    // This might require prompting the user if the vault is locked or if the wizard didn't capture it.
+                    // The `FINALIZE_NEW_IDENTITY_SETUP` handler in background.ts expects a password to unlock the seed.
+                },
+                requestId: crypto.randomUUID().toString(),
+            });
+
+            if (response && response.type === "VIBE_AGENT_RESPONSE" && response.payload?.success) {
+                alert(`New identity "${details.identityName}" finalized and set as active!`);
+                setShowNewIdentitySetupWizard(false);
+                setIdentityForSetup(null);
+                loadIdentityData(); // Reload all data, active identity should now be the new one.
+            } else if (response && response.type === "VIBE_AGENT_RESPONSE_ERROR") {
+                console.error("Error finalizing new identity setup:", response.error);
+                alert(`Error finalizing setup: ${response.error.message}`);
+                // Optionally, keep the wizard open for retry, or close it.
+                // For now, we'll close it. User can try "Add Identity" again.
+                setShowNewIdentitySetupWizard(false);
+                setIdentityForSetup(null);
+            } else {
+                alert("Unexpected response during finalization.");
+                setShowNewIdentitySetupWizard(false);
+                setIdentityForSetup(null);
+            }
+        } catch (error: any) {
+            console.error("Failed to send FINALIZE_NEW_IDENTITY_SETUP message:", error);
+            alert(`Failed to finalize setup: ${error.message}`);
+            setShowNewIdentitySetupWizard(false);
+            setIdentityForSetup(null);
+        }
+    };
+
+    const handleNewIdentitySetupCancel = () => {
+        setShowNewIdentitySetupWizard(false);
+        setIdentityForSetup(null);
+        loadIdentityData(); // Refresh the identity list
+    };
+
     const handleOpenSettings = () => {
         setShowIdentitySettings(true);
     };
@@ -216,9 +361,13 @@ export function App({ onResetDev }: AppProps) {
     if (isLoadingIdentity) {
         return (
             <div className="w-[380px] p-4 bg-background text-foreground flex flex-col items-center justify-center h-48 rounded-lg shadow-2xl">
-                <p>Loading identity...</p> {/* Add a spinner later */}
+                <p>Loading...</p> {/* Simplified loading message */}
             </div>
         );
+    }
+
+    if (showUnlockScreen) {
+        return <UnlockScreen onUnlock={handleUnlock} isUnlocking={isUnlocking} unlockError={unlockError} lastActiveDidHint={lastActiveDidHint} />;
     }
 
     if (showImportWizard) {
@@ -238,6 +387,19 @@ export function App({ onResetDev }: AppProps) {
                     </Button>
                 </div>
                 <IdentitySettings />
+            </div>
+        );
+    }
+
+    if (showNewIdentitySetupWizard && identityForSetup) {
+        return (
+            <div className="w-[380px] bg-background text-foreground flex flex-col shadow-2xl rounded-lg overflow-hidden h-[600px]">
+                <NewIdentitySetupWizard
+                    identityDid={identityForSetup.did}
+                    accountIndex={identityForSetup.accountIndex}
+                    onSetupComplete={handleNewIdentitySetupComplete}
+                    onCancel={handleNewIdentitySetupCancel}
+                />
             </div>
         );
     }

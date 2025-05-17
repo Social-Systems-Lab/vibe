@@ -68,6 +68,7 @@ const STORAGE_KEY_VAULT = "vibeVault";
 const STORAGE_KEY_VAULT_SALT = "vibeVaultSalt";
 const SESSION_STORAGE_DECRYPTED_SEED_PHRASE = "decryptedSeedPhrase";
 const SESSION_STORAGE_ACTIVE_IDENTITY_INDEX = "activeIdentityIndex";
+const STORAGE_KEY_LAST_ACTIVE_DID = "lastActiveDid"; // New constant
 // const SESSION_STORAGE_JWT_PREFIX = "vibe_jwt_"; // Old, replaced by specific token keys
 const GAP_LIMIT = 20;
 
@@ -248,13 +249,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             try {
                 switch (action) {
                     case "init":
-                        if (!isUnlocked) await loadActiveIdentityFromSessionInternal();
-                        if (!isUnlocked || !currentActiveDid) {
-                            responseType = "VIBE_AGENT_RESPONSE_ERROR";
-                            responsePayload = { error: { message: "Vault is locked. Please unlock.", code: "VAULT_LOCKED" } };
+                        // Attempt to load from session first (checks for decrypted seed)
+                        if (!isUnlocked) {
+                            await loadActiveIdentityFromSessionInternal();
+                        }
+
+                        if (isUnlocked && currentActiveDid) {
+                            // Successfully loaded an active identity from session (vault is unlocked)
+                            responsePayload = {
+                                did: currentActiveDid,
+                                permissions: { "profile:read": "always" }, // Example permission
+                                message: "Successfully initialized.",
+                                code: "INITIALIZED_UNLOCKED",
+                            };
                         } else {
-                            // TODO: Check for JWT and potentially guide to login if missing for cloud features
-                            responsePayload = { did: currentActiveDid, permissions: { "profile:read": "always" }, message: "Successfully initialized." };
+                            // Vault is locked, or no active identity could be loaded from session
+                            const localData = await chrome.storage.local.get(STORAGE_KEY_LAST_ACTIVE_DID);
+                            const lastActiveDid = localData[STORAGE_KEY_LAST_ACTIVE_DID];
+
+                            if (lastActiveDid) {
+                                // We know the last active DID, but the vault is locked.
+                                responseType = "VIBE_AGENT_RESPONSE_ERROR"; // Still an "error" in terms of full init
+                                responsePayload = {
+                                    error: {
+                                        message: "Vault is locked. Unlock to access your last active identity.",
+                                        code: "UNLOCK_REQUIRED_FOR_LAST_ACTIVE",
+                                        lastActiveDid: lastActiveDid,
+                                    },
+                                };
+                            } else {
+                                // Vault is locked, and we don't even know the last active DID (e.g., fresh install, or storage cleared)
+                                // This could also mean setup is not complete.
+                                const setupCompleteResult = await chrome.storage.local.get(STORAGE_KEY_SETUP_COMPLETE);
+                                if (!setupCompleteResult[STORAGE_KEY_SETUP_COMPLETE]) {
+                                    responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                                    responsePayload = { error: { message: "Setup not complete.", code: "SETUP_NOT_COMPLETE" } };
+                                } else {
+                                    responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                                    responsePayload = { error: { message: "Vault is locked. Please unlock.", code: "VAULT_LOCKED_NO_LAST_ACTIVE" } };
+                                }
+                            }
                         }
                         break;
 
@@ -262,9 +296,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         console.log("Processing 'UNLOCK_VAULT'");
                         const { password } = payload;
                         if (!password || typeof password !== "string") throw new Error("Password is required for UNLOCK_VAULT.");
-                        const localData = await chrome.storage.local.get([STORAGE_KEY_VAULT, STORAGE_KEY_VAULT_SALT]);
+                        const localData = await chrome.storage.local.get([STORAGE_KEY_VAULT, STORAGE_KEY_VAULT_SALT, STORAGE_KEY_LAST_ACTIVE_DID]);
                         const vaultData = localData[STORAGE_KEY_VAULT];
                         const saltHex = localData[STORAGE_KEY_VAULT_SALT];
+                        const lastActiveDidFromStorage = localData[STORAGE_KEY_LAST_ACTIVE_DID];
+
                         if (!vaultData || !saltHex) throw new Error("Vault or salt not found. Setup may not be complete.");
                         const salt = Buffer.from(saltHex, "hex");
                         let encryptionKey: CryptoKey | null = null; // For scoping, ensure it's not accidentally reused
@@ -274,27 +310,56 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             decryptedSeedAttempt = await decryptData(vaultData.encryptedSeedPhrase, encryptionKey);
                             if (!decryptedSeedAttempt) throw new Error("Decryption failed, returned null seed.");
 
-                            const activeIdentityIndex = vaultData.settings?.activeIdentityIndex ?? 0;
+                            let activeIdentityIndexToSet = vaultData.settings?.activeIdentityIndex ?? 0;
+
+                            // If we have a lastActiveDid, try to find its index and use that
+                            if (lastActiveDidFromStorage && vaultData.identities) {
+                                const foundIndex = vaultData.identities.findIndex((idObj: any) => idObj.did === lastActiveDidFromStorage);
+                                if (foundIndex !== -1) {
+                                    activeIdentityIndexToSet = foundIndex;
+                                    // Also update the vault's persisted activeIdentityIndex to match lastActiveDid
+                                    if (vaultData.settings.activeIdentityIndex !== foundIndex) {
+                                        vaultData.settings.activeIdentityIndex = foundIndex;
+                                        await chrome.storage.local.set({ [STORAGE_KEY_VAULT]: vaultData });
+                                        console.log(`Persisted activeIdentityIndex updated to match lastActiveDid: ${lastActiveDidFromStorage}`);
+                                    }
+                                } else {
+                                    console.warn(
+                                        `Last active DID ${lastActiveDidFromStorage} not found in current vault identities. Defaulting to index ${activeIdentityIndexToSet}.`
+                                    );
+                                }
+                            }
+
                             await chrome.storage.session.set({
                                 [SESSION_STORAGE_DECRYPTED_SEED_PHRASE]: decryptedSeedAttempt,
-                                [SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: activeIdentityIndex,
+                                [SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: activeIdentityIndexToSet,
                             });
                             await loadActiveIdentityFromSessionInternal(); // This sets currentActiveDid and isUnlocked
                             if (!isUnlocked || !currentActiveDid) throw new Error("Failed to load active identity into global state after unlock.");
+
+                            // Persist this successfully unlocked DID as the last active one
+                            if (currentActiveDid) {
+                                await chrome.storage.local.set({ [STORAGE_KEY_LAST_ACTIVE_DID]: currentActiveDid });
+                            }
 
                             // JWT is no longer proactively checked here. It will be handled by getValidCpAccessToken on demand.
                             console.info(`Vault unlocked for ${currentActiveDid}. API calls will attempt to use/refresh tokens.`);
 
                             responsePayload = { success: true, did: currentActiveDid, message: "Vault unlocked." };
                         } catch (error) {
+                            // This catch belongs to the try block above
                             await clearSessionStateInternal(); // Clear session on any unlock error
                             throw new Error(`Failed to unlock vault. ${error instanceof Error ? error.message : String(error)}`);
                         } finally {
+                            // This finally belongs to the try block above
                             // encryptionKey is a CryptoKey object, no explicit wipe method. It will be garbage collected.
                             if (decryptedSeedAttempt) decryptedSeedAttempt = null; // Clear sensitive data from memory
                         }
                         break;
                     }
+
+                    // The following UNLOCK_VAULT case was a duplicate due to merge error, removing it.
+                    // case "UNLOCK_VAULT": { ... }
 
                     case "LOCK_VAULT":
                         await clearSessionStateInternal(); // This clears seed, active index, and all JWTs
@@ -920,7 +985,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         console.log("Processing 'SWITCH_ACTIVE_IDENTITY'");
                         const { did: targetDid } = payload;
                         if (!targetDid) throw new Error("Target DID is required for SWITCH_ACTIVE_IDENTITY.");
-                        if (!isUnlocked) throw new Error("Vault must be unlocked to switch identities.");
+                        // Removed: if (!isUnlocked) throw new Error("Vault must be unlocked to switch identities.");
+                        // Switching the active identity pointer is allowed even if vault is locked.
+                        // Operations requiring the private key for the new identity will trigger unlock if needed.
 
                         const vaultResult = await chrome.storage.local.get(STORAGE_KEY_VAULT);
                         const vault = vaultResult[STORAGE_KEY_VAULT];
@@ -947,7 +1014,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                         if (currentActiveDid !== targetDid) {
                             // This should not happen if logic is correct, but as a safeguard:
+                            console.error(
+                                `Failed to switch active identity. Expected ${targetDid}, got ${currentActiveDid}. Attempting to clear session and relock.`
+                            );
+                            await clearSessionStateInternal(); // Clear potentially inconsistent session
                             throw new Error(`Failed to switch active identity. Expected ${targetDid}, got ${currentActiveDid}.`);
+                        }
+
+                        // Persist this newly switched DID as the last active one
+                        if (currentActiveDid) {
+                            await chrome.storage.local.set({ [STORAGE_KEY_LAST_ACTIVE_DID]: currentActiveDid });
                         }
 
                         // Clear session tokens for the PREVIOUSLY active DID
@@ -1023,6 +1099,143 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         } finally {
                             if (seedBuffer) wipeMemory(seedBuffer);
                         }
+                        break;
+                    }
+
+                    case "FINALIZE_NEW_IDENTITY_SETUP": {
+                        console.log("Processing 'FINALIZE_NEW_IDENTITY_SETUP'");
+                        const { didToFinalize, accountIndex, identityName, identityPicture, cloudUrl, claimCode, password } = payload;
+
+                        if (!didToFinalize || typeof accountIndex !== "number" || !password) {
+                            throw new Error("DID, accountIndex, and password are required for finalizing new identity setup.");
+                        }
+                        if (!isUnlocked) {
+                            // Ensure vault is unlocked to get the seed for signing
+                            // Attempt to unlock if password provided, similar to UNLOCK_VAULT but more direct
+                            console.log("Vault locked, attempting unlock with provided password for FINALIZE_NEW_IDENTITY_SETUP...");
+                            const localData = await chrome.storage.local.get([STORAGE_KEY_VAULT, STORAGE_KEY_VAULT_SALT]);
+                            const vaultDataForUnlock = localData[STORAGE_KEY_VAULT];
+                            const saltHex = localData[STORAGE_KEY_VAULT_SALT];
+                            if (!vaultDataForUnlock || !saltHex) throw new Error("Vault or salt not found for unlock during finalization.");
+                            const salt = Buffer.from(saltHex, "hex");
+                            const encryptionKey = await deriveEncryptionKey(password, salt);
+                            const decryptedSeedAttempt = await decryptData(vaultDataForUnlock.encryptedSeedPhrase, encryptionKey);
+                            if (!decryptedSeedAttempt) throw new Error("Decryption failed, invalid password for unlock during finalization.");
+                            // Temporarily store in session to allow key derivation
+                            await chrome.storage.session.set({ [SESSION_STORAGE_DECRYPTED_SEED_PHRASE]: decryptedSeedAttempt });
+                            // No need to call loadActiveIdentityFromSessionInternal() here as we are not changing the *global* active identity yet.
+                            console.log("Vault temporarily unlocked for signing during finalization.");
+                        }
+
+                        const sessionData = await chrome.storage.session.get(SESSION_STORAGE_DECRYPTED_SEED_PHRASE);
+                        const decryptedSeed = sessionData[SESSION_STORAGE_DECRYPTED_SEED_PHRASE];
+                        if (!decryptedSeed) {
+                            throw new Error("Vault is locked or seed phrase not available in session. Unlock is required to finalize identity.");
+                        }
+
+                        const vaultResult = await chrome.storage.local.get(STORAGE_KEY_VAULT);
+                        let vaultData = vaultResult[STORAGE_KEY_VAULT];
+                        if (!vaultData || !vaultData.identities) {
+                            throw new Error("Vault data not found or identities array is missing.");
+                        }
+
+                        const identityEntryIndex = vaultData.identities.findIndex((idObj: any) => idObj.did === didToFinalize);
+                        if (identityEntryIndex === -1) {
+                            throw new Error(`Identity with DID ${didToFinalize} not found in vault for finalization.`);
+                        }
+
+                        let finalCloudUrl: string | undefined = undefined;
+
+                        if (cloudUrl === OFFICIAL_VIBE_CLOUD_URL) {
+                            console.log(`Official Vibe Cloud: Registering new DID: ${didToFinalize}`);
+                            let seedForSigning: Buffer | null = null;
+                            try {
+                                seedForSigning = await seedFromMnemonic(decryptedSeed);
+                                const masterKey = getMasterHDKeyFromSeed(seedForSigning);
+                                // Use the specific accountIndex passed in payload for the new identity
+                                const keyPair = deriveChildKeyPair(masterKey, accountIndex);
+
+                                if (didFromEd25519(keyPair.publicKey) !== didToFinalize) {
+                                    throw new Error("Derived DID does not match didToFinalize. Account index might be incorrect.");
+                                }
+
+                                const nonce = crypto.randomUUID().toString();
+                                const timestamp = new Date().toISOString();
+                                const messageToSign = `${didToFinalize}|${nonce}|${timestamp}|${claimCode || ""}`;
+                                const signature = await signMessage(keyPair.privateKey, messageToSign);
+
+                                const registerPayload: any = { did: didToFinalize, nonce, timestamp, signature };
+                                if (identityName) registerPayload.profileName = identityName;
+                                if (identityPicture) registerPayload.profilePictureUrl = identityPicture;
+                                if (claimCode) registerPayload.claimCode = claimCode;
+
+                                const registerResponse = await fetch(`${OFFICIAL_VIBE_CLOUD_URL}/api/v1/auth/register`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify(registerPayload),
+                                });
+
+                                if (!registerResponse.ok) {
+                                    const errBody = await registerResponse.json().catch(() => ({ error: "Unknown registration error" }));
+                                    throw new Error(`Registration for ${didToFinalize} failed: ${errBody.error}`);
+                                }
+                                const result = await registerResponse.json();
+                                const serverIdentity = result.identity as Identity;
+                                const tokenDetails = result.tokenDetails as TokenDetails;
+
+                                await storeCpTokens(didToFinalize, tokenDetails);
+
+                                vaultData.identities[identityEntryIndex].profile_name = serverIdentity.profileName;
+                                vaultData.identities[identityEntryIndex].profile_picture = serverIdentity.profilePictureUrl;
+                                vaultData.identities[identityEntryIndex].cloudUrl = serverIdentity.instanceUrl;
+                                (vaultData.identities[identityEntryIndex] as any).instanceId = serverIdentity.instanceId;
+                                (vaultData.identities[identityEntryIndex] as any).instanceStatus = serverIdentity.instanceStatus;
+                                (vaultData.identities[identityEntryIndex] as any).isAdmin = serverIdentity.isAdmin;
+                                finalCloudUrl = serverIdentity.instanceUrl;
+                            } finally {
+                                if (seedForSigning) wipeMemory(seedForSigning);
+                            }
+                        } else if (cloudUrl) {
+                            console.warn(`Custom cloud URL ${cloudUrl} for ${didToFinalize}. No automatic registration.`);
+                            vaultData.identities[identityEntryIndex].profile_name = identityName;
+                            vaultData.identities[identityEntryIndex].profile_picture = identityPicture;
+                            vaultData.identities[identityEntryIndex].cloudUrl = cloudUrl;
+                        } else {
+                            // No cloud URL provided, just update local name/pic
+                            vaultData.identities[identityEntryIndex].profile_name = identityName;
+                            vaultData.identities[identityEntryIndex].profile_picture = identityPicture;
+                        }
+
+                        // Set this newly finalized identity as active
+                        vaultData.settings.activeIdentityIndex = identityEntryIndex;
+                        await chrome.storage.local.set({ [STORAGE_KEY_VAULT]: vaultData });
+
+                        // Update session storage for active identity
+                        // The decryptedSeed should still be in session from the unlock check or initial unlock
+                        await chrome.storage.session.set({ [SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: identityEntryIndex });
+                        await loadActiveIdentityFromSessionInternal(); // This will set currentActiveDid to the new one
+
+                        // Persist this newly finalized and active DID as the last active one
+                        if (currentActiveDid) {
+                            await chrome.storage.local.set({ [STORAGE_KEY_LAST_ACTIVE_DID]: currentActiveDid });
+                        }
+
+                        // Clear the temporary seed from session if it was only put there for this operation and the vault was originally locked
+                        // However, if the vault was already unlocked, leave the seed. This logic is tricky.
+                        // For simplicity, if password was provided in payload, assume it was locked and clear.
+                        if (payload.password) {
+                            await chrome.storage.session.remove(SESSION_STORAGE_DECRYPTED_SEED_PHRASE);
+                            isUnlocked = false; // Reflect that the temporary unlock is over
+                            console.log("Temporary unlock for finalization reverted.");
+                        }
+
+                        responsePayload = {
+                            success: true,
+                            message: `Identity ${didToFinalize} finalized and set as active.`,
+                            did: didToFinalize,
+                            identityName: vaultData.identities[identityEntryIndex].profile_name,
+                            newActiveDid: currentActiveDid, // Reflects the switch
+                        };
                         break;
                     }
 
