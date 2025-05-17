@@ -844,8 +844,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             });
 
                             if (!loginResponse.ok) {
-                                const errBody = await loginResponse.json().catch(() => ({ error: "Unknown login API error" }));
-                                throw new Error(`Login API call failed: ${errBody.error || loginResponse.status}`);
+                                const errorStatus = loginResponse.status;
+                                const errBody = await loginResponse
+                                    .json()
+                                    .catch(() => ({ error: "Unknown login API error", message: `Login failed with status ${errorStatus}` })); // Provide a fallback message
+                                const errorMessage = errBody.error || errBody.message; // Prefer .error, fallback to .message
+                                console.warn(`Login API call failed for ${did}: Status ${errorStatus} - ${errorMessage}`);
+                                throw new Error(`Login API call failed: ${errorMessage}`);
                             }
                             const result = await loginResponse.json(); // Expects { identity, tokenDetails }
                             const tokenDetails = result.tokenDetails as TokenDetails;

@@ -60,23 +60,26 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
             const data = await sendMessageToBackground("FETCH_FULL_IDENTITY_DETAILS", { did });
             if (data && data.identity) {
                 setIdentityDetails(data.identity);
+                // Successfully fetched details, ensure login required is false
+                setIsLoginRequired(false);
+                setError(null); // Clear previous errors
             } else {
-                // This case might occur if the background script resolves without 'identity' in payload
-                // or if the response structure is unexpected.
                 console.warn("FETCH_FULL_IDENTITY_DETAILS response did not contain identity object:", data);
-                setError("Received incomplete identity data from background.");
-                setIdentityDetails(null); // Clear previous details if any
+                setError("Received incomplete identity data.");
+                setIdentityDetails(null);
             }
         } catch (err: any) {
-            console.error("Error fetching identity details:", err);
+            console.error("Error fetching identity details in CloudStatus:", err);
             const errorMessage = err.message || "Failed to fetch status.";
-            if (errorMessage.includes("JWT missing")) {
-                setError("Login required to view cloud status.");
+            // Check for the specific error code or message from background.ts
+            if (err.code === "LOGIN_REQUIRED" || errorMessage.startsWith("FULL_LOGIN_REQUIRED")) {
+                setError(errorMessage); // Use the specific message from background
                 setIsLoginRequired(true);
             } else {
                 setError(errorMessage);
+                setIsLoginRequired(false); // Ensure this is reset if it's a different error
             }
-            setIdentityDetails(null); // Clear previous details on error
+            setIdentityDetails(null);
         } finally {
             setIsLoading(false);
         }
@@ -106,35 +109,42 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
 
     useEffect(() => {
         // Stop polling if instance status is terminal
+        console.log("[CloudStatus] Polling stop check. Current status:", identityDetails?.instanceStatus);
         if (identityDetails?.instanceStatus && TERMINAL_INSTANCE_STATUSES.includes(identityDetails.instanceStatus.toLowerCase())) {
             if (pollingIntervalId) {
                 clearInterval(pollingIntervalId);
                 setPollingIntervalId(null);
-                console.log(`Polling stopped for DID ${activeDid} due to terminal status: ${identityDetails.instanceStatus}`);
+                console.log(`[CloudStatus] Polling stopped for DID ${activeDid} due to terminal status: ${identityDetails.instanceStatus}`);
             }
         }
     }, [identityDetails, pollingIntervalId, activeDid]);
+
+    // Log current identityDetails for render
+    console.log("[CloudStatus] Rendering with identityDetails:", identityDetails);
 
     let displayStatus: string = "Fetching status...";
     let StatusIcon = Loader2;
     let iconColor = "text-slate-500";
     let statusDescription = "Attempting to retrieve Vibe Cloud instance status...";
 
-    const handleLoginClick = () => {
+    const handleLoginClick = async () => {
         if (activeDid) {
             console.log(`Login button clicked for DID: ${activeDid}. Requesting login flow.`);
-            sendMessageToBackground("REQUEST_LOGIN_FLOW", { did: activeDid })
-                .then(() => {
-                    // Optionally, re-fetch details or wait for a signal after login flow completes
-                    // For now, we can just log or let polling handle it if JWT becomes available
-                    console.log("REQUEST_LOGIN_FLOW message sent.");
-                    // Potentially re-trigger fetch after a delay or if login flow signals completion
-                    // fetchIdentityDetails(activeDid); // Or rely on next poll
-                })
-                .catch((err) => {
-                    console.error("Error sending REQUEST_LOGIN_FLOW:", err);
-                    setError("Failed to initiate login. Please try again.");
-                });
+            setIsLoading(true); // Show loading indicator during login attempt
+            setError(null);
+            try {
+                await sendMessageToBackground("REQUEST_LOGIN_FLOW", { did: activeDid });
+                console.log("REQUEST_LOGIN_FLOW message sent, attempting to re-fetch details.");
+                // After attempting login, immediately re-fetch details.
+                // The fetchIdentityDetails will handle setting isLoading to false.
+                // It will also update isLoginRequired if login failed again for some reason.
+                fetchIdentityDetails(activeDid);
+            } catch (loginErr: any) {
+                console.error("Error during REQUEST_LOGIN_FLOW:", loginErr);
+                setError(loginErr.message || "Login failed. Please try again.");
+                setIsLoginRequired(true); // Remain in login required state if login itself fails
+                setIsLoading(false); // Stop loading as login attempt finished (failed)
+            }
         }
     };
 
