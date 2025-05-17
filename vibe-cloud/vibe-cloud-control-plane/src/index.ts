@@ -215,7 +215,8 @@ export const app = new Elysia()
 
                     // Truncate to a max length to keep overall K8s names (e.g., "vibe-[instanceId]") within limits.
                     // Max K8s namespace length is 63. "vibe-" is 5 chars. So, instanceId max length is 53 - 5 = 48.
-                    let instanceId = sanitizedId.substring(0, 40);
+                    // For labels like app.kubernetes.io/name: vibe-${instanceId}-vibe-cloud-instan (5 + X + 19 = 24 + X <= 63), X <= 39
+                    let instanceId = sanitizedId.substring(0, 39);
                     // Ensure it doesn't end with a hyphen after truncation
                     instanceId = instanceId.replace(/-+$/, "");
 
@@ -523,7 +524,8 @@ export const app = new Elysia()
                         let responseToken: string | undefined = undefined;
                         if (callingRole === "owner" && claimCodeForPromotion && updatedIdentity.isAdmin && !identityBeforeUpdate.isAdmin) {
                             // When owner promotes to admin, issue a new access token with the 'type' claim
-                            responseToken = await jwt.sign({ identityDid: updatedIdentity.identityDid, isAdmin: true, type: "access" });
+                            // Changed isAdmin: true to isAdmin: "true" to satisfy jwt.sign() type expectation
+                            responseToken = await jwt.sign({ identityDid: updatedIdentity.identityDid, isAdmin: "true", type: "access" });
                         }
                         // Return type for Elysia needs to match schema, so ensure token is part of the object if defined
                         const responsePayload: Static<typeof IdentitySchema> & { token?: string } = { ...updatedIdentity };

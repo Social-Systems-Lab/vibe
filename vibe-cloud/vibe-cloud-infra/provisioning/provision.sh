@@ -86,9 +86,9 @@ callback_control_plane() {
   
   curl_exit_code=$?
   if [ $curl_exit_code -ne 0 ]; then
-    echo "ERROR: Callback to control plane failed." >&2
-    # This is a problem, as the control plane won't know the final status.
-    # Consider retry logic or more persistent error logging.
+    echo "ERROR: Callback to control plane failed with curl exit code ${curl_exit_code}." >&2
+    # Exit with an error code so the control plane's 'on("close")' handler can catch this
+    exit 1
   else
     echo "Callback successful."
   fi
