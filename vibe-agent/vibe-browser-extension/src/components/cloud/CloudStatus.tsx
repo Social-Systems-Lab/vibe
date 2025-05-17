@@ -135,15 +135,18 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
             try {
                 await sendMessageToBackground("REQUEST_LOGIN_FLOW", { did: activeDid });
                 console.log("REQUEST_LOGIN_FLOW message sent, attempting to re-fetch details.");
-                // After attempting login, immediately re-fetch details.
-                // The fetchIdentityDetails will handle setting isLoading to false.
-                // It will also update isLoginRequired if login failed again for some reason.
-                fetchIdentityDetails(activeDid);
+                fetchIdentityDetails(activeDid); // This will reset isLoading and handle outcomes
             } catch (loginErr: any) {
-                console.error("Error during REQUEST_LOGIN_FLOW:", loginErr);
-                setError(loginErr.message || "Login failed. Please try again.");
+                console.error("Error during REQUEST_LOGIN_FLOW in CloudStatus:", loginErr);
+                if (loginErr.code === "VAULT_LOCKED_FOR_LOGIN") {
+                    setError(loginErr.message || "Vault is locked. Please unlock the extension to log in.");
+                    // UI should ideally show a full-screen unlock prompt here via a global state/context.
+                    // For now, CloudStatus will just show this error.
+                } else {
+                    setError(loginErr.message || "Login failed. Please try again.");
+                }
                 setIsLoginRequired(true); // Remain in login required state if login itself fails
-                setIsLoading(false); // Stop loading as login attempt finished (failed)
+                setIsLoading(false);
             }
         }
     };

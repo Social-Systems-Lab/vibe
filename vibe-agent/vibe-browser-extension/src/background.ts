@@ -484,8 +484,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                     derivationPath: derivationPath,
                                     profile_name: `Recovered Identity ${currentIndex + 1}`, // Placeholder
                                     instanceStatus: instanceStatus, // Store initial status
+                                    // We will attempt to log in and get tokens immediately
                                 });
                                 consecutiveInactiveCount = 0;
+
+                                // Attempt to login and get tokens for this active DID
+                                console.log(`Attempting proactive login for recovered active DID: ${currentDid} at index ${currentIndex}`);
+                                try {
+                                    // Keys are derived using masterHDKey and currentIndex
+                                    // const keyPairForLogin = deriveChildKeyPair(masterHDKey, currentIndex); // Already have keyPair from above
+
+                                    const nonce = crypto.randomUUID().toString();
+                                    const timestamp = new Date().toISOString();
+                                    const messageToSign = `${currentDid}|${nonce}|${timestamp}`;
+                                    const signature = await signMessage(keyPair.privateKey, messageToSign);
+
+                                    const loginApiPayload = { did: currentDid, nonce, timestamp, signature };
+                                    const loginResponse = await fetch(`${OFFICIAL_VIBE_CLOUD_URL}/api/v1/auth/login`, {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify(loginApiPayload),
+                                    });
+
+                                    if (loginResponse.ok) {
+                                        const result = await loginResponse.json();
+                                        const tokenDetails = result.tokenDetails as TokenDetails;
+                                        if (tokenDetails) {
+                                            await storeCpTokens(currentDid, tokenDetails);
+                                            console.info(`Proactive login successful, tokens stored for DID: ${currentDid}`);
+                                        } else {
+                                            console.warn(`Proactive login for ${currentDid} succeeded but no tokenDetails received.`);
+                                        }
+                                    } else {
+                                        const errBody = await loginResponse
+                                            .json()
+                                            .catch(() => ({ error: `Proactive login failed with status ${loginResponse.status}` }));
+                                        console.warn(`Proactive login failed for DID ${currentDid}: ${errBody.error || loginResponse.status}`);
+                                    }
+                                } catch (loginError: any) {
+                                    console.error(`Error during proactive login attempt for ${currentDid}:`, loginError.message);
+                                }
+                                // End of proactive login attempt
+
                                 nextAccountIndexToStore = currentIndex + 1;
                             } else {
                                 consecutiveInactiveCount++;
@@ -809,11 +849,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 console.log(`Vault unlocked successfully for ${did} during login flow.`);
                             } else {
                                 // Vault is locked, and no password provided by UI yet.
-                                // Signal UI to request password.
-                                responseType = "VIBE_AGENT_RESPONSE_ERROR";
-                                responsePayload = { error: { message: "Vault is locked. Password required to login.", code: "VAULT_LOCKED_FOR_LOGIN" } };
-                                sendResponse({ type: responseType, requestId, error: responsePayload.error });
-                                return;
+                                // Signal UI to request password with a more specific error.
+                                console.warn(`REQUEST_LOGIN_FLOW for ${did}: Vault is locked and password not provided. Throwing VAULT_LOCKED_FOR_LOGIN.`);
+                                throw { message: "Vault is locked. Password required to perform login.", code: "VAULT_LOCKED_FOR_LOGIN" }; // Throw an object similar to other errors
                             }
                         }
 
