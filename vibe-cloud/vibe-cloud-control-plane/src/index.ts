@@ -83,6 +83,10 @@ export const app = new Elysia()
             name: "jwt",
             secret: jwtSecret,
             schema: JWTPayloadSchema,
+            alg: "HS256", // Explicitly define the expected algorithm
+            iss: process.env.JWT_ISSUER || "vibe-cloud-control-plane", // Explicitly define the expected issuer
+            exp: process.env.ACCESS_TOKEN_EXPIRY_SECONDS ? `${process.env.ACCESS_TOKEN_EXPIRY_SECONDS}s` : "15m", // Ensure plugin knows default expiry if not in token
+            clockTolerance: 60, // Allow 60 seconds clock skew for nbf, exp, iat
         })
     )
     .onError(({ code, error, set }) => {
@@ -210,9 +214,10 @@ export const app = new Elysia()
                     sanitizedId = sanitizedId.replace(/-+/g, "-").replace(/^-+|-+$/g, "");
 
                     // Truncate to a max length to keep overall K8s names (e.g., "vibe-[instanceId]") within limits.
-                    // Max K8s namespace length is 63. "vibe-" is 5 chars. So, 58 for instanceId.
-                    // Let's use 50 for a good margin.
-                    const instanceId = sanitizedId.substring(0, 50);
+                    // Max K8s namespace length is 63. "vibe-" is 5 chars. So, instanceId max length is 53 - 5 = 48.
+                    let instanceId = sanitizedId.substring(0, 40);
+                    // Ensure it doesn't end with a hyphen after truncation
+                    instanceId = instanceId.replace(/-+$/, "");
 
                     if (!instanceId) {
                         // Should not happen if DID is valid
@@ -349,10 +354,24 @@ export const app = new Elysia()
     .group("/api/v1/identities", (group) =>
         group
             .derive(async ({ jwt, request, set }) => {
+                const internalSecretHeader = request.headers.get("x-internal-secret");
+                const expectedInternalSecret = process.env.INTERNAL_SECRET_TOKEN || "dev-secret-token"; // Ensure this is consistent
+
+                // If it's a PUT request to /api/v1/identities/:did and the internal secret header is present,
+                // let it pass to the route handler for secret validation. currentIdentity will be null.
                 const urlPath = new URL(request.url).pathname;
-                if (request.method === "GET" && urlPath.endsWith("/status")) {
+                if (request.method === "PUT" && urlPath.startsWith("/api/v1/identities/") && internalSecretHeader) {
+                    // The route handler for PUT /:did will validate the actual secret value.
+                    // We pass null for currentIdentity as JWT is not expected for this specific internal call.
+                    return { currentIdentity: null as JWTPayloadType | null };
+                }
+
+                // Handle public GET /:did/status route
+                if (request.method === "GET" && urlPath.includes("/status") && urlPath.startsWith("/api/v1/identities/")) {
                     return { currentIdentity: null as JWTPayloadType | null }; // Public route
                 }
+
+                // For all other routes in this group, enforce JWT
                 const authHeader = request.headers.get("authorization");
                 if (!authHeader?.startsWith("Bearer ")) {
                     set.status = 401;
@@ -367,7 +386,9 @@ export const app = new Elysia()
                     return { currentIdentity: payload };
                 } catch (err) {
                     set.status = 401;
-                    throw new Error("Unauthorized: Token verification failed.");
+                    // Ensure the error message from jwt.verify (like "jwt expired") is propagated
+                    const errorMessage = err instanceof Error ? err.message : "Token verification failed.";
+                    throw new Error(`Unauthorized: ${errorMessage}`);
                 }
             })
             .get(
