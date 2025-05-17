@@ -378,12 +378,19 @@ export const app = new Elysia()
                     throw new Error("Unauthorized: Missing Bearer token.");
                 }
                 try {
-                    const payload = (await jwt.verify(authHeader.substring(7))) as JWTPayloadType;
-                    if (!payload || !payload.identityDid) {
+                    const tokenString = authHeader.substring(7);
+                    const payload = (await jwt.verify(tokenString)) as JWTPayloadType | false; // jwt.verify can return false
+
+                    // Log the raw payload for debugging
+                    logger.info(`JWT Payload received for verification: ${JSON.stringify(payload)}`);
+
+                    if (!payload || typeof payload === "boolean" || !payload.identityDid) {
+                        // Check for boolean false explicitly
+                        logger.error(`Invalid token payload structure or missing identityDid. Payload: ${JSON.stringify(payload)}`);
                         set.status = 401;
                         throw new Error("Unauthorized: Invalid token payload.");
                     }
-                    return { currentIdentity: payload };
+                    return { currentIdentity: payload as JWTPayloadType }; // Cast back after checks
                 } catch (err) {
                     set.status = 401;
                     // Ensure the error message from jwt.verify (like "jwt expired") is propagated
