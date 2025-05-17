@@ -43,23 +43,6 @@ import { didFromEd25519 } from "./lib/identity";
 
 console.log("Vibe Background Service Worker started.");
 
-// --- BIP39 Self-Test ---
-try {
-    console.log("[BIP39 TEST] Running self-test...");
-    const testMnemonic = generateMnemonic(12);
-    console.log(`[BIP39 TEST] Generated test mnemonic: "${testMnemonic}"`);
-    const isValid = validateMnemonic(testMnemonic);
-    console.log(`[BIP39 TEST] Validation result for generated mnemonic: ${isValid}`);
-    if (!isValid) {
-        console.error("[BIP39 TEST] CRITICAL: bip39.validateMnemonic failed for a freshly generated mnemonic!");
-    } else {
-        console.log("[BIP39 TEST] Self-test PASSED.");
-    }
-} catch (e) {
-    console.error("[BIP39 TEST] CRITICAL: Error during bip39 self-test:", e);
-}
-// --- End BIP39 Self-Test ---
-
 // --- Constants ---
 const OFFICIAL_VIBE_CLOUD_URL = "https://vibe-cloud-cp.vibeapp.dev"; // Renamed for clarity
 const SETUP_URL = chrome.runtime.getURL("setup.html");
@@ -357,9 +340,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         }
                         break;
                     }
-
-                    // The following UNLOCK_VAULT case was a duplicate due to merge error, removing it.
-                    // case "UNLOCK_VAULT": { ... }
 
                     case "LOCK_VAULT":
                         await clearSessionStateInternal(); // This clears seed, active index, and all JWTs
