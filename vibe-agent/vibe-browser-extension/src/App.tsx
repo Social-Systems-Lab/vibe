@@ -30,60 +30,86 @@ interface Identity {
 
 export function App({ onResetDev }: AppProps) {
     const [currentIdentity, setCurrentIdentity] = useState<Identity | null>(null); // Initialize with null
-    const [identities, setIdentities] = useState<Identity[]>([]); // Initialize with empty array
+    const [allIdentities, setAllIdentities] = useState<Identity[]>([]); // Renamed from 'identities'
     const [isLoadingIdentity, setIsLoadingIdentity] = useState(true); // Loading state for identity
     const [showImportWizard, setShowImportWizard] = useState(false); // State for wizard visibility
     const [showIdentitySettings, setShowIdentitySettings] = useState(false); // State for settings visibility
 
     const loadIdentityData = useCallback(async () => {
-        console.log("App.tsx: loadIdentityData triggered"); // Diagnostic log
+        console.log("App.tsx: loadIdentityData triggered");
         setIsLoadingIdentity(true);
         try {
-            // Fetch from "vibeVault" and "currentIdentityDID"
-            const result = await chrome.storage.local.get(["vibeVault", "currentIdentityDID"]);
-            const vault = result.vibeVault;
-            const storedCurrentDID: string | undefined = result.currentIdentityDID;
+            // Get all identities from background script
+            const getAllIdentitiesResponse = await chrome.runtime.sendMessage({
+                type: "VIBE_AGENT_REQUEST",
+                action: "GET_ALL_IDENTITIES",
+                requestId: crypto.randomUUID().toString(),
+            });
 
             let uiIdentities: Identity[] = [];
-            if (vault && vault.identities && Array.isArray(vault.identities)) {
-                uiIdentities = vault.identities.map((id: StoredIdentity) => ({
+            if (getAllIdentitiesResponse && getAllIdentitiesResponse.type === "VIBE_AGENT_RESPONSE" && getAllIdentitiesResponse.payload?.identities) {
+                uiIdentities = getAllIdentitiesResponse.payload.identities.map((id: StoredIdentity) => ({
                     did: id.did,
-                    displayName: id.profile_name,
+                    displayName: id.profile_name, // This is profile_name from vault
                     avatarUrl: id.profile_picture,
                 }));
+            } else if (getAllIdentitiesResponse && getAllIdentitiesResponse.type === "VIBE_AGENT_RESPONSE_ERROR") {
+                console.error("Error fetching all identities:", getAllIdentitiesResponse.error);
             }
-            setIdentities(uiIdentities);
+            setAllIdentities(uiIdentities);
 
-            if (storedCurrentDID) {
-                const foundCurrent = uiIdentities.find((id) => id.did === storedCurrentDID);
-                setCurrentIdentity(foundCurrent || (uiIdentities.length > 0 ? uiIdentities[0] : null));
+            // Get active identity details from background script
+            const activeIdentityDetailsResponse = await chrome.runtime.sendMessage({
+                type: "VIBE_AGENT_REQUEST",
+                action: "GET_ACTIVE_IDENTITY_DETAILS",
+                requestId: crypto.randomUUID().toString(),
+            });
+
+            if (activeIdentityDetailsResponse && activeIdentityDetailsResponse.type === "VIBE_AGENT_RESPONSE" && activeIdentityDetailsResponse.payload?.did) {
+                const activeStoredIdentity = activeIdentityDetailsResponse.payload;
+                setCurrentIdentity({
+                    did: activeStoredIdentity.did,
+                    displayName: activeStoredIdentity.profileName, // Background returns profileName
+                    avatarUrl: activeStoredIdentity.profilePictureUrl,
+                });
             } else if (uiIdentities.length > 0) {
-                // If no current DID is set (e.g., first time after setup), default to the first one
-                setCurrentIdentity(uiIdentities[0]);
-                // Persist this choice
-                await chrome.storage.local.set({ currentIdentityDID: uiIdentities[0].did });
+                console.warn("GET_ACTIVE_IDENTITY_DETAILS failed or returned no DID. Attempting to set first available identity as active.");
+                const firstIdentity = uiIdentities[0];
+                // setCurrentIdentity(firstIdentity); // Set UI immediately
+                // Try to switch in background, loadIdentityData will be called again by storage listener if successful
+                await chrome.runtime.sendMessage({
+                    type: "VIBE_AGENT_REQUEST",
+                    action: "SWITCH_ACTIVE_IDENTITY",
+                    payload: { did: firstIdentity.did },
+                    requestId: crypto.randomUUID().toString(),
+                });
+                // No need to call loadIdentityData here, storage listener will handle it.
             } else {
-                setCurrentIdentity(null); // No identities found
+                setCurrentIdentity(null);
             }
-            console.log("Loaded vault identities, mapped to UI:", uiIdentities);
-            console.log("Current DID from storage:", storedCurrentDID);
+            console.log("Loaded UI identities:", uiIdentities);
         } catch (error) {
-            console.error("Error loading identity data from storage:", error);
-            // Optionally set an error state to display to the user
+            console.error("Error in loadIdentityData:", error);
+            setCurrentIdentity(null); // Ensure currentIdentity is null on error
+            setAllIdentities([]); // Ensure allIdentities is empty on error
         } finally {
             setIsLoadingIdentity(false);
         }
-    }, []); // Removed dependencies as it's meant to run once or be manually called
+    }, []); // No dependencies, relies on manual calls or storage listener
 
     useEffect(() => {
         loadIdentityData();
-    }, [loadIdentityData]);
+    }, [loadIdentityData]); // loadIdentityData is stable due to useCallback([])
 
     // Listen for storage changes to auto-refresh identity data
     useEffect(() => {
         const storageChangedListener = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
-            if (areaName === "local" && (changes.vibeVault || changes.currentIdentityDID)) {
-                console.log("App.tsx: Detected vibeVault or currentIdentityDID change, reloading identity data.");
+            // Check for changes in local storage (vibeVault) or session storage (activeIdentityIndex)
+            if (
+                (areaName === "local" && changes.vibeVault) ||
+                (areaName === "session" && changes.activeIdentityIndex) // Key used in background.ts for session
+            ) {
+                console.log("App.tsx: Detected vault or activeIdentityIndex change, reloading identity data.");
                 loadIdentityData();
             }
         };
@@ -93,53 +119,51 @@ export function App({ onResetDev }: AppProps) {
         };
     }, [loadIdentityData]);
 
-    const handleSwitchIdentity = (did: string) => {
-        const newIdentity = identities.find((id) => id.did === did);
-        if (newIdentity) {
-            setCurrentIdentity(newIdentity);
-            chrome.storage.local.set({ currentIdentityDID: newIdentity.did });
-            console.log("Switched to identity:", newIdentity.did);
+    const handleSwitchIdentity = async (did: string) => {
+        try {
+            const response = await chrome.runtime.sendMessage({
+                type: "VIBE_AGENT_REQUEST",
+                action: "SWITCH_ACTIVE_IDENTITY",
+                payload: { did },
+                requestId: crypto.randomUUID().toString(),
+            });
+            if (response && response.type === "VIBE_AGENT_RESPONSE" && response.payload?.success) {
+                console.log("Successfully switched active identity in background to:", response.payload.newActiveDid);
+                // loadIdentityData will be triggered by the storage listener.
+            } else if (response && response.type === "VIBE_AGENT_RESPONSE_ERROR") {
+                console.error("Error switching identity:", response.error);
+                alert(`Error switching identity: ${response.error.message}`);
+            }
+        } catch (error: any) {
+            console.error("Failed to send SWITCH_ACTIVE_IDENTITY message:", error);
+            alert(`Failed to switch identity: ${error.message}`);
         }
     };
 
     const handleAddIdentity = async () => {
-        // This placeholder needs to be updated to interact with background.ts
-        // to properly create and store a new identity within the vault structure.
-        console.log("Add new identity action triggered. Needs full implementation via background script.");
-        alert("Add new identity functionality is not fully implemented yet. It requires interaction with the background script to update the vault.");
+        console.log("Attempting to create new identity via background script.");
+        try {
+            const response = await chrome.runtime.sendMessage({
+                type: "VIBE_AGENT_REQUEST",
+                action: "CREATE_NEW_IDENTITY_FROM_SEED",
+                requestId: crypto.randomUUID().toString(),
+            });
 
-        // // --- TEMPORARY MOCK ADDITION (REMOVE/REPLACE WITH BACKGROUND SCRIPT INTERACTION) ---
-        // const newId = `did:example:temp${Date.now().toString().slice(-6)}`;
-        // const tempNewUiIdentity: Identity = { // UI type
-        //     did: newId,
-        //     displayName: `Temp User ${identities.length + 1}`,
-        //     avatarUrl: undefined,
-        // };
-        // const tempNewStoredIdentity: StoredIdentity = { // Stored type
-        //     did: newId,
-        //     profile_name: tempNewUiIdentity.displayName,
-        //     profile_picture: undefined,
-        //     derivationPath: `m/0'/0'/${identities.length}'` // Example path
-        // };
-
-        // const updatedUiIdentities = [...identities, tempNewUiIdentity];
-        // setIdentities(updatedUiIdentities);
-        // setCurrentIdentity(tempNewUiIdentity);
-
-        // try {
-        //     const vaultResult = await chrome.storage.local.get("vibeVault");
-        //     const vault = vaultResult.vibeVault || { identities: [], settings: {} };
-        //     const updatedStoredIdentities = [...(vault.identities || []), tempNewStoredIdentity];
-
-        //     await chrome.storage.local.set({
-        //         vibeVault: { ...vault, identities: updatedStoredIdentities },
-        //         currentIdentityDID: tempNewUiIdentity.did,
-        //     });
-        //     console.log("Temporarily added and saved new identity (MOCK):", tempNewUiIdentity);
-        // } catch (error) {
-        //     console.error("Error saving temporary new identity (MOCK):", error);
-        // }
-        // // --- END TEMPORARY MOCK ADDITION ---
+            if (response && response.type === "VIBE_AGENT_RESPONSE" && response.payload?.success) {
+                alert(`New identity created: ${response.payload.newIdentity.did}. You may need to switch to it and finalize setup (e.g., name it).`);
+                // loadIdentityData will be triggered by the storage listener due to vault change.
+                // Optionally, could switch to the new identity:
+                // handleSwitchIdentity(response.payload.newIdentity.did);
+            } else if (response && response.type === "VIBE_AGENT_RESPONSE_ERROR") {
+                console.error("Error creating new identity:", response.error);
+                alert(`Error creating new identity: ${response.error.message}`);
+            } else {
+                alert("Received an unexpected response from the background script during identity creation.");
+            }
+        } catch (error: any) {
+            console.error("Error sending CREATE_NEW_IDENTITY_FROM_SEED message to background:", error);
+            alert(`Failed to communicate with the background script for identity creation: ${error.message}`);
+        }
     };
 
     const handleImportIdentity = async () => {
@@ -149,34 +173,31 @@ export function App({ onResetDev }: AppProps) {
     const handleImportComplete = async (mnemonic: string, password?: string) => {
         console.log("Attempting to import identity via background script:", { mnemonic, password });
         try {
+            // NOTE: The action "IMPORT_IDENTITY_FROM_SEED" was mentioned in the original App.tsx
+            // but "SETUP_IMPORT_SEED_AND_RECOVER_IDENTITIES" is what's in background.ts for this.
+            // Assuming "SETUP_IMPORT_SEED_AND_RECOVER_IDENTITIES" is the correct one.
             const response = await chrome.runtime.sendMessage({
                 type: "VIBE_AGENT_REQUEST",
-                action: "IMPORT_IDENTITY_FROM_SEED",
-                payload: { mnemonic, password },
-                // requestId: crypto.randomUUID() // Good practice to include a request ID
+                action: "SETUP_IMPORT_SEED_AND_RECOVER_IDENTITIES", // Corrected action name
+                payload: { importedMnemonic: mnemonic, password }, // Payload matches background
+                requestId: crypto.randomUUID().toString(),
             });
 
-            console.log("Response from IMPORT_IDENTITY_FROM_SEED:", response);
+            console.log("Response from SETUP_IMPORT_SEED_AND_RECOVER_IDENTITIES:", response);
 
             if (response && response.type === "VIBE_AGENT_RESPONSE" && response.payload?.success) {
-                alert(`Identity import process initiated: ${response.payload.message}\nPlease wait for the extension to reload or refresh data.`);
-                // TODO: After successful import, the UI should ideally refresh to show new identities.
-                // This might involve:
-                // 1. Background script signaling a change.
-                // 2. App reloading identity data (calling loadIdentityData()).
-                // 3. Or, if the import replaces the vault, the extension might need to be "re-unlocked" or re-initialized.
+                alert(`Identity import process completed: ${response.payload.message}`);
                 setShowImportWizard(false);
-                loadIdentityData(); // Re-load identities
+                loadIdentityData(); // Re-load identities as vault has changed
             } else if (response && response.type === "VIBE_AGENT_RESPONSE_ERROR") {
                 alert(`Error importing identity: ${response.error?.message || "Unknown error"}`);
             } else {
                 alert("Received an unexpected response from the background script during import.");
             }
         } catch (error: any) {
-            console.error("Error sending IMPORT_IDENTITY_FROM_SEED message to background:", error);
+            console.error("Error sending SETUP_IMPORT_SEED_AND_RECOVER_IDENTITIES message to background:", error);
             alert(`Failed to communicate with the background script for import: ${error.message}`);
         }
-        // setShowImportWizard(false); // Moved inside success/error handling or keep here if always hiding
     };
 
     const handleCancelImport = () => {
@@ -230,8 +251,8 @@ export function App({ onResetDev }: AppProps) {
                 {/* Content area with padding and gap */}
                 <IdentityCard identity={currentIdentity} />
                 <IdentitySwitcher
-                    identities={identities}
-                    currentIdentity={currentIdentity}
+                    identities={allIdentities} // Use renamed state
+                    currentIdentityDid={currentIdentity?.did || null} // Updated prop
                     onSwitchIdentity={handleSwitchIdentity}
                     onAddIdentity={handleAddIdentity}
                     onImportIdentity={handleImportIdentity} // Pass the new handler
@@ -249,5 +270,3 @@ export function App({ onResetDev }: AppProps) {
         </div>
     );
 }
-
-export default App;

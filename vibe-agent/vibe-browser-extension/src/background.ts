@@ -901,6 +901,131 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         break;
                     }
 
+                    case "GET_ALL_IDENTITIES": {
+                        console.log("Processing 'GET_ALL_IDENTITIES'");
+                        const vaultResult = await chrome.storage.local.get(STORAGE_KEY_VAULT);
+                        const vault = vaultResult[STORAGE_KEY_VAULT];
+                        if (vault && vault.identities && Array.isArray(vault.identities)) {
+                            // Return a mapped version if needed, or direct if structure is fine
+                            // For now, returning as stored. Ensure UI can handle snake_case (profile_name)
+                            responsePayload = { identities: vault.identities };
+                        } else {
+                            console.warn("No vault found or identities array missing/invalid during GET_ALL_IDENTITIES.");
+                            responsePayload = { identities: [] }; // Return empty array if no identities found
+                        }
+                        break;
+                    }
+
+                    case "SWITCH_ACTIVE_IDENTITY": {
+                        console.log("Processing 'SWITCH_ACTIVE_IDENTITY'");
+                        const { did: targetDid } = payload;
+                        if (!targetDid) throw new Error("Target DID is required for SWITCH_ACTIVE_IDENTITY.");
+                        if (!isUnlocked) throw new Error("Vault must be unlocked to switch identities.");
+
+                        const vaultResult = await chrome.storage.local.get(STORAGE_KEY_VAULT);
+                        const vault = vaultResult[STORAGE_KEY_VAULT];
+                        if (!vault || !vault.identities || !Array.isArray(vault.identities)) {
+                            throw new Error("Vault data not found or identities array is missing.");
+                        }
+
+                        const targetIdentityIndex = vault.identities.findIndex((idObj: any) => idObj.did === targetDid);
+                        if (targetIdentityIndex === -1) {
+                            throw new Error(`Target DID ${targetDid} not found in vault.`);
+                        }
+
+                        const previousActiveDid = currentActiveDid; // Capture before it's changed by loadActiveIdentityFromSessionInternal
+
+                        // Update active index in session storage
+                        await chrome.storage.session.set({ [SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: targetIdentityIndex });
+
+                        // Update active index in local storage vault settings as well for persistence
+                        vault.settings.activeIdentityIndex = targetIdentityIndex;
+                        await chrome.storage.local.set({ [STORAGE_KEY_VAULT]: vault });
+
+                        // Reload active identity based on new index, this updates currentActiveDid and isUnlocked
+                        await loadActiveIdentityFromSessionInternal();
+
+                        if (currentActiveDid !== targetDid) {
+                            // This should not happen if logic is correct, but as a safeguard:
+                            throw new Error(`Failed to switch active identity. Expected ${targetDid}, got ${currentActiveDid}.`);
+                        }
+
+                        // Clear session tokens for the PREVIOUSLY active DID
+                        if (previousActiveDid && previousActiveDid !== targetDid) {
+                            const prevAccessTokenKey = `${SESSION_STORAGE_CP_ACCESS_TOKEN_PREFIX}${previousActiveDid}`;
+                            const prevAccessTokenExpiresAtKey = `${SESSION_STORAGE_CP_ACCESS_TOKEN_EXPIRES_AT_PREFIX}${previousActiveDid}`;
+                            await chrome.storage.session.remove([prevAccessTokenKey, prevAccessTokenExpiresAtKey]);
+                            console.info(`Cleared session CP access tokens for previously active DID: ${previousActiveDid}`);
+                        }
+                        // Also clear session tokens for the NEWLY active DID to force re-evaluation/login if needed
+                        const newAccessTokenKey = `${SESSION_STORAGE_CP_ACCESS_TOKEN_PREFIX}${targetDid}`;
+                        const newAccessTokenExpiresAtKey = `${SESSION_STORAGE_CP_ACCESS_TOKEN_EXPIRES_AT_PREFIX}${targetDid}`;
+                        await chrome.storage.session.remove([newAccessTokenKey, newAccessTokenExpiresAtKey]);
+                        console.info(`Cleared session CP access tokens for newly active DID: ${targetDid} to ensure fresh state.`);
+
+                        responsePayload = { success: true, newActiveDid: currentActiveDid, message: `Switched active identity to ${currentActiveDid}.` };
+                        break;
+                    }
+
+                    case "CREATE_NEW_IDENTITY_FROM_SEED": {
+                        console.log("Processing 'CREATE_NEW_IDENTITY_FROM_SEED'");
+                        if (!isUnlocked) {
+                            throw new Error("Vault must be unlocked to create a new identity.");
+                        }
+
+                        const sessionData = await chrome.storage.session.get(SESSION_STORAGE_DECRYPTED_SEED_PHRASE);
+                        const decryptedSeed = sessionData[SESSION_STORAGE_DECRYPTED_SEED_PHRASE];
+                        if (!decryptedSeed) {
+                            // This case should ideally be caught by isUnlocked check, but good to be defensive
+                            throw new Error("Decrypted seed phrase not found in session. Vault may be locked or session cleared.");
+                        }
+
+                        const vaultResult = await chrome.storage.local.get(STORAGE_KEY_VAULT);
+                        const vault = vaultResult[STORAGE_KEY_VAULT];
+                        if (!vault || !vault.settings || typeof vault.settings.nextAccountIndex !== "number") {
+                            throw new Error("Vault data or settings (nextAccountIndex) not found or invalid.");
+                        }
+
+                        const newAccountIndex = vault.settings.nextAccountIndex;
+                        let seedBuffer: Buffer | null = null;
+                        let newIdentityDid = "";
+                        let newIdentityDerivationPath = "";
+
+                        try {
+                            seedBuffer = await seedFromMnemonic(decryptedSeed);
+                            const masterHDKey = getMasterHDKeyFromSeed(seedBuffer);
+                            const newKeyPair = deriveChildKeyPair(masterHDKey, newAccountIndex);
+                            newIdentityDid = didFromEd25519(newKeyPair.publicKey);
+                            newIdentityDerivationPath = newKeyPair.derivationPath;
+
+                            const newIdentityEntry = {
+                                did: newIdentityDid,
+                                derivationPath: newIdentityDerivationPath,
+                                profile_name: `Identity ${newAccountIndex + 1}`, // Default name
+                                profile_picture: null,
+                                cloudUrl: null, // Not registered yet
+                                // Other fields like instanceStatus, etc., will be populated after registration
+                            };
+
+                            vault.identities.push(newIdentityEntry);
+                            vault.settings.nextAccountIndex = newAccountIndex + 1;
+
+                            await chrome.storage.local.set({ [STORAGE_KEY_VAULT]: vault });
+
+                            console.log(
+                                `New identity created: ${newIdentityDid} at index ${newAccountIndex}. Next account index is now ${vault.settings.nextAccountIndex}.`
+                            );
+                            responsePayload = {
+                                success: true,
+                                message: "New identity created successfully.",
+                                newIdentity: newIdentityEntry, // Send back the newly created identity object
+                            };
+                        } finally {
+                            if (seedBuffer) wipeMemory(seedBuffer);
+                        }
+                        break;
+                    }
+
                     default:
                         console.warn(`[BG_WARN_UnknownAction] Unknown action: ${action}`);
                         responsePayload = { error: { message: `Unknown action: ${action}` } };

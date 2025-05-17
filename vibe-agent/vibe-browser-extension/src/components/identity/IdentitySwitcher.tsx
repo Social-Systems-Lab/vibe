@@ -1,71 +1,74 @@
 import React from "react";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu"; // Keep for visual separation
 import { Button } from "@/components/ui/button";
-import { ChevronDown, UserPlus, Users, LogIn } from "lucide-react";
+import { UserPlus, Users, LogIn } from "lucide-react"; // ChevronDown removed
 
-interface Identity {
+// Interface for identities as expected by this UI component
+interface DisplayIdentity {
     did: string;
-    displayName?: string;
-    // Add other relevant fields if needed for display in switcher
+    displayName?: string; // Mapped from profile_name by the parent
+    profilePictureUrl?: string; // Optional: for future avatar display
 }
 
 interface IdentitySwitcherProps {
-    identities: Identity[];
-    currentIdentity: Identity | null;
+    identities: DisplayIdentity[];
+    currentIdentityDid: string | null; // Use DID string for current identity
     onSwitchIdentity: (did: string) => void;
     onAddIdentity: () => void;
-    onImportIdentity: () => void; // New prop for import
+    onImportIdentity: () => void;
 }
 
-export const IdentitySwitcher: React.FC<IdentitySwitcherProps> = ({ identities, currentIdentity, onSwitchIdentity, onAddIdentity, onImportIdentity }) => {
-    if (!currentIdentity && identities.length === 0) {
-        return (
-            <div className="mt-4 flex flex-col gap-2">
-                <Button onClick={onAddIdentity} className="w-full">
-                    <UserPlus className="mr-2 h-4 w-4" /> Add New Identity
-                </Button>
-                <Button onClick={onImportIdentity} variant="outline" className="w-full">
-                    <LogIn className="mr-2 h-4 w-4" /> Import Identity
-                </Button>
-            </div>
-        );
-    }
+export const IdentitySwitcher: React.FC<IdentitySwitcherProps> = ({ identities, currentIdentityDid, onSwitchIdentity, onAddIdentity, onImportIdentity }) => {
+    const hasMultipleIdentities = identities.length > 1;
+
+    // Scenario: No identities exist at all (e.g., fresh setup before creating/importing first one)
+    // The "Add" and "Import" buttons below will cover this.
+    // If currentIdentityDid is null AND identities array is empty, it implies a state
+    // where the user needs to create or import their very first identity.
 
     return (
-        <div className="mt-4 flex flex-col gap-2">
-            {identities.length > 1 && (
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button variant="outline" className="w-full justify-between">
-                            <span>Switch Identity</span>
-                            <ChevronDown className="ml-2 h-4 w-4" />
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="w-56" align="end">
-                        <DropdownMenuLabel>Available Identities</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        {identities.map((id) => (
-                            <DropdownMenuItem key={id.did} onClick={() => onSwitchIdentity(id.did)} disabled={currentIdentity?.did === id.did}>
-                                <Users className="mr-2 h-4 w-4" />
-                                <span>{id.displayName || id.did.substring(0, 12) + "..."}</span>
-                            </DropdownMenuItem>
+        <div className="p-2 flex flex-col gap-3">
+            {" "}
+            {/* Adjusted padding and gap */}
+            {hasMultipleIdentities && (
+                <div className="flex flex-col gap-1">
+                    <h3 className="text-xs font-medium text-muted-foreground px-2 py-1.5">Identities</h3>
+                    <div className="flex flex-col gap-1">
+                        {identities.map((identity) => (
+                            <Button
+                                key={identity.did}
+                                variant={currentIdentityDid === identity.did ? "secondary" : "ghost"}
+                                className="w-full justify-start h-9 text-sm px-2" // Adjusted height and padding
+                                onClick={() => onSwitchIdentity(identity.did)}
+                                disabled={currentIdentityDid === identity.did}
+                            >
+                                <Users className="mr-2 h-4 w-4 flex-shrink-0" />
+                                <span className="truncate">{identity.displayName || identity.did.substring(0, 20) + "..."}</span>
+                            </Button>
                         ))}
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                    </div>
+                </div>
             )}
-            <Button onClick={onAddIdentity} variant="secondary" className="w-full">
-                <UserPlus className="mr-2 h-4 w-4" /> Add New Identity
-            </Button>
-            <Button onClick={onImportIdentity} variant="outline" className="w-full">
-                <LogIn className="mr-2 h-4 w-4" /> Import Identity
-            </Button>
+            {/* Separator if multiple identities were shown and there are action buttons below */}
+            {hasMultipleIdentities && <DropdownMenuSeparator className="my-1" />}
+            <div className="flex flex-col gap-2">
+                {/* "Add Identity" section - styled to match Chrome's "Add" button */}
+                <Button
+                    onClick={onAddIdentity}
+                    variant="ghost" // Typically "Add" buttons in such UIs are less prominent until hovered/focused
+                    className="w-full justify-start h-9 text-sm px-2"
+                >
+                    <UserPlus className="mr-2 h-4 w-4 flex-shrink-0" />
+                    <span>Add identity</span>
+                </Button>
+
+                {/* "Import Identity" - kept as it's a related core function */}
+                {/* Consider if this should be visually distinct or grouped differently based on final UX */}
+                <Button onClick={onImportIdentity} variant="ghost" className="w-full justify-start h-9 text-sm px-2">
+                    <LogIn className="mr-2 h-4 w-4 flex-shrink-0" />
+                    <span>Import existing seed</span>
+                </Button>
+            </div>
         </div>
     );
 };
