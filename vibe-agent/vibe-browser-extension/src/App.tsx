@@ -406,7 +406,7 @@ export function App({ onResetDev }: AppProps) {
 
     // Main render logic
     return (
-        <div className="w-[380px] bg-background text-foreground flex flex-col shadow-2xl rounded-lg overflow-hidden">
+        <div className="w-[380px] bg-background text-foreground flex flex-col overflow-hidden">
             {/* Solid background */}
             {/* Header removed */}
             <div className="p-4 flex flex-col gap-4">

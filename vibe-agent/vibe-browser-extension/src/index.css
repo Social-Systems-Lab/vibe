@@ -5,9 +5,13 @@
         @apply font-sans;
     }
 
+    html {
+        @apply w-[380px] min-h-[400px]; /* Explicit width and min-height for the popup document */
+    }
+
     body {
         /* @apply grid place-items-center min-w-[320px] min-h-screen relative m-0 bg-background text-foreground; */
-        @apply relative m-0 bg-background text-foreground; /* Reverted to bg-background for a solid fill */
+        @apply relative m-0 bg-background text-foreground w-full h-full; /* Ensure body takes full html dimensions */
     }
 }
 
