@@ -20,7 +20,8 @@
         "uuid": "latest"
     },
     "devDependencies": {
-        "bun-types": "latest",
-        "@types/nano": "^7.0.0"
+        "@types/nano": "^7.0.0",
+        "@types/varint": "^6.0.3",
+        "bun-types": "latest"
     }
 }

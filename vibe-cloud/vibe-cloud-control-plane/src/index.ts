@@ -10,7 +10,7 @@ import path from "path";
 import { Buffer } from "buffer";
 import type { Server } from "bun";
 import type * as nano from "nano";
-import { ed25519FromDid } from "./utils/identity.utils"; // Added
+import { ed25519FromDid, instanceIdFromDid } from "./utils/identity.utils"; // Added instanceIdFromDid
 import { verify } from "@noble/ed25519"; // Added
 import {
     AdminClaimSchema,
@@ -50,6 +50,11 @@ const jwtSecret = process.env.JWT_SECRET;
 if (!jwtSecret) {
     logger.error("CRITICAL: JWT_SECRET environment variable is not set.");
     throw new Error("JWT_SECRET environment variable not configured.");
+}
+const instanceIdSecret = process.env.INSTANCE_ID_SECRET;
+if (!instanceIdSecret) {
+    logger.error("CRITICAL: INSTANCE_ID_SECRET environment variable is not set.");
+    throw new Error("INSTANCE_ID_SECRET environment variable not configured.");
 }
 
 // Service Initialization
@@ -198,31 +203,11 @@ export const app = new Elysia()
                     }
                     // TODO: Nonce replay check
 
-                    // Generate instanceId from DID:
-                    // Strip "did:<scheme>:" prefix and sanitize the rest.
-                    let rawDidSuffix = did; // Default to full DID if pattern doesn't match
-                    const didPrefixMatch = did.match(/^did:[^:]+:(.*)$/);
-                    if (didPrefixMatch && didPrefixMatch[1]) {
-                        rawDidSuffix = didPrefixMatch[1];
-                    }
-
-                    // Sanitize: lowercase, replace colons with hyphens.
-                    // Other invalid K8s/DNS characters could be handled here if necessary.
-                    let sanitizedId = rawDidSuffix.toLowerCase().replace(/:/g, "-");
-
-                    // Ensure doesn't start or end with a hyphen, and no double hyphens
-                    sanitizedId = sanitizedId.replace(/-+/g, "-").replace(/^-+|-+$/g, "");
-
-                    // Truncate to a max length to keep overall K8s names (e.g., "vibe-[instanceId]") within limits.
-                    // Max K8s namespace length is 63. "vibe-" is 5 chars. So, instanceId max length is 53 - 5 = 48.
-                    // For labels like app.kubernetes.io/name: vibe-${instanceId}-vibe-cloud-instan (5 + X + 19 = 24 + X <= 63), X <= 39
-                    let instanceId = sanitizedId.substring(0, 39);
-                    // Ensure it doesn't end with a hyphen after truncation
-                    instanceId = instanceId.replace(/-+$/, "");
-
-                    if (!instanceId) {
-                        // Should not happen if DID is valid
-                        logger.error(`Failed to generate a valid instanceId from DID: ${did}. Resulted in empty string.`);
+                    let instanceId: string;
+                    try {
+                        instanceId = instanceIdFromDid(did, instanceIdSecret as string); // instanceIdSecret checked at startup
+                    } catch (error: any) {
+                        logger.error(`Failed to generate instanceId from DID: ${did}. Error: ${error.message}`);
                         set.status = 500;
                         return { error: "Failed to generate instance identifier from DID." };
                     }
@@ -232,7 +217,7 @@ export const app = new Elysia()
                     try {
                         const registrationResult = await authService.registerIdentity(
                             did,
-                            instanceId,
+                            instanceId, // Use the new deterministically generated instanceId
                             profileName,
                             profilePictureUrl,
                             claimCode,
