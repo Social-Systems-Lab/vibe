@@ -756,40 +756,103 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
             }
 
             case "GET_NEXT_ACCOUNT_INDEX": {
-                const vaultResult = await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT);
-                const vault = vaultResult[Constants.STORAGE_KEY_VAULT];
-                if (!vault || !vault.settings || typeof vault.settings.nextAccountIndex !== "number") {
-                    throw new Error("Vault data/settings invalid.");
+                try {
+                    const vaultResult = await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT);
+                    const vault = vaultResult[Constants.STORAGE_KEY_VAULT];
+                    if (!vault || !vault.settings || typeof vault.settings.nextAccountIndex !== "number") {
+                        // This is an expected error condition, handle it specifically
+                        console.error("GET_NEXT_ACCOUNT_INDEX: Vault data/settings invalid or missing nextAccountIndex.", vault);
+                        responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                        responsePayload = {
+                            // Ensure this structure matches what the frontend expects for an error
+                            error: {
+                                message: "Vault data or settings are invalid. Cannot determine next account index.",
+                                code: "VAULT_SETTINGS_INVALID",
+                            },
+                        };
+                        // No break here, will fall through to sendResponse at the end of try/catch
+                    } else {
+                        responsePayload = { accountIndex: vault.settings.nextAccountIndex };
+                    }
+                } catch (e: any) {
+                    // Catch any other unexpected errors during this specific action
+                    console.error("GET_NEXT_ACCOUNT_INDEX: Unexpected error:", e);
+                    responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                    let detailedErrorMessage = "An unexpected error occurred while fetching the account index.";
+                    if (e instanceof Error && e.message) {
+                        detailedErrorMessage = e.message;
+                    } else if (typeof e === "string") {
+                        detailedErrorMessage = e;
+                    } else {
+                        detailedErrorMessage = `Unexpected error type (${typeof e}) while fetching account index. Details: ${String(e)}`;
+                    }
+                    responsePayload = {
+                        error: {
+                            message: detailedErrorMessage,
+                            code: "GET_INDEX_UNEXPECTED_ERROR",
+                        },
+                    };
                 }
-                responsePayload = { accountIndex: vault.settings.nextAccountIndex };
                 break;
             }
 
             case "SETUP_NEW_IDENTITY_AND_FINALIZE": {
                 const { accountIndexToUse, identityName, identityPicture, cloudUrl, claimCode, password } = payload;
-                if (typeof accountIndexToUse !== "number" || (!SessionManager.isUnlocked && !password)) {
-                    throw new Error("Index required; password if locked.");
+
+                if (typeof accountIndexToUse !== "number") {
+                    // accountIndex is always required
+                    throw new Error("Account index is required.");
                 }
-                if (!SessionManager.isUnlocked && password) {
+
+                let decryptedSeed = SessionManager.getInMemoryDecryptedSeed();
+
+                if (!SessionManager.isUnlocked) {
+                    if (!password) {
+                        // Vault is locked and no password was provided by the UI
+                        responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                        responsePayload = {
+                            error: { message: "Vault is locked. Password is required to create a new identity.", code: "VAULT_LOCKED_PASSWORD_REQUIRED" },
+                        };
+                        break;
+                    }
+                    // Attempt to unlock with the provided password
+                    console.log("SETUP_NEW_IDENTITY_AND_FINALIZE: Vault locked, attempting unlock with provided password.");
                     const localData = await chrome.storage.local.get([Constants.STORAGE_KEY_VAULT, Constants.STORAGE_KEY_VAULT_SALT]);
                     const vaultDataForUnlock = localData[Constants.STORAGE_KEY_VAULT];
                     const saltHex = localData[Constants.STORAGE_KEY_VAULT_SALT];
-                    if (!vaultDataForUnlock || !saltHex) throw new Error("Vault/salt not found.");
+
+                    if (!vaultDataForUnlock || !saltHex) {
+                        throw new Error("Vault or salt not found for unlock attempt. Setup may be incomplete.");
+                    }
                     const salt = Buffer.from(saltHex, "hex");
                     const encryptionKey = await deriveEncryptionKey(password, salt);
                     const decryptedSeedAttempt = await decryptData(vaultDataForUnlock.encryptedSeedPhrase, encryptionKey);
-                    if (!decryptedSeedAttempt) throw new Error("Decryption failed.");
-                    SessionManager.setInMemoryDecryptedSeed(decryptedSeedAttempt); // Store in memory
-                    // SessionManager.setIsUnlocked(true); // Handled by setInMemoryDecryptedSeed
+
+                    if (!decryptedSeedAttempt) {
+                        throw new Error("Decryption failed with the provided password.");
+                    }
+                    SessionManager.setInMemoryDecryptedSeed(decryptedSeedAttempt);
+                    decryptedSeed = decryptedSeedAttempt; // Use the newly decrypted seed
+
+                    // After attempting unlock, we need to load the active identity details if we want currentActiveDid to be set
+                    // For creating a new identity, we primarily need the seed, not necessarily the *active* DID.
+                    // Let's ensure isUnlocked is true.
+                    if (!SessionManager.isUnlocked) {
+                        // Should be true now if setInMemoryDecryptedSeed worked
+                        throw new Error("Internal error: Vault unlock seemed successful but isUnlocked is still false.");
+                    }
+                    console.log("SETUP_NEW_IDENTITY_AND_FINALIZE: Vault unlocked successfully with provided password.");
                 }
-                // Now SessionManager.isUnlocked should be true
-                const decryptedSeed = SessionManager.getInMemoryDecryptedSeed();
+
                 if (!decryptedSeed) {
-                    // Should be redundant
+                    // Final check, should not be hit if logic above is correct
                     responseType = "VIBE_AGENT_RESPONSE_ERROR";
-                    responsePayload = { error: { message: "Vault locked or in-memory seed missing after unlock attempt.", code: "VAULT_LOCKED" } };
+                    responsePayload = {
+                        error: { message: "Vault is locked or seed is unavailable after unlock attempt.", code: "VAULT_LOCKED_SEED_UNAVAILABLE" },
+                    };
                     break;
                 }
+
                 const vaultResult = await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT);
                 let vaultData = vaultResult[Constants.STORAGE_KEY_VAULT];
                 if (!vaultData || !vaultData.settings || typeof vaultData.settings.nextAccountIndex !== "number") {

@@ -250,19 +250,20 @@ function SidePanelApp() {
                 action: "GET_NEXT_ACCOUNT_INDEX",
                 requestId: crypto.randomUUID().toString(),
             });
-            if (response?.type === "VIBE_AGENT_RESPONSE" && typeof response.payload?.nextAccountIndex === "number") {
+            if (response?.type === "VIBE_AGENT_RESPONSE" && typeof response.payload?.accountIndex === "number") {
                 setNewIdentityWizardProps({
-                    accountIndex: response.payload.nextAccountIndex,
+                    accountIndex: response.payload.accountIndex,
                     isVaultInitiallyUnlocked: !showUnlockScreen, // Vault is unlocked if unlock screen isn't shown
                 });
                 setShowNewIdentityWizard(true); // This will render NewIdentitySetupWizard with isFirstIdentitySetup = false
             } else {
-                console.error("Failed to get next account index:", response?.error);
-                alert("Error preparing to add new identity. Please try again.");
+                const errMsg = response?.error?.message || "Unknown error fetching account index.";
+                console.error("Failed to get next account index:", errMsg, response?.error);
+                alert(`Error preparing to add new identity: ${errMsg}. Please try again.`);
             }
-        } catch (error) {
-            console.error("Error in handleAddIdentity:", error);
-            alert("An error occurred while trying to add a new identity.");
+        } catch (error: any) {
+            console.error("Error in handleAddIdentity:", error.message || error);
+            alert(`An error occurred while trying to add a new identity: ${error.message || "Please try again."}`);
         }
     };
 
@@ -319,15 +320,14 @@ function SidePanelApp() {
         try {
             const response = await chrome.runtime.sendMessage({
                 type: "VIBE_AGENT_REQUEST",
-                // Action name might be SETUP_NEW_IDENTITY_AND_FINALIZE or FINALIZE_NEW_IDENTITY_SETUP
-                // Let's use what NewIdentitySetupWizard was designed for, or what background.ts expects.
-                // App.tsx used FINALIZE_NEW_IDENTITY_SETUP. addIdentity.tsx might use another.
-                // For now, assuming a generic action that background.ts handles for adding any new identity.
-                // Let's use "FINALIZE_NEW_IDENTITY_SETUP" as it was in App.tsx
-                action: "FINALIZE_NEW_IDENTITY_SETUP",
+                action: "SETUP_NEW_IDENTITY_AND_FINALIZE",
                 payload: {
-                    ...details, // Includes accountIndex, identityName, identityPicture, cloudUrl, claimCode, password
-                    // didToFinalize is not part of `details` here, background script will generate it.
+                    accountIndexToUse: details.accountIndex,
+                    identityName: details.identityName,
+                    identityPicture: details.identityPicture,
+                    cloudUrl: details.cloudUrl,
+                    claimCode: details.claimCode,
+                    password: details.password,
                 },
                 requestId: crypto.randomUUID().toString(),
             });
