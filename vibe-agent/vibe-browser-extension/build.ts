@@ -148,6 +148,7 @@ const entrypoints = [
     "src/content.ts", // Content script
     "src/vibe-inpage.ts", // In-page script (window.vibe API)
     "src/addIdentity.tsx", // For the new add identity page
+    "src/sidepanel.tsx", // For the side panel
 ];
 
 async function performBuild() {

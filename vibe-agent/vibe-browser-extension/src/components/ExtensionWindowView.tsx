@@ -6,7 +6,7 @@ import { Settings, UserPlus, User, Wifi, Loader2, AlertTriangle } from "lucide-r
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DidDisplay } from "@/components/ui/DidDisplay";
 
-interface Identity {
+export interface Identity {
     did: string;
     displayName: string | null;
     avatarUrl?: string | null;
