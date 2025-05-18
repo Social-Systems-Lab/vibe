@@ -37,7 +37,7 @@ function Popup() {
     };
 
     const handleResetDev = async () => {
-        if (confirm("Are you sure you want to reset Vibe setup? This is for development only and will clear stored data.")) {
+        if (confirm("Are you sure you want to reset Vibe? This will clear your stored data.")) {
             try {
                 await chrome.storage.local.clear(); // Clears everything for simplicity in dev
                 console.log("Storage cleared for reset.");

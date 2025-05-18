@@ -12,7 +12,7 @@ import { Settings, RotateCcw } from "lucide-react"; // Added RotateCcw for reset
 
 // Prop types for App component
 interface AppProps {
-    onResetDev: () => Promise<void>; // Or () => void if preferred
+    onResetDev?: () => Promise<void>; // Or () => void if preferred
 }
 
 // Matches the structure in background.ts (profile_name, profile_picture)
@@ -326,6 +326,19 @@ export function App({ onResetDev }: AppProps) {
         loadIdentityData(); // Refresh data when closing settings
     };
 
+    const handleResetSetup = async () => {
+        if (confirm("Are you sure you want to reset Vibe? This will clear your stored data.")) {
+            try {
+                await chrome.storage.local.clear(); // Clears everything for simplicity in dev
+                console.log("Storage cleared for reset.");
+                alert("Vibe has been reset. Reload the extension or click the icon again.");
+            } catch (err) {
+                console.error("Error resetting storage:", err);
+                alert("Failed to reset Vibe.");
+            }
+        }
+    };
+
     if (isLoadingIdentity) {
         return (
             <div className="w-[380px] p-4 bg-background text-foreground flex flex-col items-center justify-center h-48 rounded-lg shadow-2xl">
@@ -343,7 +356,10 @@ export function App({ onResetDev }: AppProps) {
             <div className="w-[380px] p-6 text-center flex-grow flex flex-col justify-center items-center bg-background text-foreground">
                 <h2 className="text-xl font-semibold mb-2">Welcome to Vibe!</h2>
                 <p className="mb-4 text-sm">Your vault is set up. Now, let's create your first identity to get started.</p>
-                <Button onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL("addIdentity.html") })}>Create First Identity</Button>
+                <div className="gap-2 flex flex-col">
+                    <Button onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL("addIdentity.html") })}>Create First Identity</Button>
+                    <Button onClick={handleResetSetup}>Reset Vibe</Button>
+                </div>
             </div>
         );
     }
@@ -405,7 +421,7 @@ export function App({ onResetDev }: AppProps) {
                     <Settings className="mr-2 h-4 w-4" /> Identity Settings
                 </Button>
                 <Button onClick={onResetDev} variant="destructive" size="sm">
-                    <RotateCcw className="mr-2 h-4 w-4" /> Reset (Dev Only)
+                    <RotateCcw className="mr-2 h-4 w-4" /> Reset Vibe
                 </Button>
             </div>
         </div>

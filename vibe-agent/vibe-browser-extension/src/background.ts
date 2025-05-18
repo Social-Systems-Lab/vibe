@@ -1128,12 +1128,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         console.log("Processing 'SETUP_NEW_IDENTITY_AND_FINALIZE'");
                         const { accountIndexToUse, identityName, identityPicture, cloudUrl, claimCode, password } = payload;
 
-                        if (typeof accountIndexToUse !== "number" || !password) {
-                            throw new Error("Account index and password are required.");
+                        // Password is required only if the vault is currently locked.
+                        // isUnlocked is a global flag reflecting if seed is in session.
+                        if (typeof accountIndexToUse !== "number" || (!isUnlocked && !password)) {
+                            throw new Error("Account index is required. Password is required if vault is locked.");
                         }
 
-                        // 1. Ensure vault is unlocked (or unlock it) to get the seed
-                        if (!isUnlocked) {
+                        // 1. Ensure vault is unlocked (or unlock it if password was provided because it was locked)
+                        if (!isUnlocked && password) {
+                            // Only attempt unlock if it was locked AND password was provided
                             console.log("Vault locked, attempting unlock with provided password for SETUP_NEW_IDENTITY_AND_FINALIZE...");
                             const localDataForUnlock = await chrome.storage.local.get([STORAGE_KEY_VAULT, STORAGE_KEY_VAULT_SALT]);
                             const vaultDataForUnlock = localDataForUnlock[STORAGE_KEY_VAULT];
@@ -1144,9 +1147,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             const decryptedSeedAttempt = await decryptData(vaultDataForUnlock.encryptedSeedPhrase, encryptionKeyForUnlock);
                             if (!decryptedSeedAttempt) throw new Error("Decryption failed, invalid password for unlock.");
                             await chrome.storage.session.set({ [SESSION_STORAGE_DECRYPTED_SEED_PHRASE]: decryptedSeedAttempt });
-                            // isUnlocked will be set by loadActiveIdentityFromSessionInternal later if successful
-                            console.log("Vault temporarily unlocked for new identity creation.");
+                            // Update global isUnlocked state after successful temporary unlock
+                            isUnlocked = true;
+                            console.log("Vault temporarily unlocked for new identity creation. Global isUnlocked set to true.");
                         }
+                        // If isUnlocked was already true, or became true above, we can proceed.
+                        // If it was locked and no password provided, the initial check would have thrown.
 
                         const sessionDataForSeed = await chrome.storage.session.get(SESSION_STORAGE_DECRYPTED_SEED_PHRASE);
                         const decryptedSeed = sessionDataForSeed[SESSION_STORAGE_DECRYPTED_SEED_PHRASE];
@@ -1263,17 +1269,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             };
                         } finally {
                             if (seedBuffer) wipeMemory(seedBuffer);
-                            // If vault was temporarily unlocked for this operation, re-lock it by clearing session seed
-                            // This check is simplified: if password was in payload, assume it was a temporary unlock.
-                            if (payload.password && !isUnlocked) {
-                                // Check if global isUnlocked is still false
-                                await chrome.storage.session.remove(SESSION_STORAGE_DECRYPTED_SEED_PHRASE);
-                                console.log("Temporary unlock for new identity creation reverted.");
-                            } else if (payload.password && isUnlocked) {
-                                // Vault was unlocked by this operation and loadActiveIdentityFromSessionInternal set isUnlocked=true
-                                // It should remain unlocked.
-                                console.log("Vault was unlocked by this operation and remains unlocked.");
-                            }
+                            // If vault was temporarily unlocked for this operation (i.e., password was provided in payload
+                            // AND the global isUnlocked was initially false), we might consider re-locking.
+                            // However, the current flow sets the new identity as active, which implies the vault
+                            // should remain unlocked with this new active identity.
+                            // The `isUnlocked = true` after a successful temporary unlock handles this.
+                            // No explicit re-locking here seems correct if the user is now active with the new identity.
                         }
                         break;
                     }

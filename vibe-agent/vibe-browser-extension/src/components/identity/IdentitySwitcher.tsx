@@ -62,12 +62,10 @@ export const IdentitySwitcher: React.FC<IdentitySwitcherProps> = ({ identities, 
                     <span>Add identity</span>
                 </Button>
 
-                {/* "Import Identity" - kept as it's a related core function */}
-                {/* Consider if this should be visually distinct or grouped differently based on final UX */}
-                <Button onClick={onImportIdentity} variant="ghost" className="w-full justify-start h-9 text-sm px-2">
+                {/* <Button onClick={onImportIdentity} variant="ghost" className="w-full justify-start h-9 text-sm px-2">
                     <LogIn className="mr-2 h-4 w-4 flex-shrink-0" />
                     <span>Import existing seed</span>
-                </Button>
+                </Button> */}
             </div>
         </div>
     );

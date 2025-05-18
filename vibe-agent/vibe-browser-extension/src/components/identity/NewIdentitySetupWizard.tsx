@@ -160,7 +160,7 @@ export const NewIdentitySetupWizard: React.FC<NewIdentitySetupWizardProps> = ({ 
         <form onSubmit={handleCreateIdentitySubmit} className="p-6 space-y-6">
             {/* Identity Profile Section */}
             <div className="space-y-4">
-                <h3 className="text-lg font-medium">Identity Profile (Optional)</h3>
+                <h3 className="text-lg font-medium">Create New Identity</h3>
                 <div className="flex flex-col items-center space-y-2">
                     <Avatar className="h-24 w-24 mb-2">
                         <AvatarImage src={picturePreview ?? undefined} alt={identityName || "Identity Avatar"} />
@@ -190,12 +190,8 @@ export const NewIdentitySetupWizard: React.FC<NewIdentitySetupWizardProps> = ({ 
                     />
                 </div>
             </div>
-
-            <hr />
-
             {/* Vibe Cloud Configuration Section */}
             <div className="space-y-4">
-                <h3 className="text-lg font-medium">Connect to Vibe Cloud</h3>
                 <div>
                     <Label htmlFor="cloud-service-select">Vibe Cloud Provider</Label>
                     <select
@@ -243,8 +239,6 @@ export const NewIdentitySetupWizard: React.FC<NewIdentitySetupWizardProps> = ({ 
                     </div>
                 )}
             </div>
-
-            <hr />
 
             {/* Vault Password Section - Conditional */}
             {!isVaultInitiallyUnlocked && (
@@ -308,10 +302,7 @@ export const NewIdentitySetupWizard: React.FC<NewIdentitySetupWizardProps> = ({ 
     };
 
     return (
-        <div className="w-full h-full flex flex-col bg-card">
-            <div className="p-4 border-b border-border">
-                <h2 className="text-lg font-semibold text-center">{currentStep === "creationComplete" ? "Setup Complete" : "Setup New Identity"}</h2>
-            </div>
+        <div className="w-full h-full flex flex-col">
             <div className="flex-grow p-2 overflow-y-auto">
                 {currentStep === "enterDetails" && renderEnterDetailsStep()}
                 {currentStep === "creating" && renderCreatingStep()}

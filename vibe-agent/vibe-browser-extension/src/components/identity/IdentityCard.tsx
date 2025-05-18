@@ -35,7 +35,7 @@ export const IdentityCard: React.FC<IdentityCardProps> = ({ identity }) => {
 
     // Main display for an active identity
     return (
-        <div className="w-full p-4 rounded-lg bg-muted/50 flex flex-col items-center text-center">
+        <div className="w-full p-4 rounded-lg bg-[#d9dbff] flex flex-col items-center text-center">
             <Avatar className="h-16 w-16 mb-3">
                 <AvatarImage src={identity.avatarUrl} alt={identity.displayName || "User Avatar"} />
                 <AvatarFallback className="text-xl">{getInitials(identity.displayName)}</AvatarFallback>
