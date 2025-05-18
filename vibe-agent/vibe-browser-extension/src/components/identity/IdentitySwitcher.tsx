@@ -1,7 +1,7 @@
 import React from "react";
 import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu"; // Keep for visual separation
 import { Button } from "@/components/ui/button";
-import { UserPlus, Users, LogIn } from "lucide-react"; // ChevronDown removed
+import { UserPlus, Users, Settings as SettingsIcon } from "lucide-react"; // ChevronDown removed, LogIn removed, SettingsIcon added
 
 // Interface for identities as expected by this UI component
 interface DisplayIdentity {
@@ -16,9 +16,17 @@ interface IdentitySwitcherProps {
     onSwitchIdentity: (did: string) => void;
     onAddIdentity: () => void;
     onImportIdentity: () => void;
+    onOpenSettings: () => void; // Added prop for opening settings
 }
 
-export const IdentitySwitcher: React.FC<IdentitySwitcherProps> = ({ identities, currentIdentityDid, onSwitchIdentity, onAddIdentity, onImportIdentity }) => {
+export const IdentitySwitcher: React.FC<IdentitySwitcherProps> = ({
+    identities,
+    currentIdentityDid,
+    onSwitchIdentity,
+    onAddIdentity,
+    onImportIdentity,
+    onOpenSettings,
+}) => {
     const hasMultipleIdentities = identities.length > 1;
 
     // Scenario: No identities exist at all (e.g., fresh setup before creating/importing first one)
@@ -62,10 +70,16 @@ export const IdentitySwitcher: React.FC<IdentitySwitcherProps> = ({ identities, 
                     <span>Add identity</span>
                 </Button>
 
+                {/* Import Identity button is commented out, keeping it as is based on current file content */}
                 {/* <Button onClick={onImportIdentity} variant="ghost" className="w-full justify-start h-9 text-sm px-2">
                     <LogIn className="mr-2 h-4 w-4 flex-shrink-0" />
                     <span>Import existing seed</span>
                 </Button> */}
+
+                <Button onClick={onOpenSettings} variant="ghost" className="w-full justify-start h-9 text-sm px-2">
+                    <SettingsIcon className="mr-2 h-4 w-4 flex-shrink-0" />
+                    <span>Settings</span>
+                </Button>
             </div>
         </div>
     );

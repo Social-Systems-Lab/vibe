@@ -235,7 +235,7 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
                 <CardHeader className="flex flex-row items-center justify-between p-3">
                     <div className="flex items-center gap-2">
                         <StatusIcon className={cn("h-5 w-5", iconColor, StatusIcon === Loader2 && "animate-spin")} />
-                        <span className={cn("text-sm font-medium", iconColor)}>{compactStatusMessage}</span>
+                        <span className={cn("text-sm font-medium")}>{compactStatusMessage}</span>
                     </div>
                     <ChevronRight className="h-5 w-5 text-muted-foreground" />
                 </CardHeader>

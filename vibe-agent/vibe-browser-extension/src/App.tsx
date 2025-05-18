@@ -378,12 +378,24 @@ export function App({ onResetDev }: AppProps) {
     if (showIdentitySettings) {
         return (
             <div className="w-[380px] bg-background text-foreground flex flex-col shadow-2xl rounded-lg overflow-hidden">
-                <div className="p-4 border-b border-border">
+                <div className="p-4 border-b border-border flex justify-between items-center">
                     <Button onClick={handleCloseSettings} variant="outline" size="sm">
                         &larr; Back to Main
                     </Button>
                 </div>
-                <IdentitySettings />
+                <div className="flex-grow overflow-auto">
+                    {" "}
+                    {/* Allow settings content to scroll if needed */}
+                    <IdentitySettings />
+                </div>
+                {/* Reset Vibe button moved here, shown only in settings view */}
+                {onResetDev && (
+                    <div className="p-4 border-t border-border bg-muted/30">
+                        <Button onClick={onResetDev} variant="destructive" size="sm" className="w-full">
+                            <RotateCcw className="mr-2 h-4 w-4" /> Reset Vibe
+                        </Button>
+                    </div>
+                )}
             </div>
         );
     }
@@ -411,7 +423,7 @@ export function App({ onResetDev }: AppProps) {
             onAddIdentity={handleAddIdentity}
             onImportIdentity={handleImportIdentity}
             onOpenSettings={handleOpenSettings}
-            onResetDev={onResetDev}
+            // onResetDev prop removed from ExtensionWindowView invocation
         />
     );
 }
