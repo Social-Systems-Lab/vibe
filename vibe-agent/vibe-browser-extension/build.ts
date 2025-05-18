@@ -142,12 +142,10 @@ const publicDir = path.join(process.cwd(), "public");
 
 // Define explicit entry points - needed for performBuild and watch setup
 const entrypoints = [
-    "src/index.tsx", // For popup (linked from public/index.html)
-    "src/setup.tsx", // For setup page (linked from public/setup.html)
+    "src/index.tsx", // Main entry point
     "src/background.ts", // Background service worker
     "src/content.ts", // Content script
     "src/vibe-inpage.ts", // In-page script (window.vibe API)
-    "src/addIdentity.tsx", // For the new add identity page
     "src/sidepanel.tsx", // For the side panel
 ];
 

@@ -28,7 +28,7 @@
     ],
     "web_accessible_resources": [
         {
-            "resources": ["vibe-inpage.js", "addIdentity.html", "src/addIdentity.tsx", "src/index.css"],
+            "resources": ["vibe-inpage.js", "src/index.css"],
             "matches": ["<all_urls>"]
         }
     ]
