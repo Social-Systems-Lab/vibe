@@ -33,9 +33,11 @@ export function ExtensionWindowView({
 }: ExtensionWindowViewProps) {
     return (
         <div className="w-[380px] bg-background text-foreground flex flex-col overflow-hidden">
-            <div className="p-4 flex flex-col gap-4">
+            <div className="flex flex-col">
                 <IdentityCard identity={currentIdentity} />
-                <CloudStatus activeDid={currentIdentity?.did || null} />
+                <div className="pr-3 pl-3 pb-3">
+                    <CloudStatus activeDid={currentIdentity?.did || null} />
+                </div>
                 <IdentitySwitcher
                     identities={allIdentities}
                     currentIdentityDid={currentIdentity?.did || null}

@@ -35,30 +35,32 @@ export const IdentitySwitcher: React.FC<IdentitySwitcherProps> = ({
     // where the user needs to create or import their very first identity.
 
     return (
-        <div className="p-2 flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
             {" "}
             {/* Adjusted padding and gap */}
             {hasMultipleIdentities && (
                 <div className="flex flex-col gap-1">
-                    <h3 className="text-xs font-medium text-muted-foreground px-2 py-1.5">Identities</h3>
+                    <h3 className="text-xs font-medium text-muted-foreground py-1.5  pl-3 pr-3">Other Identities</h3>
                     <div className="flex flex-col gap-1">
-                        {identities.map((identity) => (
-                            <Button
-                                key={identity.did}
-                                variant={currentIdentityDid === identity.did ? "secondary" : "ghost"}
-                                className="w-full justify-start h-9 text-sm px-2" // Adjusted height and padding
-                                onClick={() => onSwitchIdentity(identity.did)}
-                                disabled={currentIdentityDid === identity.did}
-                            >
-                                <Users className="mr-2 h-4 w-4 flex-shrink-0" />
-                                <span className="truncate">{identity.displayName || identity.did.substring(0, 20) + "..."}</span>
-                            </Button>
-                        ))}
+                        {identities
+                            .filter((x) => x.did !== currentIdentityDid)
+                            .map((identity) => (
+                                <Button
+                                    key={identity.did}
+                                    variant={currentIdentityDid === identity.did ? "secondary" : "ghost"}
+                                    className="w-full justify-start h-9 text-sm rounded-none" // Adjusted height and padding
+                                    onClick={() => onSwitchIdentity(identity.did)}
+                                    disabled={currentIdentityDid === identity.did}
+                                >
+                                    <Users className="mr-2 h-4 w-4 flex-shrink-0" />
+                                    <span className="truncate">{identity.displayName || identity.did.substring(0, 20) + "..."}</span>
+                                </Button>
+                            ))}
                     </div>
                 </div>
             )}
             {/* Separator if multiple identities were shown and there are action buttons below */}
-            {hasMultipleIdentities && <DropdownMenuSeparator className="my-1" />}
+            {/* <DropdownMenuSeparator /> */}
             <div className="flex flex-col gap-2">
                 {/* "Add Identity" section - styled to match Chrome's "Add" button */}
                 <Button

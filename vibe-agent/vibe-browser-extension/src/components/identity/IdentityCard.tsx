@@ -1,7 +1,6 @@
 import React from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-// Card components are no longer used directly here for the main identity display
-// import { Card, CardContent } from "@/components/ui/card";
+import { DidDisplay } from "@/components/ui/DidDisplay"; // Import the new DidDisplay component
 
 interface Identity {
     did: string;
@@ -34,16 +33,19 @@ export const IdentityCard: React.FC<IdentityCardProps> = ({ identity }) => {
     };
 
     // Main display for an active identity
+    // Styling adjusted to match the second screenshot: Avatar left, text right, bottom border
     return (
-        <div className="w-full p-4 rounded-lg bg-[#d9dbff] flex flex-col items-center text-center">
-            <Avatar className="h-16 w-16 mb-3">
+        <div className="w-full flex items-center p-3">
+            <Avatar className="h-16 w-16 mr-3">
+                {" "}
+                {/* Slightly smaller avatar */}
                 <AvatarImage src={identity.avatarUrl} alt={identity.displayName || "User Avatar"} />
-                <AvatarFallback className="text-xl">{getInitials(identity.displayName)}</AvatarFallback>
+                <AvatarFallback>{getInitials(identity.displayName)}</AvatarFallback>
             </Avatar>
-            <h2 className="text-lg font-semibold text-foreground">{identity.displayName || "Unnamed Identity"}</h2>
-            <p className="text-xs text-muted-foreground break-all max-w-full px-2" title={identity.did}>
-                {identity.did}
-            </p>
+            <div className="flex flex-col">
+                <h2 className="text-base font-medium text-foreground leading-tight">{identity.displayName || "Unnamed Identity"}</h2>
+                <DidDisplay did={identity.did} className="text-muted-foreground" />
+            </div>
         </div>
     );
 };
