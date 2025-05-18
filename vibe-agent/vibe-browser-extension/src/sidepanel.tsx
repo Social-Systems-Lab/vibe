@@ -67,8 +67,21 @@ function SidePanelApp() {
                 const errorCode = initResponse.error.code;
                 setInitializeAppState(errorCode); // Set state
                 console.log("SidePanelApp init error code:", errorCode);
-                if (errorCode === "UNLOCK_REQUIRED_FOR_LAST_ACTIVE" || errorCode === "VAULT_LOCKED_NO_LAST_ACTIVE") {
-                    setLastActiveDidHint(initResponse.error?.lastActiveDid);
+                if (errorCode === "UNLOCK_REQUIRED_FOR_LAST_ACTIVE") {
+                    // Vault is locked, but we know the last active DID.
+                    // Attempt to load basic data for this DID and show ExtensionWindowView.
+                    // Unlock will be prompted only if an operation requires it.
+                    console.log("Vault locked, last active DID known:", initResponse.error.lastActiveDid);
+                    setLastActiveDidHint(initResponse.error.lastActiveDid);
+                    // We don't set currentIdentity here directly from lastActiveDidHint yet,
+                    // loadIdentityData will fetch all and try to set active.
+                    // The key is to NOT showUnlockScreen immediately.
+                    // We proceed to loadIdentityData which should fetch all identities.
+                    // ExtensionWindowView will then be rendered. If an operation needs unlock, that flow will trigger.
+                    await loadIdentityData(initResponse.error.lastActiveDid); // Pass hint to loadIdentityData
+                } else if (errorCode === "VAULT_LOCKED_NO_LAST_ACTIVE") {
+                    // Vault is locked, and no hint of last active DID. Must unlock.
+                    setLastActiveDidHint(undefined);
                     setShowUnlockScreen(true);
                 } else if (errorCode === "SETUP_NOT_COMPLETE") {
                     console.log("Setup not complete. Showing SetupWizard.");
@@ -93,10 +106,10 @@ function SidePanelApp() {
         } finally {
             setIsLoadingIdentity(false);
         }
-    }, []); // Removed setInitializeAppState from dependencies as it's set inside
+    }, []); // Removed loadIdentityData from dependencies, it's stable
 
-    const loadIdentityData = useCallback(async () => {
-        console.log("SidePanelApp: loadIdentityData triggered");
+    const loadIdentityData = useCallback(async (didHint?: string) => {
+        console.log("SidePanelApp: loadIdentityData triggered, hint:", didHint);
         setIsLoadingIdentity(true);
         try {
             const getAllIdentitiesResponse = await chrome.runtime.sendMessage({
@@ -130,17 +143,33 @@ function SidePanelApp() {
                     displayName: activeStoredIdentity.profileName,
                     avatarUrl: activeStoredIdentity.profilePictureUrl,
                 });
-            } else if (uiIdentities.length > 0) {
-                const firstIdentity = uiIdentities[0];
-                await chrome.runtime.sendMessage({
-                    type: "VIBE_AGENT_REQUEST",
-                    action: "SWITCH_ACTIVE_IDENTITY",
-                    payload: { did: firstIdentity.did },
-                    requestId: crypto.randomUUID().toString(),
-                });
-            } else {
+            } else if (didHint && uiIdentities.length > 0) {
+                // If we have a hint, try to find and set that identity from the fetched list
+                const hintedIdentity = uiIdentities.find((id) => id.did === didHint);
+                if (hintedIdentity) {
+                    setCurrentIdentity(hintedIdentity);
+                    // Optionally, ensure this is marked as active in the backend if it's not already.
+                    // For now, just setting it in the UI. The background's lastActiveDid is the source of truth for next full unlock.
+                } else if (uiIdentities.length > 0) {
+                    // Fallback to first if hint not found (shouldn't happen if data is consistent)
+                    setCurrentIdentity(uiIdentities[0]);
+                }
+            } else if (uiIdentities.length > 0 && !currentIdentity) {
+                // If no hint and no current identity, set to first (e.g., after initial unlock)
+                setCurrentIdentity(uiIdentities[0]);
+                // Ensure background knows about this if it was a fresh load after unlock
+                // This might be redundant if UNLOCK_VAULT already sets lastActiveDid
+                // await chrome.runtime.sendMessage({
+                //    type: "VIBE_AGENT_REQUEST",
+                //    action: "SWITCH_ACTIVE_IDENTITY", // This might be too strong, maybe just update lastActiveDid
+                //    payload: { did: uiIdentities[0].did },
+                //    requestId: crypto.randomUUID().toString(),
+                // });
+            } else if (uiIdentities.length === 0) {
                 setCurrentIdentity(null);
             }
+            // If currentIdentity is already set and valid, loadIdentityData might just refresh `allIdentities`
+            // and confirm `currentIdentity` is still in the list.
         } catch (error) {
             console.error("Error in loadIdentityData:", error);
             setCurrentIdentity(null);

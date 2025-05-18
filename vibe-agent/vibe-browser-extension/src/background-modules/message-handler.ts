@@ -29,7 +29,9 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
             case "init":
                 // Attempt to load from session first (checks for decrypted seed)
                 if (!SessionManager.isUnlocked) {
-                    await SessionManager.loadActiveIdentityFromSessionInternal();
+                    // Try to load identity if in-memory seed might exist (e.g. service worker restarted)
+                    // This call itself checks isUnlocked and inMemoryDecryptedSeed
+                    await SessionManager.loadActiveIdentity();
                 }
 
                 if (SessionManager.isUnlocked && SessionManager.currentActiveDid) {
@@ -127,13 +129,17 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                         }
                     }
 
+                    // Store the decrypted seed in memory via SessionManager
+                    SessionManager.setInMemoryDecryptedSeed(decryptedSeedAttempt);
+                    // Set the active index in session storage so loadActiveIdentity can use it
                     await chrome.storage.session.set({
-                        [Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE]: decryptedSeedAttempt,
                         [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: activeIdentityIndexToSet,
                     });
-                    await SessionManager.loadActiveIdentityFromSessionInternal(); // This sets currentActiveDid and isUnlocked
-                    if (!SessionManager.isUnlocked || !SessionManager.currentActiveDid)
+                    await SessionManager.loadActiveIdentity(); // This uses inMemoryDecryptedSeed and activeIndex from session
+                    if (!SessionManager.isUnlocked || !SessionManager.currentActiveDid) {
+                        SessionManager.setInMemoryDecryptedSeed(null); // Ensure seed is cleared if loading failed
                         throw new Error("Failed to load active identity into global state after unlock.");
+                    }
 
                     // Persist this successfully unlocked DID as the last active one
                     if (SessionManager.currentActiveDid) {
@@ -146,18 +152,20 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     responsePayload = { success: true, did: SessionManager.currentActiveDid, message: "Vault unlocked." };
                 } catch (error) {
                     // This catch belongs to the try block above
-                    await SessionManager.clearSessionStateInternal(); // Clear session on any unlock error
+                    SessionManager.setInMemoryDecryptedSeed(null); // Clear in-memory seed on any unlock error
+                    await SessionManager.lockVaultState(); // Clear session items as well
                     throw new Error(`Failed to unlock vault. ${error instanceof Error ? error.message : String(error)}`);
                 } finally {
                     // This finally belongs to the try block above
                     // encryptionKey is a CryptoKey object, no explicit wipe method. It will be garbage collected.
-                    if (decryptedSeedAttempt) decryptedSeedAttempt = null; // Clear sensitive data from memory
+                    // decryptedSeedAttempt is now managed by setInMemoryDecryptedSeed, clear it from local scope
+                    if (decryptedSeedAttempt) decryptedSeedAttempt = null;
                 }
                 break;
             }
 
             case "LOCK_VAULT":
-                await SessionManager.clearSessionStateInternal(); // This clears seed, active index, and all JWTs
+                await SessionManager.lockVaultState(); // This clears in-memory seed, active index, and all JWTs
                 responsePayload = { success: true, message: "Vault locked." };
                 break;
 
@@ -166,7 +174,7 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 break;
 
             case "SETUP_CREATE_VAULT": {
-                await SessionManager.clearSessionStateInternal();
+                await SessionManager.lockVaultState();
                 const { password } = payload;
                 if (!password || typeof password !== "string") throw new Error("Password is required for SETUP_CREATE_VAULT.");
                 const mnemonic = generateMnemonic();
@@ -189,13 +197,15 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                         [Constants.STORAGE_KEY_VAULT]: vaultData,
                         [Constants.STORAGE_KEY_SETUP_COMPLETE]: true, // Mark setup as complete here
                     });
+                    // Store mnemonic in memory, not session
+                    SessionManager.setInMemoryDecryptedSeed(mnemonic);
                     await chrome.storage.session.set({
-                        [Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE]: mnemonic,
-                        [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: -1,
+                        // [Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE]: mnemonic, // Not in session
+                        [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: -1, // Active index still in session for now
                     });
-                    SessionManager.setCurrentActiveDid(null);
-                    SessionManager.setIsUnlocked(true);
-                    console.log("SETUP_CREATE_VAULT: Vault created, pre-unlocked (seed in session), no identities yet.");
+                    SessionManager.setCurrentActiveDid(null); // No active DID yet
+                    // SessionManager.setIsUnlocked(true); // setInMemoryDecryptedSeed handles this
+                    console.log("SETUP_CREATE_VAULT: Vault created, pre-unlocked (seed in memory), no identities yet.");
                     responsePayload = { mnemonic };
                 } finally {
                     if (seed) wipeMemory(seed);
@@ -208,7 +218,7 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 const { importedMnemonic, password } = payload;
                 if (!importedMnemonic || !password) throw new Error("Mnemonic and password required.");
                 if (!validateMnemonic(importedMnemonic)) throw new Error("Invalid mnemonic provided.");
-                await SessionManager.clearSessionStateInternal();
+                await SessionManager.lockVaultState();
                 const salt = generateSalt();
                 const saltHex = Buffer.from(salt).toString("hex");
                 let encryptionKey: CryptoKey | null = null;
@@ -247,7 +257,16 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
 
             case "GET_ACTIVE_IDENTITY_DETAILS": {
                 if (!SessionManager.isUnlocked || !SessionManager.currentActiveDid) {
-                    throw new Error("Vault is locked or no active DID.");
+                    // Attempt to provide a more specific error if the vault is locked
+                    if (!SessionManager.isUnlocked) {
+                        responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                        responsePayload = { error: { message: "Vault is locked. Unlock to get active identity details.", code: "VAULT_LOCKED" } };
+                        break; // Exit switch case early
+                    }
+                    // If unlocked but no current DID, it's an unexpected state
+                    responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                    responsePayload = { error: { message: "Vault is unlocked but no active DID is set.", code: "NO_ACTIVE_DID_UNLOCKED" } };
+                    break; // Exit switch case early
                 }
                 const vaultResult = await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT);
                 const vault = vaultResult[Constants.STORAGE_KEY_VAULT];
@@ -280,7 +299,7 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 const { importedMnemonic, password } = payload;
                 if (!importedMnemonic || !validateMnemonic(importedMnemonic)) throw new Error("Valid mnemonic required.");
                 if (!password) throw new Error("Password required.");
-                await SessionManager.clearSessionStateInternal();
+                await SessionManager.lockVaultState();
                 const salt = generateSalt();
                 const saltHex = Buffer.from(salt).toString("hex");
                 const encryptionKey = await deriveEncryptionKey(password, salt);
@@ -355,11 +374,12 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 };
                 await chrome.storage.local.set({ [Constants.STORAGE_KEY_VAULT]: finalVaultData, [Constants.STORAGE_KEY_SETUP_COMPLETE]: true });
                 if (recoveredIdentities.length > 0) {
+                    // Store importedMnemonic in memory, not session
+                    SessionManager.setInMemoryDecryptedSeed(importedMnemonic);
                     await chrome.storage.session.set({
-                        [Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE]: importedMnemonic,
                         [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: 0,
                     });
-                    await SessionManager.loadActiveIdentityFromSessionInternal();
+                    await SessionManager.loadActiveIdentity();
                     responsePayload = {
                         success: true,
                         message: `Recovered ${recoveredIdentities.length} identities.`,
@@ -429,9 +449,10 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     [Constants.STORAGE_KEY_SETUP_COMPLETE]: true, // Already set in SETUP_CREATE_VAULT
                     // currentIdentityDID: identityDid, // This was an old key, lastActiveDid is preferred
                 });
-                // Session already set by SETUP_CREATE_VAULT, just ensure active index is correct
+                // In-memory seed (mnemonic) should already be set if this is the first identity from SETUP_CREATE_VAULT.
+                // Ensure active index is correct in session for loadActiveIdentity.
                 await chrome.storage.session.set({ [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: 0 });
-                await SessionManager.loadActiveIdentityFromSessionInternal();
+                await SessionManager.loadActiveIdentity(); // This will use the in-memory seed
                 responsePayload = { success: true, message: "Setup finalized.", did: identityDid, identityName: vaultData.identities[0].profile_name };
                 break;
             }
@@ -439,10 +460,21 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
             case "UPDATE_IDENTITY_PROFILE": {
                 const { did, profileName, profilePictureUrl, claimCode } = payload;
                 if (!did) throw new Error("DID required.");
-                if (!SessionManager.isUnlocked || SessionManager.currentActiveDid !== did) throw new Error("Target identity not active or vault locked.");
-                const sessionData = await chrome.storage.session.get(Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE);
-                const decryptedSeed = sessionData[Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE];
-                if (!decryptedSeed) throw new Error("Vault locked.");
+                if (!SessionManager.isUnlocked || SessionManager.currentActiveDid !== did) {
+                    if (!SessionManager.isUnlocked) {
+                        responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                        responsePayload = { error: { message: "Vault is locked. Unlock to update profile.", code: "VAULT_LOCKED" } };
+                        break;
+                    }
+                    throw new Error("Target identity not active for profile update.");
+                }
+                const decryptedSeed = SessionManager.getInMemoryDecryptedSeed();
+                if (!decryptedSeed) {
+                    // Should be redundant due to isUnlocked check, but good for safety
+                    responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                    responsePayload = { error: { message: "Vault locked (in-memory seed missing).", code: "VAULT_LOCKED" } };
+                    break;
+                }
                 const localVault = (await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT))[Constants.STORAGE_KEY_VAULT];
                 const identityIndex = localVault.identities.findIndex((idObj: any) => idObj.did === did);
                 if (identityIndex === -1) throw new Error("Identity not found in vault.");
@@ -550,27 +582,43 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                         const encryptionKey = await deriveEncryptionKey(password, salt);
                         const decryptedSeedAttempt = await decryptData(vaultData.encryptedSeedPhrase, encryptionKey);
                         if (!decryptedSeedAttempt) throw new Error("Decryption failed.");
+
+                        SessionManager.setInMemoryDecryptedSeed(decryptedSeedAttempt); // Store in memory
+
                         const identityIndex = vaultData.identities.findIndex((idObj: any) => idObj.did === did);
-                        if (identityIndex === -1) throw new Error(`DID ${did} not found in vault.`);
+                        if (identityIndex === -1) {
+                            SessionManager.setInMemoryDecryptedSeed(null); // Clear seed if DID not found
+                            throw new Error(`DID ${did} not found in vault.`);
+                        }
                         await chrome.storage.session.set({
-                            [Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE]: decryptedSeedAttempt,
                             [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: identityIndex,
                         });
-                        await SessionManager.loadActiveIdentityFromSessionInternal();
+                        await SessionManager.loadActiveIdentity();
                         if (!SessionManager.isUnlocked || SessionManager.currentActiveDid !== did) {
+                            SessionManager.setInMemoryDecryptedSeed(null); // Clear seed on failure
                             throw new Error("Failed to unlock/set active identity.");
                         }
                     } else {
-                        throw { message: "Vault locked. Password required.", code: "VAULT_LOCKED_FOR_LOGIN" };
+                        // No password provided, and vault is locked for the target DID
+                        responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                        responsePayload = { error: { message: "Vault locked. Password required to login.", code: "VAULT_LOCKED_FOR_LOGIN", did: did } };
+                        break;
                     }
                 }
-                const decryptedSeed = (await chrome.storage.session.get(Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE))[
-                    Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE
-                ];
+                // At this point, SessionManager.isUnlocked should be true for the target DID
+                const decryptedSeed = SessionManager.getInMemoryDecryptedSeed();
                 const activeIdx = (await chrome.storage.session.get(Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX))[
                     Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX
                 ];
-                if (!decryptedSeed || typeof activeIdx !== "number") throw new Error("Session seed/index missing.");
+
+                if (!decryptedSeed || typeof activeIdx !== "number") {
+                    // This case should ideally be caught by isUnlocked check earlier
+                    responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                    responsePayload = {
+                        error: { message: "Internal error: In-memory seed or active index missing despite unlock.", code: "INTERNAL_ERROR_SEED_MISSING" },
+                    };
+                    break;
+                }
                 let seedForSigning: Buffer | null = null;
                 try {
                     seedForSigning = await seedFromMnemonic(decryptedSeed);
@@ -614,16 +662,35 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 if (!vault || !vault.identities || !Array.isArray(vault.identities)) throw new Error("Vault data missing.");
                 const targetIdentityIndex = vault.identities.findIndex((idObj: any) => idObj.did === targetDid);
                 if (targetIdentityIndex === -1) throw new Error(`Target DID ${targetDid} not found.`);
+
+                // If vault is locked, switching identity doesn't unlock it.
+                // If vault is unlocked, currentActiveDid and activeIdentityIndex are updated.
+                // The inMemoryDecryptedSeed remains if it was there.
                 const previousActiveDid = SessionManager.currentActiveDid;
+
                 await chrome.storage.session.set({ [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: targetIdentityIndex });
-                vault.settings.activeIdentityIndex = targetIdentityIndex;
+                vault.settings.activeIdentityIndex = targetIdentityIndex; // Persist in vault
                 await chrome.storage.local.set({ [Constants.STORAGE_KEY_VAULT]: vault });
-                await SessionManager.loadActiveIdentityFromSessionInternal();
-                if (SessionManager.currentActiveDid !== targetDid) {
-                    await SessionManager.clearSessionStateInternal();
-                    throw new Error(`Failed to switch. Expected ${targetDid}, got ${SessionManager.currentActiveDid}.`);
+
+                if (SessionManager.isUnlocked) {
+                    // Only call loadActiveIdentity if vault is already considered unlocked
+                    await SessionManager.loadActiveIdentity();
+                    if (SessionManager.currentActiveDid !== targetDid) {
+                        // This is a more critical error if it happens post-unlock
+                        await SessionManager.lockVaultState(); // Lock everything if switch failed post-unlock
+                        throw new Error(`Failed to switch active identity in unlocked state. Expected ${targetDid}, got ${SessionManager.currentActiveDid}.`);
+                    }
+                } else {
+                    // If vault is locked, just update the target DID for next unlock.
+                    // SessionManager.currentActiveDid will remain null.
+                    // The UI will reflect the new target, but operations will require unlock.
+                    SessionManager.setCurrentActiveDid(null); // Explicitly ensure it's null if locked
                 }
-                if (SessionManager.currentActiveDid) {
+
+                // Always update last active DID in local storage
+                await chrome.storage.local.set({ [Constants.STORAGE_KEY_LAST_ACTIVE_DID]: targetDid });
+
+                if (previousActiveDid && previousActiveDid !== targetDid) {
                     await chrome.storage.local.set({ [Constants.STORAGE_KEY_LAST_ACTIVE_DID]: SessionManager.currentActiveDid });
                 }
                 if (previousActiveDid && previousActiveDid !== targetDid) {
@@ -643,10 +710,18 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
             }
 
             case "CREATE_NEW_IDENTITY_FROM_SEED": {
-                if (!SessionManager.isUnlocked) throw new Error("Vault must be unlocked.");
-                const sessionData = await chrome.storage.session.get(Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE);
-                const decryptedSeed = sessionData[Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE];
-                if (!decryptedSeed) throw new Error("Decrypted seed not in session.");
+                if (!SessionManager.isUnlocked) {
+                    responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                    responsePayload = { error: { message: "Vault must be unlocked to create a new identity.", code: "VAULT_LOCKED" } };
+                    break;
+                }
+                const decryptedSeed = SessionManager.getInMemoryDecryptedSeed();
+                if (!decryptedSeed) {
+                    // Should be redundant given isUnlocked check
+                    responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                    responsePayload = { error: { message: "Vault locked (in-memory seed missing).", code: "VAULT_LOCKED" } };
+                    break;
+                }
                 const vaultResult = await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT);
                 const vault = vaultResult[Constants.STORAGE_KEY_VAULT];
                 if (!vault || !vault.settings || typeof vault.settings.nextAccountIndex !== "number") {
@@ -704,12 +779,17 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     const encryptionKey = await deriveEncryptionKey(password, salt);
                     const decryptedSeedAttempt = await decryptData(vaultDataForUnlock.encryptedSeedPhrase, encryptionKey);
                     if (!decryptedSeedAttempt) throw new Error("Decryption failed.");
-                    await chrome.storage.session.set({ [Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE]: decryptedSeedAttempt });
-                    SessionManager.setIsUnlocked(true);
+                    SessionManager.setInMemoryDecryptedSeed(decryptedSeedAttempt); // Store in memory
+                    // SessionManager.setIsUnlocked(true); // Handled by setInMemoryDecryptedSeed
                 }
-                const sessionData = await chrome.storage.session.get(Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE);
-                const decryptedSeed = sessionData[Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE];
-                if (!decryptedSeed) throw new Error("Vault locked or seed missing.");
+                // Now SessionManager.isUnlocked should be true
+                const decryptedSeed = SessionManager.getInMemoryDecryptedSeed();
+                if (!decryptedSeed) {
+                    // Should be redundant
+                    responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                    responsePayload = { error: { message: "Vault locked or in-memory seed missing after unlock attempt.", code: "VAULT_LOCKED" } };
+                    break;
+                }
                 const vaultResult = await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT);
                 let vaultData = vaultResult[Constants.STORAGE_KEY_VAULT];
                 if (!vaultData || !vaultData.settings || typeof vaultData.settings.nextAccountIndex !== "number") {
@@ -767,7 +847,7 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     vaultData.settings.activeIdentityIndex = newIdentityEntryIndexInVault;
                     await chrome.storage.local.set({ [Constants.STORAGE_KEY_VAULT]: vaultData });
                     await chrome.storage.session.set({ [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: newIdentityEntryIndexInVault });
-                    await SessionManager.loadActiveIdentityFromSessionInternal();
+                    await SessionManager.loadActiveIdentity(); // Uses in-memory seed
                     if (SessionManager.currentActiveDid) {
                         await chrome.storage.local.set({ [Constants.STORAGE_KEY_LAST_ACTIVE_DID]: SessionManager.currentActiveDid });
                     }
@@ -797,12 +877,23 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     const encryptionKey = await deriveEncryptionKey(password, salt);
                     const decryptedSeedAttempt = await decryptData(vaultDataForUnlock.encryptedSeedPhrase, encryptionKey);
                     if (!decryptedSeedAttempt) throw new Error("Decryption failed.");
-                    await chrome.storage.session.set({ [Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE]: decryptedSeedAttempt });
-                    // SessionManager.setIsUnlocked(true); // Not setting global unlock, just for this operation
+                    // Temporarily put seed in memory for this operation if password was provided
+                    // This specific seed is not meant to persist globally unless it's for the active identity.
+                    // However, the current SessionManager model has one global inMemoryDecryptedSeed.
+                    // For simplicity, we'll use the global one. If this operation isn't for the *active* identity's unlock,
+                    // this might briefly make the *active* identity seem unlocked if it wasn't.
+                    // This is a nuance if we allow finalizing non-active identities with password.
+                    // For now, assume FINALIZE_NEW_IDENTITY_SETUP implies making it active.
+                    SessionManager.setInMemoryDecryptedSeed(decryptedSeedAttempt);
                 }
-                const sessionData = await chrome.storage.session.get(Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE);
-                const decryptedSeed = sessionData[Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE];
-                if (!decryptedSeed) throw new Error("Vault locked or seed missing.");
+
+                const decryptedSeed = SessionManager.getInMemoryDecryptedSeed();
+                if (!decryptedSeed) {
+                    // Check if vault is truly unlocked (in-memory seed available)
+                    responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                    responsePayload = { error: { message: "Vault locked or in-memory seed missing after unlock attempt.", code: "VAULT_LOCKED" } };
+                    break;
+                }
                 const vaultResult = await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT);
                 let vaultData = vaultResult[Constants.STORAGE_KEY_VAULT];
                 if (!vaultData || !vaultData.identities) throw new Error("Vault data missing.");
@@ -856,15 +947,18 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 vaultData.settings.activeIdentityIndex = identityEntryIndex;
                 await chrome.storage.local.set({ [Constants.STORAGE_KEY_VAULT]: vaultData });
                 await chrome.storage.session.set({ [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: identityEntryIndex });
-                await SessionManager.loadActiveIdentityFromSessionInternal();
+                await SessionManager.loadActiveIdentity(); // Uses in-memory seed
                 if (SessionManager.currentActiveDid) {
                     await chrome.storage.local.set({ [Constants.STORAGE_KEY_LAST_ACTIVE_DID]: SessionManager.currentActiveDid });
                 }
-                if (payload.password && !SessionManager.isUnlocked) {
-                    // If was temporarily unlocked
-                    await chrome.storage.session.remove(Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE);
-                    // SessionManager.setIsUnlocked(false); // loadActiveIdentityFromSessionInternal should set this correctly
-                }
+                // If a password was provided for a temporary unlock, and this operation
+                // didn't result in the vault staying unlocked for the *active* identity,
+                // we might want to clear the inMemoryDecryptedSeed.
+                // However, loadActiveIdentity should correctly reflect the state.
+                // The main goal is that SESSION_STORAGE_DECRYPTED_SEED_PHRASE is not used.
+                // If 'password' was provided, it means setInMemoryDecryptedSeed was called.
+                // If the operation completes successfully, the seed remains in memory.
+                // This is acceptable as the user just authenticated.
                 responsePayload = {
                     success: true,
                     message: `Identity ${didToFinalize} finalized.`,
