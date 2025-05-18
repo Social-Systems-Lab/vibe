@@ -24,6 +24,8 @@ const POLLING_INTERVAL_MS = 5000; // Poll every 5 seconds
 
 interface CloudStatusProps {
     activeDid: string | null; // The DID of the currently active identity
+    displayMode?: "full" | "iconOnly";
+    onIconClick?: () => void;
 }
 
 // Helper to send messages to background script
@@ -44,7 +46,7 @@ const sendMessageToBackground = (action: string, payload?: any): Promise<any> =>
     });
 };
 
-export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
+export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid, displayMode = "full", onIconClick }) => {
     const [identityDetails, setIdentityDetails] = useState<Identity | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
@@ -123,7 +125,7 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
     }, [identityDetails, pollingIntervalId, activeDid]);
 
     // Log current identityDetails for render
-    console.log("[CloudStatus] Rendering with identityDetails:", identityDetails);
+    console.log("[CloudStatus] Rendering with identityDetails:", identityDetails, "displayMode:", displayMode);
 
     let displayStatus: string = "Fetching status...";
     let StatusIcon = Loader2;
@@ -228,6 +230,37 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
         const endLength = Math.ceil((maxLength - 3) / 2);
         return `${url.substring(0, startLength)}...${url.substring(url.length - endLength)}`;
     };
+
+    if (displayMode === "iconOnly") {
+        const handleClick = () => {
+            if (onIconClick) {
+                onIconClick();
+            } else {
+                // If no specific onIconClick, and we want to show details,
+                // we need a way to trigger the main component's expansion or a modal.
+                // For now, let's make it toggle its own expansion if used in a context where that makes sense,
+                // or simply be a visual indicator if onIconClick is not set.
+                // The user feedback suggested "when clicked maybe be brought to a new screen",
+                // implying onIconClick would handle navigation.
+                // If we want it to open the existing card details, toggleExpansion is fine.
+                toggleExpansion(); // This will make the icon click show the full card if not handled by onIconClick
+            }
+        };
+        return (
+            <button
+                onClick={handleClick}
+                className={cn(
+                    "p-1.5 rounded-full bg-white hover:bg-muted/30 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    isLoading && "cursor-default" // Prevent click spam while loading initial state for icon
+                )}
+                aria-label={`Cloud Status: ${displayStatus}`}
+                title={compactStatusMessage}
+                disabled={isLoading && !identityDetails && !isLoginRequired} // Disable if truly in an initial loading state for the icon
+            >
+                <StatusIcon className={cn("h-5 w-5", iconColor, StatusIcon === Loader2 && "animate-spin")} />
+            </button>
+        );
+    }
 
     if (!isExpanded) {
         return (
