@@ -131,8 +131,10 @@ const AddIdentityPage: React.FC = () => {
                     <NewIdentitySetupWizard
                         accountIndex={accountIndex}
                         isVaultInitiallyUnlocked={isVaultInitiallyUnlocked} // Pass the lock state
+                        isFirstIdentitySetup={false} // This page is for adding subsequent identities or first after basic setup
                         onSetupComplete={handleSetupComplete}
                         onCancel={handleCancel}
+                        // onResetVibe is not passed, as it's not relevant for this flow
                     />
                 )}
             </div>

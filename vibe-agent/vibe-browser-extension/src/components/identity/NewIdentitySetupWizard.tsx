@@ -19,7 +19,8 @@ interface CloudServiceOption {
 
 interface NewIdentitySetupWizardProps {
     accountIndex: number;
-    isVaultInitiallyUnlocked: boolean; // Added new prop
+    isVaultInitiallyUnlocked: boolean;
+    isFirstIdentitySetup: boolean; // Added: True if this is for the very first identity
     onSetupComplete: (details: {
         accountIndex: number;
         identityName: string | null;
@@ -28,12 +29,20 @@ interface NewIdentitySetupWizardProps {
         claimCode?: string | null;
         password?: string;
     }) => Promise<void>;
-    onCancel: () => void;
+    onCancel: () => void; // Called when cancelling a subsequent identity add
+    onResetVibe?: () => void; // Added: Called when resetting during first identity setup
 }
 
 type WizardStep = "enterDetails" | "creating" | "creationComplete";
 
-export const NewIdentitySetupWizard: React.FC<NewIdentitySetupWizardProps> = ({ accountIndex, isVaultInitiallyUnlocked, onSetupComplete, onCancel }) => {
+export const NewIdentitySetupWizard: React.FC<NewIdentitySetupWizardProps> = ({
+    accountIndex,
+    isVaultInitiallyUnlocked,
+    isFirstIdentitySetup,
+    onSetupComplete,
+    onCancel,
+    onResetVibe,
+}) => {
     const [currentStep, setCurrentStep] = useState<WizardStep>("enterDetails");
 
     // Form field states
@@ -288,15 +297,25 @@ export const NewIdentitySetupWizard: React.FC<NewIdentitySetupWizardProps> = ({ 
         </div>
     );
 
-    const renderCancelButton = () => {
+    const renderFooterButtons = () => {
         if (currentStep === "enterDetails" && !isCreating) {
-            return (
-                <div className="p-4 border-t border-border">
-                    <Button onClick={onCancel} variant="outline" className="w-full">
-                        Cancel
-                    </Button>
-                </div>
-            );
+            if (isFirstIdentitySetup) {
+                return (
+                    <div className="p-4 border-t border-border">
+                        <Button onClick={onResetVibe} variant="outline" className="w-full">
+                            Reset Vibe & Start Over
+                        </Button>
+                    </div>
+                );
+            } else {
+                return (
+                    <div className="p-4 border-t border-border">
+                        <Button onClick={onCancel} variant="outline" className="w-full">
+                            Cancel
+                        </Button>
+                    </div>
+                );
+            }
         }
         return null;
     };
@@ -308,7 +327,7 @@ export const NewIdentitySetupWizard: React.FC<NewIdentitySetupWizardProps> = ({ 
                 {currentStep === "creating" && renderCreatingStep()}
                 {currentStep === "creationComplete" && renderCreationCompleteStep()}
             </div>
-            {renderCancelButton()}
+            {renderFooterButtons()}
         </div>
     );
 };

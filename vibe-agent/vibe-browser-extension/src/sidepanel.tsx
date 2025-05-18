@@ -36,6 +36,7 @@ function SidePanelApp() {
         accountIndex: number;
         isVaultInitiallyUnlocked: boolean;
     } | null>(null); // Added
+    const [initializeAppState, setInitializeAppState] = useState<string | null>(null); // Moved and initialized
 
     const initializeApp = useCallback(async () => {
         console.log("SidePanelApp: initializeApp triggered");
@@ -47,6 +48,7 @@ function SidePanelApp() {
         setShowNewIdentityWizard(false);
         setNewIdentityWizardProps(null);
         setShowCreateFirstIdentityPrompt(false); // Keep for now, might remove if NewIdentitySetupWizard covers it
+        setInitializeAppState(null); // Reset initializeAppState
 
         try {
             const initResponse = await chrome.runtime.sendMessage({
@@ -55,11 +57,15 @@ function SidePanelApp() {
                 requestId: crypto.randomUUID().toString(),
             });
 
-            if (initResponse.type === "VIBE_AGENT_RESPONSE" && initResponse.payload?.code === "INITIALIZED_UNLOCKED") {
-                console.log("SidePanelApp initialized successfully, vault unlocked.");
-                await loadIdentityData();
-            } else if (initResponse.type === "VIBE_AGENT_RESPONSE_ERROR") {
-                const errorCode = initResponse.error?.code;
+            if (initResponse.type === "VIBE_AGENT_RESPONSE" && initResponse.payload?.code) {
+                setInitializeAppState(initResponse.payload.code); // Set state
+                if (initResponse.payload.code === "INITIALIZED_UNLOCKED") {
+                    console.log("SidePanelApp initialized successfully, vault unlocked.");
+                    await loadIdentityData();
+                }
+            } else if (initResponse.type === "VIBE_AGENT_RESPONSE_ERROR" && initResponse.error?.code) {
+                const errorCode = initResponse.error.code;
+                setInitializeAppState(errorCode); // Set state
                 console.log("SidePanelApp init error code:", errorCode);
                 if (errorCode === "UNLOCK_REQUIRED_FOR_LAST_ACTIVE" || errorCode === "VAULT_LOCKED_NO_LAST_ACTIVE") {
                     setLastActiveDidHint(initResponse.error?.lastActiveDid);
@@ -69,9 +75,11 @@ function SidePanelApp() {
                     setShowSetupWizard(true);
                 } else if (errorCode === "FIRST_IDENTITY_CREATION_REQUIRED") {
                     console.log("First identity creation required. Showing NewIdentitySetupWizard.");
-                    // Assuming nextAccountIndex is part of the error payload or defaults to 0
                     const nextAccountIndex = initResponse.error?.nextAccountIndex ?? 0;
-                    setNewIdentityWizardProps({ accountIndex: nextAccountIndex, isVaultInitiallyUnlocked: true });
+                    setNewIdentityWizardProps({
+                        accountIndex: nextAccountIndex,
+                        isVaultInitiallyUnlocked: true,
+                    });
                     setShowNewIdentityWizard(true);
                 } else {
                     setUnlockError(initResponse.error?.message || "Failed to initialize.");
@@ -85,7 +93,7 @@ function SidePanelApp() {
         } finally {
             setIsLoadingIdentity(false);
         }
-    }, []);
+    }, []); // Removed setInitializeAppState from dependencies as it's set inside
 
     const loadIdentityData = useCallback(async () => {
         console.log("SidePanelApp: loadIdentityData triggered");
@@ -218,7 +226,7 @@ function SidePanelApp() {
                     accountIndex: response.payload.nextAccountIndex,
                     isVaultInitiallyUnlocked: !showUnlockScreen, // Vault is unlocked if unlock screen isn't shown
                 });
-                setShowNewIdentityWizard(true);
+                setShowNewIdentityWizard(true); // This will render NewIdentitySetupWizard with isFirstIdentitySetup = false
             } else {
                 console.error("Failed to get next account index:", response?.error);
                 alert("Error preparing to add new identity. Please try again.");
@@ -362,8 +370,13 @@ function SidePanelApp() {
                 <NewIdentitySetupWizard
                     accountIndex={newIdentityWizardProps.accountIndex}
                     isVaultInitiallyUnlocked={newIdentityWizardProps.isVaultInitiallyUnlocked}
+                    isFirstIdentitySetup={
+                        (newIdentityWizardProps.accountIndex === 0 && initializeAppState === "FIRST_IDENTITY_CREATION_REQUIRED") ||
+                        showCreateFirstIdentityPrompt // If this prompt specifically triggered it
+                    }
                     onSetupComplete={handleNewIdentityFinalized}
                     onCancel={handleNewIdentityCancel}
+                    onResetVibe={handleResetSetup}
                 />
             </div>
         );
@@ -392,7 +405,7 @@ function SidePanelApp() {
                                 isVaultInitiallyUnlocked: true, // Vault is set up, just no identities
                             });
                             setShowCreateFirstIdentityPrompt(false); // Hide this prompt
-                            setShowNewIdentityWizard(true); // Show the wizard
+                            setShowNewIdentityWizard(true); // This will render NewIdentitySetupWizard with isFirstIdentitySetup = true
                         }}
                     >
                         Create First Identity
