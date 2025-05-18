@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { Wifi, WifiOff, HardDrive, AlertTriangle, Loader2, ExternalLink } from "lucide-react";
+import { Wifi, WifiOff, HardDrive, AlertTriangle, Loader2, ExternalLink, ChevronRight, ChevronDown } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -50,6 +50,9 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
     const [error, setError] = useState<string | null>(null);
     const [isLoginRequired, setIsLoginRequired] = useState<boolean>(false); // New state for login
     const [pollingIntervalId, setPollingIntervalId] = useState<NodeJS.Timeout | null>(null);
+    const [isExpanded, setIsExpanded] = useState<boolean>(false); // State for compact/expanded view
+
+    const toggleExpansion = () => setIsExpanded(!isExpanded);
 
     const fetchIdentityDetails = useCallback(async (did: string) => {
         if (!did) return;
@@ -126,6 +129,7 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
     let StatusIcon = Loader2;
     let iconColor = "text-slate-500";
     let statusDescription = "Attempting to retrieve Vibe Cloud instance status...";
+    let compactStatusMessage = "Vibe Cloud: Fetching...";
 
     const handleLoginClick = async () => {
         if (activeDid) {
@@ -156,22 +160,24 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
         StatusIcon = AlertTriangle;
         iconColor = "text-amber-500";
         statusDescription = "Please select or create an identity.";
+        compactStatusMessage = "Vibe Cloud: No Identity";
     } else if (isLoading && !identityDetails && !isLoginRequired) {
-        // Added !isLoginRequired here
-        // Show loading only on initial load or if no details yet, and not if login is required
         displayStatus = "Loading Status...";
-        StatusIcon = Loader2; // Loader2 will be animated by className
+        StatusIcon = Loader2;
         iconColor = "text-blue-500";
+        compactStatusMessage = "Vibe Cloud: Loading...";
     } else if (isLoginRequired) {
         displayStatus = "Login Required";
         StatusIcon = AlertTriangle;
-        iconColor = "text-amber-500"; // Use a warning color
-        statusDescription = error || "Your session may have expired. Please log in."; // Error already set to "Login required..."
+        iconColor = "text-amber-500";
+        statusDescription = error || "Your session may have expired. Please log in.";
+        compactStatusMessage = "Vibe Cloud: Login Required";
     } else if (error) {
         displayStatus = "Error";
         StatusIcon = AlertTriangle;
         iconColor = "text-red-500";
         statusDescription = error;
+        compactStatusMessage = "Vibe Cloud: Error";
     } else if (identityDetails) {
         const status = identityDetails.instanceStatus?.toLowerCase() || "unknown";
         displayStatus = identityDetails.instanceStatus || "Unknown Status";
@@ -183,42 +189,72 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
                 StatusIcon = Loader2; // Animated
                 iconColor = "text-blue-500";
                 statusDescription = `Instance is ${identityDetails.instanceStatus}. Polling for updates...`;
+                compactStatusMessage = `Vibe Cloud: ${identityDetails.instanceStatus}`;
                 break;
             case "completed":
-            case "running": // Assuming 'running' is a possible completed state
+            case "running":
                 StatusIcon = Wifi;
                 iconColor = "text-green-500";
                 statusDescription = `Instance is active and running.`;
+                compactStatusMessage = "Vibe Cloud: Connected";
                 break;
             case "failed":
-            case "error": // Instance specific error
+            case "error":
                 StatusIcon = AlertTriangle;
                 iconColor = "text-red-500";
                 statusDescription = `Instance status: ${identityDetails.instanceStatus}. ${
                     identityDetails.instanceErrorDetails || "Check logs for more info."
                 }`;
+                compactStatusMessage = `Vibe Cloud: ${identityDetails.instanceStatus}`;
                 break;
             case "deprovisioned":
             case "stopped":
                 StatusIcon = WifiOff;
                 iconColor = "text-slate-500";
                 statusDescription = `Instance is ${identityDetails.instanceStatus}.`;
+                compactStatusMessage = `Vibe Cloud: ${identityDetails.instanceStatus}`;
                 break;
             default:
-                StatusIcon = AlertTriangle; // For unknown or unexpected statuses
+                StatusIcon = AlertTriangle;
                 iconColor = "text-amber-500";
                 statusDescription = `Instance status is '${identityDetails.instanceStatus}'.`;
+                compactStatusMessage = `Vibe Cloud: ${identityDetails.instanceStatus}`;
         }
     }
 
+    const truncateUrl = (url: string, maxLength = 30) => {
+        if (url.length <= maxLength) return url;
+        const startLength = Math.floor((maxLength - 3) / 2);
+        const endLength = Math.ceil((maxLength - 3) / 2);
+        return `${url.substring(0, startLength)}...${url.substring(url.length - endLength)}`;
+    };
+
+    if (!isExpanded) {
+        return (
+            <Card className="mt-4 w-full cursor-pointer hover:bg-muted/50 transition-colors" onClick={toggleExpansion}>
+                <CardHeader className="flex flex-row items-center justify-between p-3">
+                    <div className="flex items-center gap-2">
+                        <StatusIcon className={cn("h-5 w-5", iconColor, StatusIcon === Loader2 && "animate-spin")} />
+                        <span className={cn("text-sm font-medium", iconColor)}>{compactStatusMessage}</span>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                </CardHeader>
+            </Card>
+        );
+    }
+
+    // Expanded View
     return (
         <Card className="mt-4 w-full">
-            <CardHeader className="pb-2 pt-4">
+            <CardHeader className="pb-2 pt-4 cursor-pointer hover:bg-muted/50 transition-colors" onClick={toggleExpansion}>
                 <div className="flex items-center justify-between">
-                    <CardTitle className="text-base font-medium">Vibe Cloud Instance</CardTitle>
-                    <StatusIcon className={cn("h-5 w-5", iconColor, StatusIcon === Loader2 && "animate-spin")} />
+                    <div className="flex items-center gap-2">
+                        <StatusIcon className={cn("h-5 w-5", iconColor, StatusIcon === Loader2 && "animate-spin")} />
+                        <CardTitle className="text-base font-medium">{compactStatusMessage.replace("Vibe Cloud: ", "Status: ")}</CardTitle>
+                    </div>
+                    <ChevronDown className="h-5 w-5 text-muted-foreground" />
                 </div>
-                <CardDescription className={cn("text-xs", iconColor)}>{displayStatus}</CardDescription>
+                <CardDescription className={cn("text-xs pl-7", iconColor)}>{displayStatus}</CardDescription> {/* Indent description slightly */}
             </CardHeader>
             <CardContent className="pt-2 pb-4 text-sm space-y-2">
                 <p className="text-xs text-muted-foreground">{statusDescription}</p>
@@ -231,40 +267,34 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid }) => {
 
                 {!isLoginRequired && identityDetails && (
                     <>
-                        {identityDetails.profileName && (
-                            <p className="text-xs">
-                                <strong>Identity:</strong> {identityDetails.profileName} ({identityDetails.identityDid.substring(0, 12)}...)
-                            </p>
-                        )}
+                        {/* Identity line removed as it's redundant with IdentityCard above CloudStatus */}
                         {identityDetails.instanceUrl &&
                             (identityDetails.instanceStatus?.toLowerCase() === "completed" || identityDetails.instanceStatus?.toLowerCase() === "running") && (
                                 <div className="flex items-center gap-2">
                                     <HardDrive className="h-4 w-4 text-muted-foreground" />
-                                    <span className="text-muted-foreground">Instance URL:</span>
+                                    <span className="text-muted-foreground text-xs">Instance URL:</span>
                                     <Button
                                         variant="link"
                                         className="p-0 h-auto text-xs"
-                                        onClick={() => chrome.tabs.create({ url: identityDetails.instanceUrl })}
+                                        onClick={(e) => {
+                                            e.stopPropagation(); // Prevent card click when clicking link
+                                            chrome.tabs.create({ url: identityDetails.instanceUrl });
+                                        }}
+                                        title={identityDetails.instanceUrl} // Show full URL on hover
                                     >
-                                        {identityDetails.instanceUrl}
+                                        {truncateUrl(identityDetails.instanceUrl)}
                                         <ExternalLink className="ml-1 h-3 w-3" />
                                     </Button>
                                 </div>
                             )}
-                        {/* Placeholder for storage or other resources if they become available via this endpoint */}
-                        {/* <div className="flex items-center gap-2 text-muted-foreground">
-                            <Database className="h-4 w-4" />
-                            <span>Storage: N/A</span>
-                        </div> */}
+                        {/* Placeholder for storage or other resources */}
                     </>
                 )}
-                {isLoading &&
-                    pollingIntervalId &&
-                    !isLoginRequired && ( // Show subtle loading indicator during polling updates, but not if login is required
-                        <p className="text-xs text-blue-500 flex items-center">
-                            <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Checking for updates...
-                        </p>
-                    )}
+                {isLoading && pollingIntervalId && !isLoginRequired && (
+                    <p className="text-xs text-blue-500 flex items-center">
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Checking for updates...
+                    </p>
+                )}
             </CardContent>
         </Card>
     );
