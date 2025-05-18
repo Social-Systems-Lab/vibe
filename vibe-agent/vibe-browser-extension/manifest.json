@@ -11,6 +11,11 @@
     "action": {
         "default_icon": "icon-dev.png"
     },
+    "icons": {
+        "16": "icon-dev.png",
+        "48": "icon-dev.png",
+        "128": "icon-dev.png"
+    },
     "side_panel": {
         "default_path": "sidepanel.html"
     },

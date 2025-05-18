@@ -8,6 +8,8 @@ import { ImportIdentityWizard } from "./components/identity/ImportIdentityWizard
 import IdentitySettings from "./components/identity/IdentitySettings";
 import { Button } from "@/components/ui/button";
 import { Settings, RotateCcw } from "lucide-react";
+import { SetupWizard } from "./components/setup/SetupWizard"; // Added
+import { NewIdentitySetupWizard } from "./components/identity/NewIdentitySetupWizard"; // Added
 
 // Matches the structure in background.ts (profile_name, profile_picture)
 interface StoredIdentity {
@@ -27,14 +29,24 @@ function SidePanelApp() {
     const [unlockError, setUnlockError] = useState<string | null>(null);
     const [isUnlocking, setIsUnlocking] = useState(false);
     const [lastActiveDidHint, setLastActiveDidHint] = useState<string | undefined>(undefined);
-    const [showCreateFirstIdentityPrompt, setShowCreateFirstIdentityPrompt] = useState(false);
+    const [showCreateFirstIdentityPrompt, setShowCreateFirstIdentityPrompt] = useState(false); // This might be replaced by showNewIdentityWizard
+    const [showSetupWizard, setShowSetupWizard] = useState(false); // Added
+    const [showNewIdentityWizard, setShowNewIdentityWizard] = useState(false); // Added
+    const [newIdentityWizardProps, setNewIdentityWizardProps] = useState<{
+        accountIndex: number;
+        isVaultInitiallyUnlocked: boolean;
+    } | null>(null); // Added
 
     const initializeApp = useCallback(async () => {
         console.log("SidePanelApp: initializeApp triggered");
         setIsLoadingIdentity(true);
         setShowUnlockScreen(false);
         setUnlockError(null);
-        setShowCreateFirstIdentityPrompt(false);
+        // Reset wizard states
+        setShowSetupWizard(false);
+        setShowNewIdentityWizard(false);
+        setNewIdentityWizardProps(null);
+        setShowCreateFirstIdentityPrompt(false); // Keep for now, might remove if NewIdentitySetupWizard covers it
 
         try {
             const initResponse = await chrome.runtime.sendMessage({
@@ -53,11 +65,14 @@ function SidePanelApp() {
                     setLastActiveDidHint(initResponse.error?.lastActiveDid);
                     setShowUnlockScreen(true);
                 } else if (errorCode === "SETUP_NOT_COMPLETE") {
-                    console.error("Setup not complete. Side panel might not function correctly.");
-                    // Potentially show a message or redirect to setup
+                    console.log("Setup not complete. Showing SetupWizard.");
+                    setShowSetupWizard(true);
                 } else if (errorCode === "FIRST_IDENTITY_CREATION_REQUIRED") {
-                    console.log("First identity creation required.");
-                    setShowCreateFirstIdentityPrompt(true);
+                    console.log("First identity creation required. Showing NewIdentitySetupWizard.");
+                    // Assuming nextAccountIndex is part of the error payload or defaults to 0
+                    const nextAccountIndex = initResponse.error?.nextAccountIndex ?? 0;
+                    setNewIdentityWizardProps({ accountIndex: nextAccountIndex, isVaultInitiallyUnlocked: true });
+                    setShowNewIdentityWizard(true);
                 } else {
                     setUnlockError(initResponse.error?.message || "Failed to initialize.");
                     setShowUnlockScreen(true);
@@ -189,8 +204,29 @@ function SidePanelApp() {
         }
     };
 
-    const handleAddIdentity = () => {
-        chrome.tabs.create({ url: chrome.runtime.getURL("addIdentity.html") });
+    const handleAddIdentity = async () => {
+        // This will now open the NewIdentitySetupWizard in the side panel
+        console.log("SidePanelApp: handleAddIdentity triggered");
+        try {
+            const response = await chrome.runtime.sendMessage({
+                type: "VIBE_AGENT_REQUEST",
+                action: "GET_NEXT_ACCOUNT_INDEX",
+                requestId: crypto.randomUUID().toString(),
+            });
+            if (response?.type === "VIBE_AGENT_RESPONSE" && typeof response.payload?.nextAccountIndex === "number") {
+                setNewIdentityWizardProps({
+                    accountIndex: response.payload.nextAccountIndex,
+                    isVaultInitiallyUnlocked: !showUnlockScreen, // Vault is unlocked if unlock screen isn't shown
+                });
+                setShowNewIdentityWizard(true);
+            } else {
+                console.error("Failed to get next account index:", response?.error);
+                alert("Error preparing to add new identity. Please try again.");
+            }
+        } catch (error) {
+            console.error("Error in handleAddIdentity:", error);
+            alert("An error occurred while trying to add a new identity.");
+        }
     };
 
     const handleImportIdentity = async () => {
@@ -224,6 +260,63 @@ function SidePanelApp() {
         setShowImportWizard(false);
     };
 
+    // Handler for SetupWizard completion
+    const handleFullSetupComplete = () => {
+        console.log("SidePanelApp: Full setup wizard completed.");
+        setShowSetupWizard(false);
+        initializeApp(); // Re-initialize to check if first identity setup is now needed
+    };
+
+    // Handler for NewIdentitySetupWizard completion (this is the function that does the work)
+    const handleNewIdentityFinalized = async (details: {
+        accountIndex: number;
+        identityName: string | null;
+        identityPicture?: string | null;
+        cloudUrl: string;
+        claimCode?: string | null;
+        password?: string;
+    }) => {
+        console.log("SidePanelApp: handleNewIdentityFinalized called with:", details);
+        // This function is passed as `onSetupComplete` to NewIdentitySetupWizard
+        // It needs to send the message to the background script to finalize.
+        try {
+            const response = await chrome.runtime.sendMessage({
+                type: "VIBE_AGENT_REQUEST",
+                // Action name might be SETUP_NEW_IDENTITY_AND_FINALIZE or FINALIZE_NEW_IDENTITY_SETUP
+                // Let's use what NewIdentitySetupWizard was designed for, or what background.ts expects.
+                // App.tsx used FINALIZE_NEW_IDENTITY_SETUP. addIdentity.tsx might use another.
+                // For now, assuming a generic action that background.ts handles for adding any new identity.
+                // Let's use "FINALIZE_NEW_IDENTITY_SETUP" as it was in App.tsx
+                action: "FINALIZE_NEW_IDENTITY_SETUP",
+                payload: {
+                    ...details, // Includes accountIndex, identityName, identityPicture, cloudUrl, claimCode, password
+                    // didToFinalize is not part of `details` here, background script will generate it.
+                },
+                requestId: crypto.randomUUID().toString(),
+            });
+
+            if (response && response.type === "VIBE_AGENT_RESPONSE" && response.payload?.success) {
+                console.log(`New identity "${details.identityName || "Unnamed"}" finalized!`);
+                setShowNewIdentityWizard(false);
+                setNewIdentityWizardProps(null);
+                await loadIdentityData(); // Refresh identities
+            } else {
+                console.error("Error finalizing new identity setup:", response?.error);
+                throw new Error(response?.error?.message || "Failed to finalize new identity.");
+            }
+        } catch (error: any) {
+            console.error("Failed to send FINALIZE_NEW_IDENTITY_SETUP message:", error);
+            // The wizard itself will handle displaying this error to the user if we throw it.
+            throw error;
+        }
+    };
+
+    const handleNewIdentityCancel = () => {
+        console.log("SidePanelApp: New identity setup cancelled.");
+        setShowNewIdentityWizard(false);
+        setNewIdentityWizardProps(null);
+    };
+
     const handleOpenSettings = () => {
         setShowIdentitySettings(true);
     };
@@ -249,8 +342,29 @@ function SidePanelApp() {
 
     if (isLoadingIdentity) {
         return (
-            <div className="w-full p-4 bg-background text-foreground flex flex-col items-center justify-center h-48">
+            <div className="w-full p-4 bg-background text-foreground flex flex-col items-center justify-center h-full">
                 <p>Loading Vibe...</p>
+            </div>
+        );
+    }
+
+    if (showSetupWizard) {
+        return (
+            <div className="w-full h-full bg-background text-foreground">
+                <SetupWizard onSetupComplete={handleFullSetupComplete} />
+            </div>
+        );
+    }
+
+    if (showNewIdentityWizard && newIdentityWizardProps) {
+        return (
+            <div className="w-full h-full bg-background text-foreground">
+                <NewIdentitySetupWizard
+                    accountIndex={newIdentityWizardProps.accountIndex}
+                    isVaultInitiallyUnlocked={newIdentityWizardProps.isVaultInitiallyUnlocked}
+                    onSetupComplete={handleNewIdentityFinalized}
+                    onCancel={handleNewIdentityCancel}
+                />
             </div>
         );
     }
@@ -259,13 +373,30 @@ function SidePanelApp() {
         return <UnlockScreen onUnlock={handleUnlock} isUnlocking={isUnlocking} unlockError={unlockError} lastActiveDidHint={lastActiveDidHint} />;
     }
 
+    // showCreateFirstIdentityPrompt might be redundant if showNewIdentityWizard covers this.
+    // For now, keeping it to see if init logic correctly prioritizes NewIdentitySetupWizard.
     if (showCreateFirstIdentityPrompt) {
         return (
             <div className="w-full p-6 text-center flex-grow flex flex-col justify-center items-center bg-background text-foreground">
                 <h2 className="text-xl font-semibold mb-2">Welcome to Vibe!</h2>
                 <p className="mb-4 text-sm">Create your first identity to get started.</p>
                 <div className="gap-2 flex flex-col">
-                    <Button onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL("addIdentity.html") })}>Create First Identity</Button>
+                    {/* This button should now trigger the NewIdentitySetupWizard */}
+                    <Button
+                        onClick={async () => {
+                            // Logic similar to handleAddIdentity but specifically for first identity
+                            console.log("Create First Identity button clicked");
+                            const nextAccountIndex = 0; // First identity is always account 0
+                            setNewIdentityWizardProps({
+                                accountIndex: nextAccountIndex,
+                                isVaultInitiallyUnlocked: true, // Vault is set up, just no identities
+                            });
+                            setShowCreateFirstIdentityPrompt(false); // Hide this prompt
+                            setShowNewIdentityWizard(true); // Show the wizard
+                        }}
+                    >
+                        Create First Identity
+                    </Button>
                     <Button onClick={handleResetSetup} variant="outline">
                         Reset Vibe
                     </Button>

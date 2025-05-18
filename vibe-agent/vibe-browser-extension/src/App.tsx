@@ -39,8 +39,6 @@ export function App({ onResetDev }: AppProps) {
     const [isLoadingIdentity, setIsLoadingIdentity] = useState(true); // Loading state for identity
     const [showImportWizard, setShowImportWizard] = useState(false); // State for wizard visibility
     const [showIdentitySettings, setShowIdentitySettings] = useState(false); // State for settings visibility
-    // const [showNewIdentitySetupWizard, setShowNewIdentitySetupWizard] = useState(false); // No longer used for add identity flow
-    // const [identityForSetup, setIdentityForSetup] = useState<{ did: string; accountIndex: number; currentPassword?: string } | null>(null); // No longer used for add identity flow
     const [showUnlockScreen, setShowUnlockScreen] = useState(false);
     const [unlockError, setUnlockError] = useState<string | null>(null);
     const [isUnlocking, setIsUnlocking] = useState(false);
@@ -268,57 +266,8 @@ export function App({ onResetDev }: AppProps) {
         setShowImportWizard(false); // Hide the wizard
     };
 
-    const handleNewIdentitySetupComplete = async (details: {
-        didToFinalize: string;
-        accountIndex: number;
-        identityName: string;
-        identityPicture?: string;
-        cloudUrl: string;
-        claimCode?: string;
-        password?: string; // Password to re-decrypt seed for signing
-    }) => {
-        // This handler is no longer called by NewIdentitySetupWizard when adding a new identity,
-        // as that flow is now handled in addIdentity.html.
-        // It might still be used by other flows if NewIdentitySetupWizard is rendered directly by App.tsx for other purposes.
-        // For now, keeping its logic but noting its reduced usage for "add identity".
-        console.log("Finalizing new identity setup in App.tsx (potentially old flow):", details);
-        try {
-            const response = await chrome.runtime.sendMessage({
-                type: "VIBE_AGENT_REQUEST",
-                action: "FINALIZE_NEW_IDENTITY_SETUP", // This action might need to be re-evaluated or deprecated if SETUP_NEW_IDENTITY_AND_FINALIZE covers all cases
-                payload: details,
-                requestId: crypto.randomUUID().toString(),
-            });
-
-            if (response && response.type === "VIBE_AGENT_RESPONSE" && response.payload?.success) {
-                alert(`New identity "${details.identityName}" finalized and set as active!`);
-                // setShowNewIdentitySetupWizard(false); // State removed
-                // setIdentityForSetup(null); // State removed
-                loadIdentityData();
-            } else if (response && response.type === "VIBE_AGENT_RESPONSE_ERROR") {
-                console.error("Error finalizing new identity setup:", response.error);
-                alert(`Error finalizing setup: ${response.error.message}`);
-                // setShowNewIdentitySetupWizard(false); // State removed
-                // setIdentityForSetup(null); // State removed
-            } else {
-                alert("Unexpected response during finalization.");
-                // setShowNewIdentitySetupWizard(false); // State removed
-                // setIdentityForSetup(null); // State removed
-            }
-        } catch (error: any) {
-            console.error("Failed to send FINALIZE_NEW_IDENTITY_SETUP message:", error);
-            alert(`Failed to finalize setup: ${error.message}`);
-            // setShowNewIdentitySetupWizard(false); // State removed
-            // setIdentityForSetup(null); // State removed
-        }
-    };
-
-    const handleNewIdentitySetupCancel = () => {
-        // This handler is no longer called by NewIdentitySetupWizard when adding a new identity.
-        // setShowNewIdentitySetupWizard(false); // State removed
-        // setIdentityForSetup(null); // State removed
-        loadIdentityData(); // Refresh the identity list, just in case
-    };
+    // const handleNewIdentitySetupComplete and related logic were removed as they are
+    // now handled by addIdentity.html or the sidepanel.tsx internal wizard.
 
     const handleOpenSettings = () => {
         setShowIdentitySettings(true);
@@ -400,19 +349,9 @@ export function App({ onResetDev }: AppProps) {
         );
     }
 
-    // The direct rendering of NewIdentitySetupWizard for adding identities is removed.
-    // if (showNewIdentitySetupWizard && identityForSetup) {
-    //     return (
-    //         <div className="w-[380px] bg-background text-foreground flex flex-col shadow-2xl rounded-lg overflow-hidden h-[600px]">
-    //             <NewIdentitySetupWizard
-    //                 identityDid={identityForSetup.did} // This was causing the TS error, but the whole block is removed
-    //                 accountIndex={identityForSetup.accountIndex}
-    //                 onSetupComplete={handleNewIdentitySetupComplete}
-    //                 onCancel={handleNewIdentitySetupCancel}
-    //             />
-    //         </div>
-    //     );
-    // }
+    // The direct rendering of NewIdentitySetupWizard for adding identities is removed from App.tsx.
+    // The side panel handles its own instance of NewIdentitySetupWizard.
+    // The popup's "add identity" button opens addIdentity.html.
 
     // Main render logic
     return (
