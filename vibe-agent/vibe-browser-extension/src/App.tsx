@@ -344,7 +344,7 @@ export function App({ onResetDev }: AppProps) {
 
     if (isLoadingIdentity) {
         return (
-            <div className="w-[380px] p-4 bg-background text-foreground flex flex-col items-center justify-center h-48 rounded-lg shadow-2xl">
+            <div className="p-4 bg-background text-foreground flex flex-col items-center justify-center h-48 rounded-lg shadow-2xl">
                 <p>Loading...</p> {/* Simplified loading message */}
             </div>
         );
@@ -356,7 +356,7 @@ export function App({ onResetDev }: AppProps) {
 
     if (showCreateFirstIdentityPrompt) {
         return (
-            <div className="w-[380px] p-6 text-center flex-grow flex flex-col justify-center items-center bg-background text-foreground">
+            <div className="p-6 text-center flex-grow flex flex-col justify-center items-center bg-background text-foreground">
                 <h2 className="text-xl font-semibold mb-2">Welcome to Vibe!</h2>
                 <p className="mb-4 text-sm">Your vault is set up. Now, let's create your first identity to get started.</p>
                 <div className="gap-2 flex flex-col">
@@ -369,7 +369,7 @@ export function App({ onResetDev }: AppProps) {
 
     if (showImportWizard) {
         return (
-            <div className="w-[380px] bg-background text-foreground flex flex-col shadow-2xl rounded-lg overflow-hidden">
+            <div className="bg-background text-foreground flex flex-col shadow-2xl rounded-lg overflow-hidden">
                 <ImportIdentityWizard onImportComplete={handleImportComplete} onCancel={handleCancelImport} />
             </div>
         );
@@ -377,7 +377,7 @@ export function App({ onResetDev }: AppProps) {
 
     if (showIdentitySettings) {
         return (
-            <div className="w-[380px] bg-background text-foreground flex flex-col shadow-2xl rounded-lg overflow-hidden">
+            <div className="bg-background text-foreground flex flex-col shadow-2xl rounded-lg overflow-hidden">
                 <div className="p-4 border-b border-border flex justify-between items-center">
                     <Button onClick={handleCloseSettings} variant="outline" size="sm">
                         &larr; Back to Main

@@ -60,7 +60,7 @@ function Popup() {
 
     // Apply popup-specific dimensions here
     return (
-        <div className="w-[380px] flex flex-col">
+        <div className="flex flex-col">
             {isSetupComplete ? (
                 <App onResetDev={handleResetDev} /> // App component will fill this sized container
             ) : (

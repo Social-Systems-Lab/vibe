@@ -59,7 +59,7 @@ export function ExtensionWindowView({
     const otherDisplayIdentities = allIdentities.filter((id) => id.did !== currentIdentity?.did);
 
     return (
-        <div className="w-[380px] bg-white text-foreground flex flex-col overflow-hidden">
+        <div className=" bg-white text-foreground flex flex-col overflow-hidden">
             {/* Header Section */}
             <div
                 style={{ background: "linear-gradient(to bottom right, #a18ce8, #ae8deb)" }}
