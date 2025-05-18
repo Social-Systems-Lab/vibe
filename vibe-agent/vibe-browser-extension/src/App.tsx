@@ -9,6 +9,7 @@ import { CloudStatus } from "./components/cloud/CloudStatus";
 import { ImportIdentityWizard } from "./components/identity/ImportIdentityWizard"; // Import the new wizard
 import { Button } from "@/components/ui/button"; // For a potential settings button
 import { Settings, RotateCcw } from "lucide-react"; // Added RotateCcw for reset icon
+import { ExtensionWindowView } from "./components/ExtensionWindowView"; // Import the new view component
 
 // Prop types for App component
 interface AppProps {
@@ -23,7 +24,9 @@ interface StoredIdentity {
     derivationPath?: string; // Optional, from vault
 }
 
-// UI-facing Identity type
+// UI-facing Identity type is now in ExtensionWindowView.tsx,
+// but App.tsx still needs it for state typing.
+// For a cleaner approach, this should be in a shared types file.
 interface Identity {
     did: string;
     displayName: string | null;
@@ -401,29 +404,14 @@ export function App({ onResetDev }: AppProps) {
 
     // Main render logic
     return (
-        <div className="w-[380px] bg-background text-foreground flex flex-col overflow-hidden">
-            {/* Solid background */}
-            {/* Header removed */}
-            <div className="p-4 flex flex-col gap-4">
-                {/* Content area with padding and gap */}
-                <IdentityCard identity={currentIdentity} />
-                <IdentitySwitcher
-                    identities={allIdentities} // Use renamed state
-                    currentIdentityDid={currentIdentity?.did || null} // Updated prop
-                    onSwitchIdentity={handleSwitchIdentity}
-                    onAddIdentity={handleAddIdentity}
-                    onImportIdentity={handleImportIdentity} // Pass the new handler
-                />
-                <CloudStatus activeDid={currentIdentity?.did || null} />
-            </div>
-            <div className="mt-auto flex flex-col gap-2 p-4 border-t border-border bg-muted/30">
-                <Button onClick={handleOpenSettings} variant="secondary" size="sm">
-                    <Settings className="mr-2 h-4 w-4" /> Identity Settings
-                </Button>
-                <Button onClick={onResetDev} variant="destructive" size="sm">
-                    <RotateCcw className="mr-2 h-4 w-4" /> Reset Vibe
-                </Button>
-            </div>
-        </div>
+        <ExtensionWindowView
+            currentIdentity={currentIdentity}
+            allIdentities={allIdentities}
+            onSwitchIdentity={handleSwitchIdentity}
+            onAddIdentity={handleAddIdentity}
+            onImportIdentity={handleImportIdentity}
+            onOpenSettings={handleOpenSettings}
+            onResetDev={onResetDev}
+        />
     );
 }
