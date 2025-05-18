@@ -256,30 +256,53 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
             }
 
             case "GET_ACTIVE_IDENTITY_DETAILS": {
-                if (!SessionManager.isUnlocked || !SessionManager.currentActiveDid) {
-                    // Attempt to provide a more specific error if the vault is locked
-                    if (!SessionManager.isUnlocked) {
-                        responseType = "VIBE_AGENT_RESPONSE_ERROR";
-                        responsePayload = { error: { message: "Vault is locked. Unlock to get active identity details.", code: "VAULT_LOCKED" } };
-                        break; // Exit switch case early
-                    }
-                    // If unlocked but no current DID, it's an unexpected state
-                    responseType = "VIBE_AGENT_RESPONSE_ERROR";
-                    responsePayload = { error: { message: "Vault is unlocked but no active DID is set.", code: "NO_ACTIVE_DID_UNLOCKED" } };
-                    break; // Exit switch case early
+                let didToFetch: string | null = null;
+
+                if (SessionManager.isUnlocked && SessionManager.currentActiveDid) {
+                    didToFetch = SessionManager.currentActiveDid;
+                } else {
+                    // Vault is locked or no active DID in session, try to use last active DID from local storage
+                    const lastActiveDidResult = await chrome.storage.local.get(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
+                    didToFetch = lastActiveDidResult[Constants.STORAGE_KEY_LAST_ACTIVE_DID] || null;
                 }
+
+                if (!didToFetch) {
+                    responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                    // Determine a more specific error based on setup state
+                    const setupCompleteResult = await chrome.storage.local.get(Constants.STORAGE_KEY_SETUP_COMPLETE);
+                    if (!setupCompleteResult[Constants.STORAGE_KEY_SETUP_COMPLETE]) {
+                        responsePayload = { error: { message: "Setup not complete. Cannot get identity details.", code: "SETUP_NOT_COMPLETE" } };
+                    } else {
+                        responsePayload = { error: { message: "No active identity found. Please select or create an identity.", code: "NO_ACTIVE_IDENTITY" } };
+                    }
+                    break;
+                }
+
                 const vaultResult = await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT);
                 const vault = vaultResult[Constants.STORAGE_KEY_VAULT];
-                if (!vault || !vault.identities) throw new Error("Vault data not found.");
-                const activeIdentityData = vault.identities.find((idObj: any) => idObj.did === SessionManager.currentActiveDid);
-                if (!activeIdentityData) throw new Error(`Active DID ${SessionManager.currentActiveDid} not found.`);
+
+                if (!vault || !vault.identities || !Array.isArray(vault.identities)) {
+                    throw new Error("Vault data not found or invalid.");
+                }
+
+                const identityData = vault.identities.find((idObj: any) => idObj.did === didToFetch);
+
+                if (!identityData) {
+                    // This could happen if lastActiveDid points to a now-deleted identity
+                    responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                    responsePayload = { error: { message: `Identity details for DID ${didToFetch} not found in vault.`, code: "IDENTITY_NOT_FOUND_IN_VAULT" } };
+                    break;
+                }
+
                 responsePayload = {
-                    did: activeIdentityData.did,
-                    profileName: activeIdentityData.profile_name,
-                    profilePictureUrl: activeIdentityData.profile_picture,
-                    cloudUrl: activeIdentityData.cloudUrl,
-                    instanceStatus: (activeIdentityData as any).instanceStatus,
-                    isAdmin: (activeIdentityData as any).isAdmin,
+                    did: identityData.did,
+                    profileName: identityData.profile_name,
+                    profilePictureUrl: identityData.profile_picture,
+                    cloudUrl: identityData.cloudUrl,
+                    instanceStatus: (identityData as any).instanceStatus,
+                    isAdmin: (identityData as any).isAdmin,
+                    // Add a flag to indicate if the vault is locked, so UI can adapt (e.g., disable save button until unlock)
+                    isVaultLocked: !SessionManager.isUnlocked,
                 };
                 break;
             }
