@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
+import { VaultUnlockProvider } from "./contexts/VaultUnlockContext"; // Added
 import { ExtensionWindowView } from "./components/ExtensionWindowView";
 import type { Identity } from "./components/ExtensionWindowView";
 import { UnlockScreen } from "./components/identity/UnlockScreen";
@@ -489,6 +490,8 @@ function SidePanelApp() {
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-        <SidePanelApp />
+        <VaultUnlockProvider>
+            <SidePanelApp />
+        </VaultUnlockProvider>
     </React.StrictMode>
 );

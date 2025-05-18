@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from "react";
+import { useVaultUnlock } from "@/contexts/VaultUnlockContext"; // Added
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,7 +49,9 @@ export const NewIdentitySetupWizard: React.FC<NewIdentitySetupWizardProps> = ({
     // Form field states
     const [identityName, setIdentityName] = useState("");
     const [picturePreview, setPicturePreview] = useState<string | null>(null);
-    const [vaultPassword, setVaultPassword] = useState("");
+    // const [vaultPassword, setVaultPassword] = useState(""); // Removed
+
+    const { requestUnlockAndPerformAction } = useVaultUnlock(); // Added
 
     // Cloud configuration states (from SetupIdentityStep)
     const [configuredCloudServices, setConfiguredCloudServices] = useState<CloudServiceOption[]>([
@@ -93,12 +96,7 @@ export const NewIdentitySetupWizard: React.FC<NewIdentitySetupWizardProps> = ({
     const handleCreateIdentitySubmit = async (event: React.FormEvent) => {
         event.preventDefault();
         setError(null);
-
-        if (!isVaultInitiallyUnlocked && !vaultPassword) {
-            // Only require password if vault is locked
-            setError("Vault password is required to create the identity.");
-            return;
-        }
+        // Removed direct password check here, will be handled by requestUnlockAndPerformAction
 
         setIsCreating(true);
         setCurrentStep("creating");
@@ -125,8 +123,6 @@ export const NewIdentitySetupWizard: React.FC<NewIdentitySetupWizardProps> = ({
             finalClaimCode = customClaimCode.trim() || null;
         } else {
             finalCloudUrl = selectedService.url;
-            // For default or previously saved custom services, claim code isn't re-entered here
-            // unless a specific logic for it is added.
             finalClaimCode = selectedService.id.startsWith("custom-") ? customClaimCode.trim() || null : null;
             if (selectedService.isDefault) {
                 finalClaimCode = null;
@@ -134,18 +130,32 @@ export const NewIdentitySetupWizard: React.FC<NewIdentitySetupWizardProps> = ({
         }
 
         try {
-            await onSetupComplete({
-                accountIndex,
-                identityName: identityName.trim() || null,
-                identityPicture: picturePreview,
-                cloudUrl: finalCloudUrl,
-                claimCode: finalClaimCode,
-                password: isVaultInitiallyUnlocked ? undefined : vaultPassword, // Send password only if vault was locked
+            const createIdentityAction = async (passwordFromPrompt?: string) => {
+                await onSetupComplete({
+                    accountIndex,
+                    identityName: identityName.trim() || null,
+                    identityPicture: picturePreview,
+                    cloudUrl: finalCloudUrl,
+                    claimCode: finalClaimCode,
+                    password: passwordFromPrompt, // Use password from prompt
+                });
+            };
+
+            await requestUnlockAndPerformAction(createIdentityAction, {
+                title: "Create New Identity",
+                description: "Enter your vault password to encrypt and save your new identity.",
             });
+
             setCurrentStep("creationComplete");
         } catch (e: any) {
-            setError(e.message || "An unknown error occurred during identity creation.");
-            setCurrentStep("enterDetails"); // Revert to details step on error
+            // This catch block will handle errors from requestUnlockAndPerformAction (e.g., user cancellation)
+            // or errors from createIdentityAction if they weren't handled by the modal for retry.
+            const errorMessage = e instanceof Error ? e.message : "An unknown error occurred.";
+            if (errorMessage !== "Operation cancelled by user.") {
+                // Don't show "cancelled" as a form error
+                setError(errorMessage);
+            }
+            setCurrentStep("enterDetails"); // Revert to details step on error or cancellation
         } finally {
             setIsCreating(false);
         }
@@ -249,24 +259,11 @@ export const NewIdentitySetupWizard: React.FC<NewIdentitySetupWizardProps> = ({
                 )}
             </div>
 
-            {/* Vault Password Section - Conditional */}
-            {!isVaultInitiallyUnlocked && (
-                <div className="space-y-2">
-                    <Label htmlFor="vault-password">Current Vault Password</Label>
-                    <Input
-                        id="vault-password"
-                        type="password"
-                        value={vaultPassword}
-                        onChange={(e) => setVaultPassword(e.target.value)}
-                        placeholder="Enter your vault password"
-                        required={!isVaultInitiallyUnlocked} // Required only if shown
-                    />
-                </div>
-            )}
+            {/* Vault Password Section - Conditional - REMOVED */}
 
             {error && <p className="text-red-500 text-sm text-center">{error}</p>}
 
-            <Button type="submit" className="w-full !mt-8" disabled={isCreating || (!isVaultInitiallyUnlocked && !vaultPassword)}>
+            <Button type="submit" className="w-full !mt-8" disabled={isCreating}>
                 {isCreating ? (
                     <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
