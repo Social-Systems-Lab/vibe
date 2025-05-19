@@ -481,73 +481,160 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
             }
 
             case "UPDATE_IDENTITY_PROFILE": {
-                const { did, profileName, profilePictureUrl, claimCode } = payload;
-                if (!did) throw new Error("DID required.");
-                if (!SessionManager.isUnlocked || SessionManager.currentActiveDid !== did) {
-                    if (!SessionManager.isUnlocked) {
-                        responseType = "VIBE_AGENT_RESPONSE_ERROR";
-                        responsePayload = { error: { message: "Vault is locked. Unlock to update profile.", code: "VAULT_LOCKED" } };
-                        break;
-                    }
-                    throw new Error("Target identity not active for profile update.");
-                }
-                const decryptedSeed = SessionManager.getInMemoryDecryptedSeed();
-                if (!decryptedSeed) {
-                    // Should be redundant due to isUnlocked check, but good for safety
-                    responseType = "VIBE_AGENT_RESPONSE_ERROR";
-                    responsePayload = { error: { message: "Vault locked (in-memory seed missing).", code: "VAULT_LOCKED" } };
-                    break;
-                }
-                const localVault = (await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT))[Constants.STORAGE_KEY_VAULT];
+                const { did, profileName, profilePictureUrl, claimCode } = payload; // claimCode for admin promotion
+                if (!did) throw new Error("DID required for profile update.");
+
+                let localVault = (await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT))[Constants.STORAGE_KEY_VAULT];
+                if (!localVault || !localVault.identities) throw new Error("Vault data not found.");
+
                 const identityIndex = localVault.identities.findIndex((idObj: any) => idObj.did === did);
-                if (identityIndex === -1) throw new Error("Identity not found in vault.");
-                let seedBuffer: Buffer | null = null;
-                try {
-                    seedBuffer = await seedFromMnemonic(decryptedSeed);
-                    const masterKey = getMasterHDKeyFromSeed(seedBuffer);
-                    const keyPair = deriveChildKeyPair(masterKey, identityIndex);
-                    const nonce = crypto.randomUUID().toString();
-                    const timestamp = new Date().toISOString();
-                    const updateOwnerPayload: any = { nonce, timestamp };
-                    if (profileName !== undefined) updateOwnerPayload.profileName = profileName;
-                    if (profilePictureUrl !== undefined) updateOwnerPayload.profilePictureUrl = profilePictureUrl;
-                    if (claimCode !== undefined) updateOwnerPayload.claimCode = claimCode;
-                    const fieldsToSign = [claimCode || "", updateOwnerPayload.profileName || "", updateOwnerPayload.profilePictureUrl || ""];
-                    const messageToSign = `${did}|${nonce}|${timestamp}|${fieldsToSign.join("|")}`;
-                    updateOwnerPayload.signature = await signMessage(keyPair.privateKey, messageToSign);
-                    let accessTokenToUse = await TokenManager.getValidCpAccessToken(did);
-                    const updateUrl = `${Constants.OFFICIAL_VIBE_CLOUD_URL}/api/v1/identities/${did}`;
-                    const updateResponse = await fetch(updateUrl, {
-                        method: "PUT",
-                        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessTokenToUse}` },
-                        body: JSON.stringify(updateOwnerPayload),
-                    });
-                    if (!updateResponse.ok) {
-                        const errBody = await updateResponse.json().catch(() => ({ error: "Unknown update error" }));
-                        throw new Error(`Profile update failed: ${errBody.error}`);
-                    }
-                    const updatedServerIdentity = (await updateResponse.json()) as Types.Identity & { token?: string };
-                    localVault.identities[identityIndex].profile_name = updatedServerIdentity.profileName;
-                    localVault.identities[identityIndex].profile_picture = updatedServerIdentity.profilePictureUrl;
-                    if (updatedServerIdentity.isAdmin) (localVault.identities[identityIndex] as any).isAdmin = true;
+                if (identityIndex === -1) throw new Error(`Identity with DID ${did} not found in vault.`);
+
+                const identityToUpdate = localVault.identities[identityIndex];
+                let needsLocalSave = false;
+                let needsCloudSync = false;
+
+                if (profileName !== undefined && identityToUpdate.profile_name !== profileName) {
+                    identityToUpdate.profile_name = profileName;
+                    needsLocalSave = true;
+                    needsCloudSync = true;
+                }
+                if (profilePictureUrl !== undefined && identityToUpdate.profile_picture !== profilePictureUrl) {
+                    identityToUpdate.profile_picture = profilePictureUrl;
+                    needsLocalSave = true;
+                    needsCloudSync = true;
+                }
+                // If claimCode is provided and different, it also implies a cloud sync is needed (for admin promotion)
+                if (claimCode !== undefined) {
+                    // Assuming claim code is primarily for cloud interaction
+                    needsCloudSync = true;
+                }
+
+                if (needsLocalSave) {
                     await chrome.storage.local.set({ [Constants.STORAGE_KEY_VAULT]: localVault });
-                    if ((updatedServerIdentity as any).token) {
-                        // Fallback for old token field
-                        const sessionAccessTokenKey = `${Constants.SESSION_STORAGE_CP_ACCESS_TOKEN_PREFIX}${did}`;
-                        const sessionAccessTokenExpiresAtKey = `${Constants.SESSION_STORAGE_CP_ACCESS_TOKEN_EXPIRES_AT_PREFIX}${did}`;
-                        const defaultExpiry = Math.floor(Date.now() / 1000) + 900;
-                        await chrome.storage.session.set({
-                            [sessionAccessTokenKey]: (updatedServerIdentity as any).token,
-                            [sessionAccessTokenExpiresAtKey]: defaultExpiry,
-                        });
+                }
+
+                let cloudSyncMessage = ""; // To build up the final message
+                let cloudUpdateError = null;
+                // let requiresUnlockForCloudSync = false; // No longer needed from backend
+
+                if (needsCloudSync && identityToUpdate.cloudUrl === Constants.OFFICIAL_VIBE_CLOUD_URL) {
+                    // Frontend ensures vault is unlocked if this path is taken for cloud sync.
+                    // We still need to check SessionManager state for safety/direct calls.
+                    if (!SessionManager.isUnlocked || SessionManager.currentActiveDid !== did) {
+                        // This should ideally not be hit if frontend calls requestUnlockAndPerformAction first.
+                        // If it is, it means a direct call was made or UI logic error.
+                        cloudUpdateError = "Vault locked or identity not active; cloud sync skipped.";
+                        cloudSyncMessage = "Changes saved locally. Cloud sync skipped (vault locked or inactive identity).";
+                    } else {
+                        const decryptedSeed = SessionManager.getInMemoryDecryptedSeed();
+                        if (!decryptedSeed) {
+                            cloudUpdateError = "Decrypted seed not available for signing; cloud sync skipped.";
+                            cloudSyncMessage = "Changes saved locally. Cloud sync skipped (seed unavailable).";
+                        } else {
+                            let seedBuffer: Buffer | null = null;
+                            try {
+                                seedBuffer = await seedFromMnemonic(decryptedSeed);
+                                const masterKey = getMasterHDKeyFromSeed(seedBuffer);
+                                const keyPair = deriveChildKeyPair(masterKey, identityIndex);
+
+                                const nonce = crypto.randomUUID().toString();
+                                const timestamp = new Date().toISOString();
+                                const updateOwnerPayload: any = { nonce, timestamp };
+
+                                // Populate payload for API: only send fields that are being updated or are needed for the operation
+                                if (profileName !== undefined) updateOwnerPayload.profileName = profileName;
+                                if (profilePictureUrl !== undefined) updateOwnerPayload.profilePictureUrl = profilePictureUrl;
+                                if (claimCode !== undefined) updateOwnerPayload.claimCode = claimCode; // For admin promotion
+
+                                // Construct fieldsToSign based on what's being sent for signature verification
+                                // The signature should cover all data that the owner is asserting.
+                                const fieldsToSign = [
+                                    claimCode || "", // If claimCode is part of the update, include it
+                                    profileName === undefined ? identityToUpdate.profile_name || "" : profileName,
+                                    profilePictureUrl === undefined ? identityToUpdate.profile_picture || "" : profilePictureUrl,
+                                ];
+                                const messageToSign = `${did}|${nonce}|${timestamp}|${fieldsToSign.join("|")}`;
+                                updateOwnerPayload.signature = await signMessage(keyPair.privateKey, messageToSign);
+
+                                let accessTokenToUse = await TokenManager.getValidCpAccessToken(did);
+                                const updateUrl = `${Constants.OFFICIAL_VIBE_CLOUD_URL}/api/v1/identities/${did}`;
+                                const updateResponse = await fetch(updateUrl, {
+                                    method: "PUT",
+                                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessTokenToUse}` },
+                                    body: JSON.stringify(updateOwnerPayload),
+                                });
+
+                                if (!updateResponse.ok) {
+                                    const errBody = await updateResponse.json().catch(() => ({ error: "Unknown cloud update error" }));
+                                    throw new Error(`Cloud profile update failed: ${errBody.error}`);
+                                }
+                                const updatedServerIdentity = (await updateResponse.json()) as Types.Identity & { token?: string }; // Token for admin promotion
+
+                                // Sync back authoritative fields from server
+                                identityToUpdate.profile_name = updatedServerIdentity.profileName;
+                                identityToUpdate.profile_picture = updatedServerIdentity.profilePictureUrl;
+                                if (updatedServerIdentity.isAdmin !== undefined) identityToUpdate.isAdmin = updatedServerIdentity.isAdmin;
+                                // If a new token was issued (e.g. admin promotion), store it
+                                if (updatedServerIdentity.token) {
+                                    // This part seems to be from an older JWT model, refresh tokens are now primary
+                                    // For now, we'll assume the main login/refresh flow handles token updates.
+                                    // If specific token update is needed here, TokenManager should be used.
+                                    console.warn(
+                                        "Received token in PUT response, but current flow relies on refresh tokens. Ignoring direct token update here."
+                                    );
+                                }
+                                await chrome.storage.local.set({ [Constants.STORAGE_KEY_VAULT]: localVault });
+                                cloudSyncMessage = "Changes saved locally and synced to cloud.";
+                            } catch (error: any) {
+                                console.error("Error during cloud profile update:", error);
+                                cloudUpdateError = error.message;
+                                cloudSyncMessage = `Changes saved locally. Cloud sync failed: ${error.message}`;
+                            } finally {
+                                if (seedBuffer) wipeMemory(seedBuffer);
+                            }
+                        }
                     }
+                } else if (needsCloudSync && identityToUpdate.cloudUrl !== Constants.OFFICIAL_VIBE_CLOUD_URL) {
+                    cloudSyncMessage = "Changes saved locally. Identity not connected to official Vibe Cloud for sync.";
+                } else if (!needsCloudSync && needsLocalSave) {
+                    cloudSyncMessage = "Changes saved locally.";
+                } else if (!needsLocalSave && !needsCloudSync) {
+                    cloudSyncMessage = "No changes detected.";
+                }
+
+                if (needsLocalSave && !cloudUpdateError && cloudSyncMessage.includes("synced to cloud")) {
                     responsePayload = {
                         success: true,
-                        message: "Profile updated.",
-                        updatedProfile: { profileName: updatedServerIdentity.profileName, profilePictureUrl: updatedServerIdentity.profilePictureUrl },
+                        message: "Profile updated and synced to cloud.",
+                        updatedProfile: { profileName: identityToUpdate.profile_name, profilePictureUrl: identityToUpdate.profile_picture },
                     };
-                } finally {
-                    if (seedBuffer) wipeMemory(seedBuffer);
+                } else if (needsLocalSave && !cloudUpdateError) {
+                    responsePayload = {
+                        success: true,
+                        message: cloudSyncMessage.length > 0 ? `Profile saved locally. ${cloudSyncMessage}` : "Profile saved locally.",
+                        updatedProfile: { profileName: identityToUpdate.profile_name, profilePictureUrl: identityToUpdate.profile_picture },
+                    };
+                } else if (cloudUpdateError) {
+                    responsePayload = {
+                        success: false, // Indicate overall operation might not be fully complete as user expects
+                        message: `Local save successful. Cloud sync failed: ${cloudUpdateError}`,
+                        updatedProfile: { profileName: identityToUpdate.profile_name, profilePictureUrl: identityToUpdate.profile_picture },
+                        cloudUpdateError: cloudUpdateError,
+                    };
+                } else if (!needsLocalSave && !needsCloudSync) {
+                    responsePayload = {
+                        success: true, // No error, but no operation performed
+                        message: "No changes to save.",
+                        updatedProfile: { profileName: identityToUpdate.profile_name, profilePictureUrl: identityToUpdate.profile_picture },
+                    };
+                } else {
+                    // Should not be reached if logic is correct
+                    responsePayload = {
+                        success: false,
+                        message: "An unexpected state occurred during profile update.",
+                        updatedProfile: { profileName: identityToUpdate.profile_name, profilePictureUrl: identityToUpdate.profile_picture },
+                    };
                 }
                 break;
             }
