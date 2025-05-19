@@ -10,6 +10,7 @@ import {
     currentIdentityAtom,
     allIdentitiesAtom,
     type Identity, // Use Identity type from identityAtoms
+    newIdentityWizardPropsAtom,
 } from "../store/identityAtoms";
 import { isLoadingIdentityAtom, appStatusAtom } from "../store/appAtoms"; // For loading state and app status
 
@@ -36,6 +37,7 @@ export function DashboardPage() {
     const [isLoading, setIsLoading] = useAtom(isLoadingIdentityAtom);
     const [appStatus] = useAtom(appStatusAtom);
     const [, setLocation] = useLocation();
+    const [, setNewIdentityProps] = useAtom(newIdentityWizardPropsAtom);
 
     const [isCloudStatusExpanded, setIsCloudStatusExpanded] = useState(false);
     const [statusToggleInfo, setStatusToggleInfo] = useState<{
@@ -144,13 +146,65 @@ export function DashboardPage() {
         }
     }, []); // loadIdentityData removed from deps, switch should trigger storage change
 
-    const handleAddIdentity = () => setLocation("/setup/new-identity");
+    const handleAddIdentity = useCallback(async () => {
+        setIsLoading(true);
+        try {
+            const nextIndexResponse = (await chrome.runtime.sendMessage({
+                type: "VIBE_AGENT_REQUEST",
+                action: "GET_NEXT_ACCOUNT_INDEX",
+                requestId: crypto.randomUUID().toString(),
+            })) as ChromeMessage;
+
+            if (nextIndexResponse?.type !== "VIBE_AGENT_RESPONSE" || typeof nextIndexResponse.payload?.accountIndex !== "number") {
+                console.error("Failed to get next account index:", nextIndexResponse?.error);
+                alert(`Error preparing for new identity: ${nextIndexResponse?.error?.message || "Could not get account index."}`);
+                setIsLoading(false);
+                return;
+            }
+            const accountIndex = nextIndexResponse.payload.accountIndex;
+
+            const lockStateResponse = (await chrome.runtime.sendMessage({
+                type: "VIBE_AGENT_REQUEST",
+                action: "GET_LOCK_STATE",
+                requestId: crypto.randomUUID().toString(),
+            })) as ChromeMessage;
+
+            if (lockStateResponse?.type !== "VIBE_AGENT_RESPONSE" || typeof lockStateResponse.payload?.isUnlocked !== "boolean") {
+                console.error("Failed to get lock state:", lockStateResponse?.error);
+                alert(`Error preparing for new identity: ${lockStateResponse?.error?.message || "Could not get lock state."}`);
+                setIsLoading(false);
+                return;
+            }
+            const isVaultInitiallyUnlocked = lockStateResponse.payload.isUnlocked;
+
+            setNewIdentityProps({
+                accountIndex,
+                isVaultInitiallyUnlocked,
+            });
+            setLocation("/setup/new-identity");
+        } catch (error: any) {
+            console.error("Error in handleAddIdentity:", error);
+            alert(`An unexpected error occurred: ${error.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [setLocation, setNewIdentityProps, setIsLoading]);
     const handleOpenSettings = () => setLocation("/settings");
     // const handleImportIdentity = () => setLocation("/import-identity"); // If this action is still needed
 
-    const handleCloudStatusUpdate = useCallback((statusInfo: { Icon: React.ElementType; color: string; rawStatus: string; isLoading: boolean }) => {
-        setStatusToggleInfo({ Icon: statusInfo.Icon, color: statusInfo.color, isLoading: statusInfo.isLoading });
-    }, []);
+    const handleCloudStatusUpdate = useCallback((newStatusInfo: { Icon: React.ElementType; color: string; rawStatus: string; isLoading: boolean }) => {
+        setStatusToggleInfo((currentStatusInfo) => {
+            if (
+                currentStatusInfo.Icon !== newStatusInfo.Icon ||
+                currentStatusInfo.color !== newStatusInfo.color ||
+                currentStatusInfo.isLoading !== newStatusInfo.isLoading
+            ) {
+                // Return an object matching the state's type (without rawStatus)
+                return { Icon: newStatusInfo.Icon, color: newStatusInfo.color, isLoading: newStatusInfo.isLoading };
+            }
+            return currentStatusInfo; // No change
+        });
+    }, []); // Empty dependency array is correct as setStatusToggleInfo is stable
 
     const toggleCloudStatusExpansion = () => setIsCloudStatusExpanded(!isCloudStatusExpanded);
 

@@ -43,20 +43,56 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                         code: "INITIALIZED_UNLOCKED",
                     };
                 } else {
-                    // Vault is locked, or no active identity could be loaded from session
+                    // Vault is locked (SessionManager.isUnlocked is false), or no active identity could be loaded from session.
                     const localData = await chrome.storage.local.get(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
                     const lastActiveDid = localData[Constants.STORAGE_KEY_LAST_ACTIVE_DID];
 
                     if (lastActiveDid) {
-                        // We know the last active DID, but the vault is locked.
-                        responseType = "VIBE_AGENT_RESPONSE_ERROR"; // Still an "error" in terms of full init
-                        responsePayload = {
-                            error: {
-                                message: "Vault is locked. Unlock to access your last active identity.",
-                                code: "UNLOCK_REQUIRED_FOR_LAST_ACTIVE",
-                                lastActiveDid: lastActiveDid,
-                            },
-                        };
+                        // Vault is locked, but we have a lastActiveDid.
+                        // Try to get a token using refresh token if available.
+                        try {
+                            // Attempt to get a valid access token. This will try to use the refresh token.
+                            // We don't need the token itself here, just to see if it succeeds.
+                            await TokenManager.getValidCpAccessToken(lastActiveDid);
+
+                            // If getValidCpAccessToken succeeds, it means we have a valid session or refreshed token.
+                            // We can proceed as if "unlocked" for API purposes, even if the vault password hasn't been entered.
+                            // SessionManager.isUnlocked will remain false, which is correct.
+                            // We set currentActiveDid here so the UI knows which identity we are operating with.
+                            SessionManager.setCurrentActiveDid(lastActiveDid); // Ensure this is set for UI context
+
+                            responsePayload = {
+                                did: lastActiveDid,
+                                permissions: { "profile:read": "always" }, // Example permission
+                                message: "Successfully initialized using stored token.",
+                                code: "INITIALIZED_UNLOCKED", // Treat as unlocked for UI flow
+                            };
+                            // responseType remains "VIBE_AGENT_RESPONSE" (success)
+                        } catch (tokenError: any) {
+                            // If getValidCpAccessToken throws, it means we need a full login or vault unlock.
+                            if (tokenError.message && tokenError.message.startsWith("FULL_LOGIN_REQUIRED")) {
+                                // Refresh token is invalid or missing, so vault unlock is truly required.
+                                responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                                responsePayload = {
+                                    error: {
+                                        message: "Vault is locked. Unlock to access your last active identity.",
+                                        code: "UNLOCK_REQUIRED_FOR_LAST_ACTIVE",
+                                        lastActiveDid: lastActiveDid,
+                                    },
+                                };
+                            } else {
+                                // Some other unexpected error during token refresh.
+                                console.error(`Unexpected error during token validation for init: ${tokenError.message}`);
+                                responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                                responsePayload = {
+                                    error: {
+                                        message: `Error initializing session: ${tokenError.message}`,
+                                        code: "INIT_TOKEN_ERROR", // Potentially a new error code for UI to handle
+                                        lastActiveDid: lastActiveDid,
+                                    },
+                                };
+                            }
+                        }
                     } else {
                         // Vault is locked, and we don't even know the last active DID (e.g., fresh install, or storage cleared)
                         // This could also mean setup is not complete, or setup is complete but no identities exist.
