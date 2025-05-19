@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 // IdentityCard is no longer directly used.
 import { CloudStatus } from "./cloud/CloudStatus";
 import { Button } from "@/components/ui/button";
@@ -39,9 +39,9 @@ export function ExtensionWindowView({
         isLoading: boolean;
     }>({ Icon: Loader2, color: "text-slate-500", isLoading: true });
 
-    const handleCloudStatusUpdate = (statusInfo: { Icon: React.ElementType; color: string; rawStatus: string; isLoading: boolean }) => {
+    const handleCloudStatusUpdate = useCallback((statusInfo: { Icon: React.ElementType; color: string; rawStatus: string; isLoading: boolean }) => {
         setStatusToggleInfo({ Icon: statusInfo.Icon, color: statusInfo.color, isLoading: statusInfo.isLoading });
-    };
+    }, []); // setStatusToggleInfo is stable, so empty dependency array is fine.
 
     const toggleCloudStatusExpansion = () => {
         setIsCloudStatusExpanded(!isCloudStatusExpanded);

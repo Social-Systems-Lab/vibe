@@ -1,4 +1,7 @@
 // Vibe Browser Extension - Content Script
+import { BlueSkyProcessor } from "./site-processors/BlueSkyProcessor";
+import { GenericProcessor } from "./site-processors/GenericProcessor";
+import type { SiteProcessor } from "./site-processors/SiteProcessor";
 
 /**
  * Injects the vibe-inpage.js script into the page's main world.
@@ -62,3 +65,56 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // This listener is more for unsolicited messages from background to page.
     return false; // Indicate that sendResponse will not be called asynchronously here
 });
+
+// --- Vibe Icon Injection Logic ---
+
+function initializeVibeFeatures() {
+    console.log("Vibe: Initializing Vibe features on page.");
+    let processor: SiteProcessor | null = null;
+
+    const blueSkyProcessor = new BlueSkyProcessor();
+    if (blueSkyProcessor.isCurrentSite()) {
+        processor = blueSkyProcessor;
+        console.log("Vibe: BlueSky site detected. Using BlueSkyProcessor.");
+    } else {
+        // Fallback to generic processor if no specific site is matched.
+        // For now, GenericProcessor is a no-op, but it could have default behaviors.
+        processor = new GenericProcessor();
+        // console.log("Vibe: No specific site detected. Using GenericProcessor.");
+    }
+
+    if (processor) {
+        try {
+            processor.scanForHandles();
+        } catch (error) {
+            console.error("Vibe: Error during handle scanning:", error);
+        }
+    }
+
+    // TODO: Implement MutationObserver to re-scan for handles when the DOM changes.
+    // This is crucial for single-page applications (SPAs) and dynamic content.
+    // const observer = new MutationObserver((mutationsList, observer) => {
+    //     if (processor) {
+    //         console.log("Vibe: DOM changed, re-scanning for handles.");
+    //         processor.scanForHandles();
+    //     }
+    // });
+    // observer.observe(document.body, { childList: true, subtree: true });
+}
+
+// Run the Vibe feature initialization logic
+// We can run it once the document is idle, or with a small delay
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializeVibeFeatures);
+} else {
+    // DOMContentLoaded has already fired
+    initializeVibeFeatures();
+}
+
+// Alternative: Run after a short delay to give the page more time to load dynamic content initially
+setTimeout(() => {
+    console.log("Vibe: Running initializeVibeFeatures after delay.");
+    initializeVibeFeatures();
+}, 2000); // Adjust delay as needed. This is a temporary measure for dynamic content.
+
+console.log("Vibe: Content script Vibe feature initialization queued/run.");

@@ -41,6 +41,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Delegate to the new message handler
         MessageHandler.handleMessage(message, sender, sendResponse);
         return true; // Crucial for asynchronous sendResponse
+    } else if (message && typeof message === "object" && message.type === "SHOW_VIBE_PROFILE") {
+        console.log("Background: Received SHOW_VIBE_PROFILE for", message.payload);
+        (async () => {
+            try {
+                if (sender.tab && sender.tab.windowId) {
+                    await chrome.sidePanel.open({ windowId: sender.tab.windowId });
+                    // Send a message to the side panel to display the profile
+                    // This assumes the side panel is listening for "DISPLAY_MOCKED_PROFILE"
+                    await chrome.runtime.sendMessage({
+                        type: "DISPLAY_MOCKED_PROFILE",
+                        payload: {
+                            username: message.payload.username,
+                            site: message.payload.site,
+                            mockBio: `This is a mocked Vibe user profile for ${message.payload.username} on ${message.payload.site}.`,
+                            mockAvatar: chrome.runtime.getURL("icon-dev.png"), // Use the extension icon as a placeholder
+                            // Add other dummy data as needed
+                        },
+                    });
+                    sendResponse({ success: true, message: "Side panel opened and profile display requested." });
+                } else {
+                    console.error("Background: Cannot open side panel, sender.tab.windowId is missing.");
+                    sendResponse({ success: false, error: "Missing tab context to open side panel." });
+                }
+            } catch (error: any) {
+                console.error("Background: Error handling SHOW_VIBE_PROFILE:", error);
+                sendResponse({ success: false, error: { message: error.message || "Unknown error opening side panel or sending profile data." } });
+            }
+        })();
+        return true; // Crucial for asynchronous sendResponse
     } else if (message && typeof message === "object" && message.type === "MARK_SETUP_COMPLETE") {
         // Handle MARK_SETUP_COMPLETE separately as before
         (async () => {

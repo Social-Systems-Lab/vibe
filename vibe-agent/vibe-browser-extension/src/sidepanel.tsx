@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Settings, RotateCcw } from "lucide-react";
 import { SetupWizard } from "./components/setup/SetupWizard"; // Added
 import { NewIdentitySetupWizard } from "./components/identity/NewIdentitySetupWizard"; // Added
+import { VibeUserProfileView, type VibeUserProfileData } from "./components/VibeUserProfileView"; // Added for mocked profile
 
 // Matches the structure in background.ts (profile_name, profile_picture)
 interface StoredIdentity {
@@ -38,6 +39,8 @@ function SidePanelApp() {
         isVaultInitiallyUnlocked: boolean;
     } | null>(null); // Added
     const [initializeAppState, setInitializeAppState] = useState<string | null>(null); // Moved and initialized
+    const [showVibeUserProfile, setShowVibeUserProfile] = useState(false); // Added for mocked profile
+    const [currentVibeProfileData, setCurrentVibeProfileData] = useState<VibeUserProfileData | null>(null); // Added for mocked profile
 
     const initializeApp = useCallback(async () => {
         console.log("SidePanelApp: initializeApp triggered");
@@ -184,11 +187,14 @@ function SidePanelApp() {
         initializeApp();
     }, [initializeApp]);
 
+    // Listener for storage changes to re-init app
     useEffect(() => {
         const storageChangedListener = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
             if ((areaName === "local" && (changes.vibeVault || changes.lastActiveDid)) || (areaName === "session" && changes.activeIdentityIndex)) {
                 console.log("SidePanelApp: Detected storage change, re-initializing app state.");
-                initializeApp();
+                initializeApp(); // This might hide the profile view if it was open, which is acceptable for now.
+                setShowVibeUserProfile(false); // Explicitly hide profile view on major state changes
+                setCurrentVibeProfileData(null);
             }
         };
         chrome.storage.onChanged.addListener(storageChangedListener);
@@ -196,6 +202,36 @@ function SidePanelApp() {
             chrome.storage.onChanged.removeListener(storageChangedListener);
         };
     }, [initializeApp]);
+
+    // Listener for messages from background script (e.g., to show mocked profile)
+    useEffect(() => {
+        const messageListener = (message: any, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) => {
+            if (message.type === "DISPLAY_MOCKED_PROFILE" && message.payload) {
+                console.log("SidePanelApp: Received DISPLAY_MOCKED_PROFILE", message.payload);
+                setCurrentVibeProfileData(message.payload as VibeUserProfileData);
+                setShowVibeUserProfile(true);
+                // Potentially hide other modals/wizards if they are open
+                setShowSetupWizard(false);
+                setShowNewIdentityWizard(false);
+                setShowUnlockScreen(false);
+                setShowImportWizard(false);
+                setShowIdentitySettings(false);
+                sendResponse({ success: true });
+                return true;
+            }
+            return false; // Indicate that sendResponse will not be called asynchronously here for other messages
+        };
+
+        chrome.runtime.onMessage.addListener(messageListener);
+        return () => {
+            chrome.runtime.onMessage.removeListener(messageListener);
+        };
+    }, []); // Empty dependency array means this runs once on mount and cleans up on unmount
+
+    const handleCloseVibeUserProfile = () => {
+        setShowVibeUserProfile(false);
+        setCurrentVibeProfileData(null);
+    };
 
     const handleUnlock = async (password: string) => {
         setIsUnlocking(true);
@@ -414,6 +450,11 @@ function SidePanelApp() {
 
     if (showUnlockScreen) {
         return <UnlockScreen onUnlock={handleUnlock} isUnlocking={isUnlocking} unlockError={unlockError} lastActiveDidHint={lastActiveDidHint} />;
+    }
+
+    // If Vibe User Profile needs to be shown, render it above other views.
+    if (showVibeUserProfile && currentVibeProfileData) {
+        return <VibeUserProfileView profileData={currentVibeProfileData} onClose={handleCloseVibeUserProfile} />;
     }
 
     // showCreateFirstIdentityPrompt might be redundant if showNewIdentityWizard covers this.
