@@ -44,7 +44,7 @@ export const useAppInitializer = () => {
     // For now, they are not directly used in this hook's primary logic after init.
     const [, setCurrentIdentity] = useAtom(currentIdentityAtom);
     const [, setAllIdentities] = useAtom(allIdentitiesAtom);
-    const [, setLocation] = useLocation();
+    const [currentPath, setLocation] = useLocation(); // Modified: also get currentPath
     const [, setCurrentVibeProfileData] = useAtom(currentVibeProfileDataAtom);
     const [, setShowVibeUserProfile] = useAtom(showVibeUserProfileAtom);
 
@@ -150,7 +150,13 @@ export const useAppInitializer = () => {
     useEffect(() => {
         const storageChangedListener = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
             const localChanges = areaName === "local" && (changes.vibeVault || changes.lastActiveDid);
+
             if (localChanges) {
+                // If currently on the main setup page, skip re-initialization to prevent interrupting the wizard
+                if (currentPath === "/setup") {
+                    console.log("useAppInitializer: Storage change detected during setup wizard (/setup), re-initialization skipped.");
+                    return;
+                }
                 console.log("useAppInitializer: Detected storage change, re-initializing app state.");
                 initializeApp(); // initializeApp is stable due to useCallback
                 setShowVibeUserProfile(false);
@@ -162,7 +168,7 @@ export const useAppInitializer = () => {
         return () => {
             chrome.storage.onChanged.removeListener(storageChangedListener);
         };
-    }, [initializeApp, setShowVibeUserProfile, setCurrentVibeProfileData]); // Jotai setters are stable
+    }, [initializeApp, setShowVibeUserProfile, setCurrentVibeProfileData, currentPath]); // Added currentPath
 
     // Effect for background messages listener
     useEffect(() => {
