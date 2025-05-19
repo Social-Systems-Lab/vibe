@@ -2,12 +2,12 @@ import React, { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Assuming shadcn/ui avatar
-import { User } from "lucide-react"; // Default icon
+// Removed Card components
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { User } from "lucide-react";
 
 interface NameIdentityStepProps {
-    onIdentityNamed: (name: string | null, picture?: string | null) => void; // Pass name (null if skipped) and optional picture data URL
+    onIdentityNamed: (name: string | null, picture?: string | null) => void;
 }
 
 export function NameIdentityStep({ onIdentityNamed }: NameIdentityStepProps) {
@@ -44,56 +44,60 @@ export function NameIdentityStep({ onIdentityNamed }: NameIdentityStepProps) {
     };
 
     return (
-        <Card className="w-full max-w-md">
-            <CardHeader>
-                <CardTitle className="text-2xl">Profile Your First Identity</CardTitle>
-                <CardDescription>
+        <div className="flex flex-col items-center justify-start h-full p-6 space-y-6 text-center">
+            <img src="/icon-dev.png" alt="Vibe Logo" className="w-16 h-16 mb-2" />
+
+            <div className="space-y-1">
+                <h1 className="text-2xl font-semibold">Profile Your First Identity</h1>
+                <p className="text-sm text-muted-foreground max-w-sm">
                     Give your first identity a recognizable name and optionally add a picture. This helps you identify it later. (Optional)
-                </CardDescription>
-            </CardHeader>
-            <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    {/* Picture Upload Placeholder */}
-                    <div className="flex flex-col items-center space-y-2">
-                        <Avatar className="h-20 w-20 mb-2">
-                            <AvatarImage src={picturePreview ?? undefined} alt={name || "Identity Avatar"} />
-                            <AvatarFallback>
-                                <User className="h-10 w-10" />
-                            </AvatarFallback>
-                        </Avatar>
-                        <Input id="picture-upload" type="file" accept="image/*" onChange={handlePictureChange} className="hidden" />
-                        <Button type="button" variant="outline" size="sm" onClick={() => document.getElementById("picture-upload")?.click()}>
-                            {picturePreview ? "Change Picture" : "Upload Picture"}
-                        </Button>
-                        {picturePreview && (
-                            <Button type="button" variant="ghost" size="sm" onClick={() => setPicturePreview(null)}>
-                                Remove Picture
-                            </Button>
-                        )}
-                    </div>
+                </p>
+            </div>
 
-                    <div className="space-y-2">
-                        <Label htmlFor="identity-name">Display Name (Optional)</Label>
-                        <Input
-                            id="identity-name"
-                            type="text"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            placeholder="e.g., Personal, Main"
-                            autoComplete="nickname"
-                        />
-                    </div>
-
-                    <Button type="submit" className="w-full">
-                        Save Profile & Continue
+            <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4 text-left">
+                <div className="flex flex-col items-center space-y-3 pt-2">
+                    <Avatar className="h-24 w-24">
+                        {" "}
+                        {/* Slightly larger Avatar */}
+                        <AvatarImage src={picturePreview ?? undefined} alt={name || "Identity Avatar"} />
+                        <AvatarFallback>
+                            <User className="h-12 w-12 text-muted-foreground" />
+                        </AvatarFallback>
+                    </Avatar>
+                    <Input id="picture-upload" type="file" accept="image/*" onChange={handlePictureChange} className="hidden" />
+                    <Button type="button" variant="outline" size="sm" onClick={() => document.getElementById("picture-upload")?.click()} className="w-auto">
+                        {picturePreview ? "Change Picture" : "Upload Picture"}
                     </Button>
-                </form>
-            </CardContent>
-            <CardFooter className="flex justify-center">
-                <Button variant="link" onClick={handleSkip}>
-                    Skip for now
+                    {picturePreview && (
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setPicturePreview(null)} className="text-xs text-muted-foreground">
+                            Remove Picture
+                        </Button>
+                    )}
+                </div>
+
+                <div className="space-y-1">
+                    <Label htmlFor="identity-name" className="text-sm font-medium">
+                        Display Name (Optional)
+                    </Label>
+                    <Input
+                        id="identity-name"
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="e.g., Personal, Main Work"
+                        autoComplete="nickname"
+                        className="text-sm"
+                    />
+                </div>
+
+                <Button type="submit" className="w-full py-3 text-base">
+                    Save Profile & Continue
                 </Button>
-            </CardFooter>
-        </Card>
+            </form>
+
+            <Button variant="link" onClick={handleSkip} className="text-sm text-muted-foreground hover:text-violet-500">
+                Skip for now
+            </Button>
+        </div>
     );
 }

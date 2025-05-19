@@ -236,7 +236,9 @@ export function SetupWizardPage(/*{ onSetupComplete }: SetupWizardPageProps*/) {
     };
 
     return (
-        <div className="container mx-auto p-4 sm:p-8 min-h-screen flex flex-col justify-center items-center bg-background text-foreground">{renderStep()}</div>
+        <div className="container mx-auto px-4 pt-8 sm:pt-12 min-h-screen flex flex-col justify-start items-center bg-background text-foreground">
+            {renderStep()}
+        </div>
     );
 }
 

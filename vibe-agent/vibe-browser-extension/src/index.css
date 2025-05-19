@@ -3,6 +3,12 @@
 @layer base {
     :root {
         @apply font-sans;
+        --primary: 250 77% 60%; /* Equivalent to HSL for #8B5CF6 (violet-500) */
+        --primary-foreground: 0 0% 100%; /* White */
+
+        /* You might also want to define other theme colors here if needed */
+        /* Example for a darker hover state for primary, if not handled by components directly */
+        /* --primary-hover: 250 70% 55%; */ /* A slightly darker violet */
     }
 
     html {

@@ -2,16 +2,15 @@ import React, { useState, useMemo, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
-// Simple password strength estimation (can be replaced with a library like zxcvbn)
+// Removed Card components
 import { zxcvbn, zxcvbnOptions } from "@zxcvbn-ts/core";
-import * as zxcvbnCommonPackage from "@zxcvbn-ts/language-common"; // Changed to named import
-import * as zxcvbnEnPackage from "@zxcvbn-ts/language-en"; // Changed to named import
-import { useEffect } from "react"; // Import useEffect
+import * as zxcvbnCommonPackage from "@zxcvbn-ts/language-common";
+import * as zxcvbnEnPackage from "@zxcvbn-ts/language-en";
+import { useEffect } from "react";
 
 interface CreatePasswordStepProps {
     onPasswordSet: (password: string) => void;
-    isImportFlow?: boolean; // Optional flag to change text slightly for import flow
+    isImportFlow?: boolean;
 }
 
 export function CreatePasswordStep({ onPasswordSet, isImportFlow = false }: CreatePasswordStepProps) {
@@ -54,14 +53,13 @@ export function CreatePasswordStep({ onPasswordSet, isImportFlow = false }: Crea
             console.error("Error calculating password strength:", err);
             return null; // Return null or a default weak score on error
         }
-    }, [password, zxcvbnLoaded]); // Depend on password and loaded status
+    }, [password, zxcvbnLoaded]);
 
     const passwordsMatch = useMemo(() => {
         return password && confirmPassword && password === confirmPassword;
     }, [password, confirmPassword]);
 
     const canProceed = useMemo(() => {
-        // Require a minimum strength (e.g., score >= 2) and matching passwords
         return passwordsMatch && strength && strength.score >= 2;
     }, [passwordsMatch, strength]);
 
@@ -87,18 +85,19 @@ export function CreatePasswordStep({ onPasswordSet, isImportFlow = false }: Crea
     );
 
     const getStrengthColor = (score: number | undefined | null): string => {
+        // Using orange for "Okay" as per image, others can be adjusted
         switch (score) {
             case 0:
             case 1:
                 return "bg-red-500"; // Weak
             case 2:
-                return "bg-yellow-500"; // Okay
+                return "bg-orange-500"; // Okay (as per image)
             case 3:
                 return "bg-blue-500"; // Good
             case 4:
                 return "bg-green-500"; // Strong
             default:
-                return "bg-gray-300"; // No password
+                return "bg-gray-300";
         }
     };
 
@@ -119,77 +118,91 @@ export function CreatePasswordStep({ onPasswordSet, isImportFlow = false }: Crea
     };
 
     return (
-        <Card className="w-full max-w-md">
-            <CardHeader>
-                <CardTitle className="text-2xl">{isImportFlow ? "Set New Device Password" : "Set Your Device Password"}</CardTitle>
-                <CardDescription>
-                    {isImportFlow
-                        ? "Create a strong password to encrypt your Vibe data on this new device. This only protects this device."
-                        : "Create a strong password to encrypt your Vibe data on this device. This password cannot be recovered if lost."}
-                </CardDescription>
-            </CardHeader>
-            <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="password">New Password</Label>
-                        <Input
-                            id="password"
-                            type={showPassword ? "text" : "password"}
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                            autoComplete="new-password"
-                        />
-                    </div>
-                    {/* Strength Indicator */}
-                    {password && strength && (
-                        <div className="flex items-center space-x-2">
-                            <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
-                                <div
-                                    className={`h-2.5 rounded-full ${getStrengthColor(strength.score)}`}
-                                    style={{ width: `${((strength.score + 1) / 5) * 100}%` }} // Scale 0-4 score to 20%-100% width
-                                ></div>
-                            </div>
-                            <span className={`text-sm font-medium ${getStrengthColor(strength.score).replace("bg-", "text-")}`}>
-                                {getStrengthLabel(strength.score)}
-                            </span>
+        <div className="flex flex-col items-center justify-start h-full p-6 space-y-6 text-center">
+            <img src="/icon-dev.png" alt="Vibe Logo" className="w-16 h-16 mb-4" /> {/* Logo */}
+            <div className="space-y-2">
+                <h1 className="text-2xl font-semibold">{isImportFlow ? "Set New Device Password" : "Set your device password"}</h1>
+                <p className="text-sm text-muted-foreground">
+                    {isImportFlow ? "Create a password to secure your Vibe vault on this new device." : "Create a password to secure your Vibe vault"}
+                </p>
+            </div>
+            <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4 text-left">
+                <div className="space-y-1">
+                    <Label htmlFor="password">New Password</Label>
+                    <Input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                        autoComplete="new-password"
+                        className="text-sm" // Match image style
+                    />
+                </div>
+
+                {/* Strength Indicator */}
+                {password && strength && (
+                    <div className="space-y-1">
+                        <div className="w-full bg-gray-200 rounded-full h-1.5 dark:bg-gray-700">
+                            <div
+                                className={`h-1.5 rounded-full ${getStrengthColor(strength.score)}`}
+                                style={{ width: `${((strength.score + 1) / 5) * 100}%` }}
+                            ></div>
                         </div>
-                    )}
-                    {strength?.feedback?.warning && <p className="text-xs text-red-600">{strength.feedback.warning}</p>}
-                    {strength?.feedback?.suggestions && strength.feedback.suggestions.length > 0 && (
-                        <ul className="text-xs text-muted-foreground list-disc list-inside">
-                            {strength.feedback.suggestions.map((s, i) => (
-                                <li key={i}>{s}</li>
-                            ))}
-                        </ul>
-                    )}
-                    <div className="space-y-2">
-                        <Label htmlFor="confirm-password">Confirm Password</Label>
-                        <Input
-                            id="confirm-password"
-                            type={showPassword ? "text" : "password"}
-                            value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
-                            required
-                            autoComplete="new-password"
-                        />
+                        {/* Optional: text label for strength, image doesn't show it prominently next to bar */}
+                        {/* <span className={`text-xs font-medium ${getStrengthColor(strength.score).replace("bg-", "text-")}`}>
+                            {getStrengthLabel(strength.score)}
+                        </span> */}
                     </div>
-                    <div className="flex items-center space-x-2">
-                        <input type="checkbox" id="show-password" checked={showPassword} onChange={() => setShowPassword(!showPassword)} />
-                        <Label htmlFor="show-password" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                            Show Password
-                        </Label>
-                    </div>
-                    {error && <p className="text-sm text-red-600">{error}</p>}
-                    <Button type="submit" className="w-full" disabled={!canProceed}>
-                        {isImportFlow ? "Set Password & Import" : "Set Device Password"}
-                    </Button>
-                    {/* Debugging line, can be removed later */}
-                </form>
-            </CardContent>
-            <CardFooter className="text-xs text-muted-foreground">
-                <p>This password encrypts your secret phrase locally. It cannot be recovered.</p>
-            </CardFooter>
-        </Card>
+                )}
+                {/* {strength?.feedback?.warning && <p className="text-xs text-red-600">{strength.feedback.warning}</p>}
+                {strength?.feedback?.suggestions && strength.feedback.suggestions.length > 0 && (
+                    <ul className="text-xs text-muted-foreground list-disc list-inside">
+                        {strength.feedback.suggestions.map((s, i) => (
+                            <li key={i}>{s}</li>
+                        ))}
+                    </ul>
+                )} */}
+
+                <div className="space-y-1">
+                    <Label htmlFor="confirm-password">Confirm Password</Label>
+                    <Input
+                        id="confirm-password"
+                        type={showPassword ? "text" : "password"}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        required
+                        autoComplete="new-password"
+                        className="text-sm" // Match image style
+                    />
+                </div>
+
+                <div className="flex items-center space-x-2 pt-2">
+                    <input
+                        type="checkbox"
+                        id="show-password"
+                        checked={showPassword}
+                        onChange={() => setShowPassword(!showPassword)}
+                        className="form-checkbox h-4 w-4 text-violet-500 border-gray-300 rounded focus:ring-violet-400"
+                    />
+                    <Label htmlFor="show-password" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Show password
+                    </Label>
+                </div>
+
+                {error && <p className="text-sm text-red-600 pt-1">{error}</p>}
+
+                <Button
+                    type="submit"
+                    className="w-full bg-violet-500 hover:bg-violet-600 text-white font-semibold py-3 text-base" // Purple button, full width, larger text
+                    disabled={!canProceed}
+                >
+                    {isImportFlow ? "Set Password & Import" : "Set Password"}
+                </Button>
+            </form>
+            <p className="text-xs text-muted-foreground text-center max-w-xs pt-2">
+                This password encrypts your secret phrase locally. It cannot be recovered.
+            </p>
+        </div>
     );
 }

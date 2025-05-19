@@ -1,7 +1,8 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { VibeLogo } from "@/components/ui/VibeLogo";
+// Removed Card components
+// Removed VibeLogo import, will use direct img tag
+import { CheckCircle2 } from "lucide-react"; // Using a check icon for completion
 
 interface SetupCompleteStepProps {
     identityName?: string;
@@ -10,27 +11,27 @@ interface SetupCompleteStepProps {
 
 export const SetupCompleteStep: React.FC<SetupCompleteStepProps> = ({ identityName, onStartUsingVibe }) => {
     return (
-        <Card className="w-full max-w-md">
-            <CardHeader className="text-center">
-                <div className="mx-auto mb-4">
-                    <VibeLogo width={60} height={60} />
-                </div>
-                <CardTitle className="text-2xl">Setup Complete!</CardTitle>
-                <CardDescription>
+        <div className="flex flex-col items-center justify-center h-full p-6 space-y-6 text-center">
+            {/* Using a CheckCircle icon instead of logo for completion visual cue */}
+            <CheckCircle2 className="w-20 h-20 text-green-500 mb-2" />
+
+            <div className="space-y-2">
+                <h1 className="text-3xl font-semibold">Setup Complete!</h1>
+                <p className="text-md text-muted-foreground max-w-sm">
                     Your Vibe Browser Extension is now set up and ready to use.
-                    {identityName && ` Welcome, ${identityName}!`}
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground text-center">
-                    You can now manage your digital identity and interact with Vibe-enabled applications securely.
+                    {identityName && <span className="block mt-1">Welcome, {identityName}!</span>}
                 </p>
-            </CardContent>
-            <CardFooter>
-                <Button onClick={onStartUsingVibe} className="w-full">
+            </div>
+
+            <p className="text-sm text-muted-foreground max-w-sm">
+                You can now manage your digital identity and interact with Vibe-enabled applications securely.
+            </p>
+
+            <div className="w-full max-w-xs pt-4">
+                <Button onClick={onStartUsingVibe} className="w-full py-3 text-base">
                     Start Using Vibe
                 </Button>
-            </CardFooter>
-        </Card>
+            </div>
+        </div>
     );
 };

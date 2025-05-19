@@ -1,7 +1,7 @@
 import React from "react";
 import { User, Smartphone } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
-import { VibeLogo } from "@/components/ui/VibeLogo"; // Assuming a Logo component exists
+// Removed Card components
+// Removed VibeLogo import, will use direct img tag
 
 interface WelcomeStepProps {
     onCreateNew: () => void;
@@ -10,30 +10,32 @@ interface WelcomeStepProps {
 
 export function WelcomeStep({ onCreateNew, onImportExisting }: WelcomeStepProps) {
     return (
-        <Card className="w-full max-w-md">
-            <CardHeader className="text-center">
-                <div className="mx-auto mb-4 h-16 w-16">
-                    <VibeLogo />
-                </div>
-                <CardTitle className="text-3xl font-bold">Set up Vibe</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-                <button onClick={onCreateNew} className="w-full p-6 border rounded-xl hover:bg-accent transition-colors flex items-start gap-4 group">
-                    <User className="w-12 h-12 text-primary" />
-                    <div className="text-left flex-1">
-                        <h3 className="text-xl font-semibold mb-2">I'm new to Vibe</h3>
-                        <p className="text-sm text-muted-foreground">I don't have a seed phrase or any existing identities.</p>
+        <div className="flex flex-col items-center justify-start h-full p-6 space-y-8 text-center">
+            <img src="/icon-dev.png" alt="Vibe Logo" className="w-20 h-20 mb-2" /> {/* Larger Logo for welcome */}
+            <h1 className="text-3xl font-bold">Set up Vibe</h1>
+            <div className="w-full max-w-sm space-y-4">
+                <button
+                    onClick={onCreateNew}
+                    className="w-full p-4 bg-violet-500 hover:bg-violet-600 text-white rounded-lg transition-colors flex items-center gap-4 group text-left shadow-md"
+                >
+                    <User className="w-10 h-10 opacity-80" /> {/* Adjusted icon size and opacity */}
+                    <div className="flex-1">
+                        <h3 className="text-lg font-semibold">I'm new to Vibe</h3>
+                        <p className="text-sm opacity-90">Create a new vault and identity.</p>
                     </div>
                 </button>
 
-                <button onClick={onImportExisting} className="w-full p-6 border rounded-xl hover:bg-accent transition-colors flex items-start gap-4 group">
-                    <Smartphone className="w-12 h-12 text-primary" />
-                    <div className="text-left flex-1">
-                        <h3 className="text-xl font-semibold mb-2">I have Vibe on another device</h3>
-                        <p className="text-sm text-muted-foreground">I've created Vibe identities before and want to reuse them.</p>
+                <button
+                    onClick={onImportExisting}
+                    className="w-full p-4 bg-violet-500 hover:bg-violet-600 text-white rounded-lg transition-colors flex items-center gap-4 group text-left shadow-md"
+                >
+                    <Smartphone className="w-10 h-10 opacity-80" /> {/* Adjusted icon size and opacity */}
+                    <div className="flex-1">
+                        <h3 className="text-lg font-semibold">I have Vibe on another device</h3>
+                        <p className="text-sm opacity-90">Import an existing vault using your seed phrase.</p>
                     </div>
                 </button>
-            </CardContent>
-        </Card>
+            </div>
+        </div>
     );
 }

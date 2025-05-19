@@ -2,10 +2,9 @@ import React, { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+// Removed Card components
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { User, PlusCircle, Loader2 } from "lucide-react"; // ChevronDown removed, Loader2 added
-// DropdownMenu imports removed
+import { User, PlusCircle, Loader2 } from "lucide-react";
 
 // This should be a globally accessible constant or fetched from a config
 const OFFICIAL_VIBE_CLOUD_URL = "https://vibe-cloud-cp.vibeapp.dev"; // Official Vibe Cloud Provisioning Service
@@ -166,119 +165,132 @@ export function SetupIdentityStep({ onIdentitySetup }: SetupIdentityStepProps) {
     }, [showCustomCloudForm]);
 
     return (
-        <Card className="w-full max-w-lg">
-            <CardHeader>
-                <CardTitle className="text-2xl">Set Up Your Identity</CardTitle>
-                <CardDescription>Personalize your Vibe identity and connect it to a Vibe Cloud service.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-6">
-                    {/* Identity Name and Picture */}
-                    <div className="space-y-4">
-                        <h3 className="text-lg font-medium">Identity Profile (Optional)</h3>
-                        <div className="flex flex-col items-center space-y-2">
-                            <Avatar className="h-24 w-24 mb-2">
-                                <AvatarImage src={picturePreview ?? undefined} alt={identityName || "Identity Avatar"} />
-                                <AvatarFallback>
-                                    <User className="h-12 w-12" />
-                                </AvatarFallback>
-                            </Avatar>
-                            <Input id="picture-upload" type="file" accept="image/*" onChange={handlePictureChange} className="hidden" />
-                            <Button type="button" variant="outline" size="sm" onClick={() => document.getElementById("picture-upload")?.click()}>
-                                {picturePreview ? "Change Picture" : "Upload Picture"}
+        <div className="flex flex-col items-center justify-start h-full p-6 space-y-6 text-center">
+            <img src="/icon-dev.png" alt="Vibe Logo" className="w-16 h-16 mb-2" />
+
+            <div className="space-y-1">
+                <h1 className="text-2xl font-semibold">Set Up Your Identity</h1>
+                <p className="text-sm text-muted-foreground max-w-md">Personalize your Vibe identity and connect it to a Vibe Cloud service.</p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="w-full max-w-lg space-y-6 text-left">
+                {/* Identity Name and Picture */}
+                <div className="space-y-3 p-4 border border-border rounded-lg">
+                    <h3 className="text-lg font-medium text-center mb-3">Identity Profile (Optional)</h3>
+                    <div className="flex flex-col items-center space-y-2">
+                        <Avatar className="h-20 w-20">
+                            <AvatarImage src={picturePreview ?? undefined} alt={identityName || "Identity Avatar"} />
+                            <AvatarFallback>
+                                <User className="h-10 w-10 text-muted-foreground" />
+                            </AvatarFallback>
+                        </Avatar>
+                        <Input id="picture-upload-setup" type="file" accept="image/*" onChange={handlePictureChange} className="hidden" />
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => document.getElementById("picture-upload-setup")?.click()}
+                            className="w-auto"
+                        >
+                            {picturePreview ? "Change Picture" : "Upload Picture"}
+                        </Button>
+                        {picturePreview && (
+                            <Button type="button" variant="ghost" size="sm" onClick={() => setPicturePreview(null)} className="text-xs text-muted-foreground">
+                                Remove Picture
                             </Button>
-                            {picturePreview && (
-                                <Button type="button" variant="ghost" size="sm" onClick={() => setPicturePreview(null)}>
-                                    Remove Picture
-                                </Button>
-                            )}
-                        </div>
-                        <div>
-                            <Label htmlFor="identity-name">Display Name</Label>
-                            <Input
-                                id="identity-name"
-                                type="text"
-                                value={identityName}
-                                onChange={(e) => setIdentityName(e.target.value)}
-                                placeholder="e.g., My Main Vibe"
-                                autoComplete="nickname"
-                            />
-                        </div>
+                        )}
+                    </div>
+                    <div className="space-y-1">
+                        <Label htmlFor="identity-name-setup" className="text-sm font-medium">
+                            Display Name
+                        </Label>
+                        <Input
+                            id="identity-name-setup"
+                            type="text"
+                            value={identityName}
+                            onChange={(e) => setIdentityName(e.target.value)}
+                            placeholder="e.g., My Main Vibe"
+                            autoComplete="nickname"
+                            className="text-sm"
+                        />
+                    </div>
+                </div>
+
+                {/* Vibe Cloud Configuration */}
+                <div className="space-y-3 p-4 border border-border rounded-lg">
+                    <h3 className="text-lg font-medium text-center mb-3">Connect to Vibe Cloud</h3>
+                    <div className="space-y-1">
+                        <Label htmlFor="cloud-service-select-setup" className="text-sm font-medium">
+                            Vibe Cloud Provider
+                        </Label>
+                        <select
+                            id="cloud-service-select-setup"
+                            value={selectedCloudServiceId}
+                            onChange={(e) => handleSelectCloudService(e.target.value)}
+                            className="w-full p-2 border rounded-md bg-background text-foreground text-sm focus:ring-ring focus:border-ring"
+                        >
+                            {configuredCloudServices.map((service) => (
+                                <option key={service.id} value={service.id}>
+                                    {service.name}
+                                </option>
+                            ))}
+                            <option value="add_new_custom" className="font-medium text-violet-600">
+                                + Add Custom Vibe Cloud
+                            </option>
+                        </select>
                     </div>
 
-                    <hr />
-
-                    {/* Vibe Cloud Configuration */}
-                    <div className="space-y-4">
-                        <h3 className="text-lg font-medium">Connect to Vibe Cloud</h3>
-                        <div>
-                            <Label htmlFor="cloud-service-select">Vibe Cloud Provider</Label>
-                            <select
-                                id="cloud-service-select"
-                                value={selectedCloudServiceId}
-                                onChange={(e) => handleSelectCloudService(e.target.value)}
-                                className="w-full p-2 border rounded-md bg-background text-foreground"
-                            >
-                                {configuredCloudServices.map((service) => (
-                                    <option key={service.id} value={service.id}>
-                                        {service.name}
-                                    </option>
-                                ))}
-                                <option value="add_new_custom">+ Add Custom Vibe Cloud</option>
-                            </select>
-                        </div>
-
-                        {/* Simplified conditional rendering for custom form based on selectedCloudServiceId */}
-                        {(selectedCloudServiceId === "add_new_custom" || showCustomCloudForm) && (
-                            <div className="space-y-4 p-4 border rounded-md">
-                                <h4 className="text-md font-medium">Add Custom Vibe Cloud</h4>
-                                <div>
-                                    <Label htmlFor="custom-cloud-url">Custom Vibe Cloud URL</Label>
-                                    <Input
-                                        id="custom-cloud-url"
-                                        type="url"
-                                        value={customCloudUrl}
-                                        onChange={(e) => {
-                                            setCustomCloudUrl(e.target.value);
-                                            setFormError(null);
-                                        }}
-                                        placeholder="https://your-custom-vibe.cloud"
-                                    />
-                                </div>
-                                <div>
-                                    <Label htmlFor="custom-claim-code">Claim Code (Optional)</Label>
-                                    <Input
-                                        id="custom-claim-code"
-                                        type="text"
-                                        value={customClaimCode}
-                                        onChange={(e) => setCustomClaimCode(e.target.value)}
-                                        placeholder="Provided by your custom cloud admin"
-                                        autoComplete="off"
-                                    />
-                                    <p className="text-xs text-muted-foreground mt-1">Only needed if your custom Vibe Cloud instance requires it.</p>
-                                </div>
-                                {/* <Button type="button" onClick={handleAddCustomCloud} variant="outline" size="sm">
-                                    Test & Add Service
-                                </Button> */}
-                                {/* The "Test & Add" button is removed for now, submission will handle it */}
+                    {(selectedCloudServiceId === "add_new_custom" || showCustomCloudForm) && (
+                        <div className="space-y-3 p-3 border border-dashed rounded-md mt-2">
+                            <h4 className="text-md font-medium text-center">Add New Custom Cloud</h4>
+                            <div className="space-y-1">
+                                <Label htmlFor="custom-cloud-url-setup" className="text-sm font-medium">
+                                    Custom Vibe Cloud URL
+                                </Label>
+                                <Input
+                                    id="custom-cloud-url-setup"
+                                    type="url"
+                                    value={customCloudUrl}
+                                    onChange={(e) => {
+                                        setCustomCloudUrl(e.target.value);
+                                        setFormError(null);
+                                    }}
+                                    placeholder="https://your-custom-vibe.cloud"
+                                    className="text-sm"
+                                />
                             </div>
-                        )}
-                    </div>
+                            <div className="space-y-1">
+                                <Label htmlFor="custom-claim-code-setup" className="text-sm font-medium">
+                                    Claim Code (Optional)
+                                </Label>
+                                <Input
+                                    id="custom-claim-code-setup"
+                                    type="text"
+                                    value={customClaimCode}
+                                    onChange={(e) => setCustomClaimCode(e.target.value)}
+                                    placeholder="Provided by your custom cloud admin"
+                                    autoComplete="off"
+                                    className="text-sm"
+                                />
+                                <p className="text-xs text-muted-foreground mt-1">Only needed if your custom Vibe Cloud instance requires it.</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
 
-                    {formError && <p className="text-sm text-red-600 text-center">{formError}</p>}
+                {formError && <p className="text-sm text-red-600 text-center pt-1">{formError}</p>}
 
-                    <Button type="submit" className="w-full !mt-8" disabled={isLoading}>
-                        {isLoading ? (
-                            <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Processing...
-                            </>
-                        ) : (
-                            "Continue"
-                        )}
-                    </Button>
-                </form>
-            </CardContent>
-        </Card>
+                <Button type="submit" className="w-full py-3 text-base !mt-8" disabled={isLoading}>
+                    {isLoading ? (
+                        <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Processing...
+                        </>
+                    ) : (
+                        "Continue"
+                    )}
+                </Button>
+            </form>
+        </div>
     );
 }

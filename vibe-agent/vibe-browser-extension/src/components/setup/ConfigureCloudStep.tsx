@@ -3,9 +3,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+// Removed Card components
 
-const DEFAULT_VIBE_CLOUD_URL = "https://vibe-cloud-vp.vibeapp.dev";
+const DEFAULT_VIBE_CLOUD_URL = "https://vibe-cloud-vp.vibeapp.dev"; // This might need to be updated if it's just for local testing
 
 interface ConfigureCloudStepProps {
     onCloudConfigured: (url: string, claimCode: string) => void;
@@ -63,67 +63,73 @@ export function ConfigureCloudStep({ onCloudConfigured }: ConfigureCloudStepProp
     }, [urlOption]);
 
     return (
-        <Card className="w-full max-w-md">
-            <CardHeader>
-                <CardTitle className="text-2xl">Connect to Vibe Cloud</CardTitle>
-                <CardDescription>
-                    Choose the Vibe Cloud server this identity will connect to for data storage and synchronization. Enter the claim code provided by your Vibe
-                    Cloud instance.
-                </CardDescription>
-            </CardHeader>
-            <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    {/* URL Selection */}
-                    <div className="space-y-2">
-                        <Label>Vibe Cloud Server</Label>
-                        <RadioGroup value={urlOption} onValueChange={(value: "default" | "custom") => setUrlOption(value)}>
-                            <div className="flex items-center space-x-2">
-                                <RadioGroupItem value="default" id="url-default" />
-                                <Label htmlFor="url-default">Default (for local testing: {DEFAULT_VIBE_CLOUD_URL})</Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                                <RadioGroupItem value="custom" id="url-custom" />
-                                <Label htmlFor="url-custom">Custom URL</Label>
-                            </div>
-                        </RadioGroup>
-                        {urlOption === "custom" && (
-                            <Input
-                                id="custom-url"
-                                type="url"
-                                placeholder="https://your-vibe-cloud.com"
-                                value={customUrl}
-                                onChange={(e) => setCustomUrl(e.target.value)}
-                                required={urlOption === "custom"}
-                                className="mt-2"
-                            />
-                        )}
-                    </div>
+        <div className="flex flex-col items-center justify-start h-full p-6 space-y-6 text-center">
+            <img src="/icon-dev.png" alt="Vibe Logo" className="w-16 h-16 mb-2" />
 
-                    {/* Claim Code Input */}
-                    <div className="space-y-2">
-                        <Label htmlFor="claim-code">Claim Code</Label>
+            <div className="space-y-1">
+                <h1 className="text-2xl font-semibold">Connect to Vibe Cloud</h1>
+                <p className="text-sm text-muted-foreground max-w-sm">
+                    Choose the Vibe Cloud server for data storage and sync. Enter the claim code from your Vibe Cloud instance.
+                </p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4 text-left">
+                {/* URL Selection */}
+                <div className="space-y-2">
+                    <Label className="text-sm font-medium">Vibe Cloud Server</Label>
+                    <RadioGroup value={urlOption} onValueChange={(value: "default" | "custom") => setUrlOption(value)} className="space-y-1">
+                        <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="default" id="url-default" />
+                            <Label htmlFor="url-default" className="text-sm font-normal">
+                                Default ({DEFAULT_VIBE_CLOUD_URL})
+                            </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="custom" id="url-custom" />
+                            <Label htmlFor="url-custom" className="text-sm font-normal">
+                                Custom URL
+                            </Label>
+                        </div>
+                    </RadioGroup>
+                    {urlOption === "custom" && (
                         <Input
-                            id="claim-code"
-                            type="text"
-                            value={claimCode}
-                            onChange={(e) => setClaimCode(e.target.value.trim())}
-                            placeholder="e.g., ABC1-XYZ9"
-                            required
-                            autoComplete="off"
+                            id="custom-url"
+                            type="url"
+                            placeholder="https://your-vibe-cloud.com"
+                            value={customUrl}
+                            onChange={(e) => setCustomUrl(e.target.value)}
+                            required={urlOption === "custom"}
+                            className="mt-2 text-sm"
                         />
-                        <p className="text-xs text-muted-foreground">Obtain this code from your Vibe Cloud server instance.</p>
-                    </div>
+                    )}
+                </div>
 
-                    {error && <p className="text-sm text-red-600">{error}</p>}
+                {/* Claim Code Input */}
+                <div className="space-y-1">
+                    <Label htmlFor="claim-code" className="text-sm font-medium">
+                        Claim Code
+                    </Label>
+                    <Input
+                        id="claim-code"
+                        type="text"
+                        value={claimCode}
+                        onChange={(e) => setClaimCode(e.target.value.trim())}
+                        placeholder="e.g., ABC1-XYZ9"
+                        required
+                        autoComplete="off"
+                        className="text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground pt-1">Obtain this code from your Vibe Cloud server instance.</p>
+                </div>
 
-                    <Button type="submit" className="w-full" disabled={!canProceed}>
-                        Confirm Configuration & Finish Setup
-                    </Button>
-                </form>
-            </CardContent>
-            <CardFooter className="text-xs text-muted-foreground">
-                <p>This connects your local Vibe identity to its cloud counterpart.</p>
-            </CardFooter>
-        </Card>
+                {error && <p className="text-sm text-red-600 pt-1">{error}</p>}
+
+                <Button type="submit" className="w-full py-3 text-base" disabled={!canProceed}>
+                    Confirm Configuration & Finish Setup
+                </Button>
+            </form>
+
+            <p className="text-xs text-muted-foreground text-center max-w-sm pt-2">This connects your local Vibe identity to its cloud counterpart.</p>
+        </div>
     );
 }
