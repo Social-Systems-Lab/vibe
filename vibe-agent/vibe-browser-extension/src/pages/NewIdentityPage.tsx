@@ -413,7 +413,7 @@ export const NewIdentityPage: React.FC = () => {
         if (currentStep === "enterDetails" && !isCreating) {
             if (isFirstIdentitySetup) {
                 return (
-                    <div className="p-4 border-t border-border">
+                    <div className="pt-4 border-t border-border">
                         <Button onClick={onResetVibeHandler} variant="outline" className="w-full">
                             Reset Vibe & Start Over
                         </Button>
@@ -421,7 +421,7 @@ export const NewIdentityPage: React.FC = () => {
                 );
             } else {
                 return (
-                    <div className="p-4 border-t border-border">
+                    <div className="pt-4 border-t border-border">
                         <Button onClick={onCancelHandler} variant="outline" className="w-full">
                             Cancel
                         </Button>
@@ -448,8 +448,8 @@ export const NewIdentityPage: React.FC = () => {
     }
 
     return (
-        <div className="w-full h-full flex flex-col bg-background text-foreground">
-            <div className="flex-grow p-2 overflow-y-auto">
+        <div className="w-full h-full flex flex-col bg-background text-foreground px-4 pt-8 sm:pt-12 ">
+            <div className="flex-grow overflow-y-auto">
                 {currentStep === "enterDetails" && renderEnterDetailsStep()}
                 {currentStep === "creating" && renderCreatingStep()}
                 {currentStep === "creationComplete" && renderCreationCompleteStep()}
