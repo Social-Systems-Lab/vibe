@@ -29,6 +29,7 @@
         "bun-plugin-tailwind": "^0.0.14",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
+        "jotai": "^2.12.4",
         "lucide-react": "^0.475.0",
         "micro-ed25519-hdkey": "^0.1.2",
         "multibase": "^4.0.6",
@@ -39,6 +40,7 @@
         "tailwindcss": "^4.0.6",
         "tailwindcss-animate": "^1.0.7",
         "varint": "^6.0.0",
+        "wouter": "^3.7.0",
         "zod": "^3.24.2"
     },
     "devDependencies": {

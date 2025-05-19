@@ -140,14 +140,33 @@ const { watch: _watchFlag, outdir: cliOutdir, ...restCliConfig } = cliConfig;
 const outdir = cliOutdir || path.join(process.cwd(), "dist");
 const publicDir = path.join(process.cwd(), "public");
 
+// Type for the 'details' object in the naming function
+interface NamingDetails {
+    path: string; // Absolute path to the entrypoint
+    kind: "entry-point" | "chunk" | "asset";
+    hash?: string; // Only present if content hashing is used in the pattern
+    name: string; // The entrypoint's name (e.g., 'index' from 'src/index.tsx')
+    dir: string; // The directory of the entrypoint relative to project root (e.g., 'src')
+    ext: string; // The extension of the entrypoint (e.g., '.tsx')
+}
+
 // Define explicit entry points - needed for performBuild and watch setup
 const entrypoints = [
     "src/index.tsx", // Main entry point
     "src/background.ts", // Background service worker
     "src/content.ts", // Content script
     "src/vibe-inpage.ts", // In-page script (window.vibe API)
-    "src/sidepanel.tsx", // For the side panel
+    // "src/sidepanel.tsx", // Old entry point for side panel - REMOVED
+    // src/index.tsx is already the first entry point, which now handles the side panel UI via App.tsx
 ];
+
+// Adjust entrypoints if src/index.tsx was not intended for sidepanel,
+// otherwise, ensure it's the one that renders the sidepanel app.
+// For this refactor, src/index.tsx is indeed the new sidepanel root.
+// So, we just need to ensure no duplicate or incorrect old entry point.
+// The current entrypoints array already has "src/index.tsx" as the first item.
+// The error "ModuleNotFound resolving "src/sidepanel.tsx" (entry point)" means it was explicitly listed.
+// I will remove the explicit "src/sidepanel.tsx" entry.
 
 async function performBuild() {
     console.log(`\n🔄 Performing build (mode: ${isWatchMode ? "watch" : "production"})...`);
@@ -165,6 +184,7 @@ async function performBuild() {
     const buildConfig: BuildConfig = {
         entrypoints,
         outdir,
+        naming: "[name].js", // Simplified naming, src/index.tsx will output to index.js
         plugins: [plugin],
         minify: isWatchMode ? false : restCliConfig.minify !== undefined ? restCliConfig.minify : true,
         target: "browser",

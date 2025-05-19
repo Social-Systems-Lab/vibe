@@ -10,6 +10,8 @@
         "allowImportingTsExtensions": true,
         "verbatimModuleSyntax": true,
         "noEmit": true,
+        "types": ["chrome", "bun"],
+        "strict": true,
 
         "baseUrl": ".",
         "paths": {
