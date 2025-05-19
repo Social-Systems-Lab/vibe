@@ -28,7 +28,7 @@
     ],
     "web_accessible_resources": [
         {
-            "resources": ["vibe-inpage.js", "src/index.css", "icon-dev.png"],
+            "resources": ["vibe-inpage.js", "src/styles.css", "icon-dev.png"],
             "matches": ["<all_urls>"]
         }
     ]

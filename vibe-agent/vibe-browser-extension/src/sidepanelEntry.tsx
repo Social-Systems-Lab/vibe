@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import "./index.css"; // Assuming Tailwind/CSS setup is handled by the build
+import "./styles.css";
 import RoutedApp from "./App"; // Import the new main app component
 import { VaultUnlockProvider } from "./contexts/VaultUnlockContext"; // Import the provider
 

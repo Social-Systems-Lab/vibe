@@ -50,16 +50,18 @@ export function ImportPhraseStep({ onPhraseVerified }: ImportPhraseStepProps) {
     );
 
     return (
-        <div className="flex flex-col items-center justify-start h-full p-6 space-y-6 text-center">
-            <img src="/icon-dev.png" alt="Vibe Logo" className="w-16 h-16 mb-2" />
-
-            <div className="space-y-1">
+        <div className="flex flex-col items-center justify-start h-full space-y-5 w-full">
+            {" "}
+            {/* Removed p-6, adjusted space-y */}
+            <img src="/icon-dev.png" alt="Vibe Logo" className="w-16 h-16 mt-2 mb-3" /> {/* Adjusted margin */}
+            <div className="space-y-1 text-center">
+                {" "}
+                {/* Ensured text-center */}
                 <h1 className="text-2xl font-semibold">Import Your Vibe</h1>
                 <p className="text-sm text-muted-foreground max-w-sm">
                     Enter your 12 or 24-word Secret Recovery Phrase to restore your identities on this device.
                 </p>
             </div>
-
             <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4 text-left">
                 <div className="space-y-1">
                     <Label htmlFor="recovery-phrase" className="text-sm font-medium">
@@ -80,12 +82,16 @@ export function ImportPhraseStep({ onPhraseVerified }: ImportPhraseStepProps) {
 
                 {error && <p className="text-sm text-red-600 pt-1">{error}</p>}
 
-                <Button type="submit" className="w-full py-3 text-base">
+                <Button type="submit" className="w-full bg-violet-500 hover:bg-violet-600 text-primary-foreground font-semibold py-3 text-base">
+                    {" "}
+                    {/* Added primary styles */}
                     Verify Phrase
                 </Button>
             </form>
-
-            <p className="text-xs text-muted-foreground text-center max-w-sm pt-2">Ensure you enter the phrase correctly, including the order of the words.</p>
+            <p className="text-xs text-muted-foreground text-center max-w-sm pt-1">
+                Ensure you enter the phrase correctly, including the order of the words.
+            </p>{" "}
+            {/* Adjusted pt */}
         </div>
     );
 }

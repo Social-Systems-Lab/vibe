@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import { NewIdentitySetupWizard } from "./components/identity/NewIdentitySetupWizard";
-import "./index.css"; // Ensure styles are applied
+import "./styles.css"; // Ensure styles are applied
 
 const AddIdentityPage: React.FC = () => {
     const [accountIndex, setAccountIndex] = useState<number | null>(null);

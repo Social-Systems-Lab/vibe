@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { User, Loader2 } from "lucide-react";
-import { VibeLogo } from "@/components/ui/VibeLogo";
+// VibeLogo import removed, will use direct img tag if needed, or consistent icon
 import {
     appStatusAtom,
     initializeAppStateAtom, // For re-triggering init on reset
@@ -270,113 +270,140 @@ export const NewIdentityPage: React.FC = () => {
     };
 
     const renderEnterDetailsStep = () => (
-        <form onSubmit={handleCreateIdentitySubmit} className="p-6 space-y-6">
-            <div className="space-y-4">
-                <h3 className="text-lg font-medium">{isFirstIdentitySetup ? "Setup Your First Identity" : "Create New Identity"}</h3>
-                <div className="flex flex-col items-center space-y-2">
-                    <Avatar className="h-24 w-24 mb-2">
-                        <AvatarImage src={picturePreview ?? undefined} alt={identityName || "Identity Avatar"} />
-                        <AvatarFallback>
-                            <User className="h-12 w-12" />
-                        </AvatarFallback>
-                    </Avatar>
-                    <Input id="picture-upload" type="file" accept="image/*" onChange={handlePictureChange} className="hidden" />
-                    <Button type="button" variant="outline" size="sm" onClick={() => document.getElementById("picture-upload")?.click()}>
-                        {picturePreview ? "Change Picture" : "Upload Picture"}
-                    </Button>
-                    {picturePreview && (
-                        <Button type="button" variant="ghost" size="sm" onClick={() => setPicturePreview(null)}>
-                            Remove Picture
+        // Removed p-6 from form, added to a wrapper div for the content of this step
+        <div className="flex flex-col items-center justify-start h-full space-y-5 w-full">
+            <img src="/icon-dev.png" alt="Vibe Logo" className="w-16 h-16 mt-2 mb-3" />
+            <div className="space-y-1 text-center">
+                <h1 className="text-2xl font-semibold">{isFirstIdentitySetup ? "Setup Your First Identity" : "Create New Identity"}</h1>
+                <p className="text-sm text-muted-foreground max-w-xs">Personalize your new identity.</p>
+            </div>
+
+            <form onSubmit={handleCreateIdentitySubmit} className="w-full max-w-sm space-y-4 text-left">
+                {/* Profile Section */}
+                <div className="space-y-3">
+                    <div className="flex flex-col items-center space-y-2">
+                        <Avatar className="h-20 w-20">
+                            <AvatarImage src={picturePreview ?? undefined} alt={identityName || "Identity Avatar"} />
+                            <AvatarFallback>
+                                <User className="h-10 w-10 text-muted-foreground" />
+                            </AvatarFallback>
+                        </Avatar>
+                        <Input id="picture-upload-newid" type="file" accept="image/*" onChange={handlePictureChange} className="hidden" />
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => document.getElementById("picture-upload-newid")?.click()}
+                            className="w-auto"
+                        >
+                            {picturePreview ? "Change Picture" : "Upload Picture"}
                         </Button>
+                        {picturePreview && (
+                            <Button type="button" variant="ghost" size="sm" onClick={() => setPicturePreview(null)} className="text-xs text-muted-foreground">
+                                Remove Picture
+                            </Button>
+                        )}
+                    </div>
+                    <div className="space-y-1">
+                        <Label htmlFor="identity-name-newid">Display Name</Label>
+                        <Input
+                            id="identity-name-newid"
+                            type="text"
+                            value={identityName}
+                            onChange={(e) => setIdentityName(e.target.value)}
+                            placeholder="e.g., My Main Vibe"
+                            autoComplete="nickname"
+                            className="text-sm"
+                        />
+                    </div>
+                </div>
+
+                {/* Cloud Configuration Section */}
+                <div className="space-y-3">
+                    <div className="space-y-1">
+                        <Label htmlFor="cloud-service-select-newid">Vibe Cloud Provider</Label>
+                        <select
+                            id="cloud-service-select-newid"
+                            value={selectedCloudServiceId}
+                            onChange={(e) => handleSelectCloudService(e.target.value)}
+                            className="w-full p-2 border rounded-md bg-background text-foreground text-sm focus:ring-ring focus:border-ring mt-1"
+                        >
+                            {configuredCloudServices.map((service) => (
+                                <option key={service.id} value={service.id}>
+                                    {service.name}
+                                </option>
+                            ))}
+                            <option value="add_new_custom" className="font-medium text-violet-600">
+                                + Add Custom Vibe Cloud
+                            </option>
+                        </select>
+                    </div>
+                    {(selectedCloudServiceId === "add_new_custom" || showCustomCloudForm) && (
+                        <div className="space-y-3 p-3 border border-dashed rounded-md mt-2">
+                            <h4 className="text-md font-medium text-center">Add New Custom Cloud</h4>
+                            <div className="space-y-1">
+                                <Label htmlFor="custom-cloud-url-newid">Custom Vibe Cloud URL</Label>
+                                <Input
+                                    id="custom-cloud-url-newid"
+                                    type="url"
+                                    value={customCloudUrl}
+                                    onChange={(e) => setCustomCloudUrl(e.target.value)}
+                                    placeholder="https://your-custom-vibe.cloud"
+                                    className="mt-1 text-sm"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <Label htmlFor="custom-claim-code-newid">Claim Code (Optional)</Label>
+                                <Input
+                                    id="custom-claim-code-newid"
+                                    type="text"
+                                    value={customClaimCode}
+                                    onChange={(e) => setCustomClaimCode(e.target.value)}
+                                    placeholder="Provided by your custom cloud admin"
+                                    autoComplete="off"
+                                    className="mt-1 text-sm"
+                                />
+                                <p className="text-xs text-muted-foreground mt-1">Only needed if your custom Vibe Cloud instance requires it.</p>
+                            </div>
+                        </div>
                     )}
                 </div>
-                <div>
-                    <Label htmlFor="identity-name">Display Name</Label>
-                    <Input
-                        id="identity-name"
-                        type="text"
-                        value={identityName}
-                        onChange={(e) => setIdentityName(e.target.value)}
-                        placeholder="e.g., My Main Vibe"
-                        autoComplete="nickname"
-                    />
-                </div>
-            </div>
-            <div className="space-y-4">
-                <div>
-                    <Label htmlFor="cloud-service-select">Vibe Cloud Provider</Label>
-                    <select
-                        id="cloud-service-select"
-                        value={selectedCloudServiceId}
-                        onChange={(e) => handleSelectCloudService(e.target.value)}
-                        className="w-full p-2 border rounded-md bg-background text-foreground mt-1"
-                    >
-                        {configuredCloudServices.map((service) => (
-                            <option key={service.id} value={service.id}>
-                                {service.name}
-                            </option>
-                        ))}
-                        <option value="add_new_custom">+ Add Custom Vibe Cloud</option>
-                    </select>
-                </div>
-                {(selectedCloudServiceId === "add_new_custom" || showCustomCloudForm) && (
-                    <div className="space-y-4 p-4 border rounded-md mt-2">
-                        <h4 className="text-md font-medium">Add Custom Vibe Cloud</h4>
-                        <div>
-                            <Label htmlFor="custom-cloud-url">Custom Vibe Cloud URL</Label>
-                            <Input
-                                id="custom-cloud-url"
-                                type="url"
-                                value={customCloudUrl}
-                                onChange={(e) => setCustomCloudUrl(e.target.value)}
-                                placeholder="https://your-custom-vibe.cloud"
-                                className="mt-1"
-                            />
-                        </div>
-                        <div>
-                            <Label htmlFor="custom-claim-code">Claim Code (Optional)</Label>
-                            <Input
-                                id="custom-claim-code"
-                                type="text"
-                                value={customClaimCode}
-                                onChange={(e) => setCustomClaimCode(e.target.value)}
-                                placeholder="Provided by your custom cloud admin"
-                                autoComplete="off"
-                                className="mt-1"
-                            />
-                            <p className="text-xs text-muted-foreground mt-1">Only needed if your custom Vibe Cloud instance requires it.</p>
-                        </div>
-                    </div>
-                )}
-            </div>
-            {error && <p className="text-red-500 text-sm text-center">{error}</p>}
-            <Button type="submit" className="w-full !mt-8" disabled={isCreating}>
-                {isCreating ? (
-                    <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Creating...
-                    </>
-                ) : (
-                    "Create Identity"
-                )}
-            </Button>
-        </form>
+                {error && <p className="text-red-500 text-sm text-center pt-1">{error}</p>}
+                <Button
+                    type="submit"
+                    className="w-full bg-violet-500 hover:bg-violet-600 text-primary-foreground font-semibold py-3 text-base !mt-6" // Explicit primary colors and adjusted margin
+                    disabled={isCreating}
+                >
+                    {isCreating ? (
+                        <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Creating...
+                        </>
+                    ) : (
+                        "Create Identity"
+                    )}
+                </Button>
+            </form>
+        </div>
     );
 
     const renderCreatingStep = () => (
-        <div className="p-6 text-center flex flex-col items-center justify-center space-y-2 h-full">
+        <div className="flex flex-col items-center justify-center h-full space-y-2">
+            {" "}
+            {/* Removed p-6 */}
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
             <p className="text-muted-foreground">Creating identity...</p>
         </div>
     );
 
     const renderCreationCompleteStep = () => (
-        // This step might be removed if onSetupCompleteHandler navigates away
-        <div className="p-6 flex flex-col items-center text-center space-y-4 h-full justify-center">
-            <VibeLogo width={60} height={60} />
+        <div className="flex flex-col items-center justify-center text-center space-y-4 h-full">
+            {" "}
+            {/* Removed p-6 */}
+            <img src="/icon-dev.png" alt="Vibe Logo" className="w-16 h-16 mb-2" />
             <h3 className="text-2xl font-semibold">Identity Created!</h3>
-            <p className="text-muted-foreground">Your new identity {identityName ? `"${identityName}"` : ""} has been successfully set up.</p>
-            <Button onClick={() => setLocation("/dashboard")} className="w-full max-w-xs">
+            <p className="text-muted-foreground max-w-xs">Your new identity {identityName ? `"${identityName}"` : ""} has been successfully set up.</p>
+            <Button onClick={() => setLocation("/dashboard")} className="w-full max-w-xs bg-violet-500 hover:bg-violet-600 text-primary-foreground">
                 Done
             </Button>
         </div>

@@ -10,8 +10,10 @@ interface WelcomeStepProps {
 
 export function WelcomeStep({ onCreateNew, onImportExisting }: WelcomeStepProps) {
     return (
-        <div className="flex flex-col items-center justify-start h-full p-6 space-y-8 text-center">
-            <img src="/icon-dev.png" alt="Vibe Logo" className="w-20 h-20 mb-2" /> {/* Larger Logo for welcome */}
+        <div className="flex flex-col items-center justify-start h-full space-y-6 w-full">
+            {" "}
+            {/* Removed p-6, adjusted space-y */}
+            <img src="/icon-dev.png" alt="Vibe Logo" className="w-20 h-20 mt-2 mb-3" /> {/* Adjusted margin */}
             <h1 className="text-3xl font-bold">Set up Vibe</h1>
             <div className="w-full max-w-sm space-y-4">
                 <button

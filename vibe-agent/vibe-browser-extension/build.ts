@@ -152,12 +152,10 @@ interface NamingDetails {
 
 // Define explicit entry points - needed for performBuild and watch setup
 const entrypoints = [
-    "src/index.tsx", // Main entry point
+    "src/sidepanelEntry.tsx", // Renamed from index.tsx to avoid naming conflict
     "src/background.ts", // Background service worker
     "src/content.ts", // Content script
     "src/vibe-inpage.ts", // In-page script (window.vibe API)
-    // "src/sidepanel.tsx", // Old entry point for side panel - REMOVED
-    // src/index.tsx is already the first entry point, which now handles the side panel UI via App.tsx
 ];
 
 // Adjust entrypoints if src/index.tsx was not intended for sidepanel,
@@ -182,9 +180,13 @@ async function performBuild() {
     console.log(`🔧 Building entry points: ${entrypoints.join(", ")}`);
 
     const buildConfig: BuildConfig = {
-        entrypoints,
+        entrypoints, // Array of strings
         outdir,
-        naming: "[name].js", // Simplified naming, src/index.tsx will output to index.js
+        naming: {
+            // Let Bun use its default for entry points (typically results in [name].js in outdir)
+            chunk: "[name]-[hash].js", // For dynamically imported code chunks
+            asset: "[name]-[hash].[ext]", // For other assets (CSS, images, or the problematic secondary JS output)
+        },
         plugins: [plugin],
         minify: isWatchMode ? false : restCliConfig.minify !== undefined ? restCliConfig.minify : true,
         target: "browser",
