@@ -1,6 +1,4 @@
 // apps/test/src/vibe/sdk.ts
-
-// apps/test/src/vibe/sdk.ts
 // Defines the interface for the `window.vibe` object provided by the agent.
 
 // Import necessary types

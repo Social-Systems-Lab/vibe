@@ -1194,17 +1194,17 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     // The frontend's useVaultUnlock should handle prompting for the correct identity's password.
                     // If currentActiveDid is not didToDelete, but vault is unlocked, it implies an admin action or complex flow not yet fully designed.
                     // For now, let's assume the active DID in session IS the one being deleted.
-                    logger.warn(`DELETE_IDENTITY: Vault not unlocked for ${didToDelete} or it's not the active session DID. Frontend should ensure this.`);
+                    console.warn(`DELETE_IDENTITY: Vault not unlocked for ${didToDelete} or it's not the active session DID. Frontend should ensure this.`);
                     // Consider if an error should be thrown here or if API auth is sufficient.
                     // If API call uses token of didToDelete, it must be active & unlocked to get/refresh token.
                 }
 
-                logger.info(`Attempting to delete identity: ${didToDelete}`);
+                console.info(`Attempting to delete identity: ${didToDelete}`);
                 let accessToken: string;
                 try {
                     accessToken = await TokenManager.getValidCpAccessToken(didToDelete);
                 } catch (tokenError: any) {
-                    logger.error(`DELETE_IDENTITY: Failed to get access token for ${didToDelete}. Error: ${tokenError.message}`);
+                    console.error(`DELETE_IDENTITY: Failed to get access token for ${didToDelete}. Error: ${tokenError.message}`);
                     throw new Error(`Failed to authenticate for deletion: ${tokenError.message}`);
                 }
 
@@ -1219,12 +1219,12 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
 
                 if (!apiResponse.ok) {
                     const errorBody = await apiResponse.json().catch(() => ({ error: `API error: ${apiResponse.status}` }));
-                    logger.error(`DELETE_IDENTITY: API call failed for ${didToDelete}. Status: ${apiResponse.status}, Error: ${errorBody.error}`);
+                    console.error(`DELETE_IDENTITY: API call failed for ${didToDelete}. Status: ${apiResponse.status}, Error: ${errorBody.error}`);
                     throw new Error(errorBody.error || `Failed to delete identity via API: ${apiResponse.status}`);
                 }
 
                 const responseJson = await apiResponse.json();
-                logger.info(`DELETE_IDENTITY: API call successful for ${didToDelete}. Message: ${responseJson.message}`);
+                console.info(`DELETE_IDENTITY: API call successful for ${didToDelete}. Message: ${responseJson.message}`);
 
                 // Clean up local data associated with the deleted identity
                 await TokenManager.clearCpTokens(didToDelete);
@@ -1232,13 +1232,13 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 const localData = await chrome.storage.local.get(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
                 if (localData[Constants.STORAGE_KEY_LAST_ACTIVE_DID] === didToDelete) {
                     await chrome.storage.local.remove(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
-                    logger.info(`Cleared lastActiveDid as it was the deleted identity: ${didToDelete}`);
+                    console.info(`Cleared lastActiveDid as it was the deleted identity: ${didToDelete}`);
                 }
 
                 // If the deleted identity was the one active in the session, lock the vault.
                 if (SessionManager.currentActiveDid === didToDelete) {
                     await SessionManager.lockVaultState(); // Clears in-memory seed, active DID, session tokens.
-                    logger.info(`Locked vault as the deleted identity ${didToDelete} was active in session.`);
+                    console.info(`Locked vault as the deleted identity ${didToDelete} was active in session.`);
                 }
 
                 responsePayload = { success: true, message: responseJson.message || "Identity deletion process initiated." };

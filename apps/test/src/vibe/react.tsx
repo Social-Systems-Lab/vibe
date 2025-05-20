@@ -1,9 +1,6 @@
 // apps/test/src/vibe/react.tsx
 "use client";
 
-// apps/test/src/vibe/react.tsx
-"use client";
-
 import React, { createContext, useState, useEffect, useContext, useCallback } from "react";
 import type { ReactNode } from "react"; // Import ReactNode as a type
 // Removed SDK/Agent instance imports

@@ -59,7 +59,7 @@ After running `bun dev`, load the extension into Chrome:
 1. Open Chrome and navigate to `chrome://extensions`.
 2. Enable "Developer mode" (usually a toggle in the top right).
 3. Click "Load unpacked".
-4. Select the `vibe-agent/vibe-browser-extension/dist` directory (or the appropriate build output directory, often `dist` or `build`).
+4. Select the `vibe-agent/vibe-browser-extension/dist` directory.
 
 ## Future Developments (as per spec)
 
