@@ -19,6 +19,62 @@ import {
 } from "../lib/crypto";
 import { didFromEd25519 } from "../lib/identity";
 
+// Simple in-memory store for active app subscriptions
+// Key: subscriptionId, Value: { tabId, origin, appId }
+const appSubscriptions = new Map<string, { tabId?: number; origin: string; appId?: string }>();
+
+async function getCurrentVibeStateForSubscription(appId?: string, origin?: string): Promise<Types.VibeState> {
+    // Helper to construct VibeState, similar to INITIALIZE_APP_SESSION
+    // TODO: Incorporate actual permissions based on appId and origin in the future
+    const vaultData = (await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT))[Constants.STORAGE_KEY_VAULT];
+    const agentIdentitiesFromVault: Types.AgentIdentity[] = vaultData?.identities || [];
+
+    const vibeIdentities: Types.VibeIdentity[] = agentIdentitiesFromVault.map((agentId: Types.AgentIdentity) => ({
+        did: agentId.identityDid,
+        label: agentId.profile_name || `Identity ${agentId.identityDid.substring(0, 12)}...`,
+        pictureUrl: agentId.profile_picture,
+    }));
+
+    const currentAgentActiveDid = SessionManager.currentActiveDid;
+    let activeVibeIdentity: Types.VibeIdentity | null = null;
+    if (currentAgentActiveDid) {
+        const foundActive = vibeIdentities.find((vid) => vid.did === currentAgentActiveDid);
+        activeVibeIdentity = foundActive || null;
+    }
+
+    return {
+        isUnlocked: SessionManager.isUnlocked,
+        did: currentAgentActiveDid,
+        account: currentAgentActiveDid ? { did: currentAgentActiveDid } : null,
+        permissions: {
+            /* Mock/actual permissions for appId, origin */
+        },
+        identities: vibeIdentities,
+        activeIdentity: activeVibeIdentity,
+    };
+}
+
+async function broadcastAppStateToSubscriptions() {
+    console.log("[BG] Broadcasting app state to all subscriptions.");
+    for (const [subscriptionId, subInfo] of appSubscriptions.entries()) {
+        if (subInfo.tabId) {
+            try {
+                const newState = await getCurrentVibeStateForSubscription(subInfo.appId, subInfo.origin);
+                console.log(`[BG] Sending VIBE_PAGE_EVENT_STATE_CHANGED to tab ${subInfo.tabId} for subId ${subscriptionId}`);
+                chrome.tabs.sendMessage(subInfo.tabId, {
+                    type: "VIBE_PAGE_EVENT_STATE_CHANGED",
+                    subscriptionId: subscriptionId,
+                    payload: newState,
+                });
+            } catch (error) {
+                console.error(`[BG] Error sending state update to tab ${subInfo.tabId} for subId ${subscriptionId}:`, error);
+                // Optionally, remove subscription if tab is no longer accessible?
+                // chrome.tabs.get(subInfo.tabId, (tab) => { if (chrome.runtime.lastError) appSubscriptions.delete(subscriptionId); });
+            }
+        }
+    }
+}
+
 export async function handleMessage(message: any, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void): Promise<void> {
     const { action, payload, requestId } = message;
 
@@ -26,7 +82,7 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
     let responseType = "VIBE_AGENT_RESPONSE";
     try {
         switch (action) {
-            case "init":
+            case "GET_AGENT_STATUS":
                 // Attempt to load from session first (checks for decrypted seed)
                 if (!SessionManager.isUnlocked) {
                     // Try to load identity if in-memory seed might exist (e.g. service worker restarted)
@@ -138,7 +194,7 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
 
                 if (!vaultData || !saltHex) throw new Error("Vault or salt not found. Setup may not be complete.");
                 const salt = Buffer.from(saltHex, "hex");
-                let encryptionKey: CryptoKey | null = null; // For scoping, ensure it's not accidentally reused
+                let encryptionKey: CryptoKey | null = null;
                 let decryptedSeedAttempt: string | null = null;
                 try {
                     encryptionKey = await deriveEncryptionKey(password, salt);
@@ -147,12 +203,10 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
 
                     let activeIdentityIndexToSet = vaultData.settings?.activeIdentityIndex ?? 0;
 
-                    // If we have a lastActiveDid, try to find its index and use that
                     if (lastActiveDidFromStorage && vaultData.identities) {
                         const foundIndex = vaultData.identities.findIndex((idObj: any) => idObj.did === lastActiveDidFromStorage);
                         if (foundIndex !== -1) {
                             activeIdentityIndexToSet = foundIndex;
-                            // Also update the vault's persisted activeIdentityIndex to match lastActiveDid
                             if (vaultData.settings.activeIdentityIndex !== foundIndex) {
                                 vaultData.settings.activeIdentityIndex = foundIndex;
                                 await chrome.storage.local.set({ [Constants.STORAGE_KEY_VAULT]: vaultData });
@@ -165,44 +219,36 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                         }
                     }
 
-                    // Store the decrypted seed in memory via SessionManager
                     SessionManager.setInMemoryDecryptedSeed(decryptedSeedAttempt);
-                    // Set the active index in session storage so loadActiveIdentity can use it
                     await chrome.storage.session.set({
                         [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: activeIdentityIndexToSet,
                     });
-                    await SessionManager.loadActiveIdentity(); // This uses inMemoryDecryptedSeed and activeIndex from session
+                    await SessionManager.loadActiveIdentity();
                     if (!SessionManager.isUnlocked || !SessionManager.currentActiveDid) {
-                        SessionManager.setInMemoryDecryptedSeed(null); // Ensure seed is cleared if loading failed
+                        SessionManager.setInMemoryDecryptedSeed(null);
                         throw new Error("Failed to load active identity into global state after unlock.");
                     }
 
-                    // Persist this successfully unlocked DID as the last active one
                     if (SessionManager.currentActiveDid) {
                         await chrome.storage.local.set({ [Constants.STORAGE_KEY_LAST_ACTIVE_DID]: SessionManager.currentActiveDid });
                     }
-
-                    // JWT is no longer proactively checked here. It will be handled by getValidCpAccessToken on demand.
                     console.info(`Vault unlocked for ${SessionManager.currentActiveDid}. API calls will attempt to use/refresh tokens.`);
-
                     responsePayload = { success: true, did: SessionManager.currentActiveDid, message: "Vault unlocked." };
+                    await broadcastAppStateToSubscriptions();
                 } catch (error) {
-                    // This catch belongs to the try block above
-                    SessionManager.setInMemoryDecryptedSeed(null); // Clear in-memory seed on any unlock error
-                    await SessionManager.lockVaultState(); // Clear session items as well
+                    SessionManager.setInMemoryDecryptedSeed(null);
+                    await SessionManager.lockVaultState();
                     throw new Error(`Failed to unlock vault. ${error instanceof Error ? error.message : String(error)}`);
                 } finally {
-                    // This finally belongs to the try block above
-                    // encryptionKey is a CryptoKey object, no explicit wipe method. It will be garbage collected.
-                    // decryptedSeedAttempt is now managed by setInMemoryDecryptedSeed, clear it from local scope
                     if (decryptedSeedAttempt) decryptedSeedAttempt = null;
                 }
                 break;
             }
 
             case "LOCK_VAULT":
-                await SessionManager.lockVaultState(); // This clears in-memory seed, active index, and all JWTs
+                await SessionManager.lockVaultState();
                 responsePayload = { success: true, message: "Vault locked." };
+                await broadcastAppStateToSubscriptions();
                 break;
 
             case "GET_LOCK_STATE":
@@ -222,7 +268,6 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     encryptionKey = await deriveEncryptionKey(password, salt);
                     const encryptedMnemonicData = await encryptData(mnemonic, encryptionKey);
                     seed = await seedFromMnemonic(mnemonic);
-                    // const masterHDKey = getMasterHDKeyFromSeed(seed); // Not needed here as no DID is created
                     const vaultData = {
                         encryptedSeedPhrase: encryptedMnemonicData,
                         identities: [],
@@ -231,16 +276,13 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     await chrome.storage.local.set({
                         [Constants.STORAGE_KEY_VAULT_SALT]: saltHex,
                         [Constants.STORAGE_KEY_VAULT]: vaultData,
-                        [Constants.STORAGE_KEY_SETUP_COMPLETE]: true, // Mark setup as complete here
+                        [Constants.STORAGE_KEY_SETUP_COMPLETE]: true,
                     });
-                    // Store mnemonic in memory, not session
                     SessionManager.setInMemoryDecryptedSeed(mnemonic);
                     await chrome.storage.session.set({
-                        // [Constants.SESSION_STORAGE_DECRYPTED_SEED_PHRASE]: mnemonic, // Not in session
-                        [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: -1, // Active index still in session for now
+                        [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: -1,
                     });
-                    SessionManager.setCurrentActiveDid(null); // No active DID yet
-                    // SessionManager.setIsUnlocked(true); // setInMemoryDecryptedSeed handles this
+                    SessionManager.setCurrentActiveDid(null);
                     console.log("SETUP_CREATE_VAULT: Vault created, pre-unlocked (seed in memory), no identities yet.");
                     responsePayload = { mnemonic };
                 } finally {
@@ -250,7 +292,6 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
             }
 
             case "SETUP_IMPORT_VAULT": {
-                // This case seems to create a first identity, might need review against new flows
                 const { importedMnemonic, password } = payload;
                 if (!importedMnemonic || !password) throw new Error("Mnemonic and password required.");
                 if (!validateMnemonic(importedMnemonic)) throw new Error("Invalid mnemonic provided.");
@@ -297,14 +338,12 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 if (SessionManager.isUnlocked && SessionManager.currentActiveDid) {
                     didToFetch = SessionManager.currentActiveDid;
                 } else {
-                    // Vault is locked or no active DID in session, try to use last active DID from local storage
                     const lastActiveDidResult = await chrome.storage.local.get(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
                     didToFetch = lastActiveDidResult[Constants.STORAGE_KEY_LAST_ACTIVE_DID] || null;
                 }
 
                 if (!didToFetch) {
                     responseType = "VIBE_AGENT_RESPONSE_ERROR";
-                    // Determine a more specific error based on setup state
                     const setupCompleteResult = await chrome.storage.local.get(Constants.STORAGE_KEY_SETUP_COMPLETE);
                     if (!setupCompleteResult[Constants.STORAGE_KEY_SETUP_COMPLETE]) {
                         responsePayload = { error: { message: "Setup not complete. Cannot get identity details.", code: "SETUP_NOT_COMPLETE" } };
@@ -324,7 +363,6 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 const identityData = vault.identities.find((idObj: any) => idObj.did === didToFetch);
 
                 if (!identityData) {
-                    // This could happen if lastActiveDid points to a now-deleted identity
                     responseType = "VIBE_AGENT_RESPONSE_ERROR";
                     responsePayload = { error: { message: `Identity details for DID ${didToFetch} not found in vault.`, code: "IDENTITY_NOT_FOUND_IN_VAULT" } };
                     break;
@@ -337,7 +375,6 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     cloudUrl: identityData.cloudUrl,
                     instanceStatus: (identityData as any).instanceStatus,
                     isAdmin: (identityData as any).isAdmin,
-                    // Add a flag to indicate if the vault is locked, so UI can adapt (e.g., disable save button until unlock)
                     isVaultLocked: !SessionManager.isUnlocked,
                 };
                 break;
@@ -433,7 +470,6 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 };
                 await chrome.storage.local.set({ [Constants.STORAGE_KEY_VAULT]: finalVaultData, [Constants.STORAGE_KEY_SETUP_COMPLETE]: true });
                 if (recoveredIdentities.length > 0) {
-                    // Store importedMnemonic in memory, not session
                     SessionManager.setInMemoryDecryptedSeed(importedMnemonic);
                     await chrome.storage.session.set({
                         [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: 0,
@@ -452,22 +488,20 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
             }
 
             case "SETUP_COMPLETE_AND_FINALIZE": {
-                // New identity registration
                 const { identityName, identityPicture, cloudUrl, claimCode, password, mnemonic } = payload;
                 if (!password || !mnemonic) throw new Error("Password and mnemonic required.");
                 const vaultResult = await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT);
                 let vaultData = vaultResult[Constants.STORAGE_KEY_VAULT];
                 if (!vaultData || !vaultData.identities || vaultData.identities.length === 0) {
-                    // Should be empty for first identity
                     throw new Error("Vault not properly initialized.");
                 }
-                const identityDid = vaultData.identities[0].did; // Assumes first identity is being finalized
+                const identityDid = vaultData.identities[0].did;
                 if (cloudUrl === Constants.OFFICIAL_VIBE_CLOUD_URL) {
                     let seedForSigning: Buffer | null = null;
                     try {
                         seedForSigning = await seedFromMnemonic(mnemonic);
                         const masterKey = getMasterHDKeyFromSeed(seedForSigning);
-                        const keyPair = deriveChildKeyPair(masterKey, vaultData.settings.activeIdentityIndex || 0); // activeIdentityIndex should be 0
+                        const keyPair = deriveChildKeyPair(masterKey, vaultData.settings.activeIdentityIndex || 0);
                         const nonce = crypto.randomUUID().toString();
                         const timestamp = new Date().toISOString();
                         const messageToSign = `${identityDid}|${nonce}|${timestamp}|${claimCode || ""}`;
@@ -486,11 +520,11 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                             throw new Error(`Registration failed: ${errBody.error}`);
                         }
                         const result = await registerResponse.json();
-                        const serverIdentity = result.identity as Types.Identity;
+                        const serverIdentity = result.identity as Types.AgentIdentity;
                         const tokenDetails = result.tokenDetails as Types.TokenDetails;
                         await TokenManager.storeCpTokens(identityDid, tokenDetails);
-                        vaultData.identities[0].profile_name = serverIdentity.profileName;
-                        vaultData.identities[0].profile_picture = serverIdentity.profilePictureUrl;
+                        vaultData.identities[0].profile_name = serverIdentity.profile_name;
+                        vaultData.identities[0].profile_picture = serverIdentity.profile_picture;
                         vaultData.identities[0].cloudUrl = serverIdentity.instanceUrl;
                         (vaultData.identities[0] as any).instanceId = serverIdentity.instanceId;
                         (vaultData.identities[0] as any).instanceStatus = serverIdentity.instanceStatus;
@@ -505,19 +539,16 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 }
                 await chrome.storage.local.set({
                     [Constants.STORAGE_KEY_VAULT]: vaultData,
-                    [Constants.STORAGE_KEY_SETUP_COMPLETE]: true, // Already set in SETUP_CREATE_VAULT
-                    // currentIdentityDID: identityDid, // This was an old key, lastActiveDid is preferred
+                    [Constants.STORAGE_KEY_SETUP_COMPLETE]: true,
                 });
-                // In-memory seed (mnemonic) should already be set if this is the first identity from SETUP_CREATE_VAULT.
-                // Ensure active index is correct in session for loadActiveIdentity.
                 await chrome.storage.session.set({ [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: 0 });
-                await SessionManager.loadActiveIdentity(); // This will use the in-memory seed
+                await SessionManager.loadActiveIdentity();
                 responsePayload = { success: true, message: "Setup finalized.", did: identityDid, identityName: vaultData.identities[0].profile_name };
                 break;
             }
 
             case "UPDATE_IDENTITY_PROFILE": {
-                const { did, profileName, profilePictureUrl, claimCode } = payload; // claimCode for admin promotion
+                const { did, profileName, profilePictureUrl, claimCode } = payload;
                 if (!did) throw new Error("DID required for profile update.");
 
                 let localVault = (await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT))[Constants.STORAGE_KEY_VAULT];
@@ -540,9 +571,7 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     needsLocalSave = true;
                     needsCloudSync = true;
                 }
-                // If claimCode is provided and different, it also implies a cloud sync is needed (for admin promotion)
                 if (claimCode !== undefined) {
-                    // Assuming claim code is primarily for cloud interaction
                     needsCloudSync = true;
                 }
 
@@ -550,16 +579,11 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     await chrome.storage.local.set({ [Constants.STORAGE_KEY_VAULT]: localVault });
                 }
 
-                let cloudSyncMessage = ""; // To build up the final message
+                let cloudSyncMessage = "";
                 let cloudUpdateError = null;
-                // let requiresUnlockForCloudSync = false; // No longer needed from backend
 
                 if (needsCloudSync && identityToUpdate.cloudUrl === Constants.OFFICIAL_VIBE_CLOUD_URL) {
-                    // Frontend ensures vault is unlocked if this path is taken for cloud sync.
-                    // We still need to check SessionManager state for safety/direct calls.
                     if (!SessionManager.isUnlocked || SessionManager.currentActiveDid !== did) {
-                        // This should ideally not be hit if frontend calls requestUnlockAndPerformAction first.
-                        // If it is, it means a direct call was made or UI logic error.
                         cloudUpdateError = "Vault locked or identity not active; cloud sync skipped.";
                         cloudSyncMessage = "Changes saved locally. Cloud sync skipped (vault locked or inactive identity).";
                     } else {
@@ -578,15 +602,12 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                                 const timestamp = new Date().toISOString();
                                 const updateOwnerPayload: any = { nonce, timestamp };
 
-                                // Populate payload for API: only send fields that are being updated or are needed for the operation
                                 if (profileName !== undefined) updateOwnerPayload.profileName = profileName;
                                 if (profilePictureUrl !== undefined) updateOwnerPayload.profilePictureUrl = profilePictureUrl;
-                                if (claimCode !== undefined) updateOwnerPayload.claimCode = claimCode; // For admin promotion
+                                if (claimCode !== undefined) updateOwnerPayload.claimCode = claimCode;
 
-                                // Construct fieldsToSign based on what's being sent for signature verification
-                                // The signature should cover all data that the owner is asserting.
                                 const fieldsToSign = [
-                                    claimCode || "", // If claimCode is part of the update, include it
+                                    claimCode || "",
                                     profileName === undefined ? identityToUpdate.profile_name || "" : profileName,
                                     profilePictureUrl === undefined ? identityToUpdate.profile_picture || "" : profilePictureUrl,
                                 ];
@@ -605,17 +626,12 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                                     const errBody = await updateResponse.json().catch(() => ({ error: "Unknown cloud update error" }));
                                     throw new Error(`Cloud profile update failed: ${errBody.error}`);
                                 }
-                                const updatedServerIdentity = (await updateResponse.json()) as Types.Identity & { token?: string }; // Token for admin promotion
+                                const updatedServerIdentity = (await updateResponse.json()) as Types.AgentIdentity & { token?: string };
 
-                                // Sync back authoritative fields from server
-                                identityToUpdate.profile_name = updatedServerIdentity.profileName;
-                                identityToUpdate.profile_picture = updatedServerIdentity.profilePictureUrl;
+                                identityToUpdate.profile_name = updatedServerIdentity.profile_name;
+                                identityToUpdate.profile_picture = updatedServerIdentity.profile_picture;
                                 if (updatedServerIdentity.isAdmin !== undefined) identityToUpdate.isAdmin = updatedServerIdentity.isAdmin;
-                                // If a new token was issued (e.g. admin promotion), store it
                                 if (updatedServerIdentity.token) {
-                                    // This part seems to be from an older JWT model, refresh tokens are now primary
-                                    // For now, we'll assume the main login/refresh flow handles token updates.
-                                    // If specific token update is needed here, TokenManager should be used.
                                     console.warn(
                                         "Received token in PUT response, but current flow relies on refresh tokens. Ignoring direct token update here."
                                     );
@@ -653,19 +669,18 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     };
                 } else if (cloudUpdateError) {
                     responsePayload = {
-                        success: false, // Indicate overall operation might not be fully complete as user expects
+                        success: false,
                         message: `Local save successful. Cloud sync failed: ${cloudUpdateError}`,
                         updatedProfile: { profileName: identityToUpdate.profile_name, profilePictureUrl: identityToUpdate.profile_picture },
                         cloudUpdateError: cloudUpdateError,
                     };
                 } else if (!needsLocalSave && !needsCloudSync) {
                     responsePayload = {
-                        success: true, // No error, but no operation performed
+                        success: true,
                         message: "No changes to save.",
                         updatedProfile: { profileName: identityToUpdate.profile_name, profilePictureUrl: identityToUpdate.profile_picture },
                     };
                 } else {
-                    // Should not be reached if logic is correct
                     responsePayload = {
                         success: false,
                         message: "An unexpected state occurred during profile update.",
@@ -692,15 +707,15 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     }
                     throw new Error(errorBody.error || `API error: ${fetchResponse.status}`);
                 }
-                const serverIdentity = (await fetchResponse.json()) as Types.Identity;
+                const serverIdentity = (await fetchResponse.json()) as Types.AgentIdentity;
                 const vaultResult = await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT);
                 let vaultData = vaultResult[Constants.STORAGE_KEY_VAULT];
                 if (vaultData && vaultData.identities) {
                     const identityIndex = vaultData.identities.findIndex((idObj: any) => idObj.did === did);
                     if (identityIndex !== -1) {
                         const localIdentity = vaultData.identities[identityIndex];
-                        localIdentity.profile_name = serverIdentity.profileName || localIdentity.profile_name;
-                        localIdentity.profile_picture = serverIdentity.profilePictureUrl || localIdentity.profile_picture;
+                        localIdentity.profile_name = serverIdentity.profile_name || localIdentity.profile_name;
+                        localIdentity.profile_picture = serverIdentity.profile_picture || localIdentity.profile_picture;
                         localIdentity.cloudUrl = serverIdentity.instanceUrl || localIdentity.cloudUrl;
                         (localIdentity as any).instanceStatus = serverIdentity.instanceStatus;
                         (localIdentity as any).instanceId = serverIdentity.instanceId;
@@ -729,11 +744,11 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                         const decryptedSeedAttempt = await decryptData(vaultData.encryptedSeedPhrase, encryptionKey);
                         if (!decryptedSeedAttempt) throw new Error("Decryption failed.");
 
-                        SessionManager.setInMemoryDecryptedSeed(decryptedSeedAttempt); // Store in memory
+                        SessionManager.setInMemoryDecryptedSeed(decryptedSeedAttempt);
 
                         const identityIndex = vaultData.identities.findIndex((idObj: any) => idObj.did === did);
                         if (identityIndex === -1) {
-                            SessionManager.setInMemoryDecryptedSeed(null); // Clear seed if DID not found
+                            SessionManager.setInMemoryDecryptedSeed(null);
                             throw new Error(`DID ${did} not found in vault.`);
                         }
                         await chrome.storage.session.set({
@@ -741,24 +756,21 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                         });
                         await SessionManager.loadActiveIdentity();
                         if (!SessionManager.isUnlocked || SessionManager.currentActiveDid !== did) {
-                            SessionManager.setInMemoryDecryptedSeed(null); // Clear seed on failure
+                            SessionManager.setInMemoryDecryptedSeed(null);
                             throw new Error("Failed to unlock/set active identity.");
                         }
                     } else {
-                        // No password provided, and vault is locked for the target DID
                         responseType = "VIBE_AGENT_RESPONSE_ERROR";
                         responsePayload = { error: { message: "Vault locked. Password required to login.", code: "VAULT_LOCKED_FOR_LOGIN", did: did } };
                         break;
                     }
                 }
-                // At this point, SessionManager.isUnlocked should be true for the target DID
                 const decryptedSeed = SessionManager.getInMemoryDecryptedSeed();
                 const activeIdx = (await chrome.storage.session.get(Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX))[
                     Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX
                 ];
 
                 if (!decryptedSeed || typeof activeIdx !== "number") {
-                    // This case should ideally be caught by isUnlocked check earlier
                     responseType = "VIBE_AGENT_RESPONSE_ERROR";
                     responsePayload = {
                         error: { message: "Internal error: In-memory seed or active index missing despite unlock.", code: "INTERNAL_ERROR_SEED_MISSING" },
@@ -809,49 +821,35 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 const targetIdentityIndex = vault.identities.findIndex((idObj: any) => idObj.did === targetDid);
                 if (targetIdentityIndex === -1) throw new Error(`Target DID ${targetDid} not found.`);
 
-                // If vault is locked, switching identity doesn't unlock it.
-                // If vault is unlocked, currentActiveDid and activeIdentityIndex are updated.
-                // The inMemoryDecryptedSeed remains if it was there.
                 const previousActiveDid = SessionManager.currentActiveDid;
 
                 await chrome.storage.session.set({ [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: targetIdentityIndex });
-                vault.settings.activeIdentityIndex = targetIdentityIndex; // Persist in vault
+                vault.settings.activeIdentityIndex = targetIdentityIndex;
                 await chrome.storage.local.set({ [Constants.STORAGE_KEY_VAULT]: vault });
 
                 if (SessionManager.isUnlocked) {
-                    // Only call loadActiveIdentity if vault is already considered unlocked
                     await SessionManager.loadActiveIdentity();
                     if (SessionManager.currentActiveDid !== targetDid) {
-                        // This is a more critical error if it happens post-unlock
-                        await SessionManager.lockVaultState(); // Lock everything if switch failed post-unlock
+                        await SessionManager.lockVaultState();
                         throw new Error(`Failed to switch active identity in unlocked state. Expected ${targetDid}, got ${SessionManager.currentActiveDid}.`);
                     }
                 } else {
-                    // If vault is locked, just update the target DID for next unlock.
-                    // SessionManager.currentActiveDid will remain null.
-                    // The UI will reflect the new target, but operations will require unlock.
-                    SessionManager.setCurrentActiveDid(null); // Explicitly ensure it's null if locked
+                    SessionManager.setCurrentActiveDid(null);
                 }
 
-                // Always update last active DID in local storage
                 await chrome.storage.local.set({ [Constants.STORAGE_KEY_LAST_ACTIVE_DID]: targetDid });
 
                 if (previousActiveDid && previousActiveDid !== targetDid) {
-                    await chrome.storage.local.set({ [Constants.STORAGE_KEY_LAST_ACTIVE_DID]: SessionManager.currentActiveDid });
+                    await TokenManager.clearCpTokens(previousActiveDid);
                 }
-                if (previousActiveDid && previousActiveDid !== targetDid) {
-                    const prevAccessTokenKey = `${Constants.SESSION_STORAGE_CP_ACCESS_TOKEN_PREFIX}${previousActiveDid}`;
-                    const prevAccessTokenExpiresAtKey = `${Constants.SESSION_STORAGE_CP_ACCESS_TOKEN_EXPIRES_AT_PREFIX}${previousActiveDid}`;
-                    await chrome.storage.session.remove([prevAccessTokenKey, prevAccessTokenExpiresAtKey]);
-                }
-                const newAccessTokenKey = `${Constants.SESSION_STORAGE_CP_ACCESS_TOKEN_PREFIX}${targetDid}`;
-                const newAccessTokenExpiresAtKey = `${Constants.SESSION_STORAGE_CP_ACCESS_TOKEN_EXPIRES_AT_PREFIX}${targetDid}`;
-                await chrome.storage.session.remove([newAccessTokenKey, newAccessTokenExpiresAtKey]);
+                await TokenManager.clearCpTokens(targetDid);
+
                 responsePayload = {
                     success: true,
-                    newActiveDid: SessionManager.currentActiveDid,
-                    message: `Switched to ${SessionManager.currentActiveDid}.`,
+                    newActiveDid: SessionManager.isUnlocked ? SessionManager.currentActiveDid : targetDid,
+                    message: `Switched active identity context to ${targetDid}.`,
                 };
+                await broadcastAppStateToSubscriptions();
                 break;
             }
 
@@ -863,7 +861,6 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 }
                 const decryptedSeed = SessionManager.getInMemoryDecryptedSeed();
                 if (!decryptedSeed) {
-                    // Should be redundant given isUnlocked check
                     responseType = "VIBE_AGENT_RESPONSE_ERROR";
                     responsePayload = { error: { message: "Vault locked (in-memory seed missing).", code: "VAULT_LOCKED" } };
                     break;
@@ -906,22 +903,18 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     const vaultResult = await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT);
                     const vault = vaultResult[Constants.STORAGE_KEY_VAULT];
                     if (!vault || !vault.settings || typeof vault.settings.nextAccountIndex !== "number") {
-                        // This is an expected error condition, handle it specifically
                         console.error("GET_NEXT_ACCOUNT_INDEX: Vault data/settings invalid or missing nextAccountIndex.", vault);
                         responseType = "VIBE_AGENT_RESPONSE_ERROR";
                         responsePayload = {
-                            // Ensure this structure matches what the frontend expects for an error
                             error: {
                                 message: "Vault data or settings are invalid. Cannot determine next account index.",
                                 code: "VAULT_SETTINGS_INVALID",
                             },
                         };
-                        // No break here, will fall through to sendResponse at the end of try/catch
                     } else {
                         responsePayload = { accountIndex: vault.settings.nextAccountIndex };
                     }
                 } catch (e: any) {
-                    // Catch any other unexpected errors during this specific action
                     console.error("GET_NEXT_ACCOUNT_INDEX: Unexpected error:", e);
                     responseType = "VIBE_AGENT_RESPONSE_ERROR";
                     let detailedErrorMessage = "An unexpected error occurred while fetching the account index.";
@@ -946,7 +939,6 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 const { accountIndexToUse, identityName, identityPicture, cloudUrl, claimCode, password } = payload;
 
                 if (typeof accountIndexToUse !== "number") {
-                    // accountIndex is always required
                     throw new Error("Account index is required.");
                 }
 
@@ -954,14 +946,12 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
 
                 if (!SessionManager.isUnlocked) {
                     if (!password) {
-                        // Vault is locked and no password was provided by the UI
                         responseType = "VIBE_AGENT_RESPONSE_ERROR";
                         responsePayload = {
                             error: { message: "Vault is locked. Password is required to create a new identity.", code: "VAULT_LOCKED_PASSWORD_REQUIRED" },
                         };
                         break;
                     }
-                    // Attempt to unlock with the provided password
                     console.log("SETUP_NEW_IDENTITY_AND_FINALIZE: Vault locked, attempting unlock with provided password.");
                     const localData = await chrome.storage.local.get([Constants.STORAGE_KEY_VAULT, Constants.STORAGE_KEY_VAULT_SALT]);
                     const vaultDataForUnlock = localData[Constants.STORAGE_KEY_VAULT];
@@ -978,20 +968,15 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                         throw new Error("Decryption failed with the provided password.");
                     }
                     SessionManager.setInMemoryDecryptedSeed(decryptedSeedAttempt);
-                    decryptedSeed = decryptedSeedAttempt; // Use the newly decrypted seed
+                    decryptedSeed = decryptedSeedAttempt;
 
-                    // After attempting unlock, we need to load the active identity details if we want currentActiveDid to be set
-                    // For creating a new identity, we primarily need the seed, not necessarily the *active* DID.
-                    // Let's ensure isUnlocked is true.
                     if (!SessionManager.isUnlocked) {
-                        // Should be true now if setInMemoryDecryptedSeed worked
                         throw new Error("Internal error: Vault unlock seemed successful but isUnlocked is still false.");
                     }
                     console.log("SETUP_NEW_IDENTITY_AND_FINALIZE: Vault unlocked successfully with provided password.");
                 }
 
                 if (!decryptedSeed) {
-                    // Final check, should not be hit if logic above is correct
                     responseType = "VIBE_AGENT_RESPONSE_ERROR";
                     responsePayload = {
                         error: { message: "Vault is locked or seed is unavailable after unlock attempt.", code: "VAULT_LOCKED_SEED_UNAVAILABLE" },
@@ -1004,7 +989,7 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 if (!vaultData || !vaultData.settings || typeof vaultData.settings.nextAccountIndex !== "number") {
                     throw new Error("Vault data/settings invalid.");
                 }
-                const newAccountIndex = vaultData.settings.nextAccountIndex; // Always use vault's next index
+                const newAccountIndex = vaultData.settings.nextAccountIndex;
                 let seedBuffer: Buffer | null = null;
                 try {
                     seedBuffer = await seedFromMnemonic(decryptedSeed);
@@ -1012,7 +997,6 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     const newKeyPair = deriveChildKeyPair(masterHDKey, newAccountIndex);
                     const newIdentityDid = didFromEd25519(newKeyPair.publicKey);
                     const newIdentityEntry: any = {
-                        // Use 'any' for flexibility with extra fields
                         did: newIdentityDid,
                         derivationPath: newKeyPair.derivationPath,
                         profile_name: identityName || `Identity ${newAccountIndex + 1}`,
@@ -1040,11 +1024,11 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                             throw new Error(`Registration failed: ${errBody.error}`);
                         }
                         const result = await registerResponse.json();
-                        const serverIdentity = result.identity as Types.Identity;
+                        const serverIdentity = result.identity as Types.AgentIdentity;
                         const tokenDetails = result.tokenDetails as Types.TokenDetails;
                         await TokenManager.storeCpTokens(newIdentityDid, tokenDetails);
-                        newIdentityEntry.profile_name = serverIdentity.profileName || newIdentityEntry.profile_name;
-                        newIdentityEntry.profile_picture = serverIdentity.profilePictureUrl || newIdentityEntry.profile_picture;
+                        newIdentityEntry.profile_name = serverIdentity.profile_name || newIdentityEntry.profile_name;
+                        newIdentityEntry.profile_picture = serverIdentity.profile_picture || newIdentityEntry.profile_picture;
                         newIdentityEntry.cloudUrl = serverIdentity.instanceUrl;
                         newIdentityEntry.instanceId = serverIdentity.instanceId;
                         newIdentityEntry.instanceStatus = serverIdentity.instanceStatus;
@@ -1056,7 +1040,7 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     vaultData.settings.activeIdentityIndex = newIdentityEntryIndexInVault;
                     await chrome.storage.local.set({ [Constants.STORAGE_KEY_VAULT]: vaultData });
                     await chrome.storage.session.set({ [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: newIdentityEntryIndexInVault });
-                    await SessionManager.loadActiveIdentity(); // Uses in-memory seed
+                    await SessionManager.loadActiveIdentity();
                     if (SessionManager.currentActiveDid) {
                         await chrome.storage.local.set({ [Constants.STORAGE_KEY_LAST_ACTIVE_DID]: SessionManager.currentActiveDid });
                     }
@@ -1067,6 +1051,7 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                         did: newIdentityDid,
                         identityName: newIdentityEntry.profile_name,
                     };
+                    await broadcastAppStateToSubscriptions();
                 } finally {
                     if (seedBuffer) wipeMemory(seedBuffer);
                 }
@@ -1074,7 +1059,6 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
             }
 
             case "FINALIZE_NEW_IDENTITY_SETUP": {
-                // Potentially deprecated by SETUP_NEW_IDENTITY_AND_FINALIZE
                 const { didToFinalize, accountIndex, identityName, identityPicture, cloudUrl, claimCode, password } = payload;
                 if (!didToFinalize || typeof accountIndex !== "number" || !password) throw new Error("Required fields missing.");
                 if (!SessionManager.isUnlocked) {
@@ -1086,19 +1070,11 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     const encryptionKey = await deriveEncryptionKey(password, salt);
                     const decryptedSeedAttempt = await decryptData(vaultDataForUnlock.encryptedSeedPhrase, encryptionKey);
                     if (!decryptedSeedAttempt) throw new Error("Decryption failed.");
-                    // Temporarily put seed in memory for this operation if password was provided
-                    // This specific seed is not meant to persist globally unless it's for the active identity.
-                    // However, the current SessionManager model has one global inMemoryDecryptedSeed.
-                    // For simplicity, we'll use the global one. If this operation isn't for the *active* identity's unlock,
-                    // this might briefly make the *active* identity seem unlocked if it wasn't.
-                    // This is a nuance if we allow finalizing non-active identities with password.
-                    // For now, assume FINALIZE_NEW_IDENTITY_SETUP implies making it active.
                     SessionManager.setInMemoryDecryptedSeed(decryptedSeedAttempt);
                 }
 
                 const decryptedSeed = SessionManager.getInMemoryDecryptedSeed();
                 if (!decryptedSeed) {
-                    // Check if vault is truly unlocked (in-memory seed available)
                     responseType = "VIBE_AGENT_RESPONSE_ERROR";
                     responsePayload = { error: { message: "Vault locked or in-memory seed missing after unlock attempt.", code: "VAULT_LOCKED" } };
                     break;
@@ -1133,11 +1109,11 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                             throw new Error(`Registration failed: ${errBody.error}`);
                         }
                         const result = await registerResponse.json();
-                        const serverIdentity = result.identity as Types.Identity;
+                        const serverIdentity = result.identity as Types.AgentIdentity;
                         const tokenDetails = result.tokenDetails as Types.TokenDetails;
                         await TokenManager.storeCpTokens(didToFinalize, tokenDetails);
-                        vaultData.identities[identityEntryIndex].profile_name = serverIdentity.profileName;
-                        vaultData.identities[identityEntryIndex].profile_picture = serverIdentity.profilePictureUrl;
+                        vaultData.identities[identityEntryIndex].profile_name = serverIdentity.profile_name;
+                        vaultData.identities[identityEntryIndex].profile_picture = serverIdentity.profile_picture;
                         vaultData.identities[identityEntryIndex].cloudUrl = serverIdentity.instanceUrl;
                         (vaultData.identities[identityEntryIndex] as any).instanceId = serverIdentity.instanceId;
                         (vaultData.identities[identityEntryIndex] as any).instanceStatus = serverIdentity.instanceStatus;
@@ -1156,18 +1132,10 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 vaultData.settings.activeIdentityIndex = identityEntryIndex;
                 await chrome.storage.local.set({ [Constants.STORAGE_KEY_VAULT]: vaultData });
                 await chrome.storage.session.set({ [Constants.SESSION_STORAGE_ACTIVE_IDENTITY_INDEX]: identityEntryIndex });
-                await SessionManager.loadActiveIdentity(); // Uses in-memory seed
+                await SessionManager.loadActiveIdentity();
                 if (SessionManager.currentActiveDid) {
                     await chrome.storage.local.set({ [Constants.STORAGE_KEY_LAST_ACTIVE_DID]: SessionManager.currentActiveDid });
                 }
-                // If a password was provided for a temporary unlock, and this operation
-                // didn't result in the vault staying unlocked for the *active* identity,
-                // we might want to clear the inMemoryDecryptedSeed.
-                // However, loadActiveIdentity should correctly reflect the state.
-                // The main goal is that SESSION_STORAGE_DECRYPTED_SEED_PHRASE is not used.
-                // If 'password' was provided, it means setInMemoryDecryptedSeed was called.
-                // If the operation completes successfully, the seed remains in memory.
-                // This is acceptable as the user just authenticated.
                 responsePayload = {
                     success: true,
                     message: `Identity ${didToFinalize} finalized.`,
@@ -1175,6 +1143,7 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                     identityName: vaultData.identities[identityEntryIndex].profile_name,
                     newActiveDid: SessionManager.currentActiveDid,
                 };
+                await broadcastAppStateToSubscriptions();
                 break;
             }
 
@@ -1183,74 +1152,6 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 if (!didToDelete || typeof didToDelete !== "string") {
                     throw new Error("DID is required for DELETE_IDENTITY action.");
                 }
-
-                // Ensure the vault is unlocked for the identity being deleted, or that an admin is performing this.
-                // For simplicity, we'll assume the frontend (useVaultUnlock) has ensured the current active identity
-                // is the one being deleted and the vault is unlocked for it, or an admin flow is in place.
-                // The API call itself will be authenticated.
-                if (!SessionManager.isUnlocked || SessionManager.currentActiveDid !== didToDelete) {
-                    // This check might be too strict if an admin could delete other identities.
-                    // However, for owner-initiated deletion, it's a good safeguard.
-                    // The frontend's useVaultUnlock should handle prompting for the correct identity's password.
-                    // If currentActiveDid is not didToDelete, but vault is unlocked, it implies an admin action or complex flow not yet fully designed.
-                    // For now, let's assume the active DID in session IS the one being deleted.
-                    console.warn(`DELETE_IDENTITY: Vault not unlocked for ${didToDelete} or it's not the active session DID. Frontend should ensure this.`);
-                    // Consider if an error should be thrown here or if API auth is sufficient.
-                    // If API call uses token of didToDelete, it must be active & unlocked to get/refresh token.
-                }
-
-                console.info(`Attempting to delete identity: ${didToDelete}`);
-                let accessToken: string;
-                try {
-                    accessToken = await TokenManager.getValidCpAccessToken(didToDelete);
-                } catch (tokenError: any) {
-                    console.error(`DELETE_IDENTITY: Failed to get access token for ${didToDelete}. Error: ${tokenError.message}`);
-                    throw new Error(`Failed to authenticate for deletion: ${tokenError.message}`);
-                }
-
-                const deleteUrl = `${Constants.OFFICIAL_VIBE_CLOUD_URL}/api/v1/identities/${didToDelete}`;
-                const apiResponse = await fetch(deleteUrl, {
-                    method: "DELETE",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${accessToken}`,
-                    },
-                });
-
-                if (!apiResponse.ok) {
-                    const errorBody = await apiResponse.json().catch(() => ({ error: `API error: ${apiResponse.status}` }));
-                    console.error(`DELETE_IDENTITY: API call failed for ${didToDelete}. Status: ${apiResponse.status}, Error: ${errorBody.error}`);
-                    throw new Error(errorBody.error || `Failed to delete identity via API: ${apiResponse.status}`);
-                }
-
-                const responseJson = await apiResponse.json();
-                console.info(`DELETE_IDENTITY: API call successful for ${didToDelete}. Message: ${responseJson.message}`);
-
-                // Clean up local data associated with the deleted identity
-                await TokenManager.clearCpTokens(didToDelete);
-
-                const localData = await chrome.storage.local.get(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
-                if (localData[Constants.STORAGE_KEY_LAST_ACTIVE_DID] === didToDelete) {
-                    await chrome.storage.local.remove(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
-                    console.info(`Cleared lastActiveDid as it was the deleted identity: ${didToDelete}`);
-                }
-
-                // If the deleted identity was the one active in the session, lock the vault.
-                if (SessionManager.currentActiveDid === didToDelete) {
-                    await SessionManager.lockVaultState(); // Clears in-memory seed, active DID, session tokens.
-                    console.info(`Locked vault as the deleted identity ${didToDelete} was active in session.`);
-                }
-
-                responsePayload = { success: true, message: responseJson.message || "Identity deletion process initiated." };
-                break;
-            }
-
-            case "DELETE_IDENTITY": {
-                const { did: didToDelete } = payload;
-                if (!didToDelete || typeof didToDelete !== "string") {
-                    throw new Error("DID is required for DELETE_IDENTITY action.");
-                }
-
                 if (!SessionManager.isUnlocked || SessionManager.currentActiveDid !== didToDelete) {
                     console.warn(`DELETE_IDENTITY: Vault not unlocked for ${didToDelete} or it's not the active session DID. Frontend should ensure this.`);
                 }
@@ -1281,7 +1182,6 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
 
                 const responseJson = await apiResponse.json();
                 console.info(`DELETE_IDENTITY: API call successful for ${didToDelete}. Message: ${responseJson.message}`);
-
                 await TokenManager.clearCpTokens(didToDelete);
 
                 const localData = await chrome.storage.local.get(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
@@ -1299,125 +1199,66 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 break;
             }
 
-            case "DELETE_IDENTITY": {
-                const { did: didToDelete } = payload;
-                if (!didToDelete || typeof didToDelete !== "string") {
-                    throw new Error("DID is required for DELETE_IDENTITY action.");
+            case "INITIALIZE_APP_SESSION": {
+                const appManifest = payload?.manifest;
+                const origin = sender.origin;
+                const appIdFromManifestValue = appManifest?.appId; // This is string | undefined
+                console.log(`[BG] INITIALIZE_APP_SESSION from origin: ${origin} for app: ${appManifest?.name}, ID: ${appIdFromManifestValue}`);
+
+                const mockSubscriptionId = `sub-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+                if (sender.tab?.id) {
+                    appSubscriptions.set(mockSubscriptionId, { tabId: sender.tab.id, origin, appId: appIdFromManifestValue ?? undefined });
+                    console.log(`[BG] Subscription added: ${mockSubscriptionId} for tab ${sender.tab.id}, origin ${origin}, appId ${appIdFromManifestValue}`);
+                } else {
+                    console.warn(`[BG] INITIALIZE_APP_SESSION from sender without tab ID. Origin: ${origin}, AppId: ${appIdFromManifestValue}`);
+                    appSubscriptions.set(mockSubscriptionId, { origin, appId: appIdFromManifestValue ?? undefined });
                 }
 
-                // Frontend (useVaultUnlock) should ensure the vault is unlocked for the active identity (didToDelete).
-                if (!SessionManager.isUnlocked || SessionManager.currentActiveDid !== didToDelete) {
-                    console.warn(`DELETE_IDENTITY: Pre-condition failed - Vault not unlocked for ${didToDelete} or it's not the active session DID.`);
-                    // Depending on strictness, could throw an error here.
-                    // However, the API call will ultimately fail if token cannot be obtained.
+                const vaultData = (await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT))[Constants.STORAGE_KEY_VAULT];
+                const agentIdentitiesFromVault: Types.AgentIdentity[] = vaultData?.identities || [];
+
+                const vibeIdentities: Types.VibeIdentity[] = agentIdentitiesFromVault.map((agentId: Types.AgentIdentity) => ({
+                    did: agentId.identityDid,
+                    label: agentId.profile_name || `Identity ${agentId.identityDid.substring(0, 12)}...`,
+                    pictureUrl: agentId.profile_picture,
+                }));
+
+                const currentAgentActiveDid = SessionManager.currentActiveDid;
+                let activeVibeIdentity: Types.VibeIdentity | null = null;
+                if (currentAgentActiveDid) {
+                    const foundActive = vibeIdentities.find((vid) => vid.did === currentAgentActiveDid);
+                    activeVibeIdentity = foundActive || null;
                 }
 
-                console.info(`Attempting to delete identity: ${didToDelete}`);
-                let accessToken: string;
-                try {
-                    // This requires didToDelete to be the currentActiveDid and vault to be unlocked,
-                    // or for a valid refresh token to exist for didToDelete.
-                    accessToken = await TokenManager.getValidCpAccessToken(didToDelete);
-                } catch (tokenError: any) {
-                    console.error(`DELETE_IDENTITY: Failed to get access token for ${didToDelete}. Error: ${tokenError.message}`);
-                    throw new Error(`Failed to authenticate for deletion: ${tokenError.message}`);
-                }
-
-                const deleteUrl = `${Constants.OFFICIAL_VIBE_CLOUD_URL}/api/v1/identities/${didToDelete}`;
-                const apiResponse = await fetch(deleteUrl, {
-                    method: "DELETE",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${accessToken}`,
+                const mockVibeState: Types.VibeState = {
+                    isUnlocked: SessionManager.isUnlocked,
+                    did: currentAgentActiveDid,
+                    account: currentAgentActiveDid ? { did: currentAgentActiveDid } : null,
+                    permissions: {
+                        /* Mock permissions */
                     },
-                });
+                    identities: vibeIdentities,
+                    activeIdentity: activeVibeIdentity,
+                };
 
-                if (!apiResponse.ok) {
-                    const errorBody = await apiResponse.json().catch(() => ({ error: `API error: ${apiResponse.status}` }));
-                    console.error(`DELETE_IDENTITY: API call failed for ${didToDelete}. Status: ${apiResponse.status}, Error: ${errorBody.error}`);
-                    throw new Error(errorBody.error || `Failed to delete identity via API: ${apiResponse.status}`);
-                }
-
-                const responseJson = await apiResponse.json();
-                console.info(`DELETE_IDENTITY: API call successful for ${didToDelete}. Message: ${responseJson.message}`);
-
-                // Clean up local data associated with the deleted identity
-                await TokenManager.clearCpTokens(didToDelete);
-
-                const localData = await chrome.storage.local.get(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
-                if (localData[Constants.STORAGE_KEY_LAST_ACTIVE_DID] === didToDelete) {
-                    await chrome.storage.local.remove(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
-                    console.info(`Cleared lastActiveDid as it was the deleted identity: ${didToDelete}`);
-                }
-
-                // If the deleted identity was the one active in the session, lock the vault.
-                if (SessionManager.currentActiveDid === didToDelete) {
-                    await SessionManager.lockVaultState();
-                    console.info(`Locked vault as the deleted identity ${didToDelete} was active in session.`);
-                }
-
-                responsePayload = { success: true, message: responseJson.message || "Identity deletion process initiated." };
+                responsePayload = {
+                    initialState: mockVibeState,
+                    subscriptionId: mockSubscriptionId,
+                };
                 break;
             }
 
-            case "DELETE_IDENTITY": {
-                const { did: didToDelete } = payload;
-                if (!didToDelete || typeof didToDelete !== "string") {
-                    throw new Error("DID is required for DELETE_IDENTITY action.");
+            case "UNSUBSCRIBE_APP_SESSION": {
+                const { subscriptionId } = payload;
+                if (appSubscriptions.has(subscriptionId)) {
+                    appSubscriptions.delete(subscriptionId);
+                    console.log(`[BG] Subscription removed: ${subscriptionId}`);
+                    responsePayload = { success: true };
+                } else {
+                    console.warn(`[BG] UNSUBSCRIBE_APP_SESSION: Subscription ID not found: ${subscriptionId}`);
+                    responsePayload = { success: false, error: "Subscription ID not found." };
                 }
-
-                // Frontend (useVaultUnlock) should ensure the vault is unlocked for the active identity (didToDelete).
-                if (!SessionManager.isUnlocked || SessionManager.currentActiveDid !== didToDelete) {
-                    console.warn(`DELETE_IDENTITY: Pre-condition failed - Vault not unlocked for ${didToDelete} or it's not the active session DID.`);
-                    // Depending on strictness, could throw an error here.
-                    // However, the API call will ultimately fail if token cannot be obtained.
-                }
-
-                console.info(`Attempting to delete identity: ${didToDelete}`);
-                let accessToken: string;
-                try {
-                    // This requires didToDelete to be the currentActiveDid and vault to be unlocked,
-                    // or for a valid refresh token to exist for didToDelete.
-                    accessToken = await TokenManager.getValidCpAccessToken(didToDelete);
-                } catch (tokenError: any) {
-                    console.error(`DELETE_IDENTITY: Failed to get access token for ${didToDelete}. Error: ${tokenError.message}`);
-                    throw new Error(`Failed to authenticate for deletion: ${tokenError.message}`);
-                }
-
-                const deleteUrl = `${Constants.OFFICIAL_VIBE_CLOUD_URL}/api/v1/identities/${didToDelete}`;
-                const apiResponse = await fetch(deleteUrl, {
-                    method: "DELETE",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${accessToken}`,
-                    },
-                });
-
-                if (!apiResponse.ok) {
-                    const errorBody = await apiResponse.json().catch(() => ({ error: `API error: ${apiResponse.status}` }));
-                    console.error(`DELETE_IDENTITY: API call failed for ${didToDelete}. Status: ${apiResponse.status}, Error: ${errorBody.error}`);
-                    throw new Error(errorBody.error || `Failed to delete identity via API: ${apiResponse.status}`);
-                }
-
-                const responseJson = await apiResponse.json();
-                console.info(`DELETE_IDENTITY: API call successful for ${didToDelete}. Message: ${responseJson.message}`);
-
-                // Clean up local data associated with the deleted identity
-                await TokenManager.clearCpTokens(didToDelete);
-
-                const localData = await chrome.storage.local.get(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
-                if (localData[Constants.STORAGE_KEY_LAST_ACTIVE_DID] === didToDelete) {
-                    await chrome.storage.local.remove(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
-                    console.info(`Cleared lastActiveDid as it was the deleted identity: ${didToDelete}`);
-                }
-
-                // If the deleted identity was the one active in the session, lock the vault.
-                if (SessionManager.currentActiveDid === didToDelete) {
-                    await SessionManager.lockVaultState();
-                    console.info(`Locked vault as the deleted identity ${didToDelete} was active in session.`);
-                }
-
-                responsePayload = { success: true, message: responseJson.message || "Identity deletion process initiated." };
                 break;
             }
 

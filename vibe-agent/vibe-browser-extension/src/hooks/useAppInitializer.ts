@@ -63,7 +63,7 @@ export const useAppInitializer = () => {
         try {
             const initResponse = (await chrome.runtime.sendMessage({
                 type: "VIBE_AGENT_REQUEST",
-                action: "init",
+                action: "GET_AGENT_STATUS",
                 requestId: crypto.randomUUID().toString(),
             })) as ChromeMessage; // Type assertion
 
