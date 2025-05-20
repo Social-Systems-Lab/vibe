@@ -1178,6 +1178,249 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 break;
             }
 
+            case "DELETE_IDENTITY": {
+                const { did: didToDelete } = payload;
+                if (!didToDelete || typeof didToDelete !== "string") {
+                    throw new Error("DID is required for DELETE_IDENTITY action.");
+                }
+
+                // Ensure the vault is unlocked for the identity being deleted, or that an admin is performing this.
+                // For simplicity, we'll assume the frontend (useVaultUnlock) has ensured the current active identity
+                // is the one being deleted and the vault is unlocked for it, or an admin flow is in place.
+                // The API call itself will be authenticated.
+                if (!SessionManager.isUnlocked || SessionManager.currentActiveDid !== didToDelete) {
+                    // This check might be too strict if an admin could delete other identities.
+                    // However, for owner-initiated deletion, it's a good safeguard.
+                    // The frontend's useVaultUnlock should handle prompting for the correct identity's password.
+                    // If currentActiveDid is not didToDelete, but vault is unlocked, it implies an admin action or complex flow not yet fully designed.
+                    // For now, let's assume the active DID in session IS the one being deleted.
+                    logger.warn(`DELETE_IDENTITY: Vault not unlocked for ${didToDelete} or it's not the active session DID. Frontend should ensure this.`);
+                    // Consider if an error should be thrown here or if API auth is sufficient.
+                    // If API call uses token of didToDelete, it must be active & unlocked to get/refresh token.
+                }
+
+                logger.info(`Attempting to delete identity: ${didToDelete}`);
+                let accessToken: string;
+                try {
+                    accessToken = await TokenManager.getValidCpAccessToken(didToDelete);
+                } catch (tokenError: any) {
+                    logger.error(`DELETE_IDENTITY: Failed to get access token for ${didToDelete}. Error: ${tokenError.message}`);
+                    throw new Error(`Failed to authenticate for deletion: ${tokenError.message}`);
+                }
+
+                const deleteUrl = `${Constants.OFFICIAL_VIBE_CLOUD_URL}/api/v1/identities/${didToDelete}`;
+                const apiResponse = await fetch(deleteUrl, {
+                    method: "DELETE",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${accessToken}`,
+                    },
+                });
+
+                if (!apiResponse.ok) {
+                    const errorBody = await apiResponse.json().catch(() => ({ error: `API error: ${apiResponse.status}` }));
+                    logger.error(`DELETE_IDENTITY: API call failed for ${didToDelete}. Status: ${apiResponse.status}, Error: ${errorBody.error}`);
+                    throw new Error(errorBody.error || `Failed to delete identity via API: ${apiResponse.status}`);
+                }
+
+                const responseJson = await apiResponse.json();
+                logger.info(`DELETE_IDENTITY: API call successful for ${didToDelete}. Message: ${responseJson.message}`);
+
+                // Clean up local data associated with the deleted identity
+                await TokenManager.clearCpTokens(didToDelete);
+
+                const localData = await chrome.storage.local.get(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
+                if (localData[Constants.STORAGE_KEY_LAST_ACTIVE_DID] === didToDelete) {
+                    await chrome.storage.local.remove(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
+                    logger.info(`Cleared lastActiveDid as it was the deleted identity: ${didToDelete}`);
+                }
+
+                // If the deleted identity was the one active in the session, lock the vault.
+                if (SessionManager.currentActiveDid === didToDelete) {
+                    await SessionManager.lockVaultState(); // Clears in-memory seed, active DID, session tokens.
+                    logger.info(`Locked vault as the deleted identity ${didToDelete} was active in session.`);
+                }
+
+                responsePayload = { success: true, message: responseJson.message || "Identity deletion process initiated." };
+                break;
+            }
+
+            case "DELETE_IDENTITY": {
+                const { did: didToDelete } = payload;
+                if (!didToDelete || typeof didToDelete !== "string") {
+                    throw new Error("DID is required for DELETE_IDENTITY action.");
+                }
+
+                if (!SessionManager.isUnlocked || SessionManager.currentActiveDid !== didToDelete) {
+                    console.warn(`DELETE_IDENTITY: Vault not unlocked for ${didToDelete} or it's not the active session DID. Frontend should ensure this.`);
+                }
+
+                console.info(`Attempting to delete identity: ${didToDelete}`);
+                let accessToken: string;
+                try {
+                    accessToken = await TokenManager.getValidCpAccessToken(didToDelete);
+                } catch (tokenError: any) {
+                    console.error(`DELETE_IDENTITY: Failed to get access token for ${didToDelete}. Error: ${tokenError.message}`);
+                    throw new Error(`Failed to authenticate for deletion: ${tokenError.message}`);
+                }
+
+                const deleteUrl = `${Constants.OFFICIAL_VIBE_CLOUD_URL}/api/v1/identities/${didToDelete}`;
+                const apiResponse = await fetch(deleteUrl, {
+                    method: "DELETE",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${accessToken}`,
+                    },
+                });
+
+                if (!apiResponse.ok) {
+                    const errorBody = await apiResponse.json().catch(() => ({ error: `API error: ${apiResponse.status}` }));
+                    console.error(`DELETE_IDENTITY: API call failed for ${didToDelete}. Status: ${apiResponse.status}, Error: ${errorBody.error}`);
+                    throw new Error(errorBody.error || `Failed to delete identity via API: ${apiResponse.status}`);
+                }
+
+                const responseJson = await apiResponse.json();
+                console.info(`DELETE_IDENTITY: API call successful for ${didToDelete}. Message: ${responseJson.message}`);
+
+                await TokenManager.clearCpTokens(didToDelete);
+
+                const localData = await chrome.storage.local.get(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
+                if (localData[Constants.STORAGE_KEY_LAST_ACTIVE_DID] === didToDelete) {
+                    await chrome.storage.local.remove(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
+                    console.info(`Cleared lastActiveDid as it was the deleted identity: ${didToDelete}`);
+                }
+
+                if (SessionManager.currentActiveDid === didToDelete) {
+                    await SessionManager.lockVaultState();
+                    console.info(`Locked vault as the deleted identity ${didToDelete} was active in session.`);
+                }
+
+                responsePayload = { success: true, message: responseJson.message || "Identity deletion process initiated." };
+                break;
+            }
+
+            case "DELETE_IDENTITY": {
+                const { did: didToDelete } = payload;
+                if (!didToDelete || typeof didToDelete !== "string") {
+                    throw new Error("DID is required for DELETE_IDENTITY action.");
+                }
+
+                // Frontend (useVaultUnlock) should ensure the vault is unlocked for the active identity (didToDelete).
+                if (!SessionManager.isUnlocked || SessionManager.currentActiveDid !== didToDelete) {
+                    console.warn(`DELETE_IDENTITY: Pre-condition failed - Vault not unlocked for ${didToDelete} or it's not the active session DID.`);
+                    // Depending on strictness, could throw an error here.
+                    // However, the API call will ultimately fail if token cannot be obtained.
+                }
+
+                console.info(`Attempting to delete identity: ${didToDelete}`);
+                let accessToken: string;
+                try {
+                    // This requires didToDelete to be the currentActiveDid and vault to be unlocked,
+                    // or for a valid refresh token to exist for didToDelete.
+                    accessToken = await TokenManager.getValidCpAccessToken(didToDelete);
+                } catch (tokenError: any) {
+                    console.error(`DELETE_IDENTITY: Failed to get access token for ${didToDelete}. Error: ${tokenError.message}`);
+                    throw new Error(`Failed to authenticate for deletion: ${tokenError.message}`);
+                }
+
+                const deleteUrl = `${Constants.OFFICIAL_VIBE_CLOUD_URL}/api/v1/identities/${didToDelete}`;
+                const apiResponse = await fetch(deleteUrl, {
+                    method: "DELETE",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${accessToken}`,
+                    },
+                });
+
+                if (!apiResponse.ok) {
+                    const errorBody = await apiResponse.json().catch(() => ({ error: `API error: ${apiResponse.status}` }));
+                    console.error(`DELETE_IDENTITY: API call failed for ${didToDelete}. Status: ${apiResponse.status}, Error: ${errorBody.error}`);
+                    throw new Error(errorBody.error || `Failed to delete identity via API: ${apiResponse.status}`);
+                }
+
+                const responseJson = await apiResponse.json();
+                console.info(`DELETE_IDENTITY: API call successful for ${didToDelete}. Message: ${responseJson.message}`);
+
+                // Clean up local data associated with the deleted identity
+                await TokenManager.clearCpTokens(didToDelete);
+
+                const localData = await chrome.storage.local.get(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
+                if (localData[Constants.STORAGE_KEY_LAST_ACTIVE_DID] === didToDelete) {
+                    await chrome.storage.local.remove(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
+                    console.info(`Cleared lastActiveDid as it was the deleted identity: ${didToDelete}`);
+                }
+
+                // If the deleted identity was the one active in the session, lock the vault.
+                if (SessionManager.currentActiveDid === didToDelete) {
+                    await SessionManager.lockVaultState();
+                    console.info(`Locked vault as the deleted identity ${didToDelete} was active in session.`);
+                }
+
+                responsePayload = { success: true, message: responseJson.message || "Identity deletion process initiated." };
+                break;
+            }
+
+            case "DELETE_IDENTITY": {
+                const { did: didToDelete } = payload;
+                if (!didToDelete || typeof didToDelete !== "string") {
+                    throw new Error("DID is required for DELETE_IDENTITY action.");
+                }
+
+                // Frontend (useVaultUnlock) should ensure the vault is unlocked for the active identity (didToDelete).
+                if (!SessionManager.isUnlocked || SessionManager.currentActiveDid !== didToDelete) {
+                    console.warn(`DELETE_IDENTITY: Pre-condition failed - Vault not unlocked for ${didToDelete} or it's not the active session DID.`);
+                    // Depending on strictness, could throw an error here.
+                    // However, the API call will ultimately fail if token cannot be obtained.
+                }
+
+                console.info(`Attempting to delete identity: ${didToDelete}`);
+                let accessToken: string;
+                try {
+                    // This requires didToDelete to be the currentActiveDid and vault to be unlocked,
+                    // or for a valid refresh token to exist for didToDelete.
+                    accessToken = await TokenManager.getValidCpAccessToken(didToDelete);
+                } catch (tokenError: any) {
+                    console.error(`DELETE_IDENTITY: Failed to get access token for ${didToDelete}. Error: ${tokenError.message}`);
+                    throw new Error(`Failed to authenticate for deletion: ${tokenError.message}`);
+                }
+
+                const deleteUrl = `${Constants.OFFICIAL_VIBE_CLOUD_URL}/api/v1/identities/${didToDelete}`;
+                const apiResponse = await fetch(deleteUrl, {
+                    method: "DELETE",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${accessToken}`,
+                    },
+                });
+
+                if (!apiResponse.ok) {
+                    const errorBody = await apiResponse.json().catch(() => ({ error: `API error: ${apiResponse.status}` }));
+                    console.error(`DELETE_IDENTITY: API call failed for ${didToDelete}. Status: ${apiResponse.status}, Error: ${errorBody.error}`);
+                    throw new Error(errorBody.error || `Failed to delete identity via API: ${apiResponse.status}`);
+                }
+
+                const responseJson = await apiResponse.json();
+                console.info(`DELETE_IDENTITY: API call successful for ${didToDelete}. Message: ${responseJson.message}`);
+
+                // Clean up local data associated with the deleted identity
+                await TokenManager.clearCpTokens(didToDelete);
+
+                const localData = await chrome.storage.local.get(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
+                if (localData[Constants.STORAGE_KEY_LAST_ACTIVE_DID] === didToDelete) {
+                    await chrome.storage.local.remove(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
+                    console.info(`Cleared lastActiveDid as it was the deleted identity: ${didToDelete}`);
+                }
+
+                // If the deleted identity was the one active in the session, lock the vault.
+                if (SessionManager.currentActiveDid === didToDelete) {
+                    await SessionManager.lockVaultState();
+                    console.info(`Locked vault as the deleted identity ${didToDelete} was active in session.`);
+                }
+
+                responsePayload = { success: true, message: responseJson.message || "Identity deletion process initiated." };
+                break;
+            }
+
             default:
                 console.warn(`[BG_WARN_UnknownAction] Unknown action: ${action}`);
                 responsePayload = { error: { message: `Unknown action: ${action}` } };

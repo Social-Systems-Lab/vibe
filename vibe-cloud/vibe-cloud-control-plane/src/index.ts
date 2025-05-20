@@ -87,11 +87,10 @@ export const app = new Elysia()
         jwtPlugin({
             name: "jwt",
             secret: jwtSecret,
-            // schema: JWTPayloadSchema, // Temporarily remove schema to isolate issue
-            alg: "HS256", // Explicitly define the expected algorithm
-            iss: process.env.JWT_ISSUER || "vibe-cloud-control-plane", // Explicitly define the expected issuer
-            exp: process.env.ACCESS_TOKEN_EXPIRY_SECONDS ? `${process.env.ACCESS_TOKEN_EXPIRY_SECONDS}s` : "15m", // Ensure plugin knows default expiry if not in token
-            clockTolerance: 60, // Allow 60 seconds clock skew for nbf, exp, iat
+            alg: "HS256",
+            iss: process.env.JWT_ISSUER || "vibe-cloud-control-plane",
+            exp: process.env.ACCESS_TOKEN_EXPIRY_SECONDS ? `${process.env.ACCESS_TOKEN_EXPIRY_SECONDS}s` : "15m",
+            clockTolerance: 60,
         })
     )
     .onError(({ code, error, set }) => {
@@ -102,7 +101,6 @@ export const app = new Elysia()
         }
 
         let errorMessage = "An internal server error occurred.";
-        // Check if error is an object and has a message property
         if (typeof error === "object" && error !== null && "message" in error && typeof (error as any).message === "string") {
             errorMessage = (error as any).message;
         } else if (typeof error === "string") {
@@ -141,19 +139,17 @@ export const app = new Elysia()
 
                     const requestTime = new Date(timestamp);
                     if (Math.abs(Date.now() - requestTime.getTime()) > 5 * 60 * 1000) {
-                        // 5 minutes window
                         set.status = 400;
                         return { error: "Request timestamp is invalid or expired." };
                     }
-                    // TODO: Nonce replay prevention
 
                     try {
                         const userAgent = request.headers.get("user-agent") ?? undefined;
-                        const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? (request as any).ip; // Bun specific for direct IP
+                        const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? (request as any).ip;
 
                         const loginResult = await authService.loginIdentity(did, userAgent, ipAddress);
                         set.status = 200;
-                        return loginResult; // Contains { identity, tokenDetails }
+                        return loginResult;
                     } catch (error: any) {
                         if (error instanceof NotFoundError) {
                             set.status = 404;
@@ -171,7 +167,7 @@ export const app = new Elysia()
                 {
                     body: LoginRequestSchema,
                     response: {
-                        200: LoginFinalResponseSchema, // Use the new schema with tokenDetails
+                        200: LoginFinalResponseSchema,
                         400: ErrorResponseSchema,
                         401: ErrorResponseSchema,
                         404: ErrorResponseSchema,
@@ -183,7 +179,6 @@ export const app = new Elysia()
             .post(
                 "/register",
                 async ({ authService, body, set, request }) => {
-                    // Removed jwt from here as authService handles token generation
                     const { did, nonce, timestamp, signature, profileName, profilePictureUrl, claimCode } = body as RegisterRequest;
                     logger.info(`Registration attempt for identity DID: ${did}`);
 
@@ -201,11 +196,10 @@ export const app = new Elysia()
                         set.status = 400;
                         return { error: "Request timestamp is invalid or expired." };
                     }
-                    // TODO: Nonce replay check
 
                     let instanceId: string;
                     try {
-                        instanceId = instanceIdFromDid(did, instanceIdSecret as string); // instanceIdSecret checked at startup
+                        instanceId = instanceIdFromDid(did, instanceIdSecret as string);
                     } catch (error: any) {
                         logger.error(`Failed to generate instanceId from DID: ${did}. Error: ${error.message}`);
                         set.status = 500;
@@ -217,7 +211,7 @@ export const app = new Elysia()
                     try {
                         const registrationResult = await authService.registerIdentity(
                             did,
-                            instanceId, // Use the new deterministically generated instanceId
+                            instanceId,
                             profileName,
                             profilePictureUrl,
                             claimCode,
@@ -231,7 +225,7 @@ export const app = new Elysia()
                         const controlPlaneBaseUrl = process.env.CONTROL_PLANE_BASE_URL || `http://localhost:${process.env.CONTROL_PLANE_PORT || 3001}`;
                         const provisionEnv = {
                             ...process.env,
-                            TARGET_USER_DID: did, // Keep as TARGET_USER_DID if script expects this name
+                            TARGET_USER_DID: did,
                             INSTANCE_IDENTIFIER: instanceId,
                             CONTROL_PLANE_URL: controlPlaneBaseUrl,
                             INTERNAL_SECRET_TOKEN: process.env.INTERNAL_SECRET_TOKEN || "dev-secret-token",
@@ -271,16 +265,12 @@ export const app = new Elysia()
                             }
                         });
 
-                        // Update identity status to provisioning after starting the script
-                        // The registerIdentity already sets it to pending, this confirms script has started attempt
                         await authService.updateIdentity(registrationResult.identity.identityDid, { instanceStatus: "provisioning" }, "internal");
 
                         set.status = 201;
-                        // registrationResult already contains { identity, tokenDetails }
                         return registrationResult;
                     } catch (error: any) {
                         if (error.message?.includes("already exists") || error.message?.includes("Conflict")) {
-                            // Handle conflict error from DB
                             set.status = 409;
                             return { error: "Identity already exists." };
                         }
@@ -292,7 +282,7 @@ export const app = new Elysia()
                 {
                     body: RegisterRequestSchema,
                     response: {
-                        201: RegisterResponseSchema, // This schema now expects { identity, tokenDetails }
+                        201: RegisterResponseSchema,
                         400: ErrorResponseSchema,
                         401: ErrorResponseSchema,
                         409: ErrorResponseSchema,
@@ -341,23 +331,17 @@ export const app = new Elysia()
         group
             .derive(async ({ jwt, request, set }) => {
                 const internalSecretHeader = request.headers.get("x-internal-secret");
-                const expectedInternalSecret = process.env.INTERNAL_SECRET_TOKEN || "dev-secret-token"; // Ensure this is consistent
+                const expectedInternalSecret = process.env.INTERNAL_SECRET_TOKEN || "dev-secret-token";
 
-                // If it's a PUT request to /api/v1/identities/:did and the internal secret header is present,
-                // let it pass to the route handler for secret validation. currentIdentity will be null.
                 const urlPath = new URL(request.url).pathname;
                 if (request.method === "PUT" && urlPath.startsWith("/api/v1/identities/") && internalSecretHeader) {
-                    // The route handler for PUT /:did will validate the actual secret value.
-                    // We pass null for currentIdentity as JWT is not expected for this specific internal call.
                     return { currentIdentity: null as JWTPayloadType | null };
                 }
 
-                // Handle public GET /:did/status route
                 if (request.method === "GET" && urlPath.includes("/status") && urlPath.startsWith("/api/v1/identities/")) {
-                    return { currentIdentity: null as JWTPayloadType | null }; // Public route
+                    return { currentIdentity: null as JWTPayloadType | null };
                 }
 
-                // For all other routes in this group, enforce JWT
                 const authHeader = request.headers.get("authorization");
                 if (!authHeader?.startsWith("Bearer ")) {
                     set.status = 401;
@@ -365,21 +349,18 @@ export const app = new Elysia()
                 }
                 try {
                     const tokenString = authHeader.substring(7);
-                    const payload = (await jwt.verify(tokenString)) as JWTPayloadType | false; // jwt.verify can return false
+                    const payload = (await jwt.verify(tokenString)) as JWTPayloadType | false;
 
-                    // Log the raw payload for debugging
                     logger.info(`JWT Payload received for verification: ${JSON.stringify(payload)}`);
 
                     if (!payload || typeof payload === "boolean" || !payload.identityDid) {
-                        // Check for boolean false explicitly
                         logger.error(`Invalid token payload structure or missing identityDid. Payload: ${JSON.stringify(payload)}`);
                         set.status = 401;
                         throw new Error("Unauthorized: Invalid token payload.");
                     }
-                    return { currentIdentity: payload as JWTPayloadType }; // Cast back after checks
+                    return { currentIdentity: payload as JWTPayloadType };
                 } catch (err) {
                     set.status = 401;
-                    // Ensure the error message from jwt.verify (like "jwt expired") is propagated
                     const errorMessage = err instanceof Error ? err.message : "Token verification failed.";
                     throw new Error(`Unauthorized: ${errorMessage}`);
                 }
@@ -485,7 +466,7 @@ export const app = new Elysia()
                                 nonce,
                                 timestamp,
                                 signature,
-                                fieldsToSignForOwner.map((f) => String(f ?? "")) // Ensure string values
+                                fieldsToSignForOwner.map((f) => String(f ?? ""))
                             );
                             if (!isOwnerSignatureValid) {
                                 set.status = 401;
@@ -508,11 +489,8 @@ export const app = new Elysia()
 
                         let responseToken: string | undefined = undefined;
                         if (callingRole === "owner" && claimCodeForPromotion && updatedIdentity.isAdmin && !identityBeforeUpdate.isAdmin) {
-                            // When owner promotes to admin, issue a new access token with the 'type' claim
-                            // Changed isAdmin: true to isAdmin: "true" to satisfy jwt.sign() type expectation
                             responseToken = await jwt.sign({ identityDid: updatedIdentity.identityDid, isAdmin: "true", type: "access" });
                         }
-                        // Return type for Elysia needs to match schema, so ensure token is part of the object if defined
                         const responsePayload: Static<typeof IdentitySchema> & { token?: string } = { ...updatedIdentity };
                         if (responseToken) {
                             responsePayload.token = responseToken;
@@ -554,35 +532,94 @@ export const app = new Elysia()
                         return { error: "Forbidden: Access denied." };
                     }
                     const { did } = params;
-                    logger.info(`Request to delete identity: ${did} by ${currentIdentity.identityDid}`);
+                    logger.info(`Request to delete identity: ${did} by user ${currentIdentity.identityDid}`);
 
                     try {
                         const identityToDelete = await dataService.getDocument<Identity>(SYSTEM_DB, `${USERS_COLLECTION}/${did}`);
-                        if (identityToDelete.instanceId) {
-                            logger.info(`Initiating deprovisioning for instance ${identityToDelete.instanceId} of identity ${did}.`);
+                        const instanceId = identityToDelete.instanceId;
+
+                        if (instanceId) {
+                            logger.info(`Initiating deprovisioning for instance ${instanceId} of identity ${did}.`);
                             await authService.updateIdentity(did, { instanceStatus: "deprovisioning" }, "internal");
 
-                            // TODO: Asynchronously trigger deprovision.sh script
-                            logger.warn(`DEPROVISIONING SCRIPT EXECUTION FOR ${identityToDelete.instanceId} IS A TODO.`);
+                            const scriptPath = path.resolve(process.cwd(), "../vibe-cloud-infra/provisioning/deprovision.sh");
+                            const scriptCwd = path.resolve(process.cwd(), "../vibe-cloud-infra");
+                            const controlPlaneBaseUrl = process.env.CONTROL_PLANE_BASE_URL || `http://localhost:${process.env.CONTROL_PLANE_PORT || 3001}`;
+
+                            const deprovisionEnv = {
+                                ...process.env,
+                                TARGET_USER_DID: did,
+                                INSTANCE_IDENTIFIER: instanceId,
+                                CONTROL_PLANE_URL: controlPlaneBaseUrl,
+                                INTERNAL_SECRET_TOKEN: process.env.INTERNAL_SECRET_TOKEN || "dev-secret-token",
+                            };
+                            Object.keys(deprovisionEnv).forEach((key) => (deprovisionEnv as any)[key] === undefined && delete (deprovisionEnv as any)[key]);
+
+                            logger.info(`Executing deprovisioning script for ${instanceId} (identity: ${did})`);
+                            const deprovisionProcess = spawn("/usr/bin/bash", [scriptPath], {
+                                cwd: scriptCwd,
+                                env: deprovisionEnv,
+                                stdio: "pipe",
+                                detached: true,
+                            });
+                            deprovisionProcess.unref();
+
+                            deprovisionProcess.stdout.on("data", (data) => logger.info(`[Deprovision STDOUT - ${instanceId}]: ${data.toString().trim()}`));
+                            deprovisionProcess.stderr.on("data", (data) => logger.error(`[Deprovision STDERR - ${instanceId}]: ${data.toString().trim()}`));
+
+                            deprovisionProcess.on("close", async (code) => {
+                                logger.info(`Deprovisioning script for instance '${instanceId}' exited with code ${code}.`);
+                                if (code !== 0) {
+                                    logger.error(
+                                        `Deprovisioning script for ${instanceId} exited with error code ${code}. Attempting to mark as failed_deprovision.`
+                                    );
+                                    try {
+                                        await authService.updateIdentity(
+                                            did,
+                                            { instanceStatus: "failed_deprovision", instanceErrorDetails: `Deprovisioning script exited with code ${code}.` },
+                                            "internal"
+                                        );
+                                    } catch (updateErr) {
+                                        logger.error(`Failed to mark instance ${instanceId} as failed_deprovision after script error:`, updateErr);
+                                    }
+                                }
+                            });
+
+                            deprovisionProcess.on("error", async (err) => {
+                                logger.error(`Failed to start deprovisioning script for ${instanceId}:`, err);
+                                try {
+                                    await authService.updateIdentity(
+                                        did,
+                                        { instanceStatus: "failed_deprovision", instanceErrorDetails: `Failed to start deprovisioning script: ${err.message}` },
+                                        "internal"
+                                    );
+                                } catch (updateErr) {
+                                    logger.error(`Failed to mark instance ${instanceId} as failed_deprovision after script spawn error:`, updateErr);
+                                }
+                            });
+                            set.status = 202;
+                            return { message: `Deprovisioning process initiated for identity ${did} and instance ${instanceId}.` };
+                        } else {
+                            logger.info(`No instance found for identity ${did}. Deleting identity record directly.`);
+                            await authService.deleteIdentity(did);
+                            set.status = 200;
+                            return { message: `Identity ${did} deleted successfully (no instance to deprovision).` };
                         }
-
-                        await authService.deleteIdentity(did);
-
-                        return { message: `Identity ${did} deletion process initiated. Instance deprovisioning (if any) started.` };
                     } catch (error: any) {
                         if (error instanceof NotFoundError) {
                             set.status = 404;
                             return { error: "Identity not found." };
                         }
-                        logger.error(`Error deleting identity ${did}:`, error);
+                        logger.error(`Error during deletion process for identity ${did}:`, error);
                         set.status = 500;
-                        return { error: "Failed to delete identity." };
+                        return { error: "Failed to initiate/complete deletion process for identity." };
                     }
                 },
                 {
                     params: t.Object({ did: t.String() }),
                     response: {
                         200: t.Object({ message: t.String() }),
+                        202: t.Object({ message: t.String() }),
                         401: ErrorResponseSchema,
                         403: ErrorResponseSchema,
                         404: ErrorResponseSchema,
@@ -591,6 +628,65 @@ export const app = new Elysia()
                     detail: { summary: "Delete an identity and its instance (Admin or Owner)." },
                 }
             )
+    )
+    // --- Internal Routes (for script callbacks etc.) ---
+    .group("/api/v1/internal", (internalGroup) =>
+        internalGroup.post(
+            "/identities/:did/finalize-deletion",
+            async ({ authService, params, request, set, body }) => {
+                const internalSecretHeader = request.headers.get("x-internal-secret");
+                const expectedInternalSecret = process.env.INTERNAL_SECRET_TOKEN || "dev-secret-token";
+
+                if (internalSecretHeader !== expectedInternalSecret) {
+                    set.status = 401;
+                    return { error: "Unauthorized: Invalid internal secret." };
+                }
+
+                const { did } = params;
+                const { status: scriptStatus, errorDetails: scriptErrorDetails } = body as { status: string; errorDetails?: string };
+
+                logger.info(`Finalize deletion callback received for DID: ${did}, Script Status: ${scriptStatus}`);
+
+                if (scriptStatus === "deprovisioned_failed") {
+                    logger.error(`Deprovisioning script failed for ${did}: ${scriptErrorDetails || "Unknown script error"}`);
+                    try {
+                        await authService.updateIdentity(
+                            did,
+                            { instanceStatus: "failed_deprovision", instanceErrorDetails: scriptErrorDetails || "Deprovision script reported failure." },
+                            "internal"
+                        );
+                    } catch (updateErr) {
+                        logger.error(`Failed to update identity ${did} status to deprovision_failed:`, updateErr);
+                    }
+                    set.status = 200;
+                    return {
+                        message: `Deprovisioning script reported failure for ${did}. Database deletion aborted or handled accordingly.`,
+                        error: scriptErrorDetails,
+                    };
+                }
+
+                try {
+                    await authService.deleteIdentity(did);
+                    logger.info(`Identity ${did} successfully deleted from database after deprovisioning script callback.`);
+                    set.status = 200;
+                    return { message: `Identity ${did} finalized deletion successfully.` };
+                } catch (error: any) {
+                    logger.error(`Error finalizing deletion for identity ${did} in database:`, error);
+                    set.status = 500;
+                    return { error: `Failed to delete identity ${did} from database after script completion. ${error.message}` };
+                }
+            },
+            {
+                params: t.Object({ did: t.String() }),
+                body: t.Object({ status: t.String(), errorDetails: t.Optional(t.String()) }),
+                response: {
+                    200: t.Object({ message: t.String(), error: t.Optional(t.String()) }),
+                    401: ErrorResponseSchema,
+                    500: ErrorResponseSchema,
+                },
+                detail: { summary: "Internal endpoint for deprovisioning script to finalize identity deletion." },
+            }
+        )
     );
 
 // Exportable Server Start Function
