@@ -26,11 +26,23 @@ export async function handleInitializeAppSession(payload: any, sender: chrome.ru
     const vaultData = (await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT))[Constants.STORAGE_KEY_VAULT];
     const agentIdentitiesFromVault: Types.AgentIdentity[] = vaultData?.identities || [];
 
-    const vibeIdentities: Types.VibeIdentity[] = agentIdentitiesFromVault.map((agentId: Types.AgentIdentity) => ({
-        did: agentId.identityDid,
-        label: agentId.profile_name || `Identity ${agentId.identityDid.substring(0, 12)}...`,
-        pictureUrl: agentId.profile_picture,
-    }));
+    console.log(`[BG] app-session.handler: Raw agentIdentitiesFromVault:`, JSON.parse(JSON.stringify(agentIdentitiesFromVault)));
+
+    const vibeIdentities: Types.VibeIdentity[] = agentIdentitiesFromVault
+        .map((agentId: any) => {
+            // Use any for logging flexibility
+            const did = agentId.identityDid || agentId.did; // Check for common variations
+            if (!did) {
+                console.warn(`[BG] app-session.handler: AgentIdentity missing 'did' or 'identityDid':`, agentId);
+            }
+            const labelName = agentId.profile_name || agentId.profileName || agentId.label;
+            return {
+                did: did || "unknown-did", // Fallback to prevent errors, though this indicates a data issue
+                label: labelName || `Identity ${(did || "unknown").substring(0, 12)}...`,
+                pictureUrl: agentId.profile_picture || agentId.profilePictureUrl || agentId.avatarUrl,
+            };
+        })
+        .filter((vid) => vid.did !== "unknown-did"); // Filter out entries where DID couldn't be found
 
     const currentAgentActiveDid = SessionManager.currentActiveDid;
     let activeVibeIdentity: Types.VibeIdentity | null = null;
