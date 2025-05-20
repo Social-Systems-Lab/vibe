@@ -63,3 +63,11 @@ export interface TokenDetails {
     refreshTokenExpiresAt: number; // Absolute UNIX timestamp (seconds)
     tokenType: "Bearer";
 }
+
+export class HandledError extends Error {
+    constructor(public payload: any, message?: string) {
+        super(message || (payload && payload.message) || "Handled error");
+        this.name = "HandledError";
+        Object.setPrototypeOf(this, HandledError.prototype);
+    }
+}
