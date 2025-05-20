@@ -8,6 +8,7 @@ export interface AppManifest {
     name: string; // Display name of the app
     description?: string; // Optional description
     pictureUrl?: string; // Optional URL for an app icon/logo
+    iconUrl?: string; // Optional URL to an icon for the app (used by Vibe Agent)
     permissions: string[]; // Array of permission strings (e.g., "read:notes", "write:tasks")
 }
 

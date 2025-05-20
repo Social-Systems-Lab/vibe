@@ -12,11 +12,11 @@ export async function handleInitializeAppSession(payload: any, sender: chrome.ru
     const mockSubscriptionId = `sub-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
     if (sender.tab?.id) {
-        appSubscriptions.set(mockSubscriptionId, { tabId: sender.tab.id, origin, appId: appIdFromManifestValue ?? undefined });
+        appSubscriptions.set(mockSubscriptionId, { tabId: sender.tab.id, origin, appId: appIdFromManifestValue ?? "" });
         console.log(`[BG] Subscription added: ${mockSubscriptionId} for tab ${sender.tab.id}, origin ${origin}, appId ${appIdFromManifestValue}`);
     } else {
         console.warn(`[BG] INITIALIZE_APP_SESSION from sender without tab ID. Origin: ${origin}, AppId: ${appIdFromManifestValue}`);
-        appSubscriptions.set(mockSubscriptionId, { origin, appId: appIdFromManifestValue ?? undefined });
+        appSubscriptions.set(mockSubscriptionId, { origin, appId: appIdFromManifestValue ?? "" });
     }
 
     // Construct the initial state to send back
@@ -34,8 +34,16 @@ export async function handleInitializeAppSession(payload: any, sender: chrome.ru
 
     const currentAgentActiveDid = SessionManager.currentActiveDid;
     let activeVibeIdentity: Types.VibeIdentity | null = null;
+
+    console.log(`[BG] app-session.handler: currentAgentActiveDid = ${currentAgentActiveDid}`);
+    console.log(
+        `[BG] app-session.handler: DIDs in vibeIdentities:`,
+        vibeIdentities.map((v) => v.did)
+    );
+
     if (currentAgentActiveDid) {
         const foundActive = vibeIdentities.find((vid) => vid.did === currentAgentActiveDid);
+        console.log(`[BG] app-session.handler: foundActive VibeIdentity for ${currentAgentActiveDid}:`, foundActive);
         activeVibeIdentity = foundActive || null;
     }
 

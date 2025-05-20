@@ -76,10 +76,20 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid, onStatusUpd
         try {
             const data = await sendMessageToBackground("FETCH_FULL_IDENTITY_DETAILS", { did });
             if (data && data.identity) {
-                setIdentityDetails(data.identity);
-                // Successfully fetched details, ensure login required is false
+                // Only update if the core details have changed to prevent unnecessary re-renders
+                setIdentityDetails((prevDetails) => {
+                    // Basic shallow comparison for key fields. For deep objects, a deep comparison library might be needed.
+                    if (
+                        prevDetails?.instanceStatus !== data.identity.instanceStatus ||
+                        prevDetails?.instanceUrl !== data.identity.instanceUrl ||
+                        prevDetails?.profileName !== data.identity.profileName
+                    ) {
+                        return data.identity;
+                    }
+                    return prevDetails; // No change
+                });
                 setIsLoginRequired(false);
-                setError(null); // Clear previous errors
+                setError(null);
             } else {
                 console.warn("FETCH_FULL_IDENTITY_DETAILS response did not contain identity object:", data);
                 setError("Received incomplete identity data.");

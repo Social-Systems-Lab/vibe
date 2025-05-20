@@ -111,8 +111,8 @@ export function DashboardPage() {
                 setIsLoading(false);
             }
         },
-        [setIsLoading, setAllIdentities, setCurrentIdentity, currentIdentity]
-    ); // Added currentIdentity to deps
+        [setIsLoading, setAllIdentities, setCurrentIdentity]
+    ); // Removed currentIdentity from deps
 
     useEffect(() => {
         // Load data when the component mounts and app status is appropriate
