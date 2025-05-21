@@ -34,6 +34,15 @@ import { didFromEd25519 } from "./lib/identity";
 
 console.log("Vibe Background Service Worker started.");
 
+// Initialize SessionManager to load persisted active DID
+(async () => {
+    try {
+        await SessionManager.initializeSessionManager();
+    } catch (error) {
+        console.error("[BACKGROUND_SCRIPT] Error during SessionManager initialization:", error);
+    }
+})();
+
 EventListeners.registerEventListeners();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

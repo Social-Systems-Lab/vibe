@@ -19,14 +19,6 @@ export interface AgentIdentity {
 // --- Types for VibeState (to be exposed to third-party apps) ---
 
 /**
- * Represents the user's account information provided by the Vibe Agent.
- */
-export interface Account {
-    did: string; // The user's Decentralized Identifier (matches activeIdentity.did)
-    // Add other relevant account details here as needed (e.g., primary email, display name from agent settings)
-}
-
-/**
  * Represents the possible permission settings for a specific permission string.
  */
 export type PermissionSetting = "always" | "ask" | "never";
@@ -60,7 +52,6 @@ export interface Note {
 export interface VibeState {
     isUnlocked: boolean; // Is the agent's vault currently unlocked?
     did?: string | null; // Active DID of the user in the agent, if any and unlocked/session valid
-    account?: Account | null; // Current user account (based on active identity)
     activeIdentity?: VibeIdentity | null; // The currently selected identity, mapped for app consumption
     identities?: VibeIdentity[]; // All available identities, mapped for app consumption
     permissions?: Record<string, PermissionSetting>; // Permissions granted for the active app session (appId + origin)

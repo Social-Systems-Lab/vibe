@@ -7,13 +7,12 @@ import type { ReactNode } from "react"; // Import ReactNode as a type
 // Removed ui-context import
 import type { IVibeSDK } from "./sdk"; // Import the SDK interface type
 // Import types
-import type { Account, AppManifest, Unsubscribe, VibeState, PermissionSetting, Identity, ReadResult, WriteResult } from "./types"; // Added Identity, ReadResult, WriteResult
+import type { AppManifest, Unsubscribe, VibeState, PermissionSetting, Identity, ReadResult, WriteResult } from "./types"; // Added Identity, ReadResult, WriteResult
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 // Define the shape of the context value (includes more state now)
 interface VibeContextValue {
-    account: Account | null | undefined;
     permissions: Record<string, PermissionSetting> | null | undefined;
     activeIdentity: Identity | null | undefined; // Still part of VibeState
     identities: Identity[] | undefined; // Still part of VibeState
@@ -150,7 +149,6 @@ export function VibeProvider({ children, manifest }: VibeProviderProps) {
 
     // Provide the application-level state and SDK methods through the context
     const contextValue: VibeContextValue = {
-        account: vibeState?.account,
         permissions: vibeState?.permissions,
         activeIdentity: vibeState?.activeIdentity,
         identities: vibeState?.identities,

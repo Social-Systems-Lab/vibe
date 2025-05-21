@@ -416,30 +416,30 @@ export async function handleCreateNewIdentityFromSeed(payload: any): Promise<any
 
     const vaultResult = await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT);
     const vault = vaultResult[Constants.STORAGE_KEY_VAULT];
-    if (!vault || !vault.settings || typeof vault.settings.nextAccountIndex !== "number") {
+    if (!vault || !vault.settings || typeof vault.settings.nextIdentityIndex !== "number") {
         throw new Error("Vault data/settings invalid for creating new identity."); // Internal error
     }
 
-    const newAccountIndex = vault.settings.nextAccountIndex;
+    const newIdentityIndex = vault.settings.nextIdentityIndex;
     let seedBuffer: Buffer | null = null;
     try {
         seedBuffer = await seedFromMnemonic(decryptedSeed);
         const masterHDKey = getMasterHDKeyFromSeed(seedBuffer);
-        const newKeyPair = deriveChildKeyPair(masterHDKey, newAccountIndex);
+        const newKeyPair = deriveChildKeyPair(masterHDKey, newIdentityIndex);
         const newIdentityDid = didFromEd25519(newKeyPair.publicKey);
 
         const newIdentityEntry: Types.AgentIdentity = {
             // Using AgentIdentity for consistency
             identityDid: newIdentityDid,
             derivationPath: newKeyPair.derivationPath,
-            profile_name: `Identity ${newAccountIndex + 1}`, // Default name
+            profile_name: `Identity ${newIdentityIndex + 1}`, // Default name
             profile_picture: undefined,
             cloudUrl: undefined,
             isAdmin: false, // Default
         };
 
         vault.identities.push(newIdentityEntry);
-        vault.settings.nextAccountIndex = newAccountIndex + 1;
+        vault.settings.nextIdentityIndex = newIdentityIndex + 1;
         await chrome.storage.local.set({ [Constants.STORAGE_KEY_VAULT]: vault });
 
         // Optionally, switch to this new identity or let user do it. For now, just create.
@@ -467,18 +467,18 @@ export async function handleCreateNewIdentityFromSeed(payload: any): Promise<any
     }
 }
 
-export async function handleGetNextAccountIndex(): Promise<any> {
+export async function handleGetNextIdentityIndex(): Promise<any> {
     const vaultResult = await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT);
     const vault = vaultResult[Constants.STORAGE_KEY_VAULT];
-    if (!vault || !vault.settings || typeof vault.settings.nextAccountIndex !== "number") {
+    if (!vault || !vault.settings || typeof vault.settings.nextIdentityIndex !== "number") {
         throw new Types.HandledError({
             error: {
-                message: "Vault data or settings are invalid. Cannot determine next account index.",
+                message: "Vault data or settings are invalid. Cannot determine next identity index.",
                 code: "VAULT_SETTINGS_INVALID",
             },
         });
     }
-    return { accountIndex: vault.settings.nextAccountIndex };
+    return { identityIndex: vault.settings.nextIdentityIndex };
 }
 
 export async function handleDeleteIdentity(payload: any): Promise<any> {
@@ -557,11 +557,11 @@ export async function handleDeleteIdentity(payload: any): Promise<any> {
         return { success: true, message: `Identity ${didToDelete} not found locally. ${cloudDeletionMessage}` };
     }
 
-    // Adjust settings if the deleted identity was active or affects nextAccountIndex (though usually not)
+    // Adjust settings if the deleted identity was active or affects nextIdentityIndex (though usually not)
     if (vault.settings.activeIdentityIndex >= vault.identities.length) {
         vault.settings.activeIdentityIndex = vault.identities.length > 0 ? 0 : -1; // Default to first or none
     }
-    // nextAccountIndex usually only increments, not related to deletion of specific DIDs by index.
+    // nextIdentityIndex usually only increments, not related to deletion of specific DIDs by index.
 
     await chrome.storage.local.set({ [Constants.STORAGE_KEY_VAULT]: vault });
 

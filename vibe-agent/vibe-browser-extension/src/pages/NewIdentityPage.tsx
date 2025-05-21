@@ -56,9 +56,9 @@ export const NewIdentityPage: React.FC = () => {
     const [, setLocation] = useLocation();
     const { requestUnlockAndPerformAction } = useVaultUnlock();
 
-    const accountIndex = props?.accountIndex ?? 0; // Default to 0 if props not set
+    const identityIndex = props?.identityIndex ?? 0; // Default to 0 if props not set
     const isVaultInitiallyUnlocked = props?.isVaultInitiallyUnlocked ?? true; // Default based on typical flow
-    const isFirstIdentitySetup = appStatus === "FIRST_IDENTITY_CREATION_REQUIRED" || (accountIndex === 0 && appStatus === "SETUP_NOT_COMPLETE");
+    const isFirstIdentitySetup = appStatus === "FIRST_IDENTITY_CREATION_REQUIRED" || (identityIndex === 0 && appStatus === "SETUP_NOT_COMPLETE");
 
     // Cloud configuration states
     const [configuredCloudServices, setConfiguredCloudServices] = useState<CloudServiceOption[]>([
@@ -80,12 +80,12 @@ export const NewIdentityPage: React.FC = () => {
                 try {
                     const response = (await chrome.runtime.sendMessage({
                         type: "VIBE_AGENT_REQUEST",
-                        action: "GET_NEXT_ACCOUNT_INDEX",
+                        action: "GET_NEXT_IDENTITY_INDEX",
                         requestId: crypto.randomUUID().toString(),
                     })) as ChromeMessage;
-                    if (response?.type === "VIBE_AGENT_RESPONSE" && typeof response.payload?.accountIndex === "number") {
+                    if (response?.type === "VIBE_AGENT_RESPONSE" && typeof response.payload?.identityIndex === "number") {
                         setProps({
-                            accountIndex: response.payload.accountIndex,
+                            identityIndex: response.payload.identityIndex,
                             isVaultInitiallyUnlocked: true, // Assume unlocked if at this stage
                         });
                     } else {
@@ -121,7 +121,7 @@ export const NewIdentityPage: React.FC = () => {
     }, [showCustomCloudForm, selectedCloudServiceId]);
 
     const onSetupCompleteHandler = async (details: {
-        accountIndex: number;
+        identityIndex: number;
         identityName: string | null;
         identityPicture?: string | null;
         cloudUrl: string;
@@ -137,7 +137,7 @@ export const NewIdentityPage: React.FC = () => {
                 type: "VIBE_AGENT_REQUEST",
                 action: "SETUP_NEW_IDENTITY_AND_FINALIZE", // Or a more general "FINALIZE_IDENTITY_SETUP"
                 payload: {
-                    accountIndexToUse: details.accountIndex,
+                    identityIndexToUse: details.identityIndex,
                     identityName: details.identityName,
                     identityPicture: details.identityPicture,
                     cloudUrl: details.cloudUrl,
@@ -201,7 +201,7 @@ export const NewIdentityPage: React.FC = () => {
 
         try {
             const identityDetailsToComplete = {
-                accountIndex,
+                identityIndex,
                 identityName: identityName.trim() || null,
                 identityPicture: picturePreview,
                 cloudUrl: finalCloudUrl,
@@ -432,9 +432,9 @@ export const NewIdentityPage: React.FC = () => {
         return null;
     };
 
-    // If props are not loaded yet (e.g. accountIndex is still default 0 but not first identity setup)
+    // If props are not loaded yet (e.g. identityIndex is still default 0 but not first identity setup)
     // and it's not the first identity setup determined by appStatus, show loading or an error.
-    // This check helps prevent rendering the form with potentially incorrect default accountIndex.
+    // This check helps prevent rendering the form with potentially incorrect default identityIndex.
     if (!props && !isFirstIdentitySetup && appStatus !== "LOADING") {
         // This case indicates an issue, perhaps navigated here directly without necessary state.
         return (

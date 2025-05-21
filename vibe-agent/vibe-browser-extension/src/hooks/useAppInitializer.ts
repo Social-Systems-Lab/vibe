@@ -15,14 +15,14 @@ import { PENDING_CONSENT_REQUEST_KEY } from "../background-modules/action-handle
 // For now, defining it here based on expected structure from background script
 interface InitResponsePayload {
     code: string;
-    [key: string]: any; // for other potential properties like lastActiveDid, nextAccountIndex
+    [key: string]: any; // for other potential properties like lastActiveDid, nextIdentityIndex
 }
 
 interface InitResponseError {
     code: string;
     message?: string;
     lastActiveDid?: string;
-    nextAccountIndex?: number;
+    nextIdentityIndex?: number;
     [key: string]: any;
 }
 

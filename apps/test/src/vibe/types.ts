@@ -38,15 +38,6 @@ export interface Note {
 }
 
 /**
- * Represents the user's account information provided by the Vibe Agent.
- * Keeping this simple for now, focusing on the DID.
- */
-export interface Account {
-    userDid: string; // The user's Decentralized Identifier
-    // Add other relevant account details here as needed
-}
-
-/**
  * Represents the possible permission settings for a specific permission string.
  * - always: The action is allowed without prompting.
  * - ask: The user must be prompted before the action is allowed.
@@ -58,7 +49,6 @@ export type PermissionSetting = "always" | "ask" | "never";
  * Represents the overall state managed by the Vibe SDK.
  */
 export interface VibeState {
-    account?: Account; // Current user account (based on active identity)
     activeIdentity?: Identity | null; // The currently selected identity
     identities?: Identity[]; // All available identities
     permissions?: Record<string, PermissionSetting>; // Permissions granted for the active identity and current origin
@@ -162,9 +152,7 @@ export interface VibeAgent {
         requestConsent: (request: ConsentRequest) => Promise<Record<string, PermissionSetting>>;
         requestActionConfirmation: (request: ActionRequest) => Promise<ActionResponse>;
     }): void;
-    init(
-        manifest: AppManifest
-    ): Promise<{ account: Account | null; permissions: Record<string, PermissionSetting> | null; activeIdentity: Identity | null; identities: Identity[] }>;
+    init(manifest: AppManifest): Promise<{ permissions: Record<string, PermissionSetting> | null; activeIdentity: Identity | null; identities: Identity[] }>;
     getVibeState(): Promise<VibeState>; // Method to get current agent state if needed
 
     // --- Identity Management ---

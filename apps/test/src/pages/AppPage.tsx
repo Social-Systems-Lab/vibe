@@ -19,26 +19,26 @@ const testAppManifest: AppManifest = {
 // that interacts with the Vibe SDK via the useVibe hook.
 function AppContent() {
     // Get state and methods from useVibe (NO identity methods here)
-    const { account, activeIdentity, readOnce, read, write } = useVibe();
+    const { activeIdentity, readOnce, read, write } = useVibe();
     const [notes, setNotes] = useState<any[]>([]);
     const [tasks, setTasks] = useState<any[]>([]);
     const [status, setStatus] = useState<string>("Initializing VibeProvider...");
     const taskSubscription = useRef<Unsubscribe | null>(null);
 
-    // --- Effect to update status based on account ---
+    // --- Effect to update status based on active identity ---
     useEffect(() => {
-        if (account) {
+        if (activeIdentity) {
             setStatus("VibeProvider initialized. Ready.");
         } else {
             // This might briefly show if init fails or hasn't completed
             setStatus("Waiting for Vibe initialization...");
         }
-    }, [account]);
+    }, [activeIdentity]);
 
     // --- Handlers (using methods from useVibe) ---
     const handleReadNotesOnce = useCallback(async () => {
-        if (!account) {
-            setStatus("Account not initialized. Cannot read notes.");
+        if (!activeIdentity) {
+            setStatus("Active identity not initialized. Cannot read notes.");
             return;
         }
         setStatus("Reading notes...");
@@ -52,11 +52,11 @@ function AppContent() {
             setStatus(`Error reading notes: ${error instanceof Error ? error.message : String(error)}`);
             setNotes([]);
         }
-    }, [readOnce, account]);
+    }, [readOnce, activeIdentity]);
 
     const handleWriteNote = useCallback(async () => {
-        if (!account) {
-            setStatus("Account not initialized. Cannot write note.");
+        if (!activeIdentity) {
+            setStatus("Active identity not initialized. Cannot write note.");
             return;
         }
         setStatus("Writing new note...");
@@ -73,11 +73,11 @@ function AppContent() {
             console.error("[AppPage] Error writing note:", error);
             setStatus(`Error writing note: ${error instanceof Error ? error.message : String(error)}`);
         }
-    }, [write, account, handleReadNotesOnce]); // Added handleReadNotesOnce dependency
+    }, [write, activeIdentity, handleReadNotesOnce]); // Added handleReadNotesOnce dependency
 
     const handleWriteTask = useCallback(async () => {
-        if (!account) {
-            setStatus("Account not initialized. Cannot write task.");
+        if (!activeIdentity) {
+            setStatus("Active identity not initialized. Cannot write task.");
             return;
         }
         setStatus("Writing new task...");
@@ -93,7 +93,7 @@ function AppContent() {
             console.error("[AppPage] Error writing task:", error);
             setStatus(`Error writing task: ${error instanceof Error ? error.message : String(error)}`);
         }
-    }, [write, account]);
+    }, [write, activeIdentity]);
 
     // --- Subscription Effect ---
     useEffect(() => {
@@ -186,10 +186,10 @@ function AppContent() {
                     </CardHeader>
                     <CardContent>
                         <div className="flex gap-2 mb-4">
-                            <Button onClick={handleReadNotesOnce} disabled={!account}>
+                            <Button onClick={handleReadNotesOnce} disabled={!activeIdentity}>
                                 Read Notes Once
                             </Button>
-                            <Button onClick={handleWriteNote} variant="secondary" disabled={!account}>
+                            <Button onClick={handleWriteNote} variant="secondary" disabled={!activeIdentity}>
                                 Write New Note
                             </Button>
                         </div>
@@ -207,7 +207,7 @@ function AppContent() {
                     </CardHeader>
                     <CardContent>
                         <div className="flex gap-2 mb-4">
-                            <Button onClick={handleWriteTask} variant="secondary" disabled={!account}>
+                            <Button onClick={handleWriteTask} variant="secondary" disabled={!activeIdentity}>
                                 Write New Task
                             </Button>
                         </div>

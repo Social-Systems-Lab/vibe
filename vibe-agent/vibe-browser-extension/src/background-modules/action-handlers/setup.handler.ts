@@ -37,7 +37,7 @@ export async function handleSetupCreateVault(payload: any): Promise<any> {
         const vaultData = {
             encryptedSeedPhrase: encryptedMnemonicData,
             identities: [],
-            settings: { nextAccountIndex: 0, activeIdentityIndex: -1 },
+            settings: { nextIdentityIndex: 0, activeIdentityIndex: -1 },
         };
         await chrome.storage.local.set({
             [Constants.STORAGE_KEY_VAULT_SALT]: saltHex,
@@ -96,7 +96,7 @@ export async function handleSetupImportVault(payload: any): Promise<any> {
                     cloudUrl: null,
                 },
             ],
-            settings: { nextAccountIndex: 1, activeIdentityIndex: 0 }, // First identity is active
+            settings: { nextIdentityIndex: 1, activeIdentityIndex: 0 }, // First identity is active
         };
 
         await chrome.storage.local.set({
@@ -142,7 +142,7 @@ export async function handleSetupImportSeedAndRecoverIdentities(payload: any): P
         [Constants.STORAGE_KEY_VAULT]: {
             encryptedSeedPhrase: encryptedMnemonicData,
             identities: [],
-            settings: { nextAccountIndex: 0, activeIdentityIndex: -1 },
+            settings: { nextIdentityIndex: 0, activeIdentityIndex: -1 },
         },
     });
 
@@ -153,7 +153,7 @@ export async function handleSetupImportSeedAndRecoverIdentities(payload: any): P
         const recoveredIdentities: Types.AgentIdentity[] = [];
         let consecutiveInactiveCount = 0;
         let currentIndex = 0;
-        let nextAccountIndexToStore = 0;
+        let nextIdentityIndexToStore = 0;
 
         while (consecutiveInactiveCount < Constants.GAP_LIMIT) {
             const keyPair = deriveChildKeyPair(masterHDKey, currentIndex);
@@ -223,7 +223,7 @@ export async function handleSetupImportSeedAndRecoverIdentities(payload: any): P
                 } catch (loginError: any) {
                     console.error(`Error during proactive login for ${currentDid}:`, loginError.message);
                 }
-                nextAccountIndexToStore = currentIndex + 1;
+                nextIdentityIndexToStore = currentIndex + 1;
             } else {
                 consecutiveInactiveCount++;
             }
@@ -233,7 +233,7 @@ export async function handleSetupImportSeedAndRecoverIdentities(payload: any): P
         const finalVaultData = {
             encryptedSeedPhrase: encryptedMnemonicData,
             identities: recoveredIdentities,
-            settings: { nextAccountIndex: nextAccountIndexToStore, activeIdentityIndex: recoveredIdentities.length > 0 ? 0 : -1 },
+            settings: { nextIdentityIndex: nextIdentityIndexToStore, activeIdentityIndex: recoveredIdentities.length > 0 ? 0 : -1 },
         };
         await chrome.storage.local.set({ [Constants.STORAGE_KEY_VAULT]: finalVaultData, [Constants.STORAGE_KEY_SETUP_COMPLETE]: true });
 
@@ -325,7 +325,7 @@ export async function handleSetupCompleteAndFinalize(payload: any): Promise<any>
                     isAdmin: false, // Default
                 },
             ];
-            vaultData.settings.nextAccountIndex = 1;
+            vaultData.settings.nextIdentityIndex = 1;
             vaultData.settings.activeIdentityIndex = 0;
         } finally {
             if (seedForDerivation) wipeMemory(seedForDerivation);
@@ -421,9 +421,9 @@ export async function handleSetupCompleteAndFinalize(payload: any): Promise<any>
 }
 
 export async function handleFinalizeNewIdentitySetup(payload: any): Promise<any> {
-    const { didToFinalize, accountIndex, identityName, identityPicture, cloudUrl, claimCode, password } = payload;
+    const { didToFinalize, identityIndex, identityName, identityPicture, cloudUrl, claimCode, password } = payload;
 
-    if (!didToFinalize || typeof accountIndex !== "number" || !password) {
+    if (!didToFinalize || typeof identityIndex !== "number" || !password) {
         throw new Types.HandledError({ error: { message: "Required fields missing for finalization.", code: "MISSING_PARAMS" } });
     }
 
@@ -474,7 +474,7 @@ export async function handleFinalizeNewIdentitySetup(payload: any): Promise<any>
         try {
             seedForSigning = await seedFromMnemonic(decryptedSeed);
             const masterKey = getMasterHDKeyFromSeed(seedForSigning);
-            const keyPair = deriveChildKeyPair(masterKey, accountIndex); // Use provided accountIndex for derivation
+            const keyPair = deriveChildKeyPair(masterKey, identityIndex); // Use provided identityIndex for derivation
 
             if (didFromEd25519(keyPair.publicKey) !== didToFinalize) {
                 throw new Error("DID mismatch: Derived DID does not match didToFinalize.");
@@ -547,12 +547,12 @@ export async function handleFinalizeNewIdentitySetup(payload: any): Promise<any>
 // SETUP_NEW_IDENTITY_AND_FINALIZE is a more complex flow that combines creation and finalization.
 // It's often called when user is adding a subsequent identity, not the very first one.
 export async function handleSetupNewIdentityAndFinalize(payload: any): Promise<any> {
-    const { accountIndexToUse, identityName, identityPicture, cloudUrl, claimCode, password } = payload;
+    const { identityIndexToUse, identityName, identityPicture, cloudUrl, claimCode, password } = payload;
 
-    // accountIndexToUse is crucial here, it should be the next available index.
+    // identityIndexToUse is crucial here, it should be the next available index.
     // Password is required to access the seed for deriving new keys.
 
-    if (typeof accountIndexToUse !== "number") {
+    if (typeof identityIndexToUse !== "number") {
         throw new Types.HandledError({ error: { message: "Account index is required.", code: "MISSING_ACCOUNT_INDEX" } });
     }
 
@@ -597,17 +597,17 @@ export async function handleSetupNewIdentityAndFinalize(payload: any): Promise<a
 
     const vaultResult = await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT);
     let vaultData = vaultResult[Constants.STORAGE_KEY_VAULT];
-    if (!vaultData || !vaultData.settings || typeof vaultData.settings.nextAccountIndex !== "number") {
+    if (!vaultData || !vaultData.settings || typeof vaultData.settings.nextIdentityIndex !== "number") {
         throw new Types.HandledError({ error: { message: "Vault data/settings invalid.", code: "VAULT_SETTINGS_INVALID" } });
     }
 
-    // Ensure accountIndexToUse matches the expected nextAccountIndex
-    if (accountIndexToUse !== vaultData.settings.nextAccountIndex) {
+    // Ensure identityIndexToUse matches the expected nextIdentityIndex
+    if (identityIndexToUse !== vaultData.settings.nextIdentityIndex) {
         console.warn(
-            `Provided accountIndexToUse (${accountIndexToUse}) does not match vault's nextAccountIndex (${vaultData.settings.nextAccountIndex}). Using vault's index.`
+            `Provided identityIndexToUse (${identityIndexToUse}) does not match vault's nextIdentityIndex (${vaultData.settings.nextIdentityIndex}). Using vault's index.`
         );
     }
-    const newAccountIndex = vaultData.settings.nextAccountIndex; // Always use the authoritative next index
+    const newAccountIndex = vaultData.settings.nextIdentityIndex; // Always use the authoritative next index
 
     let seedBuffer: Buffer | null = null;
     try {
@@ -668,7 +668,7 @@ export async function handleSetupNewIdentityAndFinalize(payload: any): Promise<a
             vaultData.identities[newIdentityEntryIndexInVault].cloudUrl = cloudUrl;
         }
 
-        vaultData.settings.nextAccountIndex = newAccountIndex + 1;
+        vaultData.settings.nextIdentityIndex = newAccountIndex + 1;
         vaultData.settings.activeIdentityIndex = newIdentityEntryIndexInVault; // Make new identity active
 
         await chrome.storage.local.set({ [Constants.STORAGE_KEY_VAULT]: vaultData });

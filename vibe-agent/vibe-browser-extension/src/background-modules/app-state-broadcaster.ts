@@ -28,7 +28,6 @@ export async function getCurrentVibeStateForSubscription(appId?: string, origin?
     return {
         isUnlocked: SessionManager.isUnlocked,
         did: currentAgentActiveDid,
-        account: currentAgentActiveDid ? { did: currentAgentActiveDid } : null,
         permissions: {
             /* Mock/actual permissions for appId, origin */
         },

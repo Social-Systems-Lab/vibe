@@ -151,17 +151,17 @@ export function DashboardPage() {
         try {
             const nextIndexResponse = (await chrome.runtime.sendMessage({
                 type: "VIBE_AGENT_REQUEST",
-                action: "GET_NEXT_ACCOUNT_INDEX",
+                action: "GET_NEXT_IDENTITY_INDEX",
                 requestId: crypto.randomUUID().toString(),
             })) as ChromeMessage;
 
-            if (nextIndexResponse?.type !== "VIBE_AGENT_RESPONSE" || typeof nextIndexResponse.payload?.accountIndex !== "number") {
+            if (nextIndexResponse?.type !== "VIBE_AGENT_RESPONSE" || typeof nextIndexResponse.payload?.identityIndex !== "number") {
                 console.error("Failed to get next account index:", nextIndexResponse?.error);
                 alert(`Error preparing for new identity: ${nextIndexResponse?.error?.message || "Could not get account index."}`);
                 setIsLoading(false);
                 return;
             }
-            const accountIndex = nextIndexResponse.payload.accountIndex;
+            const identityIndex = nextIndexResponse.payload.identityIndex;
 
             const lockStateResponse = (await chrome.runtime.sendMessage({
                 type: "VIBE_AGENT_REQUEST",
@@ -178,7 +178,7 @@ export function DashboardPage() {
             const isVaultInitiallyUnlocked = lockStateResponse.payload.isUnlocked;
 
             setNewIdentityProps({
-                accountIndex,
+                identityIndex,
                 isVaultInitiallyUnlocked,
             });
             setLocation("/setup/new-identity");

@@ -12,10 +12,27 @@ import { seedFromMnemonic, getMasterHDKeyFromSeed, deriveChildKeyPair, wipeMemor
 import { didFromEd25519 } from "../lib/identity";
 
 // --- Global State (managed by session-manager) ---
-export let currentActiveDid: string | null = null;
+export let currentActiveDid: string | null = null; // This will be loaded from storage on init
 export let isUnlocked: boolean = false; // Reflects if inMemoryDecryptedSeed is populated
 let inMemoryDecryptedSeed: string | null = null;
 // TODO: Consider adding an inactivity timeout to clear inMemoryDecryptedSeed
+
+// Initialize Session Manager state on load
+export async function initializeSessionManager(): Promise<void> {
+    try {
+        const data = await chrome.storage.local.get(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
+        const loadedDid = data[Constants.STORAGE_KEY_LAST_ACTIVE_DID];
+        if (loadedDid) {
+            currentActiveDid = loadedDid;
+            console.log("[SessionManager] Initialized currentActiveDid from storage:", currentActiveDid);
+        } else {
+            console.log("[SessionManager] No last active DID found in storage.");
+        }
+    } catch (error) {
+        console.error("[SessionManager] Error initializing currentActiveDid from storage:", error);
+    }
+    // isUnlocked and inMemoryDecryptedSeed remain false/null until unlock
+}
 
 export function getInMemoryDecryptedSeed(): string | null {
     // TODO: Potentially refresh inactivity timer here if implementing auto-lock
@@ -31,8 +48,23 @@ export function setInMemoryDecryptedSeed(seed: string | null): void {
     // TODO: If seed is set, start/reset inactivity timer. If null, clear timer.
 }
 
-export function setCurrentActiveDid(did: string | null) {
+export async function setCurrentActiveDid(did: string | null): Promise<void> {
     currentActiveDid = did;
+    if (did) {
+        try {
+            await chrome.storage.local.set({ [Constants.STORAGE_KEY_LAST_ACTIVE_DID]: did });
+            console.log("[SessionManager] Persisted currentActiveDid:", did);
+        } catch (error) {
+            console.error("[SessionManager] Error persisting currentActiveDid:", error);
+        }
+    } else {
+        try {
+            await chrome.storage.local.remove(Constants.STORAGE_KEY_LAST_ACTIVE_DID);
+            console.log("[SessionManager] Removed persisted currentActiveDid.");
+        } catch (error) {
+            console.error("[SessionManager] Error removing persisted currentActiveDid:", error);
+        }
+    }
 }
 
 // setIsUnlocked is effectively replaced by setInMemoryDecryptedSeed
@@ -64,17 +96,19 @@ export async function loadActiveIdentity(): Promise<boolean> {
                 seedBuffer = await seedFromMnemonic(inMemoryDecryptedSeed);
                 const masterKey = getMasterHDKeyFromSeed(seedBuffer);
                 const identityKeyPair = deriveChildKeyPair(masterKey, activeIndex);
-                setCurrentActiveDid(didFromEd25519(identityKeyPair.publicKey));
-                console.log("Active identity loaded using in-memory seed:", currentActiveDid);
+                const derivedDid = didFromEd25519(identityKeyPair.publicKey);
+                await setCurrentActiveDid(derivedDid); // Persists and sets in-memory
+                console.log("Active identity loaded using in-memory seed and persisted:", currentActiveDid);
                 return true; // Successfully loaded an active DID
             } finally {
                 if (seedBuffer) wipeMemory(seedBuffer); // Wipe the temporary buffer
             }
         } else {
-            setCurrentActiveDid(null);
-            console.log("Vault unlocked (in-memory seed present), but no valid active identity index set in session.");
+            // No valid index, so clear in-memory active DID. Persisted hint remains.
+            currentActiveDid = null;
+            console.log("Vault unlocked (in-memory seed present), but no valid active identity index set in session. In-memory active DID cleared.");
             // isUnlocked remains true because the seed is still in memory.
-            return false; // false because DID couldn't be loaded
+            return false; // false because DID couldn't be loaded via index
         }
     } catch (error) {
         console.error("Error loading active identity with in-memory seed:", error);

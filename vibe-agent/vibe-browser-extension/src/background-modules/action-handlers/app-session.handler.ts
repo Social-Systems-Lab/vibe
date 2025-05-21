@@ -136,7 +136,6 @@ export async function handleInitializeAppSession(payload: any, sender: chrome.ru
     const initialState: Types.VibeState = {
         isUnlocked: SessionManager.isUnlocked,
         did: currentAgentActiveDid,
-        account: currentAgentActiveDid ? { did: currentAgentActiveDid } : null,
         permissions: grantedPermissions, // Use the determined/mocked permissions
         identities: vibeIdentities,
         activeIdentity: activeVibeIdentity,

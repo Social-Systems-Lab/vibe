@@ -11,10 +11,10 @@ import NotesPage from "./pages/NotesPage.tsx"; // Added NotesPage import
 // This component renders persistent UI elements and provides a placeholder (<Outlet>)
 // for routed page components. It now uses useVibe to access VibeState.
 function RootLayout() {
-    const { activeIdentity, identities, account, permissions } = useVibe();
+    const { activeIdentity, identities, permissions } = useVibe();
 
     // Log current Vibe state for debugging
-    console.log("[RootLayout] Vibe State:", { activeIdentity, identities, account, permissions });
+    console.log("[RootLayout] Vibe State:", { activeIdentity, identities, permissions });
 
     return (
         <div className="container mx-auto p-8 text-left relative z-10 min-h-screen flex flex-col">

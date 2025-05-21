@@ -65,8 +65,8 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
             case "CREATE_NEW_IDENTITY_FROM_SEED":
                 responsePayload = await IdentityHandler.handleCreateNewIdentityFromSeed(payload);
                 break;
-            case "GET_NEXT_ACCOUNT_INDEX":
-                responsePayload = await IdentityHandler.handleGetNextAccountIndex();
+            case "GET_NEXT_IDENTITY_INDEX":
+                responsePayload = await IdentityHandler.handleGetNextIdentityIndex();
                 break;
             case "SETUP_NEW_IDENTITY_AND_FINALIZE":
                 responsePayload = await SetupHandler.handleSetupNewIdentityAndFinalize(payload);

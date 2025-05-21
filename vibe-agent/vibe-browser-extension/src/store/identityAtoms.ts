@@ -26,7 +26,7 @@ export const showIdentitySettingsAtom = atom<boolean>(false);
 
 // Props for the NewIdentitySetupWizard, if it's shown
 export const newIdentityWizardPropsAtom = atom<{
-    accountIndex: number;
+    identityIndex: number;
     isVaultInitiallyUnlocked: boolean;
 } | null>(null);
 

@@ -9,10 +9,6 @@ export interface AppManifest {
     permissions: string[];
 }
 
-export interface Account {
-    did: string;
-}
-
 export interface VibeIdentity {
     did: string;
     label: string;
@@ -24,7 +20,6 @@ export type PermissionSetting = "always" | "ask" | "never";
 export interface VibeState {
     isUnlocked: boolean;
     did?: string | null;
-    account?: Account | null;
     activeIdentity?: VibeIdentity | null;
     identities?: VibeIdentity[];
     permissions?: Record<string, PermissionSetting>;
