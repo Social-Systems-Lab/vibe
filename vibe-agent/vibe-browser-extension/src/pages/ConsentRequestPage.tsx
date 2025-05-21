@@ -90,11 +90,14 @@ const ConsentRequestPage: React.FC = () => {
 
         try {
             const response = await chrome.runtime.sendMessage({
-                type: "SUBMIT_CONSENT_DECISION",
+                type: "VIBE_AGENT_REQUEST",
+                action: "SUBMIT_CONSENT_DECISION",
+                requestId: payload.consentRequestId, // Added requestId
                 payload: payload,
             });
 
-            if (response?.success) {
+            if (response?.payload?.success) {
+                // Adjusted to check response.payload.success
                 setSubmissionStatus("success");
                 setSubmissionMessage(decisionType === "allow" ? "Permissions granted successfully!" : "Permissions denied.");
                 // The background script should clear PENDING_CONSENT_REQUEST_KEY
@@ -106,8 +109,8 @@ const ConsentRequestPage: React.FC = () => {
                 }, 2000);
             } else {
                 setSubmissionStatus("error");
-                setSubmissionMessage(response?.error || "Failed to submit consent decision.");
-                console.error("Error submitting consent decision:", response?.error);
+                setSubmissionMessage(response?.payload?.error || response?.error || "Failed to submit consent decision."); // Adjusted to check response.payload.error and fallback
+                console.error("Error submitting consent decision:", response?.payload?.error || response?.error); // Adjusted for new response structure
             }
         } catch (e: any) {
             setSubmissionStatus("error");
