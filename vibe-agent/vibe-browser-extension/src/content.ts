@@ -72,7 +72,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             message.payload.origin,
             message.payload.appId,
             message.payload.requestedPermissions,
-            message.payload.activeIdentityForPopover // Pass the active identity details
+            message.payload.activeIdentityForPopover, // Pass the active identity details
+            message.payload.consentRequestId // Pass the consentRequestId
         );
         return false; // No async response needed
     }
@@ -94,7 +95,8 @@ function showConsentPopover(
     origin?: string,
     appId?: string,
     requestedPermissions?: string[],
-    activeIdentity?: { label: string; did: string; pictureUrl?: string } | null
+    activeIdentity?: { label: string; did: string; pictureUrl?: string } | null,
+    consentRequestId?: string
 ) {
     removeExistingPopover(); // Remove any existing popover first
 
@@ -105,9 +107,15 @@ function showConsentPopover(
     if (!activeIdentity) {
         console.warn("Vibe: Active identity not provided for consent popover. Using defaults.");
     }
+    if (!consentRequestId) {
+        console.error("Vibe: consentRequestId is missing. Cannot proceed with consent popover.");
+        // Optionally, show an error to the user or just don't render the popover.
+        // For now, returning to prevent rendering a broken popover.
+        return;
+    }
 
     if (!appName || !origin || !appId || !requestedPermissions) {
-        console.warn("Vibe: Insufficient app data to show consent popover.", { appName, origin, appId, requestedPermissions });
+        console.warn("Vibe: Insufficient app data to show consent popover.", { appName, origin, appId, requestedPermissions, consentRequestId });
         return;
     }
 
@@ -245,7 +253,7 @@ function showConsentPopover(
         console.log("Vibe: Consent popover 'Continue' button clicked.");
         chrome.runtime.sendMessage({
             type: "USER_CLICKED_CONSENT_POPOVER",
-            payload: { appName, origin, appId, appIconUrl, requestedPermissions },
+            payload: { appName, origin, appId, appIconUrl, requestedPermissions, consentRequestId }, // Include consentRequestId
         });
         removeExistingPopover();
     };

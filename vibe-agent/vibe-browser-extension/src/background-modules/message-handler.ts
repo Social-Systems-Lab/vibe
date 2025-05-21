@@ -98,6 +98,9 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 // If it's void, the sendResponse logic below needs adjustment or this case needs to handle sendResponse itself.
                 // Let's assume it returns a payload for now.
                 break;
+            case "SUBMIT_CONSENT_DECISION":
+                responsePayload = await AppSessionHandler.handleSubmitConsentDecision(payload, sender);
+                break;
             default:
                 console.warn(`[BG_WARN_UnknownAction] Unknown action: ${action}`);
                 responsePayload = { error: { message: `Unknown action: ${action}` } };

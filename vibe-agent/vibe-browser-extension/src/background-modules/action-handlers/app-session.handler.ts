@@ -1,7 +1,17 @@
 import * as Types from "../types";
 import * as SessionManager from "../session-manager";
 import * as Constants from "../constants";
-import { appSubscriptions, getCurrentVibeStateForSubscription } from "../app-state-broadcaster";
+import { appSubscriptions, getCurrentVibeStateForSubscription, broadcastAppStateToSubscriptions } from "../app-state-broadcaster";
+
+// Map to store resolve/reject functions for pending consent requests
+// The resolve function will be called with the outcome of the consent decision
+const pendingConsentPromises = new Map<
+    string,
+    {
+        resolve: (decisionOutcome: { finalGrantedPermissions: Record<string, Types.PermissionSetting>; decision: "allow" | "deny" }) => void;
+        reject: (reason?: any) => void;
+    }
+>();
 
 export async function handleInitializeAppSession(payload: any, sender: chrome.runtime.MessageSender): Promise<any> {
     const appManifest = payload?.manifest;
@@ -90,62 +100,89 @@ export async function handleInitializeAppSession(payload: any, sender: chrome.ru
                     ", "
                 )}`
             );
-            // Merge existing with newly mocked/granted ones
-            grantedPermissions = { ...existingPermissions, ...newPermissionsToGrant };
+            // At this point, consentNeeded is true.
+            // We don't set grantedPermissions yet; it will come from the user's decision.
+            const consentRequestId = `${sender.tab?.id}_${appIdFromManifestValue}_${origin}_${Date.now()}`;
+            console.log(`[BG] Consent required. ID: ${consentRequestId}. Waiting for user decision.`);
 
-            // TODO: Persist these new mocked permissions (for next time, until real UI)
-            // For now, we are only logging and returning them in initialState.
-            // If we were to persist:
-            // allPermissionsStore[permissionKey] = grantedPermissions;
-            // await chrome.storage.local.set({ [PERMISSIONS_STORE_KEY]: allPermissionsStore });
-            // console.log(`[BG] Mock permissions (would be stored):`, grantedPermissions);
-            Object.entries(newPermissionsToGrant).forEach(([perm, setting]) => {
-                console.log(`[BG] Mock granting new permission: ${perm} as ${setting}`);
-            });
-
-            // Send message to content script to show popover
             if (sender.tab?.id) {
-                chrome.tabs
-                    .sendMessage(sender.tab.id, {
-                        type: "SHOW_CONSENT_PROMPT",
-                        payload: {
-                            appName: appManifest.name,
-                            appIconUrl: appManifest.iconUrl || appManifest.pictureUrl, // Use iconUrl or fallback to pictureUrl
-                            origin: origin,
-                            appId: appIdFromManifestValue,
-                            requestedPermissions: requestedPermissionsFromManifest, // Send all requested, UI can filter/highlight new ones
-                            activeIdentityForPopover: activeVibeIdentity, // Pass the active identity details
+                // Send message to content script to show popover, including the consentRequestId
+                await chrome.tabs.sendMessage(sender.tab.id, {
+                    type: "SHOW_CONSENT_PROMPT",
+                    payload: {
+                        appName: appManifest.name,
+                        appIconUrl: appManifest.iconUrl || appManifest.pictureUrl,
+                        origin: origin,
+                        appId: appIdFromManifestValue,
+                        requestedPermissions: requestedPermissionsFromManifest,
+                        activeIdentityForPopover: activeVibeIdentity,
+                        consentRequestId: consentRequestId, // Pass the ID
+                    },
+                });
+                // Catch for sendMessage can be added here if specific handling is needed before promise setup
+                // For now, assuming if sendMessage fails, the outer handler in message-handler.ts catches it.
+
+                return new Promise((resolveOuterPromise, rejectOuterPromise) => {
+                    pendingConsentPromises.set(consentRequestId, {
+                        resolve: (decisionOutcome: { finalGrantedPermissions: Record<string, Types.PermissionSetting>; decision: "allow" | "deny" }) => {
+                            // This 'resolve' is called by handleSubmitConsentDecision
+                            const finalInitialState: Types.VibeState = {
+                                isUnlocked: SessionManager.isUnlocked,
+                                did: currentAgentActiveDid, // This must be valid if consent was processed
+                                permissions: decisionOutcome.finalGrantedPermissions,
+                                identities: vibeIdentities, // Captured from the outer scope
+                                activeIdentity: activeVibeIdentity, // Captured from the outer scope
+                            };
+                            console.log(`[BG] Consent decision outcome received for ${consentRequestId}. Resolving init with state:`, finalInitialState);
+                            resolveOuterPromise({ initialState: finalInitialState, subscriptionId: mockSubscriptionId });
                         },
-                    })
-                    .catch((err) => console.error("[BG] Error sending SHOW_CONSENT_PROMPT to content script:", err));
+                        reject: (errorReason: any) => {
+                            console.error(`[BG] Consent process rejected for ${consentRequestId}:`, errorReason);
+                            rejectOuterPromise(errorReason);
+                        },
+                    });
+                    // Optional: Timeout for the consent promise
+                    // setTimeout(() => {
+                    //     if (pendingConsentPromises.has(consentRequestId)) {
+                    //         const promiseControls = pendingConsentPromises.get(consentRequestId);
+                    //         promiseControls?.reject(new Types.HandledError({ error: { message: "Consent timed out for " + consentRequestId, code: "CONSENT_TIMEOUT" }}));
+                    //         pendingConsentPromises.delete(consentRequestId);
+                    //     }
+                    // }, 1000 * 60 * 5); // 5 minutes
+                });
             } else {
-                console.warn("[BG] Cannot send SHOW_CONSENT_PROMPT: sender.tab.id is undefined.");
+                console.warn("[BG] Cannot send SHOW_CONSENT_PROMPT: sender.tab.id is undefined. Cannot await consent.");
+                // If no tab ID, we can't show UI, so consent cannot be obtained through this flow.
+                // Resolve with current (potentially incomplete/mocked) permissions or reject.
+                // For now, rejecting seems more appropriate as the full consent flow cannot complete.
+                throw new Types.HandledError({ error: { message: "Cannot initiate consent without a tab ID.", code: "NO_TAB_FOR_CONSENT_UI" } });
             }
         } else {
-            console.log(`[BG] No new consent required. Using existing permissions for: ${appIdFromManifestValue}, identity: ${currentAgentActiveDid}`);
-            grantedPermissions = existingPermissions;
+            // No new consent needed
+            console.log(`[BG] No new consent required for ${appIdFromManifestValue}. Using existing permissions.`);
+            grantedPermissions = existingPermissions; // Already populated
+            const initialState: Types.VibeState = {
+                isUnlocked: SessionManager.isUnlocked,
+                did: currentAgentActiveDid,
+                permissions: grantedPermissions,
+                identities: vibeIdentities,
+                activeIdentity: activeVibeIdentity,
+            };
+            return Promise.resolve({ initialState: initialState, subscriptionId: mockSubscriptionId }); // Ensure it returns a Promise
         }
     } else {
-        console.warn(
-            `[BG] No active identity (currentAgentActiveDid is null). Cannot process permissions for app ${appIdFromManifestValue}. Returning empty permissions.`
-        );
-        // No active identity, so no permissions can be determined or granted.
-        // The app will receive an empty permissions object and should handle this gracefully (e.g., prompt for identity selection).
+        // No active identity
+        console.warn(`[BG] No active identity. Cannot process permissions for app ${appIdFromManifestValue}. Returning empty permissions.`);
+        const initialState: Types.VibeState = {
+            isUnlocked: SessionManager.isUnlocked,
+            did: null,
+            permissions: {},
+            identities: vibeIdentities,
+            activeIdentity: null,
+        };
+        return Promise.resolve({ initialState: initialState, subscriptionId: mockSubscriptionId }); // Ensure it returns a Promise
     }
-    // --- Permission Logic End ---
-
-    const initialState: Types.VibeState = {
-        isUnlocked: SessionManager.isUnlocked,
-        did: currentAgentActiveDid,
-        permissions: grantedPermissions, // Use the determined/mocked permissions
-        identities: vibeIdentities,
-        activeIdentity: activeVibeIdentity,
-    };
-
-    return {
-        initialState: initialState,
-        subscriptionId: mockSubscriptionId,
-    };
+    // Unreachable, but satisfies TypeScript if it thinks paths might not return.
 }
 
 export async function handleUnsubscribeAppSession(payload: any): Promise<any> {
@@ -165,14 +202,16 @@ export const PENDING_CONSENT_REQUEST_KEY = "pendingConsentRequest";
 
 export async function handleUserClickedConsentPopover(payload: any, sender: chrome.runtime.MessageSender): Promise<any> {
     console.log("[BG] USER_CLICKED_CONSENT_POPOVER received:", payload);
-    const { appName, appIconUrl, origin, appId, requestedPermissions } = payload;
+    // Destructure consentRequestId from payload
+    const { appName, appIconUrl, origin, appId, requestedPermissions, consentRequestId } = payload;
 
     if (!sender.tab?.id) {
         console.error("[BG] Cannot open side panel or store consent request: sender.tab.id is undefined.");
         return { success: false, error: "Missing tab ID." };
     }
-    if (!appId || !origin || !requestedPermissions) {
-        console.error("[BG] Insufficient data for consent request:", payload);
+    // Add check for consentRequestId
+    if (!appId || !origin || !requestedPermissions || !consentRequestId) {
+        console.error("[BG] Insufficient data for consent request (appId, origin, requestedPermissions, or consentRequestId missing):", payload);
         return { success: false, error: "Insufficient data for consent request." };
     }
 
@@ -184,11 +223,11 @@ export async function handleUserClickedConsentPopover(payload: any, sender: chro
             origin,
             appId,
             requestedPermissions,
-            // Potentially add activeIdentity DID here if needed by sidebar immediately
             activeDid: SessionManager.currentActiveDid,
+            consentRequestId: consentRequestId, // Store consentRequestId
         };
         await chrome.storage.session.set({ [PENDING_CONSENT_REQUEST_KEY]: consentRequestData });
-        console.log("[BG] Stored pending consent request to session storage:", consentRequestData);
+        console.log("[BG] Stored pending consent request to session storage (including consentRequestId):", consentRequestData);
 
         // Attempt to open the side panel to the consent UI
         // The sidebar's router/App component will need to check session storage for this key on load/navigate
@@ -199,5 +238,79 @@ export async function handleUserClickedConsentPopover(payload: any, sender: chro
     } catch (error: any) {
         console.error("[BG] Error handling USER_CLICKED_CONSENT_POPOVER:", error);
         return { success: false, error: error.message || "Failed to process popover click." };
+    }
+}
+
+export async function handleSubmitConsentDecision(payload: any, sender: chrome.runtime.MessageSender): Promise<any> {
+    console.log("[BG] SUBMIT_CONSENT_DECISION received:", payload);
+    // consentRequestId is now expected in the payload
+    const { appId, origin, activeDid, grantedPermissions, decision, consentRequestId } = payload;
+
+    if (!appId || !origin || !activeDid || !decision || !consentRequestId || (decision === "allow" && typeof grantedPermissions === "undefined")) {
+        console.error("[BG] handleSubmitConsentDecision: Insufficient data or missing consentRequestId.", payload);
+        // If consentRequestId is present, try to reject its promise
+        if (consentRequestId && pendingConsentPromises.has(consentRequestId)) {
+            pendingConsentPromises
+                .get(consentRequestId)
+                ?.reject(new Types.HandledError({ error: { message: "Insufficient data for consent decision.", code: "INVALID_REQUEST" } }));
+            pendingConsentPromises.delete(consentRequestId);
+        }
+        return { success: false, error: "Insufficient data for submitting consent decision." };
+    }
+
+    const PERMISSIONS_STORE_KEY = "permissionsStore"; // TODO: Move to constants
+    let finalGrantedPermissionsForInit: Record<string, Types.PermissionSetting> = {};
+
+    try {
+        const storeResult = await chrome.storage.local.get(PERMISSIONS_STORE_KEY);
+        const allPermissionsStore = storeResult[PERMISSIONS_STORE_KEY] || {};
+        const permissionKey = `${activeDid}_${origin}_${appId}`;
+
+        if (decision === "allow") {
+            allPermissionsStore[permissionKey] = grantedPermissions;
+            finalGrantedPermissionsForInit = grantedPermissions;
+            console.log(`[BG] Permissions ALLOWED and stored for key ${permissionKey}:`, grantedPermissions);
+        } else if (decision === "deny") {
+            allPermissionsStore[permissionKey] = {}; // Explicitly store empty object for denial
+            finalGrantedPermissionsForInit = {}; // Denied means no permissions granted
+            console.log(`[BG] Permissions DENIED for key ${permissionKey}. Stored empty permissions.`);
+        } else {
+            console.warn(`[BG] handleSubmitConsentDecision: Unknown decision type: ${decision}`);
+            if (pendingConsentPromises.has(consentRequestId)) {
+                pendingConsentPromises
+                    .get(consentRequestId)
+                    ?.reject(new Types.HandledError({ error: { message: `Unknown decision type: ${decision}`, code: "INTERNAL_ERROR" } }));
+                pendingConsentPromises.delete(consentRequestId);
+            }
+            return { success: false, error: `Unknown decision type: ${decision}` };
+        }
+
+        await chrome.storage.local.set({ [PERMISSIONS_STORE_KEY]: allPermissionsStore });
+        console.log(`[BG] Updated permissionsStore saved to local storage.`);
+
+        await chrome.storage.session.remove(PENDING_CONSENT_REQUEST_KEY);
+        console.log(`[BG] Cleared pending consent request from session storage.`);
+
+        // Resolve the pending promise from handleInitializeAppSession
+        const promiseControls = pendingConsentPromises.get(consentRequestId);
+        if (promiseControls) {
+            console.log(`[BG] Resolving pending consent promise for ${consentRequestId} with decision: ${decision}`);
+            promiseControls.resolve({ finalGrantedPermissions: finalGrantedPermissionsForInit, decision });
+            pendingConsentPromises.delete(consentRequestId);
+        } else {
+            console.warn(`[BG] No pending consent promise found for ${consentRequestId}. This might happen if it timed out or was already resolved/rejected.`);
+            // If no promise, perhaps the app init already timed out or proceeded.
+            // A state broadcast might still be useful here to update any listening app instances.
+            await broadcastAppStateToSubscriptions(); // Corrected function name
+        }
+
+        return { success: true, message: `Consent decision (${decision}) processed successfully.` };
+    } catch (error: any) {
+        console.error("[BG] Error in handleSubmitConsentDecision:", error);
+        if (pendingConsentPromises.has(consentRequestId)) {
+            pendingConsentPromises.get(consentRequestId)?.reject(error); // Reject with the actual error
+            pendingConsentPromises.delete(consentRequestId);
+        }
+        return { success: false, error: error.message || "Failed to process consent decision." };
     }
 }
