@@ -114,6 +114,7 @@ export async function handleInitializeAppSession(payload: any, sender: chrome.ru
                             origin: origin,
                             appId: appIdFromManifestValue,
                             requestedPermissions: requestedPermissionsFromManifest, // Send all requested, UI can filter/highlight new ones
+                            activeIdentityForPopover: activeVibeIdentity, // Pass the active identity details
                         },
                     })
                     .catch((err) => console.error("[BG] Error sending SHOW_CONSENT_PROMPT to content script:", err));

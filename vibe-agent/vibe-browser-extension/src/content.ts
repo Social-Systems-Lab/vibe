@@ -71,7 +71,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             message.payload.appIconUrl,
             message.payload.origin,
             message.payload.appId,
-            message.payload.requestedPermissions // Pass requestedPermissions
+            message.payload.requestedPermissions,
+            message.payload.activeIdentityForPopover // Pass the active identity details
         );
         return false; // No async response needed
     }
@@ -92,24 +93,21 @@ function showConsentPopover(
     appIconUrl?: string,
     origin?: string,
     appId?: string,
-    requestedPermissions?: string[]
-    // TODO: Add activeIdentity: { name: string, did: string, pictureUrl?: string } to payload from background
+    requestedPermissions?: string[],
+    activeIdentity?: { label: string; did: string; pictureUrl?: string } | null
 ) {
     removeExistingPopover(); // Remove any existing popover first
 
-    // Mock identity data - this should come from the background script
-    const mockIdentity = {
-        name: "Alice Wonderland",
-        did: "did:vibe:zDxabc123xyz789pqr",
-        pictureUrl:
-            "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='40' fill='%23ddd'/%3E%3Ctext x='50' y='60' font-size='30' text-anchor='middle' fill='%23333'%3EA%3C/text%3E%3C/svg%3E", // Placeholder generic avatar
-    };
-    const identityName = mockIdentity.name; // Replace with activeIdentity.name
-    const identityDid = mockIdentity.did; // Replace with activeIdentity.did
-    const identityPictureUrl = mockIdentity.pictureUrl; // Replace with activeIdentity.pictureUrl
+    const identityName = activeIdentity?.label || "Current User"; // Default if no identity passed
+    const identityDid = activeIdentity?.did || "";
+    const identityPictureUrl = activeIdentity?.pictureUrl;
+
+    if (!activeIdentity) {
+        console.warn("Vibe: Active identity not provided for consent popover. Using defaults.");
+    }
 
     if (!appName || !origin || !appId || !requestedPermissions) {
-        console.warn("Vibe: Insufficient data to show consent popover.", { appName, origin, appId, requestedPermissions });
+        console.warn("Vibe: Insufficient app data to show consent popover.", { appName, origin, appId, requestedPermissions });
         return;
     }
 
