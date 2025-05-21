@@ -66,10 +66,7 @@ export const useAppInitializer = () => {
             const consentData = await chrome.storage.session.get(PENDING_CONSENT_REQUEST_KEY);
             if (consentData && consentData[PENDING_CONSENT_REQUEST_KEY]) {
                 console.log("useAppInitializer: Pending consent request found, navigating to /consent-request.");
-                // Optionally, set a specific app status if needed, e.g., setAppStatus("AWAITING_CONSENT");
-                // For now, ConsentRequestPage will handle its own rendering.
-                // We might want to clear the PENDING_CONSENT_REQUEST_KEY here or let the ConsentRequestPage do it after processing.
-                // Let ConsentRequestPage handle clearing it for now.
+                setAppStatus("AWAITING_CONSENT"); // Set a specific status
                 setLocation("/consent-request");
                 setIsLoadingIdentity(false); // Stop general loading indicator
                 return; // Halt further initialization
@@ -191,7 +188,7 @@ export const useAppInitializer = () => {
 
     // Effect for background messages listener
     useEffect(() => {
-        const messageListener = (message: ChromeMessage, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) => {
+        const messageListener = (message: ChromeMessage, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void): boolean | undefined => {
             if (message.type === "DISPLAY_MOCKED_PROFILE" && message.payload) {
                 console.log("useAppInitializer: Received DISPLAY_MOCKED_PROFILE", message.payload);
                 const profileData = message.payload as VibeUserProfileData;
@@ -204,14 +201,24 @@ export const useAppInitializer = () => {
                     console.warn("DISPLAY_MOCKED_PROFILE received without DID, cannot navigate to profile/:did");
                 }
                 sendResponse({ success: true });
-                return true;
+                return true; // Indicate that sendResponse will be called asynchronously or synchronously.
+            } else if (message.type === "NAVIGATE_TO_CONSENT_REQUEST") {
+                console.log("useAppInitializer: Received NAVIGATE_TO_CONSENT_REQUEST. Navigating side panel.");
+                setAppStatus("AWAITING_CONSENT");
+                setLocation("/consent-request");
+                setIsLoadingIdentity(false);
+                // No sendResponse needed for this notification, but return true if it were async.
+                // Since it's synchronous, can return false or void.
+                // However, to be safe with onMessage listeners, if not sending response, often best to not return true.
+                // If background expects a response, this would need sendResponse. Assuming it doesn't.
+                return false;
             }
-            return false;
+            return false; // Explicitly return false for unhandled messages or synchronous handling without sendResponse.
         };
 
         chrome.runtime.onMessage.addListener(messageListener);
         return () => {
             chrome.runtime.onMessage.removeListener(messageListener);
         };
-    }, [setLocation, setCurrentVibeProfileData, setShowVibeUserProfile]); // Jotai setters & wouter's setLocation are stable
+    }, [setLocation, setCurrentVibeProfileData, setShowVibeUserProfile, setAppStatus, setIsLoadingIdentity]);
 };

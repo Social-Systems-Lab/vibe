@@ -8,6 +8,7 @@ export type AppStatus =
     | "VAULT_LOCKED_NO_LAST_ACTIVE" // Vault is locked, no hint for last active DID
     | "UNLOCK_REQUIRED_FOR_LAST_ACTIVE" // Vault is locked, but there's a hint for the last active DID
     | "INITIALIZED_UNLOCKED" // App initialized, vault is unlocked
+    | "AWAITING_CONSENT" // App is waiting for user consent for permissions
     | "ERROR"; // A generic error state
 
 // Atom to hold the current overall status of the application

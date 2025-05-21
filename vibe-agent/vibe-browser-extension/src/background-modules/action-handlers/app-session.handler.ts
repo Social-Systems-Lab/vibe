@@ -231,6 +231,21 @@ export async function handleUserClickedConsentPopover(payload: any, sender: chro
         await chrome.storage.session.set({ [PENDING_CONSENT_REQUEST_KEY]: consentRequestData });
         console.log("[BG] Stored pending consent request to session storage (including consentRequestId):", consentRequestData);
 
+        // Attempt to notify the side panel to navigate, if it's open.
+        chrome.runtime
+            .sendMessage({
+                type: "NAVIGATE_TO_CONSENT_REQUEST",
+                // No specific payload needed as ConsentRequestPage reads from session.
+            })
+            .catch((err) => {
+                // It's normal for this to fail if the side panel isn't open or listening.
+                if (err.message?.includes("Could not establish connection") || err.message?.includes("Receiving end does not exist")) {
+                    console.log("[BG] NAVIGATE_TO_CONSENT_REQUEST: Side panel not open or not listening (this is expected if panel was closed).");
+                } else {
+                    console.error("[BG] Error sending NAVIGATE_TO_CONSENT_REQUEST to side panel:", err);
+                }
+            });
+
         // The side panel opening is now handled by background.ts directly.
         // This handler just confirms data storage.
         return { success: true, message: "Consent request data stored for side panel." };
