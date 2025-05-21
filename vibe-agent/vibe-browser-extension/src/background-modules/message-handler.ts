@@ -5,6 +5,7 @@ import * as SetupHandler from "./action-handlers/setup.handler";
 import * as IdentityHandler from "./action-handlers/identity.handler";
 import * as AppSessionHandler from "./action-handlers/app-session.handler";
 import * as AgentHandler from "./action-handlers/agent.handler";
+import * as DataHandler from "./action-handlers/data.handler"; // Added DataHandler import
 
 export async function handleMessage(message: any, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void): Promise<void> {
     const { action, payload, requestId } = message;
@@ -81,6 +82,21 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 break;
             case "UNSUBSCRIBE_APP_SESSION":
                 responsePayload = await AppSessionHandler.handleUnsubscribeAppSession(payload);
+                break;
+            case "READ_DATA_ONCE": // Added case for READ_DATA_ONCE
+                responsePayload = await DataHandler.handleReadDataOnce(payload, sender);
+                break;
+            case "WRITE_DATA": // Added case for WRITE_DATA
+                responsePayload = await DataHandler.handleWriteData(payload, sender);
+                break;
+            case "USER_CLICKED_CONSENT_POPOVER": // Added case for popover click
+                responsePayload = await AppSessionHandler.handleUserClickedConsentPopover(payload, sender);
+                // This action might not send a response back to the content script immediately,
+                // or it might send a simple ack. The main action is to open the side panel.
+                // For now, let's assume it can return a success/failure or some info.
+                // If it's purely a trigger, responsePayload might be { success: true } or void.
+                // If it's void, the sendResponse logic below needs adjustment or this case needs to handle sendResponse itself.
+                // Let's assume it returns a payload for now.
                 break;
             default:
                 console.warn(`[BG_WARN_UnknownAction] Unknown action: ${action}`);

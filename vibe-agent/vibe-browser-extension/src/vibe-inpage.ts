@@ -41,7 +41,7 @@ interface InitializeAppSessionResponse {
 // Interface for the exposed window.vibe SDK
 interface IVibeSDK {
     init: (manifest: AppManifest, onStateChange: (state: VibeState) => void) => Promise<Unsubscribe>;
-    readOnce: (collection: string, query?: any, options?: any) => Promise<any>; // Placeholder
+    readOnce: (collection: string, filter?: any, options?: any) => Promise<any>; // Updated query to filter
     write: (collection: string, data: any, options?: any) => Promise<any>; // Placeholder
     // TODO: Add read with subscription
 }
@@ -170,11 +170,13 @@ declare global {
             });
         },
 
-        readOnce: async (collection: string, query?: any, options?: any): Promise<any> => {
+        readOnce: async (collection: string, filter?: any, options?: any): Promise<any> => {
+            // Renamed query to filter
             const requestId = generateRequestId();
             return new Promise((resolve, reject) => {
                 pendingRequests.set(requestId, { resolve, reject });
-                window.postMessage({ type: "VIBE_AGENT_REQUEST", requestId, action: "readOnce", payload: { collection, query, options } }, "*");
+                // Ensure payload matches what data.handler.ts expects for filter
+                window.postMessage({ type: "VIBE_AGENT_REQUEST", requestId, action: "READ_DATA_ONCE", payload: { collection, filter, options } }, "*");
             });
         },
 
@@ -182,7 +184,7 @@ declare global {
             const requestId = generateRequestId();
             return new Promise((resolve, reject) => {
                 pendingRequests.set(requestId, { resolve, reject });
-                window.postMessage({ type: "VIBE_AGENT_REQUEST", requestId, action: "write", payload: { collection, data, options } }, "*");
+                window.postMessage({ type: "VIBE_AGENT_REQUEST", requestId, action: "WRITE_DATA", payload: { collection, data, options } }, "*");
             });
         },
         // TODO: Implement event listener methods (on, off, once)

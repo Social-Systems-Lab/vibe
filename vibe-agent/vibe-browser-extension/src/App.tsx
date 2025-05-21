@@ -12,6 +12,7 @@ import NewIdentityPage from "./pages/NewIdentityPage"; // Import the actual NewI
 import SettingsPage from "./pages/SettingsPage"; // Import the actual SettingsPage
 import ImportIdentityPage from "./pages/ImportIdentityPage"; // Import the actual ImportIdentityPage
 import UserProfilePage from "./pages/UserProfilePage"; // Import the actual UserProfilePage
+import ConsentRequestPage from "./pages/ConsentRequestPage"; // Import ConsentRequestPage
 
 // Placeholder for Pages (to be created)
 const LoadingComponent = () => <div className="w-full p-4 bg-background text-foreground flex flex-col items-center justify-center h-full">Loading Vibe...</div>;
@@ -44,6 +45,7 @@ function App() {
     // a central routing component that reacts to `appStatusAtom`.
     return (
         <Switch>
+            <Route path="/consent-request" component={ConsentRequestPage} /> {/* Added consent request route */}
             <Route path="/setup/new-identity" component={NewIdentityPage} />
             <Route path="/setup" component={SetupWizardPage} />
             <Route path="/unlock" component={UnlockPage} />

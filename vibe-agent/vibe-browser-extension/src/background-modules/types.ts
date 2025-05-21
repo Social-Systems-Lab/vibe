@@ -43,6 +43,18 @@ export interface VibeIdentity {
 }
 
 /**
+ * Represents a single note, mirroring the definition in app-facing types.
+ * This is the structure for notes as stored and handled within the agent.
+ */
+export interface Note {
+    _id?: string; // Unique identifier, usually assigned by the backend/storage
+    title: string;
+    content: string;
+    createdAt?: string; // ISO 8601 date string
+    updatedAt?: string; // ISO 8601 date string
+}
+
+/**
  * Represents the overall state managed by the Vibe SDK, exposed to third-party apps.
  */
 export interface VibeState {

@@ -50,3 +50,7 @@ body::before {
         animation: none !important;
     }
 }
+
+.logo {
+    background-image: url("./logo.svg");
+}

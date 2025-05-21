@@ -63,8 +63,115 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     // If it's a response to a request initiated by the page, it's handled by the callback in the sendMessage above.
     // This listener is more for unsolicited messages from background to page.
-    return false; // Indicate that sendResponse will not be called asynchronously here
+    // Handle SHOW_CONSENT_PROMPT
+    if (message.type === "SHOW_CONSENT_PROMPT" && message.payload) {
+        console.log("Content script received SHOW_CONSENT_PROMPT:", message.payload);
+        showConsentPopover(
+            message.payload.appName,
+            message.payload.appIconUrl,
+            message.payload.origin,
+            message.payload.appId,
+            message.payload.requestedPermissions // Pass requestedPermissions
+        );
+        return false; // No async response needed
+    }
+    return false; // Indicate that sendResponse will not be called asynchronously here for other messages
 });
+
+const POPOVER_ID = "vibe-consent-popover";
+
+function removeExistingPopover() {
+    const existingPopover = document.getElementById(POPOVER_ID);
+    if (existingPopover) {
+        existingPopover.remove();
+    }
+}
+
+function showConsentPopover(appName?: string, appIconUrl?: string, origin?: string, appId?: string, requestedPermissions?: string[]) {
+    removeExistingPopover(); // Remove any existing popover first
+
+    if (!appName || !origin || !appId || !requestedPermissions) {
+        // Added check for requestedPermissions
+        console.warn("Vibe: Insufficient data to show consent popover.", { appName, origin, appId, requestedPermissions });
+        return;
+    }
+
+    const popover = document.createElement("div");
+    popover.id = POPOVER_ID;
+    popover.style.position = "fixed";
+    popover.style.top = "20px";
+    popover.style.right = "20px";
+    popover.style.padding = "15px";
+    popover.style.backgroundColor = "white";
+    popover.style.border = "1px solid #ccc";
+    popover.style.borderRadius = "8px";
+    popover.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
+    popover.style.zIndex = "2147483647"; // Max z-index
+    popover.style.fontFamily = "Arial, sans-serif";
+    popover.style.fontSize = "14px";
+    popover.style.color = "#333";
+    popover.style.display = "flex";
+    popover.style.alignItems = "center";
+    popover.style.gap = "10px";
+
+    let contentHTML = "";
+    if (appIconUrl) {
+        contentHTML += `<img src="${appIconUrl}" alt="${appName} icon" style="width: 32px; height: 32px; border-radius: 4px;" />`;
+    }
+    contentHTML += `
+        <div style="display: flex; flex-direction: column;">
+            <strong style="font-size: 15px;">${appName}</strong>
+            <span style="font-size: 12px; color: #555;">wants to connect with your Vibe</span>
+        </div>
+    `;
+
+    const textContainer = document.createElement("div");
+    textContainer.innerHTML = contentHTML;
+    textContainer.style.flexGrow = "1";
+
+    const button = document.createElement("button");
+    button.textContent = "Review";
+    button.style.padding = "8px 12px";
+    button.style.border = "none";
+    button.style.backgroundColor = "#007bff";
+    button.style.color = "white";
+    button.style.borderRadius = "4px";
+    button.style.cursor = "pointer";
+    button.style.fontSize = "14px";
+
+    button.onclick = () => {
+        console.log("Vibe: Consent popover 'Review' button clicked.");
+        chrome.runtime.sendMessage({
+            type: "USER_CLICKED_CONSENT_POPOVER",
+            payload: { appName, origin, appId, appIconUrl, requestedPermissions }, // Pass necessary info, including requestedPermissions
+        });
+        removeExistingPopover(); // Remove popover after click
+    };
+
+    const closeButton = document.createElement("button");
+    closeButton.textContent = "✕";
+    closeButton.style.background = "none";
+    closeButton.style.border = "none";
+    closeButton.style.color = "#aaa";
+    closeButton.style.fontSize = "16px";
+    closeButton.style.cursor = "pointer";
+    closeButton.style.marginLeft = "10px";
+    closeButton.style.padding = "0 5px";
+
+    closeButton.onclick = () => {
+        console.log("Vibe: Consent popover 'Close' button clicked.");
+        // Optionally, send a message to background if needed, e.g., user dismissed
+        // chrome.runtime.sendMessage({ type: "USER_DISMISSED_CONSENT_POPOVER", payload: { appId, origin } });
+        removeExistingPopover();
+    };
+
+    popover.appendChild(textContainer);
+    popover.appendChild(button);
+    popover.appendChild(closeButton);
+
+    document.body.appendChild(popover);
+    console.log(`Vibe: Displayed consent popover for ${appName}.`);
+}
 
 // --- Vibe Icon Injection Logic ---
 

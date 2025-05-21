@@ -9,6 +9,7 @@ import {
     showVibeUserProfileAtom, // Added
     type VibeUserProfileData, // Added
 } from "../store/identityAtoms";
+import { PENDING_CONSENT_REQUEST_KEY } from "../background-modules/action-handlers/app-session.handler"; // Import the key
 
 // This type might need to be defined or imported from a shared types file later
 // For now, defining it here based on expected structure from background script
@@ -59,6 +60,24 @@ export const useAppInitializer = () => {
         setLastActiveDidHint(undefined);
         // setCurrentIdentity(null); // Reset identity states if needed
         // setAllIdentities([]);
+
+        // Check for pending consent request first
+        try {
+            const consentData = await chrome.storage.session.get(PENDING_CONSENT_REQUEST_KEY);
+            if (consentData && consentData[PENDING_CONSENT_REQUEST_KEY]) {
+                console.log("useAppInitializer: Pending consent request found, navigating to /consent-request.");
+                // Optionally, set a specific app status if needed, e.g., setAppStatus("AWAITING_CONSENT");
+                // For now, ConsentRequestPage will handle its own rendering.
+                // We might want to clear the PENDING_CONSENT_REQUEST_KEY here or let the ConsentRequestPage do it after processing.
+                // Let ConsentRequestPage handle clearing it for now.
+                setLocation("/consent-request");
+                setIsLoadingIdentity(false); // Stop general loading indicator
+                return; // Halt further initialization
+            }
+        } catch (e) {
+            console.error("useAppInitializer: Error checking for pending consent request:", e);
+            // Proceed with normal initialization despite this error
+        }
 
         try {
             const initResponse = (await chrome.runtime.sendMessage({

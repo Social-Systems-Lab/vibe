@@ -27,6 +27,17 @@ export interface Identity extends Ed25519KeyPair {
 }
 
 /**
+ * Represents a single note.
+ */
+export interface Note {
+    _id?: string; // Unique identifier, usually assigned by the backend/storage
+    title: string;
+    content: string;
+    createdAt?: string; // ISO 8601 date string
+    updatedAt?: string; // ISO 8601 date string
+}
+
+/**
  * Represents the user's account information provided by the Vibe Agent.
  * Keeping this simple for now, focusing on the DID.
  */
