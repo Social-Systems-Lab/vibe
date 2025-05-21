@@ -87,90 +87,174 @@ function removeExistingPopover() {
     }
 }
 
-function showConsentPopover(appName?: string, appIconUrl?: string, origin?: string, appId?: string, requestedPermissions?: string[]) {
+function showConsentPopover(
+    appName?: string,
+    appIconUrl?: string,
+    origin?: string,
+    appId?: string,
+    requestedPermissions?: string[]
+    // TODO: Add activeIdentity: { name: string, did: string, pictureUrl?: string } to payload from background
+) {
     removeExistingPopover(); // Remove any existing popover first
 
+    // Mock identity data - this should come from the background script
+    const mockIdentity = {
+        name: "Alice Wonderland",
+        did: "did:vibe:zDxabc123xyz789pqr",
+        pictureUrl:
+            "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='40' fill='%23ddd'/%3E%3Ctext x='50' y='60' font-size='30' text-anchor='middle' fill='%23333'%3EA%3C/text%3E%3C/svg%3E", // Placeholder generic avatar
+    };
+    const identityName = mockIdentity.name; // Replace with activeIdentity.name
+    const identityDid = mockIdentity.did; // Replace with activeIdentity.did
+    const identityPictureUrl = mockIdentity.pictureUrl; // Replace with activeIdentity.pictureUrl
+
     if (!appName || !origin || !appId || !requestedPermissions) {
-        // Added check for requestedPermissions
         console.warn("Vibe: Insufficient data to show consent popover.", { appName, origin, appId, requestedPermissions });
         return;
     }
 
     const popover = document.createElement("div");
     popover.id = POPOVER_ID;
+    // General popover styling
     popover.style.position = "fixed";
     popover.style.top = "20px";
     popover.style.right = "20px";
-    popover.style.padding = "15px";
+    popover.style.width = "360px"; // Fixed width for better layout control
+    popover.style.padding = "16px";
     popover.style.backgroundColor = "white";
-    popover.style.border = "1px solid #ccc";
-    popover.style.borderRadius = "8px";
-    popover.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
-    popover.style.zIndex = "2147483647"; // Max z-index
-    popover.style.fontFamily = "Arial, sans-serif";
+    popover.style.border = "1px solid #e0e0e0";
+    popover.style.borderRadius = "12px";
+    popover.style.boxShadow = "0 6px 16px rgba(0,0,0,0.12)";
+    popover.style.zIndex = "2147483647";
+    popover.style.fontFamily = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"; // Modern font
     popover.style.fontSize = "14px";
-    popover.style.color = "#333";
+    popover.style.color = "#202124"; // Google's default text color
     popover.style.display = "flex";
-    popover.style.alignItems = "center";
-    popover.style.gap = "10px";
+    popover.style.flexDirection = "column"; // Changed to column for rows
+    popover.style.gap = "0px"; // Will control gap with margins
 
-    let contentHTML = "";
+    // --- Header Row ---
+    const headerRow = document.createElement("div");
+    headerRow.style.display = "flex";
+    headerRow.style.justifyContent = "space-between";
+    headerRow.style.alignItems = "center";
+    headerRow.style.width = "100%";
+    headerRow.style.marginBottom = "16px";
+
+    const appInfo = document.createElement("div");
+    appInfo.style.display = "flex";
+    appInfo.style.alignItems = "center";
+    appInfo.style.gap = "10px";
+
     if (appIconUrl) {
-        contentHTML += `<img src="${appIconUrl}" alt="${appName} icon" style="width: 32px; height: 32px; border-radius: 4px;" />`;
+        const appIconImg = document.createElement("img");
+        appIconImg.src = appIconUrl;
+        appIconImg.alt = `${appName} icon`;
+        appIconImg.style.width = "24px"; // Slightly smaller icon for header
+        appIconImg.style.height = "24px";
+        appIconImg.style.borderRadius = "4px";
+        appInfo.appendChild(appIconImg);
     }
-    contentHTML += `
-        <div style="display: flex; flex-direction: column;">
-            <strong style="font-size: 15px;">${appName}</strong>
-            <span style="font-size: 12px; color: #555;">wants to connect with your Vibe</span>
-        </div>
-    `;
 
-    const textContainer = document.createElement("div");
-    textContainer.innerHTML = contentHTML;
-    textContainer.style.flexGrow = "1";
-
-    const button = document.createElement("button");
-    button.textContent = "Review";
-    button.style.padding = "8px 12px";
-    button.style.border = "none";
-    button.style.backgroundColor = "#007bff";
-    button.style.color = "white";
-    button.style.borderRadius = "4px";
-    button.style.cursor = "pointer";
-    button.style.fontSize = "14px";
-
-    button.onclick = () => {
-        console.log("Vibe: Consent popover 'Review' button clicked.");
-        chrome.runtime.sendMessage({
-            type: "USER_CLICKED_CONSENT_POPOVER",
-            payload: { appName, origin, appId, appIconUrl, requestedPermissions }, // Pass necessary info, including requestedPermissions
-        });
-        removeExistingPopover(); // Remove popover after click
-    };
+    const appNameSpan = document.createElement("span");
+    appNameSpan.style.fontWeight = "500"; // Medium weight
+    appNameSpan.style.fontSize = "15px";
+    appNameSpan.innerHTML = `<strong style="color: #1a73e8;">${appName}</strong> wants to connect with your Vibe`;
+    appInfo.appendChild(appNameSpan);
 
     const closeButton = document.createElement("button");
     closeButton.textContent = "✕";
     closeButton.style.background = "none";
     closeButton.style.border = "none";
-    closeButton.style.color = "#aaa";
-    closeButton.style.fontSize = "16px";
+    closeButton.style.color = "#5f6368"; // Google's icon color
+    closeButton.style.fontSize = "18px";
     closeButton.style.cursor = "pointer";
-    closeButton.style.marginLeft = "10px";
-    closeButton.style.padding = "0 5px";
-
+    closeButton.style.padding = "4px";
+    closeButton.style.lineHeight = "1";
+    closeButton.setAttribute("aria-label", "Close");
+    closeButton.onmouseover = () => (closeButton.style.color = "#202124");
+    closeButton.onmouseout = () => (closeButton.style.color = "#5f6368");
     closeButton.onclick = () => {
         console.log("Vibe: Consent popover 'Close' button clicked.");
-        // Optionally, send a message to background if needed, e.g., user dismissed
-        // chrome.runtime.sendMessage({ type: "USER_DISMISSED_CONSENT_POPOVER", payload: { appId, origin } });
         removeExistingPopover();
     };
 
-    popover.appendChild(textContainer);
-    popover.appendChild(button);
-    popover.appendChild(closeButton);
+    headerRow.appendChild(appInfo);
+    headerRow.appendChild(closeButton);
+    popover.appendChild(headerRow);
+
+    // --- Identity Row ---
+    const identityRow = document.createElement("div");
+    identityRow.style.display = "flex";
+    identityRow.style.alignItems = "center";
+    identityRow.style.gap = "12px";
+    identityRow.style.width = "100%";
+    identityRow.style.padding = "12px 0"; // Padding top and bottom
+    identityRow.style.borderTop = "1px solid #e0e0e0";
+    identityRow.style.borderBottom = "1px solid #e0e0e0";
+    identityRow.style.marginBottom = "16px";
+
+    const identityPictureImg = document.createElement("img");
+    identityPictureImg.src =
+        identityPictureUrl ||
+        "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='40' fill='%23ddd'/%3E%3C/svg%3E"; // Default placeholder
+    identityPictureImg.alt = `${identityName} picture`;
+    identityPictureImg.style.width = "40px";
+    identityPictureImg.style.height = "40px";
+    identityPictureImg.style.borderRadius = "50%";
+    identityPictureImg.style.objectFit = "cover"; // Ensure image covers the circle
+    identityRow.appendChild(identityPictureImg);
+
+    const identityDetailsDiv = document.createElement("div");
+    identityDetailsDiv.style.display = "flex";
+    identityDetailsDiv.style.flexDirection = "column";
+    identityDetailsDiv.style.justifyContent = "center";
+
+    const identityNameSpan = document.createElement("span");
+    identityNameSpan.textContent = identityName;
+    identityNameSpan.style.fontWeight = "bold";
+    identityNameSpan.style.fontSize = "16px";
+    identityNameSpan.style.color = "#202124";
+    identityDetailsDiv.appendChild(identityNameSpan);
+
+    const shortDid = identityDid ? `did:..${identityDid.slice(-7)}` : "No DID available";
+    const identityDidSpan = document.createElement("span");
+    identityDidSpan.textContent = shortDid;
+    identityDidSpan.style.fontSize = "12px";
+    identityDidSpan.style.color = "#5f6368";
+    identityDetailsDiv.appendChild(identityDidSpan);
+
+    identityRow.appendChild(identityDetailsDiv);
+    popover.appendChild(identityRow);
+
+    // --- Continue Button Row ---
+    const continueButton = document.createElement("button");
+    continueButton.textContent = `Continue as ${identityName.split(" ")[0]}`; // Use first name
+    continueButton.style.width = "100%";
+    continueButton.style.padding = "10px 0"; // Vertical padding
+    continueButton.style.border = "none";
+    continueButton.style.backgroundColor = "#1a73e8"; // Google blue
+    continueButton.style.color = "white";
+    continueButton.style.borderRadius = "8px";
+    continueButton.style.cursor = "pointer";
+    continueButton.style.fontSize = "15px";
+    continueButton.style.fontWeight = "500";
+    continueButton.style.textAlign = "center";
+    continueButton.onmouseover = () => (continueButton.style.backgroundColor = "#185abc"); // Darker blue on hover
+    continueButton.onmouseout = () => (continueButton.style.backgroundColor = "#1a73e8");
+
+    continueButton.onclick = () => {
+        console.log("Vibe: Consent popover 'Continue' button clicked.");
+        chrome.runtime.sendMessage({
+            type: "USER_CLICKED_CONSENT_POPOVER",
+            payload: { appName, origin, appId, appIconUrl, requestedPermissions },
+        });
+        removeExistingPopover();
+    };
+    popover.appendChild(continueButton);
 
     document.body.appendChild(popover);
-    console.log(`Vibe: Displayed consent popover for ${appName}.`);
+    console.log(`Vibe: Displayed styled consent popover for ${appName}.`);
 }
 
 // --- Vibe Icon Injection Logic ---

@@ -21,7 +21,7 @@ const testAppManifest: AppManifest = {
         "write:notes", // Request permission to write notes
         // Add other permissions as needed, e.g., "read:profile"
     ],
-    iconUrl: `${window.location.origin}/logo.svg`, // Optional: URL to an icon for the app
+    iconUrl: `${window.location.origin}/_bun/asset/335ed0fce7e3a596.svglogo.svg`, // Optional: URL to an icon for the app
     // TODO: Add other manifest fields if necessary (e.g., website, privacyPolicyUrl)
 };
 

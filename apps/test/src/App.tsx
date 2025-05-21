@@ -7,6 +7,8 @@ import { useVibe } from "./vibe/react.tsx"; // Import useVibe hook
 import AppPage from "./pages/AppPage.tsx";
 import NotesPage from "./pages/NotesPage.tsx"; // Added NotesPage import
 
+import logoSvg from "./logo.svg";
+
 // --- Root Layout Component ---
 // This component renders persistent UI elements and provides a placeholder (<Outlet>)
 // for routed page components. It now uses useVibe to access VibeState.
@@ -42,6 +44,7 @@ function RootLayout() {
                     )}
                 </div>
             </header>
+            <img src={logoSvg} alt="Vibe Logo" className="h-10 w-10 mb-4 hidden" />
 
             {/* Main Content Area - Renders the matched route's component */}
             <main className="flex-grow">

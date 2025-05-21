@@ -156,7 +156,7 @@ export async function handleUnsubscribeAppSession(payload: any): Promise<any> {
     } else {
         console.warn(`[BG] UNSUBSCRIBE_APP_SESSION: Subscription ID not found: ${subscriptionId}`);
         // Instead of throwing, return an error payload structure if this is a client-facing error
-        throw new Types.HandledError({ error: { message: "Subscription ID not found.", code: "SUBSCRIPTION_NOT_FOUND" } });
+        //throw new Types.HandledError({ error: { message: "Subscription ID not found.", code: "SUBSCRIPTION_NOT_FOUND" } });
     }
 } // End of handleUnsubscribeAppSession
 
