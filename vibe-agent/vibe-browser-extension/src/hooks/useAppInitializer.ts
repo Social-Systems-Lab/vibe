@@ -90,7 +90,7 @@ export const useAppInitializer = () => {
                     setAppStatus("INITIALIZED_UNLOCKED");
                     // TODO: Trigger loadIdentityData() here or ensure DashboardPage does it.
                     // For now, DashboardPage will be responsible for loading its own data.
-                    setLocation("/dashboard");
+                    setLocation("/"); // Changed to /
                 } else {
                     console.warn(`Unhandled VIBE_AGENT_RESPONSE code during init: ${code}`);
                     setAppStatus("ERROR");

@@ -13,6 +13,7 @@ const pendingConsentPromises = new Map<
         tabId?: number; // Added tabId
         appName?: string; // Added appName
         appIconUrl?: string; // Added appIconUrl
+        manifestRequestedPermissions?: string[]; // Added manifestRequestedPermissions
     }
 >();
 
@@ -147,6 +148,7 @@ export async function handleInitializeAppSession(payload: any, sender: chrome.ru
                         tabId: sender.tab?.id,
                         appName: appManifest.name,
                         appIconUrl: appManifest.iconUrl || appManifest.pictureUrl,
+                        manifestRequestedPermissions: appManifest?.permissions || [],
                     });
                     // Optional: Timeout for the consent promise
                     // setTimeout(() => {
@@ -177,6 +179,7 @@ export async function handleInitializeAppSession(payload: any, sender: chrome.ru
                     appName: appManifest.name,
                     appIconUrl: appManifest.iconUrl || appManifest.pictureUrl,
                     grantedPermissions: grantedPermissions,
+                    manifestRequestedPermissions: appManifest?.permissions || [], // Add here
                     tabId: sender.tab.id,
                 };
                 try {
@@ -347,6 +350,7 @@ export async function handleSubmitConsentDecision(payload: any, sender: chrome.r
                     appName: promiseControls.appName,
                     appIconUrl: promiseControls.appIconUrl,
                     grantedPermissions: finalGrantedPermissionsForInit,
+                    manifestRequestedPermissions: promiseControls.manifestRequestedPermissions || [], // Add here
                     tabId: promiseControls.tabId,
                 };
                 try {

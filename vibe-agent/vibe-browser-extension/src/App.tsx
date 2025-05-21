@@ -49,7 +49,7 @@ function App() {
             <Route path="/setup/new-identity" component={NewIdentityPage} />
             <Route path="/setup" component={SetupWizardPage} />
             <Route path="/unlock" component={UnlockPage} />
-            <Route path="/dashboard" component={DashboardPage} />
+            <Route path="/" component={DashboardPage} /> {/* Changed /dashboard to / */}
             <Route path="/settings" component={SettingsPage} />
             <Route path="/import-identity" component={ImportIdentityPage} />
             <Route path="/profile/:did" component={UserProfilePage} />

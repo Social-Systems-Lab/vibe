@@ -3,9 +3,11 @@ import { useAtom } from "jotai";
 import { useLocation } from "wouter";
 import { CloudStatus } from "@/components/cloud/CloudStatus"; // Adjusted path
 import { Button } from "@/components/ui/button";
-import { Settings, UserPlus, User, Loader2 } from "lucide-react";
+import { Settings, UserPlus, User, Loader2, Settings2 } from "lucide-react"; // Added Settings2
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DidDisplay } from "@/components/ui/DidDisplay";
+import { PENDING_CONSENT_REQUEST_KEY } from "../background-modules/action-handlers/app-session.handler"; // Import the key
+import { CONSENT_OUTCOME_TOAST_KEY } from "./ConsentRequestPage"; // Import toast key
 import {
     currentIdentityAtom,
     allIdentitiesAtom,
@@ -47,7 +49,19 @@ export function DashboardPage() {
     }>({ Icon: Loader2, color: "text-slate-500", isLoading: true });
 
     // State for active tab's app context
-    const [activeAppContext, setActiveAppContext] = useState<any | null>(null); // Replace 'any' with a proper type later
+    // TODO: Define a proper interface for ActiveAppContext
+    // interface ActiveAppContextType {
+    //     appName: string;
+    //     appIconUrl?: string;
+    //     origin: string;
+    //     appId: string;
+    //     tabId: number;
+    //     grantedPermissions: Record<string, string>; // Assuming PermissionSetting is string for now
+    //     manifestRequestedPermissions?: string[]; // Optional: full list from manifest
+    // }
+    const [activeAppContext, setActiveAppContext] = useState<any | null>(null);
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
+    const [showToast, setShowToast] = useState(false);
 
     const loadIdentityData = useCallback(
         async (didHint?: string) => {
@@ -165,6 +179,61 @@ export function DashboardPage() {
         };
     }, []); // Runs on mount and cleans up
 
+    // Effect to check for and display toast messages from session storage
+    useEffect(() => {
+        const checkAndShowToast = async () => {
+            try {
+                const result = await chrome.storage.session.get(CONSENT_OUTCOME_TOAST_KEY);
+                const message = result[CONSENT_OUTCOME_TOAST_KEY];
+                if (message) {
+                    setToastMessage(message);
+                    setShowToast(true);
+                    await chrome.storage.session.remove(CONSENT_OUTCOME_TOAST_KEY);
+                    setTimeout(() => {
+                        setShowToast(false);
+                        setToastMessage(null);
+                    }, 3000); // Show toast for 3 seconds
+                }
+            } catch (error) {
+                console.error("DashboardPage: Error checking for toast message:", error);
+            }
+        };
+        checkAndShowToast();
+        // This effect should ideally run when the page becomes visible or after navigation.
+        // For wouter, if this page re-mounts on navigation to "/", this is fine.
+        // If not, a more sophisticated trigger might be needed (e.g. listening to location changes).
+    }, [setLocation]); // Re-run if setLocation changes, though it's stable. Primarily for mount.
+
+    const handleManageAppContextPermissions = async () => {
+        if (!activeAppContext || !currentIdentity?.did) {
+            console.error("DashboardPage: Cannot manage permissions, activeAppContext or currentIdentity.did is missing.");
+            return;
+        }
+
+        const consentRequestDataForPage = {
+            appName: activeAppContext.appName,
+            appIconUrl: activeAppContext.appIconUrl,
+            origin: activeAppContext.origin,
+            appId: activeAppContext.appId,
+            // Use manifestRequestedPermissions if available, otherwise fallback to keys of grantedPermissions
+            requestedPermissions: activeAppContext.manifestRequestedPermissions || Object.keys(activeAppContext.grantedPermissions || {}),
+            activeDid: currentIdentity.did,
+            // Create a unique ID for this re-consent flow.
+            // The original consentRequestId from init might not be relevant or available here.
+            consentRequestId: `reconsent_${activeAppContext.tabId || "unknown"}_${activeAppContext.appId}_${Date.now()}`,
+            currentPermissions: activeAppContext.grantedPermissions, // Pass current permissions
+        };
+
+        try {
+            await chrome.storage.session.set({ [PENDING_CONSENT_REQUEST_KEY]: consentRequestDataForPage });
+            console.log("DashboardPage: Stored data for re-consent:", consentRequestDataForPage);
+            setLocation("/consent-request");
+        } catch (error) {
+            console.error("DashboardPage: Error setting up for re-consent:", error);
+            // Optionally, show an error to the user
+        }
+    };
+
     const handleSwitchIdentity = useCallback(async (did: string) => {
         try {
             const response = (await chrome.runtime.sendMessage({
@@ -267,7 +336,28 @@ export function DashboardPage() {
     const otherDisplayIdentities = allIdentities.filter((id) => id.did !== currentIdentity?.did);
 
     return (
-        <div className="bg-white text-foreground flex flex-col overflow-hidden h-full">
+        <div className="bg-white text-foreground flex flex-col overflow-hidden h-full relative">
+            {/* Toast Notification */}
+            {showToast && toastMessage && (
+                <div
+                    style={{
+                        position: "fixed",
+                        bottom: "20px",
+                        left: "50%",
+                        transform: "translateX(-50%)",
+                        backgroundColor: toastMessage.includes("denied") ? "#f8d7da" : "#d4edda", // Red for denied, Green for granted
+                        color: toastMessage.includes("denied") ? "#721c24" : "#155724",
+                        padding: "10px 20px",
+                        borderRadius: "5px",
+                        boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+                        zIndex: 1000, // Ensure it's on top
+                        fontSize: "14px",
+                    }}
+                >
+                    {toastMessage}
+                </div>
+            )}
+
             <div style={{ background: "linear-gradient(to bottom right, #a18ce8, #ae8deb)" }} className="h-16 flex items-center px-4 relative"></div>
             <div className="px-4 pb-4">
                 {currentIdentity ? (
@@ -323,38 +413,34 @@ export function DashboardPage() {
                     </div>
                 )}
             </div>
-            {/* Section for Active App Context */}
+            {/* Section for Active App Context - Condensed */}
             {activeAppContext && currentIdentity && (
-                <div className="px-4 pt-3 pb-3 border-b border-gray-200">
-                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Context: {activeAppContext.appName || "Current Application"}</h3>
-                    <div className="text-xs text-gray-600 space-y-1">
-                        <p>
-                            <span className="font-medium">Origin:</span> {activeAppContext.origin}
-                        </p>
-                        <p>
-                            <span className="font-medium">App ID:</span> {activeAppContext.appId}
-                        </p>
-                        {activeAppContext.appIconUrl && <img src={activeAppContext.appIconUrl} alt="App Icon" className="h-8 w-8 inline-block mr-2 rounded" />}
-                        <div>
-                            <span className="font-medium">Permissions:</span>
-                            {activeAppContext.grantedPermissions && Object.keys(activeAppContext.grantedPermissions).length > 0 ? (
-                                <ul className="list-disc list-inside pl-1">
-                                    {Object.entries(activeAppContext.grantedPermissions).map(([key, value]) => (
-                                        <li key={key}>{`${key}: ${value}`}</li>
-                                    ))}
-                                </ul>
-                            ) : (
-                                <span> No permissions granted or tracked for this app.</span>
-                            )}
-                        </div>
+                <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                    <div className="flex items-center space-x-2 overflow-hidden">
+                        {activeAppContext.appIconUrl && (
+                            <img
+                                src={activeAppContext.appIconUrl}
+                                alt="App Icon"
+                                className="h-6 w-6 rounded flex-shrink-0" // Smaller icon
+                            />
+                        )}
+                        <span className="text-sm font-medium text-gray-800 truncate">{activeAppContext.appName || "Current Application"}</span>
                     </div>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-gray-500 hover:text-gray-700" // Smaller button
+                        onClick={handleManageAppContextPermissions}
+                        aria-label="Manage App Permissions"
+                    >
+                        <Settings2 className="h-4 w-4" />
+                    </Button>
                 </div>
             )}
             {!activeAppContext && currentIdentity && (
-                <div className="px-4 pt-3 pb-3 text-xs text-gray-500 border-b border-gray-200">No specific application context active in the current tab.</div>
+                <div className="px-4 py-3 text-xs text-gray-500 border-b border-gray-200">No specific application context active in the current tab.</div>
             )}
-            {currentIdentity && !activeAppContext && <hr className="mx-4 border-gray-200" />} {/* Conditional hr */}
-            {/* If activeAppContext is shown, its container already has a border-b */}
+            {/* No extra hr needed if the above sections handle borders */}
             <div className="flex flex-col gap-1 p-4">
                 <h3 className="text-xs font-medium text-gray-500 mb-2">Other Identities</h3>
                 {otherDisplayIdentities.map((identity) => (

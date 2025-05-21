@@ -1,8 +1,12 @@
 import React, { useEffect, useState } from "react";
+import { useLocation } from "wouter"; // Import useLocation
+import { X } from "lucide-react"; // Import X icon
 import { PENDING_CONSENT_REQUEST_KEY } from "../background-modules/action-handlers/app-session.handler";
 import type { PermissionSetting } from "../background-modules/types"; // For potential use with permission settings
 
 // Define a type for the consent request data we expect from session storage
+export const CONSENT_OUTCOME_TOAST_KEY = "consentOutcomeToast"; // Export for DashboardPage
+
 interface ConsentRequestData {
     appName: string;
     appIconUrl?: string;
@@ -11,6 +15,7 @@ interface ConsentRequestData {
     requestedPermissions: string[];
     activeDid?: string; // The DID this request is for
     consentRequestId?: string; // Added to carry the ID for the pending promise
+    currentPermissions?: Record<string, PermissionSetting>; // For re-consent flow
 }
 
 const ConsentRequestPage: React.FC = () => {
@@ -19,6 +24,7 @@ const ConsentRequestPage: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [submissionStatus, setSubmissionStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
     const [submissionMessage, setSubmissionMessage] = useState<string | null>(null);
+    const [, setLocation] = useLocation(); // For navigation
 
     // Temporary state for permission choices - will be more complex later
     const [permissionChoices, setPermissionChoices] = useState<Record<string, PermissionSetting>>({});
@@ -32,13 +38,20 @@ const ConsentRequestPage: React.FC = () => {
                 if (result && result[PENDING_CONSENT_REQUEST_KEY]) {
                     const data = result[PENDING_CONSENT_REQUEST_KEY] as ConsentRequestData;
                     setConsentRequest(data);
-                    // Initialize permissionChoices based on requestedPermissions (default to 'ask' or a predefined default)
-                    const initialChoices: Record<string, PermissionSetting> = {};
-                    data.requestedPermissions.forEach((perm) => {
-                        // Default to 'ask', or more sophisticated logic later
-                        initialChoices[perm] = perm.startsWith("read:") ? "always" : "ask";
-                    });
-                    setPermissionChoices(initialChoices);
+
+                    if (data.currentPermissions) {
+                        setPermissionChoices(data.currentPermissions);
+                        console.log("ConsentRequestPage: Initialized permissionChoices from currentPermissions", data.currentPermissions);
+                    } else {
+                        // Initialize permissionChoices based on requestedPermissions (default to 'ask' or a predefined default)
+                        const initialChoices: Record<string, PermissionSetting> = {};
+                        data.requestedPermissions.forEach((perm) => {
+                            // Default to 'ask', or more sophisticated logic later
+                            initialChoices[perm] = perm.startsWith("read:") ? "always" : "ask";
+                        });
+                        setPermissionChoices(initialChoices);
+                        console.log("ConsentRequestPage: Initialized permissionChoices with defaults", initialChoices);
+                    }
                     console.log("Consent request data loaded:", data);
                 } else {
                     setError("No pending consent request found.");
@@ -97,20 +110,23 @@ const ConsentRequestPage: React.FC = () => {
             });
 
             if (response?.payload?.success) {
-                // Adjusted to check response.payload.success
-                setSubmissionStatus("success");
-                setSubmissionMessage(decisionType === "allow" ? "Permissions granted successfully!" : "Permissions denied.");
-                // The background script should clear PENDING_CONSENT_REQUEST_KEY
-                // Optionally, navigate away or close side panel after a delay
-                setTimeout(() => {
-                    // For now, just clear the local state to reflect completion
-                    setConsentRequest(null);
-                    // Consider chrome.sidePanel.close() or navigation if desired
-                }, 2000);
+                const toastMessage = decisionType === "allow" ? "Permissions granted successfully!" : "Permissions denied.";
+                try {
+                    await chrome.storage.session.set({ [CONSENT_OUTCOME_TOAST_KEY]: toastMessage });
+                    // No longer setSubmissionStatus or submissionMessage here for success, as we navigate immediately.
+                    // The PENDING_CONSENT_REQUEST_KEY is cleared by the background script.
+                    setLocation("/"); // Immediate navigation
+                } catch (storageError) {
+                    console.error("Error setting toast message in session storage:", storageError);
+                    // Fallback: show message on current page if storage fails, then navigate
+                    setSubmissionStatus("success"); // Still show success locally if storage fails
+                    setSubmissionMessage(toastMessage);
+                    setTimeout(() => setLocation("/"), 2000); // Navigate after delay
+                }
             } else {
                 setSubmissionStatus("error");
-                setSubmissionMessage(response?.payload?.error || response?.error || "Failed to submit consent decision."); // Adjusted to check response.payload.error and fallback
-                console.error("Error submitting consent decision:", response?.payload?.error || response?.error); // Adjusted for new response structure
+                setSubmissionMessage(response?.payload?.error || response?.error || "Failed to submit consent decision.");
+                console.error("Error submitting consent decision:", response?.payload?.error || response?.error);
             }
         } catch (e: any) {
             setSubmissionStatus("error");
@@ -127,6 +143,11 @@ const ConsentRequestPage: React.FC = () => {
         submitDecision("deny");
     };
 
+    const handleCloseIconClick = () => {
+        // This will also trigger navigation to "/" via submitDecision's logic for "deny"
+        submitDecision("deny");
+    };
+
     if (isLoading) {
         return <div style={{ padding: "20px" }}>Loading consent request...</div>;
     }
@@ -140,14 +161,16 @@ const ConsentRequestPage: React.FC = () => {
         return <div style={{ padding: "20px" }}>Submitting your decision...</div>;
     }
 
-    if (submissionStatus === "success" || submissionStatus === "error") {
+    // This view will now only be shown for errors, as success leads to immediate navigation.
+    if (submissionStatus === "error") {
         return (
-            <div style={{ padding: "20px", color: submissionStatus === "error" ? "red" : "green" }}>
-                {submissionMessage || (submissionStatus === "success" ? "Done!" : "An error occurred.")}
-                {/* Optionally add a button to close or navigate */}
+            <div style={{ padding: "20px", color: "red" }}>
+                {submissionMessage || "An error occurred."}
+                {/* Optionally add a button to go back or try again */}
             </div>
         );
     }
+    // The "success" state view is removed as navigation is immediate.
 
     if (!consentRequest) {
         // This case should ideally be covered by isLoading or error state,
@@ -156,7 +179,24 @@ const ConsentRequestPage: React.FC = () => {
     }
 
     return (
-        <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
+        <div style={{ padding: "20px", fontFamily: "Arial, sans-serif", position: "relative" }}>
+            <button
+                onClick={handleCloseIconClick}
+                style={{
+                    position: "absolute",
+                    top: "15px",
+                    right: "15px",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "5px",
+                    lineHeight: "1",
+                }}
+                disabled={submissionStatus === "submitting"}
+                aria-label="Close and Deny"
+            >
+                <X size={20} color={submissionStatus === "submitting" ? "#ccc" : "#555"} />
+            </button>
             <div style={{ display: "flex", alignItems: "center", marginBottom: "20px" }}>
                 {consentRequest.appIconUrl && (
                     <img
