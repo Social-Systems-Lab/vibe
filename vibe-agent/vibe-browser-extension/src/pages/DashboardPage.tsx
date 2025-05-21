@@ -46,6 +46,9 @@ export function DashboardPage() {
         isLoading: boolean;
     }>({ Icon: Loader2, color: "text-slate-500", isLoading: true });
 
+    // State for active tab's app context
+    const [activeAppContext, setActiveAppContext] = useState<any | null>(null); // Replace 'any' with a proper type later
+
     const loadIdentityData = useCallback(
         async (didHint?: string) => {
             console.log("DashboardPage: loadIdentityData triggered, hint:", didHint);
@@ -118,12 +121,49 @@ export function DashboardPage() {
         // Load data when the component mounts and app status is appropriate
         // (e.g., INITIALIZED_UNLOCKED or UNLOCK_REQUIRED_FOR_LAST_ACTIVE if we want to show data behind an unlock overlay)
         if (appStatus === "INITIALIZED_UNLOCKED" || appStatus === "UNLOCK_REQUIRED_FOR_LAST_ACTIVE") {
-            // For UNLOCK_REQUIRED_FOR_LAST_ACTIVE, useAppInitializer provides lastActiveDidHintAtom
-            // We might want to pass that hint here if needed.
-            // const lastActiveHint = lastActiveDidHintAtom.init; // Read initial value if needed
             loadIdentityData();
         }
     }, [appStatus, loadIdentityData]);
+
+    // Effect to fetch active tab app context and listen for updates
+    useEffect(() => {
+        const fetchContext = async () => {
+            try {
+                const response = await chrome.runtime.sendMessage({
+                    type: "VIBE_AGENT_REQUEST",
+                    action: "GET_ACTIVE_TAB_APP_CONTEXT",
+                    requestId: crypto.randomUUID().toString(),
+                });
+                if (response?.payload?.success && response.payload.appContext) {
+                    setActiveAppContext(response.payload.appContext);
+                    console.log("DashboardPage: Active app context loaded", response.payload.appContext);
+                } else {
+                    setActiveAppContext(null);
+                    console.log("DashboardPage: No active app context found or error", response?.payload?.error);
+                }
+            } catch (error) {
+                console.error("DashboardPage: Error fetching active app context:", error);
+                setActiveAppContext(null);
+            }
+        };
+
+        fetchContext();
+
+        const messageListener = (message: any, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) => {
+            if (message.type === "UPDATE_SIDE_PANEL_APP_CONTEXT") {
+                console.log("DashboardPage: Received UPDATE_SIDE_PANEL_APP_CONTEXT", message.payload);
+                setActiveAppContext(message.payload.appContext); // Directly use the context from the message
+                // No need to call fetchContext again if the background sends the full context.
+                return true; // Indicate async response if we were to send one
+            }
+        };
+
+        chrome.runtime.onMessage.addListener(messageListener);
+
+        return () => {
+            chrome.runtime.onMessage.removeListener(messageListener);
+        };
+    }, []); // Runs on mount and cleans up
 
     const handleSwitchIdentity = useCallback(async (did: string) => {
         try {
@@ -283,9 +323,38 @@ export function DashboardPage() {
                     </div>
                 )}
             </div>
-
-            {currentIdentity && <hr className="mx-4 border-gray-200" />}
-
+            {/* Section for Active App Context */}
+            {activeAppContext && currentIdentity && (
+                <div className="px-4 pt-3 pb-3 border-b border-gray-200">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Context: {activeAppContext.appName || "Current Application"}</h3>
+                    <div className="text-xs text-gray-600 space-y-1">
+                        <p>
+                            <span className="font-medium">Origin:</span> {activeAppContext.origin}
+                        </p>
+                        <p>
+                            <span className="font-medium">App ID:</span> {activeAppContext.appId}
+                        </p>
+                        {activeAppContext.appIconUrl && <img src={activeAppContext.appIconUrl} alt="App Icon" className="h-8 w-8 inline-block mr-2 rounded" />}
+                        <div>
+                            <span className="font-medium">Permissions:</span>
+                            {activeAppContext.grantedPermissions && Object.keys(activeAppContext.grantedPermissions).length > 0 ? (
+                                <ul className="list-disc list-inside pl-1">
+                                    {Object.entries(activeAppContext.grantedPermissions).map(([key, value]) => (
+                                        <li key={key}>{`${key}: ${value}`}</li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <span> No permissions granted or tracked for this app.</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+            {!activeAppContext && currentIdentity && (
+                <div className="px-4 pt-3 pb-3 text-xs text-gray-500 border-b border-gray-200">No specific application context active in the current tab.</div>
+            )}
+            {currentIdentity && !activeAppContext && <hr className="mx-4 border-gray-200" />} {/* Conditional hr */}
+            {/* If activeAppContext is shown, its container already has a border-b */}
             <div className="flex flex-col gap-1 p-4">
                 <h3 className="text-xs font-medium text-gray-500 mb-2">Other Identities</h3>
                 {otherDisplayIdentities.map((identity) => (

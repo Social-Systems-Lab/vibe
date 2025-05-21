@@ -95,6 +95,9 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
             case "SUBMIT_CONSENT_DECISION":
                 responsePayload = await AppSessionHandler.handleSubmitConsentDecision(payload, sender);
                 break;
+            case "GET_ACTIVE_TAB_APP_CONTEXT":
+                responsePayload = await AppSessionHandler.getActiveTabAppContext(payload, sender);
+                break;
             default:
                 console.warn(`[BG_WARN_UnknownAction] Unknown action: ${action}`);
                 responsePayload = { error: { message: `Unknown action: ${action}` } };

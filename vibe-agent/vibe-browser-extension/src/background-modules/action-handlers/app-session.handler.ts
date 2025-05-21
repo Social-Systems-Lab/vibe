@@ -10,8 +10,13 @@ const pendingConsentPromises = new Map<
     {
         resolve: (decisionOutcome: { finalGrantedPermissions: Record<string, Types.PermissionSetting>; decision: "allow" | "deny" }) => void;
         reject: (reason?: any) => void;
+        tabId?: number; // Added tabId
+        appName?: string; // Added appName
+        appIconUrl?: string; // Added appIconUrl
     }
 >();
+
+export const ACTIVE_TAB_APP_CONTEXTS_KEY = "activeTabAppContexts";
 
 export async function handleInitializeAppSession(payload: any, sender: chrome.runtime.MessageSender): Promise<any> {
     const appManifest = payload?.manifest;
@@ -125,7 +130,6 @@ export async function handleInitializeAppSession(payload: any, sender: chrome.ru
                 return new Promise((resolveOuterPromise, rejectOuterPromise) => {
                     pendingConsentPromises.set(consentRequestId, {
                         resolve: (decisionOutcome: { finalGrantedPermissions: Record<string, Types.PermissionSetting>; decision: "allow" | "deny" }) => {
-                            // This 'resolve' is called by handleSubmitConsentDecision
                             const finalInitialState: Types.VibeState = {
                                 isUnlocked: SessionManager.isUnlocked,
                                 did: currentAgentActiveDid, // This must be valid if consent was processed
@@ -140,6 +144,9 @@ export async function handleInitializeAppSession(payload: any, sender: chrome.ru
                             console.error(`[BG] Consent process rejected for ${consentRequestId}:`, errorReason);
                             rejectOuterPromise(errorReason);
                         },
+                        tabId: sender.tab?.id,
+                        appName: appManifest.name,
+                        appIconUrl: appManifest.iconUrl || appManifest.pictureUrl,
                     });
                     // Optional: Timeout for the consent promise
                     // setTimeout(() => {
@@ -161,6 +168,27 @@ export async function handleInitializeAppSession(payload: any, sender: chrome.ru
             // No new consent needed
             console.log(`[BG] No new consent required for ${appIdFromManifestValue}. Using existing permissions.`);
             grantedPermissions = existingPermissions; // Already populated
+
+            // Store app context if no consent is needed
+            if (sender.tab?.id && currentAgentActiveDid) {
+                const appContext = {
+                    appId: appIdFromManifestValue,
+                    origin: origin,
+                    appName: appManifest.name,
+                    appIconUrl: appManifest.iconUrl || appManifest.pictureUrl,
+                    grantedPermissions: grantedPermissions,
+                    tabId: sender.tab.id,
+                };
+                try {
+                    const currentContexts = (await chrome.storage.session.get(ACTIVE_TAB_APP_CONTEXTS_KEY))[ACTIVE_TAB_APP_CONTEXTS_KEY] || {};
+                    currentContexts[sender.tab.id] = appContext;
+                    await chrome.storage.session.set({ [ACTIVE_TAB_APP_CONTEXTS_KEY]: currentContexts });
+                    console.log(`[BG] App context stored for tab ${sender.tab.id} (no consent needed):`, appContext);
+                } catch (e) {
+                    console.error("[BG] Error storing app context (no consent needed):", e);
+                }
+            }
+
             const initialState: Types.VibeState = {
                 isUnlocked: SessionManager.isUnlocked,
                 did: currentAgentActiveDid,
@@ -310,12 +338,34 @@ export async function handleSubmitConsentDecision(payload: any, sender: chrome.r
         if (promiseControls) {
             console.log(`[BG] Resolving pending consent promise for ${consentRequestId} with decision: ${decision}`);
             promiseControls.resolve({ finalGrantedPermissions: finalGrantedPermissionsForInit, decision });
+
+            // Store app context after consent decision
+            if (promiseControls.tabId) {
+                const appContext = {
+                    appId: appId,
+                    origin: origin,
+                    appName: promiseControls.appName,
+                    appIconUrl: promiseControls.appIconUrl,
+                    grantedPermissions: finalGrantedPermissionsForInit,
+                    tabId: promiseControls.tabId,
+                };
+                try {
+                    const currentContexts = (await chrome.storage.session.get(ACTIVE_TAB_APP_CONTEXTS_KEY))[ACTIVE_TAB_APP_CONTEXTS_KEY] || {};
+                    currentContexts[promiseControls.tabId] = appContext;
+                    await chrome.storage.session.set({ [ACTIVE_TAB_APP_CONTEXTS_KEY]: currentContexts });
+                    console.log(`[BG] App context stored for tab ${promiseControls.tabId} (after consent):`, appContext);
+                } catch (e) {
+                    console.error("[BG] Error storing app context (after consent):", e);
+                }
+            }
             pendingConsentPromises.delete(consentRequestId);
         } else {
             console.warn(`[BG] No pending consent promise found for ${consentRequestId}. This might happen if it timed out or was already resolved/rejected.`);
             // If no promise, perhaps the app init already timed out or proceeded.
             // A state broadcast might still be useful here to update any listening app instances.
-            await broadcastAppStateToSubscriptions(); // Corrected function name
+            // Also, try to update app context if possible, though tabId might be lost.
+            // For now, just broadcast.
+            await broadcastAppStateToSubscriptions();
         }
 
         return { success: true, message: `Consent decision (${decision}) processed successfully.` };
@@ -326,5 +376,36 @@ export async function handleSubmitConsentDecision(payload: any, sender: chrome.r
             pendingConsentPromises.delete(consentRequestId);
         }
         return { success: false, error: error.message || "Failed to process consent decision." };
+    }
+}
+
+export async function getActiveTabAppContext(payload: any, sender: chrome.runtime.MessageSender): Promise<any> {
+    let tabIdToQuery: number | undefined = sender.tab?.id;
+
+    if (!tabIdToQuery) {
+        try {
+            const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (activeTab?.id) {
+                tabIdToQuery = activeTab.id;
+            }
+        } catch (e) {
+            console.error("[BG] Error querying active tab for app context:", e);
+            return { success: false, error: "Failed to determine active tab." };
+        }
+    }
+
+    if (!tabIdToQuery) {
+        console.warn("[BG] No active tab ID found to fetch app context.");
+        return { success: true, appContext: null }; // No specific tab, so no context
+    }
+
+    try {
+        const allAppContexts = (await chrome.storage.session.get(ACTIVE_TAB_APP_CONTEXTS_KEY))[ACTIVE_TAB_APP_CONTEXTS_KEY] || {};
+        const appContext = allAppContexts[tabIdToQuery] || null;
+        console.log(`[BG] Fetched app context for tab ${tabIdToQuery}:`, appContext);
+        return { success: true, appContext: appContext };
+    } catch (error: any) {
+        console.error(`[BG] Error fetching app context for tab ${tabIdToQuery}:`, error);
+        return { success: false, error: error.message || "Failed to fetch app context." };
     }
 }
