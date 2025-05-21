@@ -47,9 +47,26 @@ EventListeners.registerEventListeners();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message && typeof message === "object" && message.type === "VIBE_AGENT_REQUEST" && message.action) {
-        // Delegate to the new message handler
-        MessageHandler.handleMessage(message, sender, sendResponse);
-        return true; // Crucial for asynchronous sendResponse
+        if (message.action === "USER_CLICKED_CONSENT_POPOVER") {
+            // Attempt to open side panel immediately in response to user gesture
+            if (sender.tab && sender.tab.id) {
+                // Check both sender.tab and sender.tab.id
+                const tabId = sender.tab.id; // Assign to a new const
+                chrome.sidePanel
+                    .open({ tabId: tabId }) // Use the new const
+                    .then(() => console.log(`[BG] Side panel open triggered for tab ${tabId} by USER_CLICKED_CONSENT_POPOVER.`))
+                    .catch((err) => console.error(`[BG] Error opening side panel for USER_CLICKED_CONSENT_POPOVER on tab ${tabId}:`, err));
+            } else {
+                console.error("[BG] USER_CLICKED_CONSENT_POPOVER: sender.tab or sender.tab.id is undefined. Cannot trigger side panel open.");
+            }
+            // Regardless of side panel success/failure, proceed to MessageHandler for data processing & response.
+            // MessageHandler will call sendResponse.
+            MessageHandler.handleMessage(message, sender, sendResponse);
+        } else {
+            // For other VIBE_AGENT_REQUEST actions
+            MessageHandler.handleMessage(message, sender, sendResponse);
+        }
+        return true; // Crucial for asynchronous sendResponse from MessageHandler for all VIBE_AGENT_REQUEST types
     } else if (message && typeof message === "object" && message.type === "SHOW_VIBE_PROFILE") {
         console.log("Background: Received SHOW_VIBE_PROFILE for", message.payload);
         (async () => {

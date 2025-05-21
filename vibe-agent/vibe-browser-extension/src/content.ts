@@ -251,10 +251,22 @@ function showConsentPopover(
 
     continueButton.onclick = () => {
         console.log("Vibe: Consent popover 'Continue' button clicked.");
-        chrome.runtime.sendMessage({
-            type: "USER_CLICKED_CONSENT_POPOVER",
-            payload: { appName, origin, appId, appIconUrl, requestedPermissions, consentRequestId }, // Include consentRequestId
-        });
+        const requestId = `vibe-req-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        chrome.runtime.sendMessage(
+            {
+                type: "VIBE_AGENT_REQUEST", // Changed type
+                action: "USER_CLICKED_CONSENT_POPOVER", // Added action
+                requestId: requestId, // Added requestId
+                payload: { appName, origin, appId, appIconUrl, requestedPermissions, consentRequestId },
+            },
+            (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error(`Vibe: Error sending USER_CLICKED_CONSENT_POPOVER (requestId: ${requestId}) message:`, chrome.runtime.lastError.message);
+                } else {
+                    console.log(`Vibe: USER_CLICKED_CONSENT_POPOVER (requestId: ${requestId}) message sent successfully, response:`, response);
+                }
+            }
+        );
         removeExistingPopover();
     };
     popover.appendChild(continueButton);

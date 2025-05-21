@@ -201,18 +201,20 @@ export async function handleUnsubscribeAppSession(payload: any): Promise<any> {
 export const PENDING_CONSENT_REQUEST_KEY = "pendingConsentRequest";
 
 export async function handleUserClickedConsentPopover(payload: any, sender: chrome.runtime.MessageSender): Promise<any> {
-    console.log("[BG] USER_CLICKED_CONSENT_POPOVER received:", payload);
+    console.log("[BG] USER_CLICKED_CONSENT_POPOVER received for data storage:", payload);
     // Destructure consentRequestId from payload
     const { appName, appIconUrl, origin, appId, requestedPermissions, consentRequestId } = payload;
 
-    if (!sender.tab?.id) {
-        console.error("[BG] Cannot open side panel or store consent request: sender.tab.id is undefined.");
-        return { success: false, error: "Missing tab ID." };
-    }
-    // Add check for consentRequestId
+    // sender.tab.id is already checked in background.ts before sidePanel.open is called.
+    // Here, we primarily focus on data validation for storage.
     if (!appId || !origin || !requestedPermissions || !consentRequestId) {
-        console.error("[BG] Insufficient data for consent request (appId, origin, requestedPermissions, or consentRequestId missing):", payload);
-        return { success: false, error: "Insufficient data for consent request." };
+        console.error(
+            "[BG] Insufficient data for storing consent request details (appId, origin, requestedPermissions, or consentRequestId missing):",
+            payload
+        );
+        // Even if data is insufficient, the side panel might have been triggered by background.ts.
+        // This function's success/failure now primarily relates to storing data for the side panel to read.
+        return { success: false, error: "Insufficient data to store for consent request." };
     }
 
     try {
@@ -229,15 +231,12 @@ export async function handleUserClickedConsentPopover(payload: any, sender: chro
         await chrome.storage.session.set({ [PENDING_CONSENT_REQUEST_KEY]: consentRequestData });
         console.log("[BG] Stored pending consent request to session storage (including consentRequestId):", consentRequestData);
 
-        // Attempt to open the side panel to the consent UI
-        // The sidebar's router/App component will need to check session storage for this key on load/navigate
-        await chrome.sidePanel.open({ tabId: sender.tab.id });
-        console.log(`[BG] Attempted to open side panel for tab ${sender.tab.id}`);
-
-        return { success: true, message: "Side panel opening initiated for consent." };
+        // The side panel opening is now handled by background.ts directly.
+        // This handler just confirms data storage.
+        return { success: true, message: "Consent request data stored for side panel." };
     } catch (error: any) {
-        console.error("[BG] Error handling USER_CLICKED_CONSENT_POPOVER:", error);
-        return { success: false, error: error.message || "Failed to process popover click." };
+        console.error("[BG] Error storing consent request data for side panel:", error);
+        return { success: false, error: error.message || "Failed to store consent request data." };
     }
 }
 

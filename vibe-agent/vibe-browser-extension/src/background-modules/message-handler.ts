@@ -89,14 +89,8 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
             case "WRITE_DATA": // Added case for WRITE_DATA
                 responsePayload = await DataHandler.handleWriteData(payload, sender);
                 break;
-            case "USER_CLICKED_CONSENT_POPOVER": // Added case for popover click
+            case "USER_CLICKED_CONSENT_POPOVER":
                 responsePayload = await AppSessionHandler.handleUserClickedConsentPopover(payload, sender);
-                // This action might not send a response back to the content script immediately,
-                // or it might send a simple ack. The main action is to open the side panel.
-                // For now, let's assume it can return a success/failure or some info.
-                // If it's purely a trigger, responsePayload might be { success: true } or void.
-                // If it's void, the sendResponse logic below needs adjustment or this case needs to handle sendResponse itself.
-                // Let's assume it returns a payload for now.
                 break;
             case "SUBMIT_CONSENT_DECISION":
                 responsePayload = await AppSessionHandler.handleSubmitConsentDecision(payload, sender);
