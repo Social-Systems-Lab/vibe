@@ -18,6 +18,9 @@ rules:
     - apiGroups: ["rbac.authorization.k8s.io"]
       resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
       verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "bind", "escalate"]
+    - apiGroups: ["traefik.io"]
+      resources: ["middlewares", "ingressroutes", "traefikservices", "tlsoptions", "tlsstores"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 # The provision.sh script uses helm directly.
 # Helm itself needs permissions to create these resources.
 # The ServiceAccount under which the control plane runs (which spawns provision.sh)
