@@ -1,4 +1,12 @@
 import PouchDB from "pouchdb-browser";
+import { Buffer } from "buffer";
+import type { EncryptedData } from "./crypto"; // Assuming EncryptedData is exported
+import { generateSalt, deriveEncryptionKey, encryptData, decryptData } from "./crypto";
+
+import { getIdentityInstanceUrl } from "./utils"; // Actual import
+import { getValidCpAccessToken } from "../background-modules/token-manager"; // Actual import
+import { isUnlocked as isVaultUnlocked } from "../background-modules/session-manager"; // Actual import
+// Note: getVaultPassword is not directly importable. It must be passed if available.
 
 const COUCHDB_CONFIG_STORAGE_KEY = "couchDbConfig";
 
@@ -11,20 +19,24 @@ const remoteDbInstances = new Map<string, PouchDB.Database>();
 // Map to store sync handlers, keyed by userDid
 const syncHandlers = new Map<string, PouchDB.Replication.Sync<{}>>();
 
-interface CouchDbConfig {
-    userDid: string; // Added userDid to associate config
-    url: string;
+export interface CouchDbConfig {
+    userDid: string;
+    url: string; // CouchDB URL
     username: string;
-    password?: string; // Storing actual password temporarily. TODO: Encrypt this.
+    encryptedPassword?: EncryptedData; // Encrypted CouchDB password
+    passwordSalt?: string; // Salt used for encrypting the password (hex)
 }
 
 function getLocalDbName(userDid: string): string {
-    // Sanitize DID if necessary, e.g., replace colons
     const sanitizedDid = userDid.replace(/:/g, "_").replace(/\./g, "-");
     return `user_data_${sanitizedDid}`;
 }
 
-async function getCouchDbConfig(userDid: string): Promise<CouchDbConfig | null> {
+/**
+ * Retrieves CouchDB configuration from cache or chrome.storage.local.
+ * Does not perform API calls or decryption.
+ */
+async function getCouchDbConfigFromStorage(userDid: string): Promise<CouchDbConfig | null> {
     if (couchDbConfigCache.has(userDid)) {
         return couchDbConfigCache.get(userDid)!;
     }
@@ -32,28 +44,14 @@ async function getCouchDbConfig(userDid: string): Promise<CouchDbConfig | null> 
     const storageKey = `${COUCHDB_CONFIG_STORAGE_KEY}_${userDid}`;
     try {
         const result = await chrome.storage.local.get(storageKey);
-        const storedConfig = result[storageKey];
+        const storedConfig = result[storageKey] as CouchDbConfig | undefined;
 
         if (storedConfig) {
-            console.log(`Loaded CouchDB config for ${userDid} from chrome.storage.local`);
-            // TODO: Decrypt 'password' field here if it was encrypted
-            const config = storedConfig as CouchDbConfig;
-            couchDbConfigCache.set(userDid, config);
-            return config;
-        } else {
-            console.warn(
-                `CouchDB config not found for ${userDid} in chrome.storage.local using key: ${storageKey}. ` +
-                    `User needs to login or re-fetch config from API.`
-            );
-            // TODO: Implement API call to /api/v1/instance/couchdb-details for this userDid
-            // This would be the place to call:
-            // const fetchedConfig = await callVibeCloudApiForCouchDbDetails(userDid);
-            // if (fetchedConfig) {
-            //     await setRemoteCouchDbCredentials(userDid, fetchedConfig.url, fetchedConfig.username, fetchedConfig.password);
-            //     return fetchedConfig; // setRemoteCouchDbCredentials will cache it
-            // }
-            return null;
+            console.log(`Loaded CouchDB config for ${userDid} from chrome.storage.local (encrypted)`);
+            couchDbConfigCache.set(userDid, storedConfig);
+            return storedConfig;
         }
+        return null;
     } catch (error) {
         console.error(`Error retrieving CouchDB config for ${userDid} from storage:`, error);
         return null;
@@ -62,14 +60,18 @@ async function getCouchDbConfig(userDid: string): Promise<CouchDbConfig | null> 
 
 console.info(`PouchDB service initialized for multi-identity support.`);
 
-async function initializeSync(userDid: string) {
+/**
+ * Initializes PouchDB synchronization for a given user.
+ * It will attempt to load stored credentials, decrypt if vault is unlocked,
+ * or fetch live credentials from the Vibe Cloud API.
+ * If live credentials are fetched and vault is unlocked, they will be encrypted and stored.
+ * @param userDid The DID of the user for whom to initialize sync.
+ * @param mainVaultPasswordIfAvailable The user's main vault password, if available (e.g., after unlock).
+ *                                     Required for encrypting new credentials or decrypting stored ones.
+ */
+export async function initializeSync(userDid: string, mainVaultPasswordIfAvailable?: string): Promise<void> {
     if (!userDid) {
         console.error("initializeSync called without userDid.");
-        return;
-    }
-    const config = await getCouchDbConfig(userDid);
-    if (!config) {
-        console.error(`Failed to initialize PouchDB sync for ${userDid}: CouchDB config missing.`);
         return;
     }
 
@@ -78,20 +80,149 @@ async function initializeSync(userDid: string) {
         return;
     }
 
-    const localDb = getLocalUserDataDb(userDid); // Get specific DB instance
+    let couchDbUrl: string | null = null;
+    let couchDbUsername: string | null = null;
+    let couchDbPasswordPlaintext: string | null = null; // Plaintext password for current session
+
+    const storedConfig = await getCouchDbConfigFromStorage(userDid);
+    const vaultUnlocked = isVaultUnlocked; // Accessing the boolean variable directly
+
+    // Use the provided password if available and vault is unlocked
+    const mainVaultPasswordForCrypto: string | null = vaultUnlocked && mainVaultPasswordIfAvailable ? mainVaultPasswordIfAvailable : null;
+
+    if (storedConfig?.encryptedPassword && storedConfig.passwordSalt) {
+        if (mainVaultPasswordForCrypto) {
+            // Check if we have the password to attempt decryption
+            try {
+                const saltBuffer = Buffer.from(storedConfig.passwordSalt, "hex");
+                const key = await deriveEncryptionKey(
+                    mainVaultPasswordForCrypto, // Known to be string here
+                    new Uint8Array(saltBuffer.buffer, saltBuffer.byteOffset, saltBuffer.byteLength)
+                );
+                couchDbPasswordPlaintext = await decryptData(storedConfig.encryptedPassword, key);
+                couchDbUrl = storedConfig.url;
+                couchDbUsername = storedConfig.username;
+                console.log(`Successfully decrypted stored CouchDB password for ${userDid}.`);
+            } catch (decryptionError) {
+                console.error(`Failed to decrypt stored CouchDB password for ${userDid}:`, decryptionError, "Will attempt to fetch live credentials.");
+                // Clear potentially corrupted stored config? Or mark as needing re-encryption?
+                // For now, just proceed to fetch live.
+            }
+        } else {
+            console.log(`Vault is locked for ${userDid}. Stored CouchDB password cannot be decrypted. Attempting to fetch live credentials.`);
+        }
+    }
+
+    // If credentials were not successfully decrypted from storage, try to fetch them live.
+    if (!couchDbPasswordPlaintext) {
+        console.log(`Attempting to fetch live CouchDB credentials for ${userDid}.`);
+        const instanceUrl = await getIdentityInstanceUrl(userDid); // Using actual import
+        if (!instanceUrl) {
+            console.error(`Cannot fetch CouchDB credentials for ${userDid}: Vibe Cloud API instance URL not found.`);
+            return;
+        }
+
+        try {
+            // getValidCpAccessToken might throw if full login is required, so wrap in try-catch
+            const accessToken = await getValidCpAccessToken(userDid); // Using actual import. Assumes it's valid for instanceUrl or instanceUrl is OFFICIAL_VIBE_CLOUD_URL.
+            if (!accessToken) {
+                // Should not happen if getValidCpAccessToken throws on failure
+                console.error(`Cannot fetch CouchDB credentials for ${userDid}: Failed to get access token for ${instanceUrl}.`);
+                return;
+            }
+
+            const response = await fetch(`${instanceUrl}/api/v1/instance/couchdb-details`, {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    "Content-Type": "application/json",
+                },
+            });
+
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error(`Failed to fetch CouchDB details for ${userDid} from ${instanceUrl}. Status: ${response.status}. Body: ${errorBody}`);
+                return;
+            }
+
+            const fetchedCloudApiConfig = await response.json();
+            // Assuming API returns { url: string, username: string, password: string } for CouchDB
+            if (!fetchedCloudApiConfig.url || !fetchedCloudApiConfig.username || !fetchedCloudApiConfig.password) {
+                console.error(`Fetched CouchDB config for ${userDid} is incomplete:`, fetchedCloudApiConfig);
+                return;
+            }
+
+            couchDbUrl = fetchedCloudApiConfig.url;
+            couchDbUsername = fetchedCloudApiConfig.username;
+            couchDbPasswordPlaintext = fetchedCloudApiConfig.password; // Use live password for this session
+            console.log(`Successfully fetched live CouchDB credentials for ${userDid}.`);
+
+            // If vault is unlocked, encrypt and store these newly fetched credentials
+            if (vaultUnlocked && mainVaultPasswordForCrypto && couchDbPasswordPlaintext) {
+                // mainVaultPasswordForCrypto is confirmed not null by the if condition
+                // couchDbPasswordPlaintext is also confirmed not null
+                try {
+                    const newSaltBytes = generateSalt(); // generateSalt returns Uint8Array
+                    const saltHex = Buffer.from(newSaltBytes).toString("hex");
+
+                    // Explicit non-null assertions for TypeScript, guarded by the outer if condition
+                    if (!mainVaultPasswordForCrypto) {
+                        throw new Error("Assertion failed: mainVaultPasswordForCrypto should be non-null here.");
+                    }
+                    if (!couchDbPasswordPlaintext) {
+                        throw new Error("Assertion failed: couchDbPasswordPlaintext should be non-null here.");
+                    }
+                    // Assign to new consts to help TypeScript's control flow analysis
+                    const finalMainVaultPassword = mainVaultPasswordForCrypto;
+                    const finalPlaintextPassword = couchDbPasswordPlaintext;
+
+                    const key = await deriveEncryptionKey(finalMainVaultPassword!, newSaltBytes); // Added non-null assertion
+                    const encryptedData = await encryptData(finalPlaintextPassword!, key); // Kept non-null assertion
+
+                    // Call a modified setRemoteCouchDbCredentials that doesn't re-trigger initializeSync
+                    if (!couchDbUrl || !couchDbUsername) {
+                        // Add checks for these as well before calling internalSetRemote...
+                        throw new Error("couchDbUrl or couchDbUsername became null unexpectedly before storing credentials.");
+                    }
+                    await internalSetRemoteCouchDbCredentials(userDid, couchDbUrl, couchDbUsername, encryptedData, saltHex, false);
+                    console.log(`Encrypted and stored fetched CouchDB credentials for ${userDid}.`);
+                } catch (encryptionError) {
+                    console.error(`Failed to encrypt and store fetched CouchDB credentials for ${userDid}:`, encryptionError);
+                    // Continue with plaintext password for this session anyway
+                }
+            } else {
+                console.log(
+                    `Vault is locked for ${userDid}. Fetched CouchDB credentials will be used in-memory for this session only and not stored encrypted.`
+                );
+            }
+        } catch (fetchError) {
+            console.error(`Error fetching CouchDB credentials for ${userDid}:`, fetchError);
+            return;
+        }
+    }
+
+    if (!couchDbUrl || !couchDbUsername || couchDbPasswordPlaintext === null) {
+        // Check explicitly for null if password can be empty string
+        console.error(`Failed to obtain CouchDB credentials for ${userDid}. Cannot initialize sync.`);
+        return;
+    }
+
+    const localDb = getLocalUserDataDb(userDid);
     if (!localDb) {
         console.error(`Failed to get local PouchDB instance for ${userDid}. Cannot initialize sync.`);
         return;
     }
 
-    console.log(`Initializing PouchDB sync for ${userDid} with remote: ${config.url}`);
-    const remoteDb = new PouchDB(config.url, {
+    console.log(`Initializing PouchDB sync for ${userDid} with remote: ${couchDbUrl}`);
+    const remoteDbOpts: PouchDB.Configuration.RemoteDatabaseConfiguration = {
         auth: {
-            username: config.username,
-            password: config.password,
+            username: couchDbUsername,
+            password: couchDbPasswordPlaintext,
         },
         skip_setup: true,
-    });
+    };
+    // Add fetch options for timeout if needed, e.g. remoteDbOpts.fetch = (url, opts) => { opts.timeout = 10000; return PouchDB.fetch(url, opts); };
+
+    const remoteDb = new PouchDB(couchDbUrl, remoteDbOpts);
     remoteDbInstances.set(userDid, remoteDb);
 
     const currentSyncHandler = localDb.sync(remoteDb, {
@@ -105,57 +236,60 @@ async function initializeSync(userDid: string) {
             console.log(`PouchDB sync [${userDid}]: Data changed`, info);
         })
         .on("paused", (err) => {
-            if (err) {
-                console.warn(`PouchDB sync [${userDid}]: Paused due to error (will retry)`, err);
-            } else {
-                console.log(`PouchDB sync [${userDid}]: Paused (idle)`);
-            }
+            console.warn(`PouchDB sync [${userDid}]: Paused`, err || "(idle)");
         })
         .on("active", () => {
             console.log(`PouchDB sync [${userDid}]: Active`);
         })
         .on("denied", (err) => {
-            console.error(`PouchDB sync [${userDid}]: Denied (authentication error or insufficient permissions)`, err);
-            if (syncHandlers.has(userDid)) {
-                syncHandlers.get(userDid)?.cancel();
-                syncHandlers.delete(userDid);
-            }
-            if (remoteDbInstances.has(userDid)) {
-                remoteDbInstances.delete(userDid);
-            }
+            console.error(`PouchDB sync [${userDid}]: Denied`, err);
+            syncHandlers.get(userDid)?.cancel();
+            syncHandlers.delete(userDid);
+            remoteDbInstances.delete(userDid);
         })
         .on("complete", (info) => {
-            console.log(`PouchDB sync [${userDid}]: Complete (live sync may have been cancelled)`, info);
-            if (syncHandlers.has(userDid)) {
-                syncHandlers.delete(userDid);
-            }
-            if (remoteDbInstances.has(userDid)) {
-                remoteDbInstances.delete(userDid);
-            }
+            console.log(`PouchDB sync [${userDid}]: Complete`, info);
+            syncHandlers.delete(userDid);
+            remoteDbInstances.delete(userDid);
         })
         .on("error", (err) => {
-            console.error(`PouchDB sync [${userDid}]: An unhandled error occurred`, err);
+            console.error(`PouchDB sync [${userDid}]: Error`, err);
         });
 
     console.log(`PouchDB live sync initiated for ${userDid}.`);
 }
 
-// Function to be called when user logs in and CouchDB details are available from API
-export async function setRemoteCouchDbCredentials(userDid: string, url: string, username: string, password?: string) {
+/**
+ * Internal function to set credentials without re-triggering initializeSync.
+ * @param triggerInitializeSync If true, will call initializeSync. Should be false if called from within initializeSync.
+ */
+async function internalSetRemoteCouchDbCredentials(
+    userDid: string,
+    url: string,
+    username: string,
+    encryptedPasswordData: EncryptedData,
+    saltHex: string,
+    triggerInitializeSync: boolean = true
+) {
     if (!userDid) {
-        console.error("setRemoteCouchDbCredentials called without userDid.");
+        console.error("internalSetRemoteCouchDbCredentials called without userDid.");
         return;
     }
-    console.log(`Attempting to set and store remote CouchDB credentials for ${userDid}.`);
+    console.log(`Attempting to set and store remote CouchDB credentials for ${userDid}. Encrypted.`);
 
-    const newConfig: CouchDbConfig = { userDid, url, username, password };
+    const newConfig: CouchDbConfig = {
+        userDid,
+        url,
+        username,
+        encryptedPassword: encryptedPasswordData,
+        passwordSalt: saltHex,
+    };
     const storageKey = `${COUCHDB_CONFIG_STORAGE_KEY}_${userDid}`;
 
     try {
-        // TODO: Encrypt the 'password' field before storing
         await chrome.storage.local.set({ [storageKey]: newConfig });
-        couchDbConfigCache.set(userDid, newConfig); // Update in-memory cache
-        console.log(`CouchDB credentials for ${userDid} stored in chrome.storage.local (unencrypted for now). Key:`, storageKey);
+        couchDbConfigCache.set(userDid, newConfig);
+        console.log(`Encrypted CouchDB credentials for ${userDid} stored. Key:`, storageKey);
 
         if (syncHandlers.has(userDid)) {
             console.log(`Cancelling existing sync handler for ${userDid} before re-initializing with new credentials.`);
@@ -163,11 +297,28 @@ export async function setRemoteCouchDbCredentials(userDid: string, url: string, 
             syncHandlers.delete(userDid);
             remoteDbInstances.delete(userDid);
         }
-        await initializeSync(userDid);
+        if (triggerInitializeSync) {
+            await initializeSync(userDid); // Re-initialize with new (potentially decrypted) credentials
+        }
     } catch (error) {
-        console.error(`Error storing CouchDB credentials for ${userDid}:`, error);
-        couchDbConfigCache.delete(userDid);
+        console.error(`Error storing encrypted CouchDB credentials for ${userDid}:`, error);
+        couchDbConfigCache.delete(userDid); // Clear cache on error
     }
+}
+
+/**
+ * Sets and stores encrypted remote CouchDB credentials for a user.
+ * This function is intended to be called externally when new credentials (already encrypted) are available.
+ * It will typically re-initialize the sync for that user.
+ */
+export async function setRemoteCouchDbCredentials(
+    userDid: string,
+    url: string,
+    username: string,
+    encryptedPasswordData: EncryptedData,
+    saltHex: string
+): Promise<void> {
+    await internalSetRemoteCouchDbCredentials(userDid, url, username, encryptedPasswordData, saltHex, true);
 }
 
 /**
@@ -189,7 +340,6 @@ export async function clearRemoteCouchDbCredentials(userDid: string) {
     if (remoteDbInstances.has(userDid)) {
         remoteDbInstances.delete(userDid);
     }
-    // Also destroy the local PouchDB instance if it exists
     if (localDbInstances.has(userDid)) {
         try {
             await localDbInstances.get(userDid)?.destroy();
@@ -209,7 +359,6 @@ export async function clearRemoteCouchDbCredentials(userDid: string) {
     }
 }
 
-// Function to get the local PouchDB database instance for a specific user
 export function getLocalUserDataDb(userDid: string): PouchDB.Database | null {
     if (!userDid) {
         console.error("getLocalUserDataDb called without userDid.");
@@ -223,27 +372,17 @@ export function getLocalUserDataDb(userDid: string): PouchDB.Database | null {
     return localDbInstances.get(userDid)!;
 }
 
-/**
- * Defines the structure for an application permission document stored in PouchDB.
- */
 export interface AppPermissionDoc {
-    _id: string; // Document ID, typically `app_permission:${appId}`
-    _rev?: string; // Document revision, managed by PouchDB
-    type: "app_permission"; // To distinguish from other document types
-    appId: string; // The unique identifier for the application
-    userDid: string; // The DID of the user these permissions belong to
-    grants: Record<string, "always" | "never" | "ask">; // Permission grants
-    createdAt: string; // ISO date string of creation
-    updatedAt: string; // ISO date string of last update
+    _id: string;
+    _rev?: string;
+    type: "app_permission";
+    appId: string;
+    userDid: string;
+    grants: Record<string, "always" | "never" | "ask">;
+    createdAt: string;
+    updatedAt: string;
 }
 
-/**
- * Creates or updates an application's permission grants in the local PouchDB for a specific user.
- * @param userDid The DID of the user.
- * @param appId The unique identifier for the application.
- * @param grants An object mapping permission strings to their grant status ('always', 'never', 'ask').
- * @returns A promise that resolves when the operation is complete.
- */
 export async function upsertAppPermission(
     userDid: string,
     appId: string,
@@ -253,20 +392,19 @@ export async function upsertAppPermission(
     if (!db) {
         throw new Error(`PouchDB instance not found for user ${userDid}`);
     }
-    const docId = `app_permission:${appId}`; // AppId should be unique across users for this doc structure
+    const docId = `app_permission:${appId}`;
     const now = new Date().toISOString();
 
     try {
         const existingDoc = await db.get<AppPermissionDoc>(docId);
         return await db.put({
             ...existingDoc,
-            userDid, // Ensure userDid is correctly set on update
+            userDid,
             grants,
             updatedAt: now,
         });
     } catch (error: any) {
         if (error.name === "not_found") {
-            // Document doesn't exist, create it
             return await db.put<AppPermissionDoc>({
                 _id: docId,
                 type: "app_permission",
@@ -277,19 +415,12 @@ export async function upsertAppPermission(
                 updatedAt: now,
             });
         } else {
-            // Another error occurred
             console.error(`Error upserting app permission for ${appId} (user ${userDid}):`, error);
-            throw error; // Re-throw the error to be handled by the caller
+            throw error;
         }
     }
 }
 
-/**
- * Retrieves an application's permission grants from the local PouchDB for a specific user.
- * @param userDid The DID of the user.
- * @param appId The unique identifier for the application.
- * @returns A promise that resolves with the AppPermissionDoc or null if not found.
- */
 export async function getAppPermissions(userDid: string, appId: string): Promise<AppPermissionDoc | null> {
     const db = getLocalUserDataDb(userDid);
     if (!db) {
@@ -299,26 +430,15 @@ export async function getAppPermissions(userDid: string, appId: string): Promise
     const docId = `app_permission:${appId}`;
     try {
         const doc = await db.get<AppPermissionDoc>(docId);
-        // Ensure the document belongs to the correct user, though docId structure might make this redundant
-        // if appId is globally unique for permissions. If appId can be the same for different users' permissions
-        // on that app, then this check is important. Assuming appId for permissions is unique to the app itself.
         if (doc.userDid !== userDid && doc._id.startsWith("app_permission:")) {
-            // This case should ideally not happen if docId is `app_permission:${appId}` and appId is globally unique for the app.
-            // If appId is NOT globally unique for permissions (e.g. an app can have different permissions for different users),
-            // then the docId might need to include userDid, e.g. `user:${userDid}:app_permission:${appId}`.
-            // For now, assuming `app_permission:${appId}` is sufficient and `doc.userDid` is for record keeping.
             console.warn(`Permissions doc for ${appId} found, but userDid mismatch. Doc UserDID: ${doc.userDid}, Requested UserDID: ${userDid}`);
-            // Depending on strictness, could return null here.
         }
         return doc;
     } catch (error: any) {
         if (error.name === "not_found") {
-            return null; // Not found is a valid outcome
+            return null;
         }
         console.error(`Error fetching app permission for ${appId} (user ${userDid}):`, error);
-        throw error; // Re-throw other errors
+        throw error;
     }
 }
-
-// No default export of a single DB instance anymore.
-// Consumers will use getLocalUserDataDb(userDid).

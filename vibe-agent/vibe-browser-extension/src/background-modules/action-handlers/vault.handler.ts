@@ -4,6 +4,7 @@ import * as Types from "../types";
 import * as SessionManager from "../session-manager";
 import { deriveEncryptionKey, decryptData } from "../../lib/crypto";
 import { broadcastAppStateToSubscriptions } from "../app-state-broadcaster";
+import * as PouchDBManager from "../../lib/pouchdb";
 
 export async function handleUnlockVault(payload: any): Promise<any> {
     console.log("Processing 'UNLOCK_VAULT'");
@@ -21,12 +22,12 @@ export async function handleUnlockVault(payload: any): Promise<any> {
         throw new Types.HandledError({ error: { message: "Vault or salt not found. Setup may not be complete.", code: "VAULT_NOT_FOUND" } });
     }
 
-    const salt = Buffer.from(saltHex, "hex");
+    const saltBuffer = Buffer.from(saltHex, "hex");
     let encryptionKey: CryptoKey | null = null;
     let decryptedSeedAttempt: string | null = null;
 
     try {
-        encryptionKey = await deriveEncryptionKey(password, salt);
+        encryptionKey = await deriveEncryptionKey(password, new Uint8Array(saltBuffer.buffer, saltBuffer.byteOffset, saltBuffer.byteLength));
         decryptedSeedAttempt = await decryptData(vaultData.encryptedSeedPhrase, encryptionKey);
         if (!decryptedSeedAttempt) {
             throw new Error("Decryption failed, returned null seed."); // This will be caught and re-thrown as HandledError
@@ -63,6 +64,10 @@ export async function handleUnlockVault(payload: any): Promise<any> {
 
         if (SessionManager.currentActiveDid) {
             await chrome.storage.local.set({ [Constants.STORAGE_KEY_LAST_ACTIVE_DID]: SessionManager.currentActiveDid });
+            // Attempt to initialize PouchDB sync now that vault is unlocked and password is known
+            PouchDBManager.initializeSync(SessionManager.currentActiveDid, password).catch((err) =>
+                console.error(`Error initializing PouchDB sync for ${SessionManager.currentActiveDid} after vault unlock:`, err)
+            );
         }
         console.info(`Vault unlocked for ${SessionManager.currentActiveDid}. API calls will attempt to use/refresh tokens.`);
         await broadcastAppStateToSubscriptions();

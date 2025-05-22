@@ -6,6 +6,7 @@ import * as TokenManager from "../token-manager";
 import { seedFromMnemonic, getMasterHDKeyFromSeed, deriveChildKeyPair, wipeMemory, signMessage, deriveEncryptionKey, decryptData } from "../../lib/crypto";
 import { didFromEd25519 } from "../../lib/identity";
 import { broadcastAppStateToSubscriptions } from "../app-state-broadcaster";
+import * as PouchDBManager from "../../lib/pouchdb";
 
 export async function handleGetActiveIdentityDetails(): Promise<any> {
     let didToFetch: string | null = null;
@@ -265,9 +266,9 @@ export async function handleRequestLoginFlow(payload: any): Promise<any> {
         if (!vaultData || !saltHex) {
             throw new Types.HandledError({ error: { message: "Vault/salt not found for unlock attempt.", code: "VAULT_NOT_FOUND" } });
         }
-        const salt = Buffer.from(saltHex, "hex");
+        const saltBuffer = Buffer.from(saltHex, "hex");
         try {
-            const encryptionKey = await deriveEncryptionKey(password, salt);
+            const encryptionKey = await deriveEncryptionKey(password, new Uint8Array(saltBuffer.buffer, saltBuffer.byteOffset, saltBuffer.byteLength));
             decryptedSeed = await decryptData(vaultData.encryptedSeedPhrase, encryptionKey);
             if (!decryptedSeed) throw new Error("Decryption failed.");
 
@@ -389,11 +390,22 @@ export async function handleSwitchActiveIdentity(payload: any): Promise<any> {
         SessionManager.setCurrentActiveDid(null); // Clear current active DID from session state as it's locked
     }
 
-    // Clear tokens for previous and new DID to force re-auth or fresh token fetch if needed
+    // Clear tokens and PouchDB sync for previous DID
     if (previousActiveDid && previousActiveDid !== targetDid) {
+        await PouchDBManager.clearRemoteCouchDbCredentials(previousActiveDid).catch((err) =>
+            console.error(`Error clearing PouchDB credentials for ${previousActiveDid} during identity switch:`, err)
+        );
         await TokenManager.clearCpTokens(previousActiveDid);
     }
-    await TokenManager.clearCpTokens(targetDid); // Clear for the new one too
+
+    // Clear tokens for the new DID to ensure fresh state if re-logging or tokens were stale
+    await TokenManager.clearCpTokens(targetDid);
+
+    // Attempt to initialize sync for the new target DID
+    // Password is not available here, initializeSync will handle fetching or using stored if decryptable (unlikely if locked)
+    PouchDBManager.initializeSync(targetDid, undefined).catch((err) =>
+        console.error(`Error initializing PouchDB sync for ${targetDid} after identity switch:`, err)
+    );
 
     await broadcastAppStateToSubscriptions();
     return {

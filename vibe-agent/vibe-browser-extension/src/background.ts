@@ -34,12 +34,24 @@ import { didFromEd25519 } from "./lib/identity";
 
 console.log("Vibe Background Service Worker started.");
 
+import * as PouchDBManager from "./lib/pouchdb"; // Import PouchDBManager
+
 // Initialize SessionManager to load persisted active DID
 (async () => {
     try {
         await SessionManager.initializeSessionManager();
+        if (SessionManager.currentActiveDid) {
+            console.log(`[BACKGROUND_SCRIPT] Attempting to initialize PouchDB sync for active DID: ${SessionManager.currentActiveDid} on startup.`);
+            // Password is not available at startup, so pass undefined.
+            // initializeSync will try to use stored (if decryptable without password, unlikely) or fetch live.
+            PouchDBManager.initializeSync(SessionManager.currentActiveDid, undefined).catch((err) =>
+                console.error(`[BACKGROUND_SCRIPT] Error initializing PouchDB sync on startup for ${SessionManager.currentActiveDid}:`, err)
+            );
+        } else {
+            console.log("[BACKGROUND_SCRIPT] No active DID found on startup, skipping PouchDB sync initialization.");
+        }
     } catch (error) {
-        console.error("[BACKGROUND_SCRIPT] Error during SessionManager initialization:", error);
+        console.error("[BACKGROUND_SCRIPT] Error during SessionManager or PouchDB initialization on startup:", error);
     }
 })();
 

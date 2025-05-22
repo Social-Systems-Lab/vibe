@@ -18,6 +18,7 @@ import {
 } from "../../lib/crypto";
 import { didFromEd25519 } from "../../lib/identity";
 import { broadcastAppStateToSubscriptions } from "../app-state-broadcaster";
+import * as PouchDBManager from "../../lib/pouchdb";
 
 export async function handleSetupCreateVault(payload: any): Promise<any> {
     await SessionManager.lockVaultState();
@@ -243,6 +244,14 @@ export async function handleSetupImportSeedAndRecoverIdentities(payload: any): P
             await SessionManager.loadActiveIdentity(); // This will set currentActiveDid
             if (SessionManager.currentActiveDid) {
                 await chrome.storage.local.set({ [Constants.STORAGE_KEY_LAST_ACTIVE_DID]: SessionManager.currentActiveDid });
+                // Attempt to initialize sync for the newly active recovered identity
+                const activeIdentity = recoveredIdentities.find((id) => id.identityDid === SessionManager.currentActiveDid);
+                if (activeIdentity && (activeIdentity.cloudUrl || activeIdentity.instanceUrl)) {
+                    // 'password' is the password used to import/recover the seed
+                    PouchDBManager.initializeSync(SessionManager.currentActiveDid, password).catch((err) =>
+                        console.error(`Error initializing PouchDB sync for recovered DID ${SessionManager.currentActiveDid}:`, err)
+                    );
+                }
             }
             await broadcastAppStateToSubscriptions();
             return {
@@ -290,7 +299,13 @@ export async function handleSetupCompleteAndFinalize(payload: any): Promise<any>
                 vaultData.encryptedSeedPhrase,
                 await deriveEncryptionKey(
                     password,
-                    Buffer.from((await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT_SALT))[Constants.STORAGE_KEY_VAULT_SALT], "hex")
+                    await (async () => {
+                        // Await the result of the IIFE
+                        // Make IIFE async
+                        const saltHex = (await chrome.storage.local.get(Constants.STORAGE_KEY_VAULT_SALT))[Constants.STORAGE_KEY_VAULT_SALT];
+                        const saltBuffer = Buffer.from(saltHex, "hex");
+                        return new Uint8Array(saltBuffer.buffer, saltBuffer.byteOffset, saltBuffer.byteLength);
+                    })()
                 )
             ))
         ) {
@@ -409,6 +424,14 @@ export async function handleSetupCompleteAndFinalize(payload: any): Promise<any>
     await SessionManager.loadActiveIdentity(); // This will set currentActiveDid
     if (SessionManager.currentActiveDid) {
         await chrome.storage.local.set({ [Constants.STORAGE_KEY_LAST_ACTIVE_DID]: SessionManager.currentActiveDid });
+        // If cloudUrl is set (meaning Vibe Cloud is configured), attempt to initialize sync
+        const currentIdentity = vaultData.identities[identityIndexToFinalize];
+        if (currentIdentity && (currentIdentity.cloudUrl || currentIdentity.instanceUrl) && SessionManager.currentActiveDid) {
+            // The 'password' variable holds the user's main vault password used for this setup flow
+            PouchDBManager.initializeSync(SessionManager.currentActiveDid, password).catch((err) =>
+                console.error(`Error initializing PouchDB sync for ${SessionManager.currentActiveDid} after setup completion:`, err)
+            );
+        }
     }
 
     await broadcastAppStateToSubscriptions();
@@ -435,9 +458,9 @@ export async function handleFinalizeNewIdentitySetup(payload: any): Promise<any>
         if (!vaultDataForUnlock || !saltHex) {
             throw new Types.HandledError({ error: { message: "Vault/salt not found for unlock attempt.", code: "VAULT_NOT_FOUND" } });
         }
-        const salt = Buffer.from(saltHex, "hex");
+        const saltBuffer = Buffer.from(saltHex, "hex");
         try {
-            const encryptionKey = await deriveEncryptionKey(password, salt);
+            const encryptionKey = await deriveEncryptionKey(password, new Uint8Array(saltBuffer.buffer, saltBuffer.byteOffset, saltBuffer.byteLength));
             const decryptedSeedAttempt = await decryptData(vaultDataForUnlock.encryptedSeedPhrase, encryptionKey);
             if (!decryptedSeedAttempt) throw new Error("Decryption failed.");
             SessionManager.setInMemoryDecryptedSeed(decryptedSeedAttempt);
@@ -531,6 +554,14 @@ export async function handleFinalizeNewIdentitySetup(payload: any): Promise<any>
     await SessionManager.loadActiveIdentity(); // Load it into session
     if (SessionManager.currentActiveDid) {
         await chrome.storage.local.set({ [Constants.STORAGE_KEY_LAST_ACTIVE_DID]: SessionManager.currentActiveDid });
+        // If cloudUrl is set, attempt to initialize sync
+        const currentIdentity = vaultData.identities[identityEntryIndex];
+        if (currentIdentity && (currentIdentity.cloudUrl || currentIdentity.instanceUrl) && SessionManager.currentActiveDid) {
+            // The 'password' variable holds the user's main vault password used for this setup flow
+            PouchDBManager.initializeSync(SessionManager.currentActiveDid, password).catch((err) =>
+                console.error(`Error initializing PouchDB sync for ${SessionManager.currentActiveDid} after finalizing new identity setup:`, err)
+            );
+        }
     }
     await chrome.storage.local.set({ [Constants.STORAGE_KEY_SETUP_COMPLETE]: true }); // Ensure setup is marked complete
 
@@ -572,9 +603,9 @@ export async function handleSetupNewIdentityAndFinalize(payload: any): Promise<a
         if (!vaultDataForUnlock || !saltHex) {
             throw new Types.HandledError({ error: { message: "Vault or salt not found for unlock attempt.", code: "VAULT_NOT_FOUND" } });
         }
-        const salt = Buffer.from(saltHex, "hex");
+        const saltBuffer = Buffer.from(saltHex, "hex");
         try {
-            const encryptionKey = await deriveEncryptionKey(password, salt);
+            const encryptionKey = await deriveEncryptionKey(password, new Uint8Array(saltBuffer.buffer, saltBuffer.byteOffset, saltBuffer.byteLength));
             const decryptedSeedAttempt = await decryptData(vaultDataForUnlock.encryptedSeedPhrase, encryptionKey);
             if (!decryptedSeedAttempt) {
                 throw new Error("Decryption failed with the provided password.");
@@ -676,6 +707,14 @@ export async function handleSetupNewIdentityAndFinalize(payload: any): Promise<a
         await SessionManager.loadActiveIdentity(); // Load new active identity into session
         if (SessionManager.currentActiveDid) {
             await chrome.storage.local.set({ [Constants.STORAGE_KEY_LAST_ACTIVE_DID]: SessionManager.currentActiveDid });
+            // If cloudUrl is set, attempt to initialize sync
+            const currentIdentity = vaultData.identities[newIdentityEntryIndexInVault];
+            if (currentIdentity && (currentIdentity.cloudUrl || currentIdentity.instanceUrl) && SessionManager.currentActiveDid) {
+                // The 'password' variable holds the user's main vault password used for this setup flow
+                PouchDBManager.initializeSync(SessionManager.currentActiveDid, password).catch((err) =>
+                    console.error(`Error initializing PouchDB sync for ${SessionManager.currentActiveDid} after new identity finalization:`, err)
+                );
+            }
         }
         await chrome.storage.local.set({ [Constants.STORAGE_KEY_SETUP_COMPLETE]: true }); // Ensure setup is complete
 
