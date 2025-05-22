@@ -216,7 +216,7 @@ export const SettingsPage: React.FC = () => {
         return (
             <div className="p-6 text-center">
                 <p>No active identity found. Please select or create an identity first.</p>
-                <Button onClick={() => setLocation("/dashboard")} className="mt-4">
+                <Button onClick={() => setLocation("/")} className="mt-4">
                     Go to Dashboard
                 </Button>
             </div>
@@ -226,7 +226,7 @@ export const SettingsPage: React.FC = () => {
     return (
         <div className="p-6 space-y-6 bg-background text-foreground h-full flex flex-col">
             <div className="flex items-center mb-4">
-                <Button onClick={() => setLocation("/dashboard")} variant="ghost" size="icon" className="mr-2">
+                <Button onClick={() => setLocation("/")} variant="ghost" size="icon" className="mr-2">
                     <ArrowLeft className="h-5 w-5" />
                 </Button>
                 <h2 className="text-xl font-semibold">Identity Settings</h2>
