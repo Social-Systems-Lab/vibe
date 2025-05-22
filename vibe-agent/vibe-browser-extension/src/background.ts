@@ -1,8 +1,6 @@
 console.log("[BACKGROUND_SCRIPT_RESTORING_CODE] Service worker script has started."); // Keep top-level log
 import { Buffer } from "buffer"; // Standard import
 import * as Constants from "./background-modules/constants";
-import * as Types from "./background-modules/types";
-import * as TokenManager from "./background-modules/token-manager";
 import * as SessionManager from "./background-modules/session-manager";
 import * as EventListeners from "./background-modules/event-listeners";
 import * as MessageHandler from "./background-modules/message-handler"; // Added this import
@@ -16,21 +14,6 @@ if (typeof self !== "undefined" && typeof (self as any).Buffer === "undefined") 
 } else {
     console.log("[BACKGROUND_SCRIPT_BUFFER_POLYFILL] self is not defined. Cannot assign Buffer to self.Buffer.");
 }
-
-import {
-    generateMnemonic,
-    generateSalt,
-    deriveEncryptionKey,
-    encryptData,
-    seedFromMnemonic,
-    getMasterHDKeyFromSeed,
-    deriveChildKeyPair,
-    wipeMemory,
-    decryptData,
-    validateMnemonic,
-    signMessage,
-} from "./lib/crypto";
-import { didFromEd25519 } from "./lib/identity";
 
 console.log("Vibe Background Service Worker started.");
 

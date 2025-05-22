@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { User, Loader2 } from "lucide-react";
 // VibeLogo import removed, will use direct img tag if needed, or consistent icon
+import type { ChromeMessage } from "@/background-modules/types";
 import {
     appStatusAtom,
     initializeAppStateAtom, // For re-triggering init on reset
@@ -26,13 +27,9 @@ interface CloudServiceOption {
     isDefault?: boolean;
 }
 
-// Define ChromeMessage type, consider moving to a shared types file
-interface ChromeMessage {
-    type: string;
-    payload?: any;
-    error?: { message?: string; [key: string]: any };
-    [key: string]: any;
-}
+// ChromeMessage is now imported from @/background-modules/types if needed,
+// or used implicitly by casting chrome.runtime.sendMessage responses.
+// For direct usage, ensure: import type { ChromeMessage } from "@/background-modules/types";
 
 type WizardStep = "enterDetails" | "creating" | "creationComplete";
 
@@ -224,6 +221,7 @@ export const NewIdentityPage: React.FC = () => {
                 {
                     title: "Finalize Identity Setup",
                     description: "Enter your vault password to encrypt and save your new identity.",
+                    forcePrompt: false, // Don't force prompt if vault is already unlocked
                 }
             );
             // If requestUnlockAndPerformAction completes without throwing, onSetupCompleteHandler was called

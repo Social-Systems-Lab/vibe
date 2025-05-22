@@ -5,7 +5,7 @@ metadata:
   name: {{ .Release.Name }}-strip-couchdb
   namespace: {{ .Release.Namespace }} # Deploys middleware in the same namespace as the release
   labels:
-    app.kubernetes.io/name: {{ include "vibe-cloud-instance.name" . }}
+    app.kubernetes.io/name: {{ include "vibe-cloud-instance.fullname" . }}
     helm.sh/chart: {{ include "vibe-cloud-instance.chart" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}

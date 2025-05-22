@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { User, ArrowLeft, Trash2 } from "lucide-react";
+import { User, ArrowLeft, Trash2, RefreshCcw } from "lucide-react";
 import { currentIdentityAtom, allIdentitiesAtom, type Identity } from "../store/identityAtoms";
 import { isLoadingIdentityAtom, appStatusAtom } from "../store/appAtoms";
 
@@ -208,6 +208,21 @@ export const SettingsPage: React.FC = () => {
         }
     };
 
+    const handleResetVibe = async () => {
+        if (confirm("Are you sure you want to reset Vibe? This will clear your stored data.")) {
+            try {
+                await chrome.storage.local.clear();
+                await chrome.storage.session.clear(); // Clear session storage too
+                alert("Vibe has been reset. The extension will now re-initialize.");
+                setAppStatus("LOADING"); // Trigger re-initialization
+                setLocation("/setup"); // Navigate to root, initializer will pick correct route
+            } catch (err) {
+                console.error("Error resetting storage:", err);
+                setError("Failed to reset Vibe. Please try again or reinstall the extension.");
+            }
+        }
+    };
+
     if (isLoadingGlobal && !currentIdentity) {
         return <div className="p-6 text-center">Loading identity settings...</div>;
     }
@@ -311,10 +326,15 @@ export const SettingsPage: React.FC = () => {
                     variant="destructive"
                     onClick={handleDeleteIdentityClicked}
                     disabled={isSaving || isLoadingGlobal || !currentIdentity}
-                    className="w-full"
+                    className="w-full mb-3"
                 >
                     <Trash2 className="mr-2 h-4 w-4" />
                     Delete This Identity
+                </Button>
+
+                <Button variant="destructive" onClick={handleResetVibe} disabled={isSaving || isLoadingGlobal || !currentIdentity} className="w-full">
+                    <RefreshCcw className="mr-2 h-4 w-4" />
+                    Reset Vibe
                 </Button>
             </div>
         </div>

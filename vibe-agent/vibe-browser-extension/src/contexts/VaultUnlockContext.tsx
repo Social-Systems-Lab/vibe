@@ -2,9 +2,16 @@ import React, { createContext, useContext, useState, useCallback } from "react";
 import type { ReactNode } from "react"; // Import ReactNode as a type
 import { PasswordPromptModal } from "@/components/identity/PasswordPromptModal";
 // import { VibeBackgroundMessage, VibeBackgroundResponse } from "@/background-modules/types"; // Assuming types exist - commented out for now
+import type { ChromeMessage } from "@/background-modules/types"; // Assuming ChromeMessage is defined here or import from a shared types file
+
+interface VaultUnlockOptions {
+    title?: string;
+    description?: string;
+    forcePrompt?: boolean; // New option
+}
 
 interface VaultUnlockContextType {
-    requestUnlockAndPerformAction: <T>(actionFn: (password?: string) => Promise<T>, options?: { title?: string; description?: string }) => Promise<T>;
+    requestUnlockAndPerformAction: <T>(actionFn: (password?: string) => Promise<T>, options?: VaultUnlockOptions) => Promise<T>;
 }
 
 const VaultUnlockContext = createContext<VaultUnlockContextType | undefined>(undefined);
@@ -34,40 +41,72 @@ export const VaultUnlockProvider: React.FC<VaultUnlockProviderProps> = ({ childr
     const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
 
     const requestUnlockAndPerformAction = useCallback(
-        <T extends unknown>( // Explicitly type T for useCallback
-            actionFn: (password?: string) => Promise<T>,
-            options: { title?: string; description?: string } = {}
-        ): Promise<T> => {
-            return new Promise<T>((resolve, reject) => {
-                // Removed async here, actionFnWrapper is async
+        <T extends unknown>(actionFn: (password?: string) => Promise<T>, options: VaultUnlockOptions = {}): Promise<T> => {
+            return new Promise<T>(async (resolve, reject) => {
+                // Added async here for vault status check
+                const { forcePrompt = false, title, description } = options;
+
+                // Placeholder for vault status check
+                // In a real implementation, this would be an async call to the background script
+                // const isVaultLocked = await getVaultStatusFromBackground();
+                let isVaultLocked = true; // Default to locked for safety if check fails
+                try {
+                    const response = (await chrome.runtime.sendMessage({
+                        type: "VIBE_AGENT_REQUEST",
+                        action: "GET_LOCK_STATE", // Corrected action name
+                        requestId: crypto.randomUUID().toString(),
+                    })) as ChromeMessage;
+                    if (response && response.type === "VIBE_AGENT_RESPONSE" && typeof response.payload?.isUnlocked === "boolean") {
+                        isVaultLocked = !response.payload.isUnlocked; // Correctly interpret isUnlocked
+                    } else {
+                        console.warn("Could not determine vault status from GET_LOCK_STATE, assuming locked.", response);
+                    }
+                } catch (e) {
+                    console.error("Error calling GET_LOCK_STATE:", e, "Assuming locked.");
+                }
+
+                if (!forcePrompt && !isVaultLocked) {
+                    // Vault is unlocked and prompt is not forced, perform action directly
+                    try {
+                        setOperationInProgress(true);
+                        const result = await actionFn(); // No password passed
+                        resolve(result);
+                    } catch (error: any) {
+                        console.error("Error during action (vault unlocked, no prompt):", error);
+                        setErrorMessage(error.message || "Operation failed.");
+                        reject(error);
+                    } finally {
+                        setOperationInProgress(false);
+                    }
+                    return;
+                }
+
+                // Proceed with modal if prompt is forced or vault is locked
                 setModalConfig({
-                    title: options.title || "Vault Locked",
-                    description: options.description || "Please enter your vault password to proceed.",
+                    title: title || "Vault Locked",
+                    description: description || "Please enter your vault password to proceed.",
                     actionFnWrapper: async (password: string) => {
                         setOperationInProgress(true);
                         setErrorMessage(undefined);
                         try {
                             const result = await actionFn(password);
-                            resolve(result); // Resolve the main promise
-                            setIsModalOpen(false); // Close modal on success
+                            resolve(result);
+                            setIsModalOpen(false);
                         } catch (error: any) {
                             console.error("Error during action after password prompt:", error);
                             setErrorMessage(error.message || "Operation failed after unlock attempt.");
-                            // Let PasswordPromptModal display the error and user retry/cancel.
-                            // The main promise is not rejected here to allow retries from modal.
-                            // It will be rejected if the modal is cancelled (in handleCloseModal).
-                            throw error; // Re-throw for PasswordPromptModal to catch and display
+                            throw error;
                         } finally {
                             setOperationInProgress(false);
                         }
                     },
-                    resolvePromise: resolve, // Storing resolve
-                    rejectPromise: reject, // Storing reject
+                    resolvePromise: resolve,
+                    rejectPromise: reject,
                 });
                 setIsModalOpen(true);
             });
         },
-        [] // No dependencies, as it only uses its own arguments and setState
+        [] // Dependencies might be needed if getVaultStatusFromBackground were a hook-based state
     );
 
     const handleCloseModal = useCallback(() => {

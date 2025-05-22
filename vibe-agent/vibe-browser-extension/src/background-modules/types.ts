@@ -58,6 +58,17 @@ export interface VibeState {
     // Add other state properties like connection status, errors, etc.
 }
 
+// Generic message structure for chrome.runtime.sendMessage
+// Consider making this more specific if possible, or use discriminated unions for payload based on type.
+export interface ChromeMessage {
+    type: string;
+    action?: string; // Often used to specify the operation
+    payload?: any;
+    error?: { message?: string; [key: string]: any };
+    requestId?: string; // For tracking requests
+    [key: string]: any; // Allow other properties
+}
+
 // API response type for tokenDetails (align with CP models.ts TokenResponseSchema)
 export interface TokenDetails {
     accessToken: string;
