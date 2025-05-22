@@ -42,7 +42,7 @@ export const UserProfilePage: React.FC = () => {
     const handleClose = () => {
         setShowVibeUserProfile(false); // Hide the profile if this atom controls overlay visibility
         setCurrentVibeProfileData(null); // Clear the data
-        setLocation("/dashboard"); // Navigate back to dashboard or previous page
+        setLocation("/"); // Navigate back to dashboard or previous page
     };
 
     if (!profileData) {

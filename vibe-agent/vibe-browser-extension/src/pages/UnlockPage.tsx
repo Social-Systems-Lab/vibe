@@ -57,7 +57,7 @@ export const UnlockPage: React.FC = () => {
                     // For now, let's assume useAppInitializer's storage listener will re-init and navigate,
                     // or DashboardPage will load data.
                     // If direct navigation is preferred:
-                    setLocation("/dashboard");
+                    setLocation("/");
                     // Optionally, trigger identity loading here if not handled by dashboard/initializer
                     // await loadIdentities();
                 } else if (response?.type === "VIBE_AGENT_RESPONSE_ERROR") {

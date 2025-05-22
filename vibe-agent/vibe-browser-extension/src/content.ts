@@ -235,7 +235,8 @@ function showConsentPopover(
 
     // --- Continue Button Row ---
     const continueButton = document.createElement("button");
-    continueButton.textContent = `Continue as ${identityName.split(" ")[0]}`; // Use first name
+    // continueButton.textContent = `Continue as ${identityName.split(" ")[0]}`; // Use first name
+    continueButton.textContent = `Review`;
     continueButton.style.width = "100%";
     continueButton.style.padding = "10px 0"; // Vertical padding
     continueButton.style.border = "none";

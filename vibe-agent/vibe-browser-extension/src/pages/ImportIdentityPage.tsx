@@ -51,7 +51,7 @@ export const ImportIdentityPage: React.FC = () => {
                 // The useAppInitializer's storage listener should ideally pick up changes and navigate.
                 // Or, we can set status and navigate.
                 setAppStatus("INITIALIZED_UNLOCKED"); // Assuming import means vault is now set up and unlocked
-                setLocation("/dashboard");
+                setLocation("/");
                 // DashboardPage will then load all identities.
             } else if (response?.type === "VIBE_AGENT_RESPONSE_ERROR") {
                 setLocalError(response.error?.message || "Failed to import identity.");
@@ -67,7 +67,7 @@ export const ImportIdentityPage: React.FC = () => {
     }, [mnemonic, password, setIsImporting, setAppStatus, setLocalError, setLocation]);
 
     const handleCancel = () => {
-        setLocation("/dashboard"); // Or to settings, depending on where user came from
+        setLocation("/"); // Or to settings, depending on where user came from
     };
 
     return (

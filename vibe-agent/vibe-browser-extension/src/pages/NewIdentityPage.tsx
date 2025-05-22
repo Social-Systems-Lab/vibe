@@ -153,7 +153,7 @@ export const NewIdentityPage: React.FC = () => {
                 // Clear props for this wizard as it's done
                 setProps(null);
                 // Navigating to dashboard should trigger data refresh there
-                setLocation("/dashboard");
+                setLocation("/");
             } else {
                 throw new Error(response?.error?.message || "Failed to finalize new identity via background.");
             }
@@ -248,7 +248,7 @@ export const NewIdentityPage: React.FC = () => {
             setLocation("/setup");
         } else {
             // If cancelling adding a subsequent identity, go back to dashboard or settings
-            setLocation("/dashboard"); // Or wherever the user came from
+            setLocation("/"); // Or wherever the user came from
         }
     };
 
@@ -403,7 +403,7 @@ export const NewIdentityPage: React.FC = () => {
             <img src="/icon-dev.png" alt="Vibe Logo" className="w-16 h-16 mb-2" />
             <h3 className="text-2xl font-semibold">Identity Created!</h3>
             <p className="text-muted-foreground max-w-xs">Your new identity {identityName ? `"${identityName}"` : ""} has been successfully set up.</p>
-            <Button onClick={() => setLocation("/dashboard")} className="w-full max-w-xs bg-violet-500 hover:bg-violet-600 text-primary-foreground">
+            <Button onClick={() => setLocation("/")} className="w-full max-w-xs bg-violet-500 hover:bg-violet-600 text-primary-foreground">
                 Done
             </Button>
         </div>
@@ -440,7 +440,7 @@ export const NewIdentityPage: React.FC = () => {
         return (
             <div className="w-full h-full flex flex-col items-center justify-center p-4">
                 <p className="text-red-500">Error: Missing required information to create a new identity.</p>
-                <Button onClick={() => setLocation("/dashboard")} variant="link" className="mt-2">
+                <Button onClick={() => setLocation("/")} variant="link" className="mt-2">
                     Go to Dashboard
                 </Button>
             </div>

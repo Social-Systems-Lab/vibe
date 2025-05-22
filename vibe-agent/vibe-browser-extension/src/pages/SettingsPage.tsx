@@ -176,7 +176,7 @@ export const SettingsPage: React.FC = () => {
                                 setAppStatus("SETUP_NOT_COMPLETE");
                             }
                             setTimeout(() => {
-                                setLocation(remainingIdentities.length > 0 ? "/dashboard" : "/setup");
+                                setLocation(remainingIdentities.length > 0 ? "/" : "/setup");
                             }, 2000);
                         } else if (response?.type === "VIBE_AGENT_RESPONSE_ERROR") {
                             throw new Error(response.error?.message || "Failed to delete identity.");

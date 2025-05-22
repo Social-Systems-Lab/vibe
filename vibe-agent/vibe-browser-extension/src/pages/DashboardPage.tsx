@@ -437,9 +437,9 @@ export function DashboardPage() {
                     </Button>
                 </div>
             )}
-            {!activeAppContext && currentIdentity && (
+            {/* {!activeAppContext && currentIdentity && (
                 <div className="px-4 py-3 text-xs text-gray-500 border-b border-gray-200">No specific application context active in the current tab.</div>
-            )}
+            )} */}
             {/* No extra hr needed if the above sections handle borders */}
             <div className="flex flex-col gap-1 p-4">
                 <h3 className="text-xs font-medium text-gray-500 mb-2">Other Identities</h3>

@@ -2,6 +2,7 @@ import * as Types from "../types";
 import * as SessionManager from "../session-manager";
 import * as Constants from "../constants";
 import { appSubscriptions, getCurrentVibeStateForSubscription, broadcastAppStateToSubscriptions } from "../app-state-broadcaster";
+import { getAppPermissions, upsertAppPermission, type AppPermissionDoc } from "../../lib/pouchdb";
 
 // Map to store resolve/reject functions for pending consent requests
 // The resolve function will be called with the outcome of the consent decision
@@ -83,10 +84,9 @@ export async function handleInitializeAppSession(payload: any, sender: chrome.ru
     // --- Permission Logic Start ---
     let grantedPermissions: Record<string, Types.PermissionSetting> = {};
     if (currentAgentActiveDid) {
-        const PERMISSIONS_STORE_KEY = "permissionsStore"; // TODO: Move to constants
-        const allPermissionsStore = (await chrome.storage.local.get(PERMISSIONS_STORE_KEY))[PERMISSIONS_STORE_KEY] || {};
-        const permissionKey = `${currentAgentActiveDid}_${origin}_${appIdFromManifestValue}`;
-        const existingPermissions: Record<string, Types.PermissionSetting> = allPermissionsStore[permissionKey] || {};
+        // Use PouchDB to get existing permissions
+        const appPermissionDoc = await getAppPermissions(currentAgentActiveDid, appIdFromManifestValue);
+        const existingPermissions: Record<string, Types.PermissionSetting> = appPermissionDoc?.grants || {};
 
         const requestedPermissionsFromManifest: string[] = appManifest?.permissions || [];
         let consentNeeded = false;
@@ -303,22 +303,17 @@ export async function handleSubmitConsentDecision(payload: any, sender: chrome.r
         return { success: false, error: "Insufficient data for submitting consent decision." };
     }
 
-    const PERMISSIONS_STORE_KEY = "permissionsStore"; // TODO: Move to constants
     let finalGrantedPermissionsForInit: Record<string, Types.PermissionSetting> = {};
 
     try {
-        const storeResult = await chrome.storage.local.get(PERMISSIONS_STORE_KEY);
-        const allPermissionsStore = storeResult[PERMISSIONS_STORE_KEY] || {};
-        const permissionKey = `${activeDid}_${origin}_${appId}`;
-
         if (decision === "allow") {
-            allPermissionsStore[permissionKey] = grantedPermissions;
             finalGrantedPermissionsForInit = grantedPermissions;
-            console.log(`[BG] Permissions ALLOWED and stored for key ${permissionKey}:`, grantedPermissions);
+            await upsertAppPermission(activeDid, appId, grantedPermissions);
+            console.log(`[BG] Permissions ALLOWED and stored in PouchDB for user ${activeDid}, appId ${appId}:`, grantedPermissions);
         } else if (decision === "deny") {
-            allPermissionsStore[permissionKey] = {}; // Explicitly store empty object for denial
             finalGrantedPermissionsForInit = {}; // Denied means no permissions granted
-            console.log(`[BG] Permissions DENIED for key ${permissionKey}. Stored empty permissions.`);
+            await upsertAppPermission(activeDid, appId, {}); // Store empty grants for denial
+            console.log(`[BG] Permissions DENIED for user ${activeDid}, appId ${appId}. Stored empty permissions in PouchDB.`);
         } else {
             console.warn(`[BG] handleSubmitConsentDecision: Unknown decision type: ${decision}`);
             if (pendingConsentPromises.has(consentRequestId)) {
@@ -330,8 +325,8 @@ export async function handleSubmitConsentDecision(payload: any, sender: chrome.r
             return { success: false, error: `Unknown decision type: ${decision}` };
         }
 
-        await chrome.storage.local.set({ [PERMISSIONS_STORE_KEY]: allPermissionsStore });
-        console.log(`[BG] Updated permissionsStore saved to local storage.`);
+        // No longer need to manage PERMISSIONS_STORE_KEY in chrome.storage.local directly for this
+        console.log(`[BG] Permissions updated in PouchDB for appId ${appId}.`);
 
         await chrome.storage.session.remove(PENDING_CONSENT_REQUEST_KEY);
         console.log(`[BG] Cleared pending consent request from session storage.`);

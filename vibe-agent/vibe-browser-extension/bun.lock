@@ -27,6 +27,7 @@
         "lucide-react": "^0.475.0",
         "micro-ed25519-hdkey": "^0.1.2",
         "multibase": "^4.0.6",
+        "pouchdb-browser": "^9.0.0",
         "react": "^19",
         "react-dom": "^19",
         "react-hook-form": "^7.54.2",
@@ -40,6 +41,7 @@
       "devDependencies": {
         "@types/bun": "latest",
         "@types/chrome": "^0.0.318",
+        "@types/pouchdb": "latest",
         "@types/react": "^19",
         "@types/react-dom": "^19",
       },
@@ -140,13 +142,51 @@
 
     "@types/chrome": ["@types/chrome@0.0.318", "", { "dependencies": { "@types/filesystem": "*", "@types/har-format": "*" } }, "sha512-rrtyYQ1t+g7EyG0FejE+UXQBjSGUHGh0RIdXwUT/laPo9T724NOIgXA94ns6ewmNauwijYa5ck3+dBxWnHcynQ=="],
 
+    "@types/debug": ["@types/debug@4.1.12", "", { "dependencies": { "@types/ms": "*" } }, "sha512-vIChWdVG3LG1SMxEvI/AK+FWJthlrqlTu7fbrlywTkkaONwk/UAGaULXRlf8vkzFBLVm0zkMdCquhL5aOjhXPQ=="],
+
     "@types/filesystem": ["@types/filesystem@0.0.36", "", { "dependencies": { "@types/filewriter": "*" } }, "sha512-vPDXOZuannb9FZdxgHnqSwAG/jvdGM8Wq+6N4D/d80z+D4HWH+bItqsZaVRQykAn6WEVeEkLm2oQigyHtgb0RA=="],
 
     "@types/filewriter": ["@types/filewriter@0.0.33", "", {}, "sha512-xFU8ZXTw4gd358lb2jw25nxY9QAgqn2+bKKjKOYfNCzN4DKCFetK7sPtrlpg66Ywe3vWY9FNxprZawAh9wfJ3g=="],
 
     "@types/har-format": ["@types/har-format@1.2.16", "", {}, "sha512-fluxdy7ryD3MV6h8pTfTYpy/xQzCFC7m89nOH9y94cNqJ1mDIDPut7MnRHI3F6qRmh/cT2fUjG1MLdCNb4hE9A=="],
 
+    "@types/ms": ["@types/ms@2.1.0", "", {}, "sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA=="],
+
     "@types/node": ["@types/node@22.15.19", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-3vMNr4TzNQyjHcRZadojpRaD9Ofr6LsonZAoQ+HMUa/9ORTPoxVIw0e0mpqWpdjj8xybyCM+oKOUH2vwFu/oEw=="],
+
+    "@types/pouchdb": ["@types/pouchdb@6.4.2", "", { "dependencies": { "@types/pouchdb-adapter-cordova-sqlite": "*", "@types/pouchdb-adapter-fruitdown": "*", "@types/pouchdb-adapter-http": "*", "@types/pouchdb-adapter-idb": "*", "@types/pouchdb-adapter-leveldb": "*", "@types/pouchdb-adapter-localstorage": "*", "@types/pouchdb-adapter-memory": "*", "@types/pouchdb-adapter-node-websql": "*", "@types/pouchdb-adapter-websql": "*", "@types/pouchdb-browser": "*", "@types/pouchdb-core": "*", "@types/pouchdb-http": "*", "@types/pouchdb-mapreduce": "*", "@types/pouchdb-node": "*", "@types/pouchdb-replication": "*" } }, "sha512-YsI47rASdtzR+3V3JE2UKY58snhm0AglHBpyckQBkRYoCbTvGagXHtV0x5n8nzN04jQmvTG+Sm85cIzKT3KXBA=="],
+
+    "@types/pouchdb-adapter-cordova-sqlite": ["@types/pouchdb-adapter-cordova-sqlite@1.0.4", "", { "dependencies": { "@types/pouchdb-core": "*" } }, "sha512-1MGjmAMux3OIyJ+iXfhJ5hNIzS+KjGJ05O3bF5Gen5TiJUFNK1bOp3VVV9SxXgz+hGwnBruBAWdAqhbB6ZHhSA=="],
+
+    "@types/pouchdb-adapter-fruitdown": ["@types/pouchdb-adapter-fruitdown@6.1.6", "", { "dependencies": { "@types/pouchdb-core": "*" } }, "sha512-KaFB29hUI97eTtJI6pjv7EQcqhZ63qHWovKgyiE+HZF5fVmdrBbTmnIrbR87AJXcXKy47+oQFJ7rzxY8TalpLQ=="],
+
+    "@types/pouchdb-adapter-http": ["@types/pouchdb-adapter-http@6.1.6", "", { "dependencies": { "@types/pouchdb-core": "*" } }, "sha512-DJur1mt07GJXwGb5K+MOILoCOSgoQpsi7hybcTzRLeR3IO8Y8eq7TnhTkftAJdx9VHJGOiOXFjO+8BYM69j5yA=="],
+
+    "@types/pouchdb-adapter-idb": ["@types/pouchdb-adapter-idb@6.1.7", "", { "dependencies": { "@types/pouchdb-core": "*" } }, "sha512-KwjkJ4fTNz5wPXYu20bUoWud7ty0t7tgdo4oc0AJvG+fcURAH7mI7uFmpE4dZIT+hUq5G61xu96AVq9b2q4T3g=="],
+
+    "@types/pouchdb-adapter-leveldb": ["@types/pouchdb-adapter-leveldb@6.1.6", "", { "dependencies": { "@types/pouchdb-core": "*" } }, "sha512-mqeTpA2Ni2U4FA5ISRESy4WwhfUahXViUa3jQpXGdSpruaeHlhTLzZJPyz7/mGlvdAfAFv9Vd5d6ys3ASmMujw=="],
+
+    "@types/pouchdb-adapter-localstorage": ["@types/pouchdb-adapter-localstorage@6.1.6", "", { "dependencies": { "@types/pouchdb-core": "*" } }, "sha512-+HQBCpD80XkKJE64r7uLwzkNRgkvMnhDI5rIFLx3USxdrRph/R3awcEubRFndcgtxzcUaL9iYw9KetgFMUqPrg=="],
+
+    "@types/pouchdb-adapter-memory": ["@types/pouchdb-adapter-memory@6.1.6", "", { "dependencies": { "@types/pouchdb-core": "*" } }, "sha512-QCCtW561XuwFACzP/4zYySzs/a4em0EeuQdszen0YOaGV1/fRqJE0dOlmzh8do4sNJomLO6+MFtEzguGljnkgA=="],
+
+    "@types/pouchdb-adapter-node-websql": ["@types/pouchdb-adapter-node-websql@6.1.5", "", { "dependencies": { "@types/pouchdb-adapter-websql": "*", "@types/pouchdb-core": "*" } }, "sha512-yi68syUvHs4OM3mzKlh4zfpov64KITIAnxi387zgdby6SEfAJzWPC0dfH77iEVRDGCrKb3cKTNkl/UGHnphaow=="],
+
+    "@types/pouchdb-adapter-websql": ["@types/pouchdb-adapter-websql@6.1.7", "", { "dependencies": { "@types/pouchdb-core": "*" } }, "sha512-9oNkP5ZCGMkQALO9KmtbHXlkBq8i2hoCEE6/gWzRicAvL1y+WIKjEQiIIEamMhj5u5tARvW3n2/r+JXwLCyYgw=="],
+
+    "@types/pouchdb-browser": ["@types/pouchdb-browser@6.1.5", "", { "dependencies": { "@types/pouchdb-adapter-http": "*", "@types/pouchdb-adapter-idb": "*", "@types/pouchdb-adapter-websql": "*", "@types/pouchdb-core": "*", "@types/pouchdb-mapreduce": "*", "@types/pouchdb-replication": "*" } }, "sha512-f+HjxEjYFpgoYWXnMI9AQZZ+SIG8dBiBPrpfWWGsCl+48rumsP5BuBWHq/aXoB8SRKYO0XdP4TNvMBWM3UATCw=="],
+
+    "@types/pouchdb-core": ["@types/pouchdb-core@7.0.15", "", { "dependencies": { "@types/debug": "*", "@types/pouchdb-find": "*" } }, "sha512-gq1Qbqn9nCaAKRRv6fRHZ4/ER+QYEwSXBZlDQcxwdbPrtZO8EhIn2Bct0AlguaSEdFcABfbaxxyQwFINkNQ9dQ=="],
+
+    "@types/pouchdb-find": ["@types/pouchdb-find@7.3.3", "", { "dependencies": { "@types/pouchdb-core": "*" } }, "sha512-U7zXk67s9Ar+9Pwj5kSbuMnn8zif0AOOIPy4KRFeJ/S/Tk+mNS90soj+3OV21H8xyB7WTxjvS1JLablZC6C6ow=="],
+
+    "@types/pouchdb-http": ["@types/pouchdb-http@6.1.5", "", { "dependencies": { "@types/pouchdb-adapter-http": "*", "@types/pouchdb-core": "*" } }, "sha512-9jGCAl6DUsXIl1vjuPu8tzGykAr84549P4IS0zYdrOKq5eXzQRUb/tb2hEVTmmTcYKXu2P1N55ABsdDNZvzGGA=="],
+
+    "@types/pouchdb-mapreduce": ["@types/pouchdb-mapreduce@6.1.10", "", { "dependencies": { "@types/pouchdb-core": "*" } }, "sha512-AgYVqCnaA5D7cWkWyzZVuk0137N4yZsmIQTD/i3DmuMxYYoFrtWUoQu0tbA52SpTRGdL8ubQ7JFQXzA13fA6IQ=="],
+
+    "@types/pouchdb-node": ["@types/pouchdb-node@6.1.7", "", { "dependencies": { "@types/pouchdb-adapter-http": "*", "@types/pouchdb-adapter-leveldb": "*", "@types/pouchdb-core": "*", "@types/pouchdb-mapreduce": "*", "@types/pouchdb-replication": "*" } }, "sha512-hryc2eCtNB3GbLcHSwU8glLaY66gDMus1AYkcIYAAxufdnK2BAy1oxaRLmnwRn1A1vG41P/t0htFD161LUnfQw=="],
+
+    "@types/pouchdb-replication": ["@types/pouchdb-replication@6.4.7", "", { "dependencies": { "@types/pouchdb-core": "*", "@types/pouchdb-find": "*" } }, "sha512-slB4zOwri3SAVHioFx/FWC/KqOzzb7nDFtV+qzaKzxkf+U5zTwCbK3uRHaj0d/XQk0DwVeajf1ni3Wiyq3j2OA=="],
 
     "@types/react": ["@types/react@19.1.4", "", { "dependencies": { "csstype": "^3.0.2" } }, "sha512-EB1yiiYdvySuIITtD5lhW4yPyJ31RkJkkDw794LaQYrxCSaQV/47y5o1FMC4zF9ZyjUjzJMZwbovEnT5yHTW6g=="],
 
@@ -194,6 +234,8 @@
 
     "multibase": ["multibase@4.0.6", "", { "dependencies": { "@multiformats/base-x": "^4.0.1" } }, "sha512-x23pDe5+svdLz/k5JPGCVdfn7Q5mZVMBETiC+ORfO+sor9Sgs0smJzAjfTbM5tckeCqnaUuMYoz+k3RXMmJClQ=="],
 
+    "pouchdb-browser": ["pouchdb-browser@9.0.0", "", { "dependencies": { "spark-md5": "3.0.2", "uuid": "8.3.2", "vuvuzela": "1.0.3" } }, "sha512-0uKFWhsTtiVOF0+aGo7mvtCTP40f6dlsLNmJUvc/lwjsX1C3v+eBfVbvykyxpFl7UTAoJkXl+g/GOzNvyMtV1g=="],
+
     "react": ["react@19.1.0", "", {}, "sha512-FS+XFBNvn3GTAWq26joslQgWNoFu08F4kl0J4CgdNKADkdSGXQyTCnKteIAJy96Br6YbpEU1LSzV5dYtjMkMDg=="],
 
     "react-dom": ["react-dom@19.1.0", "", { "dependencies": { "scheduler": "^0.26.0" }, "peerDependencies": { "react": "^19.1.0" } }, "sha512-Xs1hdnE+DyKgeHJeJznQmYMIBG3TKIHJJT95Q58nHLSrElKlGQqDTR2HQ9fx5CN/Gk6Vh/kupBTDLU11/nDk/g=="],
@@ -209,6 +251,8 @@
     "regexparam": ["regexparam@3.0.0", "", {}, "sha512-RSYAtP31mvYLkAHrOlh25pCNQ5hWnT106VukGaaFfuJrZFkGRX5GhUAdPqpSDXxOhA2c4akmRuplv1mRqnBn6Q=="],
 
     "scheduler": ["scheduler@0.26.0", "", {}, "sha512-NlHwttCI/l5gCPR3D1nNXtWABUmBwvZpEQiD4IXSbIDq8BzLIK/7Ir5gTFSGZDUu37K5cMNp0hFtzO38sC7gWA=="],
+
+    "spark-md5": ["spark-md5@3.0.2", "", {}, "sha512-wcFzz9cDfbuqe0FZzfi2or1sgyIrsDwmPwfZC4hiNidPdPINjeUwNfv5kldczoEAcjl9Y1L3SM7Uz2PUEQzxQw=="],
 
     "tailwind-merge": ["tailwind-merge@3.3.0", "", {}, "sha512-fyW/pEfcQSiigd5SNn0nApUOxx0zB/dm6UDU/rEwc2c3sX2smWUNbapHv+QRqLGVp9GWX3THIa7MUGPo+YkDzQ=="],
 
@@ -228,7 +272,11 @@
 
     "use-sync-external-store": ["use-sync-external-store@1.5.0", "", { "peerDependencies": { "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0" } }, "sha512-Rb46I4cGGVBmjamjphe8L/UnvJD+uPPtTkNvX5mZgqdbavhI4EbgIWJiIHXJ8bc/i9EQGPRh4DwEURJ552Do0A=="],
 
+    "uuid": ["uuid@8.3.2", "", { "bin": { "uuid": "dist/bin/uuid" } }, "sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg=="],
+
     "varint": ["varint@6.0.0", "", {}, "sha512-cXEIW6cfr15lFv563k4GuVuW/fiwjknytD37jIOLSdSWuOI6WnO/oKwmP2FQTU2l01LP8/M5TSAJpzUaGe3uWg=="],
+
+    "vuvuzela": ["vuvuzela@1.0.3", "", {}, "sha512-Tm7jR1xTzBbPW+6y1tknKiEhz04Wf/1iZkcTJjSFcpNko43+dFW6+OOeQe9taJIug3NdfUAjFKgUSyQrIKaDvQ=="],
 
     "wouter": ["wouter@3.7.0", "", { "dependencies": { "mitt": "^3.0.1", "regexparam": "^3.0.0", "use-sync-external-store": "^1.0.0" }, "peerDependencies": { "react": ">=16.8.0" } }, "sha512-ElkqESy10WgRRbdd22uQkSSO6LmG6vxI50pxPKry2TLebbdXvgtp7rJ48KafjUvsKcQQmIewxgRCGixPfk58tw=="],
 

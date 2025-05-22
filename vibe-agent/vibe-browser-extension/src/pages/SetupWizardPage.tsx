@@ -53,7 +53,7 @@ export function SetupWizardPage(/*{ onSetupComplete }: SetupWizardPageProps*/) {
         // This function is called when the user clicks "Start Using Vibe" on the SetupCompleteStep
         // It should signify that the entire setup flow (including first identity if applicable) is done.
         setAppStatus("INITIALIZED_UNLOCKED"); // Or trigger re-initialization
-        setLocation("/dashboard");
+        setLocation("/");
         // Optionally, send a message to background to close setup tab if it's a dedicated tab
         chrome.runtime.sendMessage({ type: "VIBE_AGENT_REQUEST", action: "CLOSE_SETUP_TAB" }).catch(console.error);
     }, [setAppStatus, setLocation]);
