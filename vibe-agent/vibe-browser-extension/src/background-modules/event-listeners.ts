@@ -107,5 +107,43 @@ export function registerEventListeners() {
         }
     });
 
+    // Listener for changes in chrome.storage.session (specifically for app contexts)
+    chrome.storage.onChanged.addListener(async (changes, namespace) => {
+        if (namespace === "session" && changes[ACTIVE_TAB_APP_CONTEXTS_KEY]) {
+            console.log(`[BG] Detected change in session storage for ${ACTIVE_TAB_APP_CONTEXTS_KEY}.`);
+            try {
+                // Get the currently active tab
+                const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                if (activeTab?.id) {
+                    const newAppContexts = changes[ACTIVE_TAB_APP_CONTEXTS_KEY].newValue || {};
+                    const appContextForActiveTab = newAppContexts[activeTab.id] || null;
+
+                    console.log(`[BG] App context for active tab ${activeTab.id} after storage change:`, appContextForActiveTab);
+
+                    // Send message to side panel to update its context
+                    chrome.runtime
+                        .sendMessage({
+                            type: "UPDATE_SIDE_PANEL_APP_CONTEXT",
+                            payload: {
+                                tabId: activeTab.id,
+                                appContext: appContextForActiveTab,
+                            },
+                        })
+                        .catch((err) => {
+                            if (err.message?.includes("Could not establish connection") || err.message?.includes("Receiving end does not exist")) {
+                                // Expected if side panel is not open or not listening
+                            } else {
+                                console.error(`[BG] Error sending UPDATE_SIDE_PANEL_APP_CONTEXT from storage.onChanged for tab ${activeTab.id}:`, err);
+                            }
+                        });
+                } else {
+                    console.log("[BG] No active tab found to update context after storage change.");
+                }
+            } catch (error) {
+                console.error("[BG] Error handling storage.onChanged for app contexts:", error);
+            }
+        }
+    });
+
     console.log("Vibe Background Service Worker event listeners registered by module.");
 }
