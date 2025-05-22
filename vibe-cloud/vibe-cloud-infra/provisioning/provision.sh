@@ -167,8 +167,9 @@ helm_exit_code=$?
 if [ $helm_exit_code -ne 0 ]; then
   echo "ERROR: Helm install failed with exit code $helm_exit_code for instance ${INSTANCE_IDENTIFIER}." >&2
   # Attempt to clean up namespace if Helm failed badly
-  # kubectl ${KUBECONFIG_ARG} delete namespace "${K8S_NAMESPACE}" --ignore-not-found=true
-  callback_control_plane "failed" "" "Helm deployment failed for instance ${INSTANCE_IDENTIFIER}."
+  echo "Attempting to clean up namespace ${K8S_NAMESPACE} due to Helm failure..."
+  kubectl ${KUBECONFIG_ARG} delete namespace "${K8S_NAMESPACE}" --ignore-not-found=true
+  callback_control_plane "failed" "" "Helm deployment failed for instance ${INSTANCE_IDENTIFIER}. Namespace cleanup attempted."
   exit $helm_exit_code
 fi
 
