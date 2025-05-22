@@ -13,6 +13,7 @@ import SettingsPage from "./pages/SettingsPage"; // Import the actual SettingsPa
 import ImportIdentityPage from "./pages/ImportIdentityPage"; // Import the actual ImportIdentityPage
 import UserProfilePage from "./pages/UserProfilePage"; // Import the actual UserProfilePage
 import ConsentRequestPage from "./pages/ConsentRequestPage"; // Import ConsentRequestPage
+import SelectIdentityPage from "./pages/SelectIdentityPage"; // Import the new SelectIdentityPage
 
 // Placeholder for Pages (to be created)
 const LoadingComponent = () => <div className="w-full p-4 bg-background text-foreground flex flex-col items-center justify-center h-full">Loading Vibe...</div>;
@@ -50,6 +51,7 @@ function App() {
             <Route path="/setup" component={SetupWizardPage} />
             <Route path="/unlock" component={UnlockPage} />
             <Route path="/" component={DashboardPage} /> {/* Changed /dashboard to / */}
+            <Route path="/select-identity" component={SelectIdentityPage} /> {/* Added route for SelectIdentityPage */}
             <Route path="/settings" component={SettingsPage} />
             <Route path="/import-identity" component={ImportIdentityPage} />
             <Route path="/profile/:did" component={UserProfilePage} />

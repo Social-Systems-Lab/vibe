@@ -3,7 +3,7 @@ import { useAtom } from "jotai";
 import { useLocation } from "wouter";
 import { CloudStatus } from "@/components/cloud/CloudStatus"; // Adjusted path
 import { Button } from "@/components/ui/button";
-import { Settings, UserPlus, User, Loader2, Settings2 } from "lucide-react"; // Added Settings2
+import { Settings, UserPlus, User, Loader2, Settings2, Users } from "lucide-react"; // Added Settings2 and Users
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DidDisplay } from "@/components/ui/DidDisplay";
 import { PENDING_CONSENT_REQUEST_KEY } from "../background-modules/action-handlers/app-session.handler"; // Import the key
@@ -299,6 +299,7 @@ export function DashboardPage() {
         }
     }, [setLocation, setNewIdentityProps, setIsLoading]);
     const handleOpenSettings = () => setLocation("/settings");
+    const handleNavigateToSelectIdentity = () => setLocation("/select-identity");
     // const handleImportIdentity = () => setLocation("/import-identity"); // If this action is still needed
 
     const handleCloudStatusUpdate = useCallback((newStatusInfo: { Icon: React.ElementType; color: string; rawStatus: string; isLoading: boolean }) => {
@@ -333,7 +334,7 @@ export function DashboardPage() {
         );
     }
 
-    const otherDisplayIdentities = allIdentities.filter((id) => id.did !== currentIdentity?.did);
+    // const otherDisplayIdentities = allIdentities.filter((id) => id.did !== currentIdentity?.did); // No longer needed here
 
     return (
         <div className="bg-white text-foreground flex flex-col overflow-hidden h-full relative">
@@ -441,30 +442,19 @@ export function DashboardPage() {
                 <div className="px-4 py-3 text-xs text-gray-500 border-b border-gray-200">No specific application context active in the current tab.</div>
             )} */}
             {/* No extra hr needed if the above sections handle borders */}
-            <div className="flex flex-col gap-1 p-4">
-                <h3 className="text-xs font-medium text-gray-500 mb-2">Other Identities</h3>
-                {otherDisplayIdentities.map((identity) => (
-                    <Button
-                        key={identity.did}
-                        variant="ghost"
-                        className="w-full justify-start h-10 text-sm text-gray-700 hover:bg-gray-100"
-                        onClick={() => handleSwitchIdentity(identity.did)}
-                    >
-                        <User className="mr-3 h-5 w-5 text-gray-500" />
-                        <span className="truncate">{identity.displayName || identity.did.substring(0, 20) + "..."}</span>
-                    </Button>
-                ))}
-                <Button onClick={handleAddIdentity} variant="ghost" className="w-full justify-start h-10 text-sm text-gray-700 hover:bg-gray-100 mt-1">
-                    <UserPlus className="mr-3 h-5 w-5 text-gray-500" />
-                    <span>Add identity</span>
+            <div className="flex flex-col gap-2 p-4">
+                <Button
+                    onClick={handleNavigateToSelectIdentity}
+                    variant="ghost"
+                    className="w-full justify-start h-12 text-base text-gray-700 hover:bg-gray-100"
+                >
+                    <Users className="mr-3 h-6 w-6 text-gray-500" />
+                    <span>Switch identity</span>
                 </Button>
-                <Button onClick={handleOpenSettings} variant="ghost" className="w-full justify-start h-10 text-sm text-gray-700 hover:bg-gray-100">
-                    <Settings className="mr-3 h-5 w-5 text-gray-500" />
+                <Button onClick={handleOpenSettings} variant="ghost" className="w-full justify-start h-12 text-base text-gray-700 hover:bg-gray-100">
+                    <Settings className="mr-3 h-6 w-6 text-gray-500" />
                     <span>Settings</span>
                 </Button>
-                {/* <Button onClick={handleImportIdentity} variant="ghost" className="w-full justify-start h-10 text-sm text-gray-700 hover:bg-gray-100">
-                    <Download className="mr-3 h-5 w-5 text-gray-500" /> Import Identity
-                </Button> */}
             </div>
         </div>
     );
