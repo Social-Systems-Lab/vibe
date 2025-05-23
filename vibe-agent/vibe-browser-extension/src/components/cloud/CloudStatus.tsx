@@ -138,11 +138,23 @@ export const CloudStatus: React.FC<CloudStatusProps> = ({ activeDid, onStatusUpd
     useEffect(() => {
         // Stop polling if instance status is terminal
         console.log("[CloudStatus] Polling stop check. Current status:", identityDetails?.instanceStatus);
-        if (identityDetails?.instanceStatus && TERMINAL_INSTANCE_STATUSES.includes(identityDetails.instanceStatus.toLowerCase())) {
+        const currentStatus = identityDetails?.instanceStatus?.toLowerCase();
+        if (currentStatus && TERMINAL_INSTANCE_STATUSES.includes(currentStatus)) {
             if (pollingIntervalId) {
                 clearInterval(pollingIntervalId);
                 setPollingIntervalId(null);
-                console.log(`[CloudStatus] Polling stopped for DID ${activeDid} due to terminal status: ${identityDetails.instanceStatus}`);
+                console.log(`[CloudStatus] Polling stopped for DID ${activeDid} due to terminal status: ${identityDetails?.instanceStatus}`);
+            }
+            // If status is 'completed' or 'running', notify background to attempt sync if needed
+            if ((currentStatus === "completed" || currentStatus === "running") && activeDid) {
+                console.log(`[CloudStatus] Instance for DID ${activeDid} is ready. Notifying background for sync check.`);
+                chrome.runtime
+                    .sendMessage({
+                        type: "VIBE_INTERNAL_NOTIFICATION",
+                        action: "INSTANCE_READY_FOR_SYNC",
+                        payload: { did: activeDid },
+                    })
+                    .catch((err) => console.error("[CloudStatus] Error sending INSTANCE_READY_FOR_SYNC message:", err));
             }
         }
     }, [identityDetails, pollingIntervalId, activeDid]);

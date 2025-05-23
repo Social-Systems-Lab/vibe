@@ -109,7 +109,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // If the message is not handled by the above conditions,
     // it's good practice to return false or undefined.
     // The original code implicitly returned undefined for unhandled messages.
-    return false;
+    // return false; // Let's be explicit about not handling if it falls through
+
+    // Handle INSTANCE_READY_FOR_SYNC notification
+    if (message && typeof message === "object" && message.type === "VIBE_INTERNAL_NOTIFICATION" && message.action === "INSTANCE_READY_FOR_SYNC") {
+        const { did } = message.payload;
+        if (did && SessionManager.isUnlocked && SessionManager.currentActiveDid === did) {
+            const decryptedSeed = SessionManager.getInMemoryDecryptedSeed();
+            if (decryptedSeed) {
+                console.log(`[BG] Received INSTANCE_READY_FOR_SYNC for ${did}. Vault is unlocked. Initializing PouchDB sync.`);
+                PouchDBManager.initializeSync(did, decryptedSeed).catch((err) =>
+                    console.error(`[BG] Error initializing PouchDB sync for ${did} after INSTANCE_READY_FOR_SYNC:`, err)
+                );
+            } else {
+                console.warn(`[BG] Received INSTANCE_READY_FOR_SYNC for ${did}, vault unlocked, but no in-memory seed. Sync not started with password.`);
+            }
+        } else {
+            console.log(
+                `[BG] Received INSTANCE_READY_FOR_SYNC for ${did}, but conditions not met (vault locked, or not active DID). Sync not started with password.`
+            );
+        }
+        // This is a notification, no response needed to sender.
+        return false; // Or undefined
+    }
+    return false; // Default for unhandled messages
 });
 
 console.log("Vibe Background Service Worker listeners attached.");
