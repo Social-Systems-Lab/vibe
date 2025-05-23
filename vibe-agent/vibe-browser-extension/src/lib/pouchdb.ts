@@ -1,4 +1,5 @@
 import PouchDB from "pouchdb-browser";
+import PouchDBFind from "pouchdb-find";
 import { Buffer } from "buffer";
 import type { EncryptedData } from "./crypto"; // Assuming EncryptedData is exported
 import { generateSalt, deriveEncryptionKey, encryptData, decryptData } from "./crypto";
@@ -7,6 +8,8 @@ import { getIdentityInstanceUrl } from "./utils"; // Actual import
 import { getValidCpAccessToken } from "../background-modules/token-manager"; // Actual import
 import { isUnlocked as isVaultUnlocked } from "../background-modules/session-manager"; // Actual import
 // Note: getVaultPassword is not directly importable. It must be passed if available.
+
+PouchDB.plugin(PouchDBFind); // Initialize pouchdb-find plugin
 
 const COUCHDB_CONFIG_STORAGE_KEY = "couchDbConfig";
 
@@ -382,6 +385,10 @@ export interface AppPermissionDoc {
     createdAt: string;
     updatedAt: string;
 }
+
+// Note-specific CRUD functions (NoteDoc, upsertNote, getNoteById, getAllNotes, deleteNoteById)
+// have been removed as per architectural feedback.
+// data.handler.ts will now use the generic PouchDB instance methods directly.
 
 export async function upsertAppPermission(
     userDid: string,
