@@ -84,3 +84,60 @@ jobs:
                       APP_VERSION=${{ env.EFFECTIVE_APP_VERSION }}
                   cache-from: type=gha
                   cache-to: type=gha,mode=max
+
+    trigger-rollout:
+        needs: build-and-push-image # Runs after images are built and pushed
+        runs-on: ubuntu-latest
+        if: github.ref == 'refs/heads/main' # Only run for pushes to the main branch
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Set up Kubeconfig
+              run: |
+                  mkdir -p ~/.kube
+                  echo "${{ secrets.KUBE_CONFIG_DATA }}" > ~/.kube/config
+                  chmod 600 ~/.kube/config
+              env:
+                  KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+
+            - name: Install kubectl
+              uses: azure/setup-kubectl@v3
+              with:
+                  version: "v1.29.0" # Specify a kubectl version or let it default
+              id: install
+
+            - name: Restart vibe-control-plane deployment
+              if: success() # Only run if previous steps succeeded
+              run: |
+                  echo "Attempting to restart vibe-control-plane-deployment..."
+                  kubectl rollout restart deployment vibe-control-plane-deployment -n vibe-control-plane
+              continue-on-error: true # Set to false if a failed rollout should fail the workflow
+
+            - name: Restart vibe-cloud-api deployments
+              if: success()
+              run: |
+                  echo "Attempting to restart all vibe-cloud-api (vibe-app) deployments..."
+                  # This command assumes your vibe-cloud-api deployments have a common label like 'app.kubernetes.io/name=vibe-app'.
+                  # Adjust the label selector (-l) if your Helm chart uses a different common label for these deployments.
+                  # It gets deployments across all namespaces.
+                  DEPLOYMENTS_TO_RESTART=$(kubectl get deployments --all-namespaces -l 'app.kubernetes.io/name=vibe-app' -o jsonpath='{range .items[*]}{.metadata.namespace}{"/"}{.metadata.name}{"\n"}{end}')
+
+                  if [ -z "$DEPLOYMENTS_TO_RESTART" ]; then
+                    echo "No vibe-cloud-api deployments found with label 'app.kubernetes.io/name=vibe-app'."
+                  else
+                    echo "Found the following vibe-cloud-api deployments to restart:"
+                    echo "$DEPLOYMENTS_TO_RESTART"
+                    echo "$DEPLOYMENTS_TO_RESTART" | while IFS= read -r item; do
+                      NAMESPACE=$(echo "$item" | cut -d'/' -f1)
+                      DEPLOYMENT=$(echo "$item" | cut -d'/' -f2)
+                      if [ -n "$NAMESPACE" ] && [ -n "$DEPLOYMENT" ]; then
+                        echo "Restarting deployment '$DEPLOYMENT' in namespace '$NAMESPACE'..."
+                        kubectl rollout restart deployment "$DEPLOYMENT" -n "$NAMESPACE"
+                      else
+                        echo "Skipping invalid item: $item"
+                      fi
+                    done
+                  fi
+              continue-on-error: true # Set to false if a failed rollout should fail the workflow
