@@ -214,7 +214,7 @@ export const app = new Elysia()
                 const authHeader = headers.get("authorization");
                 const appIdHeader = headers.get("x-vibe-app-id"); // Get App ID header
 
-                let user: { userDid: string } | null = null;
+                let user: { identityDid: string; isAdmin?: boolean; type?: string } | null = null;
                 let appId: string | null = appIdHeader || null;
 
                 // Verify JWT
@@ -224,7 +224,7 @@ export const app = new Elysia()
                         // Use the injected jwt instance for verification
                         const payload = await jwt.verify(token);
                         if (payload) {
-                            user = payload as { userDid: string };
+                            user = payload as { identityDid: string; isAdmin?: boolean; type?: string };
                         }
                     } catch (error) {
                         logger.debug("JWT verification failed in derive");
@@ -245,7 +245,7 @@ export const app = new Elysia()
                 // Check if App ID was provided (required for data access via Agent)
                 if (!appId) {
                     set.status = 400; // Bad Request
-                    logger.warn(`Data API access denied for user ${user.userDid}: Missing X-Vibe-App-ID header.`);
+                    logger.warn(`Data API access denied for user ${user.identityDid}: Missing X-Vibe-App-ID header.`);
                     return { error: "Bad Request: Missing X-Vibe-App-ID header." };
                 }
             })
@@ -254,22 +254,22 @@ export const app = new Elysia()
                 "/read",
                 async ({ dataService, user, appId, body, set }) => {
                     // user is guaranteed non-null by onBeforeHandle
-                    const { userDid } = user!;
+                    const { identityDid } = user!;
                     const { collection, filter } = body;
 
                     // permission check
                     const requiredPermission = `read:${collection}`;
-                    const isAllowed = await permissionService.canAppActForUser(userDid, appId!, requiredPermission);
+                    const isAllowed = await permissionService.canAppActForUser(identityDid, appId!, requiredPermission);
                     if (!isAllowed) {
-                        logger.warn(`Permission denied for app '${appId}' acting for user '${userDid}' on action '${requiredPermission}'`);
+                        logger.warn(`Permission denied for app '${appId}' acting for user '${identityDid}' on action '${requiredPermission}'`);
                         set.status = 403;
                         return { error: `Forbidden: Application does not have permission '${requiredPermission}' for this user.` };
                     }
-                    logger.debug(`Permission granted for app '${appId}' acting for user '${userDid}' on action '${requiredPermission}'`);
+                    logger.debug(`Permission granted for app '${appId}' acting for user '${identityDid}' on action '${requiredPermission}'`);
 
                     // call readOnce
-                    const userDbName = getUserDbName(userDid);
-                    logger.debug(`Executing readOnce for user ${userDid}, db: ${userDbName}, collection: ${collection}, filter: ${JSON.stringify(filter)}`);
+                    const userDbName = getUserDbName(identityDid);
+                    logger.debug(`Executing readOnce for user ${identityDid}, db: ${userDbName}, collection: ${collection}, filter: ${JSON.stringify(filter)}`);
                     const results: ReadResult = await dataService.readOnce(userDbName, collection, filter);
 
                     // Return the ReadResult structure
@@ -288,23 +288,23 @@ export const app = new Elysia()
                 "/write",
                 async ({ dataService, user, appId, body, set }) => {
                     // user is guaranteed non-null by onBeforeHandle
-                    const { userDid } = user!;
+                    const { identityDid } = user!;
                     const { collection, data } = body;
 
                     // permission check
                     const requiredPermission = `write:${collection}`;
-                    const isAllowed = await permissionService.canAppActForUser(userDid, appId!, requiredPermission);
+                    const isAllowed = await permissionService.canAppActForUser(identityDid, appId!, requiredPermission);
                     if (!isAllowed) {
-                        logger.warn(`Permission denied for app '${appId}' acting for user '${userDid}' on action '${requiredPermission}'`);
+                        logger.warn(`Permission denied for app '${appId}' acting for user '${identityDid}' on action '${requiredPermission}'`);
                         set.status = 403;
                         return { error: `Forbidden: Application does not have permission '${requiredPermission}' for this user.` };
                     }
-                    logger.debug(`Permission granted for app '${appId}' acting for user '${userDid}' on action '${requiredPermission}'`);
+                    logger.debug(`Permission granted for app '${appId}' acting for user '${identityDid}' on action '${requiredPermission}'`);
 
                     // call write
-                    const userDbName = getUserDbName(userDid);
+                    const userDbName = getUserDbName(identityDid);
                     logger.debug(
-                        `Executing write for user ${userDid}, db: ${userDbName}, collection: ${collection}, data: ${
+                        `Executing write for user ${identityDid}, db: ${userDbName}, collection: ${collection}, data: ${
                             Array.isArray(data) ? `Array[${data.length}]` : "Object"
                         }`
                     );
@@ -318,17 +318,17 @@ export const app = new Elysia()
                             // Bulk response: Check if any item reported an error (including conflicts)
                             const hasErrors = response.some((item) => !!item.error);
                             if (hasErrors) {
-                                logger.warn(`Write completed with errors/conflicts for user ${userDid}, collection ${collection}. Returning 207.`);
+                                logger.warn(`Write completed with errors/conflicts for user ${identityDid}, collection ${collection}. Returning 207.`);
                                 set.status = 207; // Multi-Status
                             } else {
-                                logger.debug(`Bulk write successful for user ${userDid}, collection ${collection}. Returning 200.`);
+                                logger.debug(`Bulk write successful for user ${identityDid}, collection ${collection}. Returning 200.`);
                                 set.status = 200; // OK
                             }
                             // Return the detailed array response from CouchDB
                             return response;
                         } else {
                             // Single insert response (guaranteed ok:true if no error thrown)
-                            logger.debug(`Single write successful for user ${userDid}, collection ${collection}. Returning 200.`);
+                            logger.debug(`Single write successful for user ${identityDid}, collection ${collection}. Returning 200.`);
                             set.status = 200; // OK
                             // Return the single response object
                             return response;
@@ -336,12 +336,12 @@ export const app = new Elysia()
                     } catch (error: any) {
                         // *** Catch Specific Errors (now primarily for SINGLE writes) ***
                         if (error.message?.includes("Revision conflict")) {
-                            logger.warn(`Conflict detected during single write for user ${userDid}, collection ${collection}. Returning 409.`);
+                            logger.warn(`Conflict detected during single write for user ${identityDid}, collection ${collection}. Returning 409.`);
                             set.status = 409; // Conflict
                             return { error: "Revision conflict", details: error.message };
                         } else {
                             // Let other errors fall through to the global onError handler
-                            logger.error(`Unexpected error during write for user ${userDid}, collection ${collection}:`, error);
+                            logger.error(`Unexpected error during write for user ${identityDid}, collection ${collection}:`, error);
                             throw error;
                         }
                     }
@@ -367,7 +367,7 @@ export const app = new Elysia()
                 const token = authHeader.substring(7);
                 try {
                     const payload = await jwt.verify(token);
-                    return { user: payload as { userDid: string } };
+                    return { user: payload as { identityDid: string; isAdmin?: boolean; type?: string } };
                 } catch (error) {
                     return { user: null };
                 }
@@ -384,7 +384,7 @@ export const app = new Elysia()
                 "/status",
                 async ({ dataService, user, query, set }) => {
                     if (!user) throw new InternalServerError("User context missing after auth check.");
-                    const { userDid } = user;
+                    const { identityDid } = user;
                     const { appId } = query; // Get appId from query parameters
 
                     // Add validation for appId presence in query
@@ -393,8 +393,8 @@ export const app = new Elysia()
                         return { error: "Bad Request: Missing or invalid 'appId' query parameter." };
                     }
 
-                    logger.debug(`Checking status for app '${appId}' (from query) for user '${userDid}'`);
-                    const docId = `${APPS_COLLECTION}/${userDid}/${appId}`;
+                    logger.debug(`Checking status for app '${appId}' (from query) for user '${identityDid}'`);
+                    const docId = `${APPS_COLLECTION}/${identityDid}/${appId}`;
 
                     try {
                         const doc = await dataService.getDocument<AppModel>(SYSTEM_DB, docId);
@@ -406,7 +406,7 @@ export const app = new Elysia()
                             pictureUrl: doc.pictureUrl,
                             permissions: doc.permissions,
                         };
-                        logger.info(`Found registration for app '${appId}' for user '${userDid}'.`);
+                        logger.info(`Found registration for app '${appId}' for user '${identityDid}'.`);
                         set.status = 200;
                         return {
                             isRegistered: true,
@@ -416,7 +416,7 @@ export const app = new Elysia()
                     } catch (error: any) {
                         // Log the specific error type and message BEFORE the check
                         logger.error(
-                            `[/status] Caught error fetching status for app '${appId}', user ${userDid}. Error type: ${
+                            `[/status] Caught error fetching status for app '${appId}', user ${identityDid}. Error type: ${
                                 error?.constructor?.name
                             }, Status code: ${error?.statusCode}, IsNotFoundError: ${error instanceof NotFoundError}, Message: ${error?.message}`,
                             error
@@ -453,13 +453,13 @@ export const app = new Elysia()
                 "/upsert",
                 async ({ dataService, user, body, set }) => {
                     if (!user) throw new InternalServerError("User context missing after auth check.");
-                    const { userDid } = user;
+                    const { identityDid } = user;
                     // Body is validated against AppUpsertPayloadSchema (manifest + grants)
                     const { appId, name, description, pictureUrl, permissions, grants } = body;
 
-                    logger.info(`App upsert attempt by user ${userDid} for appId ${appId}`);
+                    logger.info(`App upsert attempt by user ${identityDid} for appId ${appId}`);
 
-                    const docId = `${APPS_COLLECTION}/${userDid}/${appId}`;
+                    const docId = `${APPS_COLLECTION}/${identityDid}/${appId}`;
                     const now = new Date().toISOString();
 
                     try {
@@ -469,7 +469,7 @@ export const app = new Elysia()
                         // If exists, update it
                         const updatedDoc: AppModel = {
                             ...existingDoc, // Keep _id, _rev, registeredAt
-                            userDid: userDid, // Ensure userDid is correct
+                            userDid: identityDid, // Ensure userDid is correct (now identityDid)
                             appId: appId, // Update manifest fields
                             name: name,
                             description: description,
@@ -482,17 +482,17 @@ export const app = new Elysia()
                         // Log the exact object being sent for update
                         logger.debug("Updating app registration document:", JSON.stringify(updatedDoc, null, 2));
                         const updateResult = await dataService.updateDocument(SYSTEM_DB, APPS_COLLECTION, docId, existingDoc._rev!, updatedDoc);
-                        logger.info(`App registration for '${appId}' updated successfully for user ${userDid}. Rev: ${updateResult.rev}`);
+                        logger.info(`App registration for '${appId}' updated successfully for user ${identityDid}. Rev: ${updateResult.rev}`);
                         set.status = 200; // OK
                         return { ok: true, id: updateResult.id, rev: updateResult.rev };
                     } catch (error: any) {
                         if (error instanceof NotFoundError || error.statusCode === 404) {
                             // If not found, create it
-                            logger.info(`No existing registration found for app '${appId}' and user ${userDid}. Creating new document with ID: ${docId}`);
+                            logger.info(`No existing registration found for app '${appId}' and user ${identityDid}. Creating new document with ID: ${docId}`);
                             const newDoc: Omit<AppModel, "_rev"> = {
                                 // Include _id in the type
                                 _id: docId, // Set the derived document ID explicitly
-                                userDid: userDid,
+                                userDid: identityDid, // Use identityDid
                                 appId: appId,
                                 name: name,
                                 description: description,
@@ -509,29 +509,29 @@ export const app = new Elysia()
                                 // Call createDocument with 3 arguments: dbName, collection, data (which includes _id)
                                 const createResult = await dataService.createDocument(SYSTEM_DB, APPS_COLLECTION, newDoc);
                                 logger.info(
-                                    `App registration for '${appId}' created successfully for user ${userDid}. ID: ${createResult.id}, Rev: ${createResult.rev}`
+                                    `App registration for '${appId}' created successfully for user ${identityDid}. ID: ${createResult.id}, Rev: ${createResult.rev}`
                                 );
                                 set.status = 201; // Created
                                 return { ok: true, id: createResult.id, rev: createResult.rev }; // Use ID from result
                             } catch (createError: any) {
                                 // Handle potential conflict during creation (e.g., race condition)
                                 if (createError.message?.includes("Document update conflict") || createError.statusCode === 409) {
-                                    logger.warn(`Conflict during creation for app '${appId}', user ${userDid}. Might already exist now.`);
+                                    logger.warn(`Conflict during creation for app '${appId}', user ${identityDid}. Might already exist now.`);
                                     set.status = 409; // Conflict
                                     return { error: `Conflict creating registration for application ID '${appId}'.` };
                                 } else {
-                                    logger.error(`Failed to create registration for app '${appId}', user ${userDid}:`, createError);
+                                    logger.error(`Failed to create registration for app '${appId}', user ${identityDid}:`, createError);
                                     throw new InternalServerError("Failed to create application registration.");
                                 }
                             }
                         } else if (error.message?.includes("Revision conflict") || error.statusCode === 409) {
                             // Handle conflict during update
-                            logger.warn(`Conflict during update for app '${appId}', user ${userDid}.`);
+                            logger.warn(`Conflict during update for app '${appId}', user ${identityDid}.`);
                             set.status = 409; // Conflict
                             return { error: `Revision conflict updating registration for application ID '${appId}'. Please retry.` };
                         } else {
                             // Handle other errors during fetch/update
-                            logger.error(`Failed to upsert registration for app '${appId}', user ${userDid}:`, error);
+                            logger.error(`Failed to upsert registration for app '${appId}', user ${identityDid}:`, error);
                             throw new InternalServerError("Failed to upsert application registration.");
                         }
                     }
@@ -559,7 +559,7 @@ export const app = new Elysia()
                     const payload = await jwt.verify(token);
                     // Add appId as null or undefined if needed by other parts,
                     // but it's not used for direct permission checks here.
-                    return { user: payload as { userDid: string }, appId: null };
+                    return { user: payload as { identityDid: string; isAdmin?: boolean; type?: string }, appId: null };
                 } catch (error) {
                     return { user: null, appId: null };
                 }
@@ -576,17 +576,17 @@ export const app = new Elysia()
                 "/upload",
                 async ({ blobService, dataService, permissionService, user, body, set }) => {
                     if (!user) throw new InternalServerError("User context missing");
-                    const { userDid } = user;
+                    const { identityDid } = user;
                     // TODO: Re-evaluate blob write permissions. For now, allow any authenticated user.
                     // const requiredPermission = `write:${BLOBS_COLLECTION}`;
-                    // logger.info(`User ${userDid} attempting upload. Checking permission: ${requiredPermission}`);
-                    // const canWrite = await permissionService.userHasDirectPermission(userDid, requiredPermission); // Method removed/commented out
-                    // logger.info(`User ${userDid} direct write permission for ${BLOBS_COLLECTION}: ${canWrite}`);
+                    // logger.info(`User ${identityDid} attempting upload. Checking permission: ${requiredPermission}`);
+                    // const canWrite = await permissionService.userHasDirectPermission(identityDid, requiredPermission); // Method removed/commented out
+                    // logger.info(`User ${identityDid} direct write permission for ${BLOBS_COLLECTION}: ${canWrite}`);
                     // if (!canWrite) {
                     //     set.status = 403;
                     //     return { error: `Forbidden: Missing '${requiredPermission}' permission.` };
                     // }
-                    logger.info(`User ${userDid} attempting upload. Bypassing direct permission check for now.`);
+                    logger.info(`User ${identityDid} attempting upload. Bypassing direct permission check for now.`);
 
                     const { file } = body;
                     if (!file || typeof file.arrayBuffer !== "function") {
@@ -605,13 +605,13 @@ export const app = new Elysia()
                             originalFilename: file.name || "untitled",
                             contentType: file.type,
                             size: file.size,
-                            ownerDid: userDid,
+                            ownerDid: identityDid, // Use identityDid
                             uploadTimestamp: new Date().toISOString(),
                             bucket: bucketName,
                             collection: BLOBS_COLLECTION,
                         };
                         await dataService.createDocument(SYSTEM_DB, BLOBS_COLLECTION, metadata);
-                        logger.info(`Blob ${objectId} metadata saved for user ${userDid}`);
+                        logger.info(`Blob ${objectId} metadata saved for user ${identityDid}`);
                         set.status = 201;
                         return {
                             message: "File uploaded successfully.",
@@ -621,7 +621,7 @@ export const app = new Elysia()
                             size: metadata.size,
                         };
                     } catch (error: any) {
-                        logger.error(`Blob upload failed for user ${userDid}, objectId ${objectId}:`, error);
+                        logger.error(`Blob upload failed for user ${identityDid}, objectId ${objectId}:`, error);
                         // Attempt to clean up Minio object if metadata saving failed? (Complex)
                         // For now, just return error
                         throw new InternalServerError("Blob upload failed."); // Let generic handler catch
@@ -640,7 +640,7 @@ export const app = new Elysia()
                     if (!user) throw new InternalServerError("User context missing after auth check.");
 
                     const { objectId } = params;
-                    const { userDid } = user;
+                    const { identityDid } = user;
 
                     try {
                         // 1. Fetch Metadata
@@ -650,20 +650,20 @@ export const app = new Elysia()
 
                         // 2. Permission Check (Owner only for now)
                         // TODO: Re-evaluate blob read permissions. Maybe check for a specific direct permission if needed later.
-                        const isOwner = metadata.ownerDid === userDid;
-                        logger.debug(`Permission check: isOwner=${isOwner}, userDid=${userDid}, metadata.ownerDid=${metadata.ownerDid}`);
-                        // const canReadDirectly = await permissionService.userHasDirectPermission(userDid, requiredPermission); // Method removed/commented out
+                        const isOwner = metadata.ownerDid === identityDid;
+                        logger.debug(`Permission check: isOwner=${isOwner}, identityDid=${identityDid}, metadata.ownerDid=${metadata.ownerDid}`);
+                        // const canReadDirectly = await permissionService.userHasDirectPermission(identityDid, requiredPermission); // Method removed/commented out
                         // logger.debug(`Permission check: isOwner=${isOwner}, userHasDirectRead=${canReadDirectly}`);
 
                         if (!isOwner /* && !canReadDirectly */) {
                             // Only check ownership for now
-                            logger.warn(`Forbidden access attempt for blob ${objectId} by user ${userDid} (not owner).`);
+                            logger.warn(`Forbidden access attempt for blob ${objectId} by user ${identityDid} (not owner).`);
                             set.status = 403; // Set status before throwing
                             return { error: "Forbidden: You do not have permission to access this blob." };
                         }
 
                         // 3. Generate Pre-signed URL
-                        logger.info(`Generating download URL for blob ${objectId} requested by user ${userDid}`);
+                        logger.info(`Generating download URL for blob ${objectId} requested by user ${identityDid}`);
                         const url = await blobService.getPresignedDownloadUrl(
                             objectId,
                             metadata.bucket // Use bucket from metadata
@@ -675,18 +675,18 @@ export const app = new Elysia()
                         return { url: url };
                     } catch (error: any) {
                         if (error instanceof NotFoundError) {
-                            logger.warn(`Download request for non-existent blob ${objectId} by user ${userDid}`);
+                            logger.warn(`Download request for non-existent blob ${objectId} by user ${identityDid}`);
                             // Use the error message from NotFoundError
                             set.status = 404;
                             return { error: error.message };
                         }
                         // Keep Minio object not found check
                         if (error.message?.includes("Object not found in storage")) {
-                            logger.warn(`Download request for blob ${objectId} (metadata found, but object missing) by user ${userDid}`);
+                            logger.warn(`Download request for blob ${objectId} (metadata found, but object missing) by user ${identityDid}`);
                             set.status = 404;
                             return { error: error.message };
                         }
-                        logger.error(`Failed to generate download URL for blob ${objectId}, user ${userDid}:`, error);
+                        logger.error(`Failed to generate download URL for blob ${objectId}, user ${identityDid}:`, error);
                         throw new InternalServerError("Failed to generate download URL.");
                     }
                 },
@@ -708,7 +708,7 @@ export const app = new Elysia()
                 const token = authHeader.substring(7);
                 try {
                     const payload = await jwt.verify(token); // Assumes 'jwt' is from .use(jwt(...))
-                    return { user: payload as { userDid: string } };
+                    return { user: payload as { identityDid: string; isAdmin?: boolean; type?: string } };
                 } catch (error) {
                     logger.warn("JWT verification failed for /api/v1/authdb request", { error });
                     return { user: null };
@@ -725,9 +725,9 @@ export const app = new Elysia()
                 "/authdb",
                 async ({ user, set }) => {
                     // user is populated by the .derive middleware
-                    const { userDid } = user!; // user is guaranteed non-null due to onBeforeHandle
+                    const { identityDid } = user!; // user is guaranteed non-null due to onBeforeHandle
 
-                    logger.info(`Processing /api/v1/authdb request for user: ${userDid}`);
+                    logger.info(`Processing /api/v1/authdb request for user: ${identityDid}`);
 
                     const couchDbUrl = process.env.COUCHDB_URL;
                     const couchDbUsername = process.env.COUCHDB_USER;
@@ -735,7 +735,7 @@ export const app = new Elysia()
 
                     if (!couchDbUrl || !couchDbUsername || !couchDbPassword) {
                         logger.error(
-                            `CRITICAL: CouchDB connection details (COUCHDB_URL, COUCHDB_USER, or COUCHDB_PASSWORD) are not configured in the environment for the API instance serving user ${userDid}.`
+                            `CRITICAL: CouchDB connection details (COUCHDB_URL, COUCHDB_USER, or COUCHDB_PASSWORD) are not configured in the environment for the API instance serving user ${identityDid}.`
                         );
                         set.status = 503; // Service Unavailable
                         return { error: "CouchDB service details are not configured or available for this instance." };
@@ -743,7 +743,7 @@ export const app = new Elysia()
 
                     // It's important that process.env.COUCHDB_URL is the externally accessible URL for the browser extension.
                     logger.info(
-                        `Successfully retrieved CouchDB details from env for user ${userDid}. URL starts with: ${couchDbUrl.substring(
+                        `Successfully retrieved CouchDB details from env for user ${identityDid}. URL starts with: ${couchDbUrl.substring(
                             0,
                             Math.min(30, couchDbUrl.length)
                         )}...`
@@ -806,9 +806,10 @@ async function fetchHandler(req: Request, server: Server): Promise<Response | un
         if (!appId) return new Response("Missing application identifier", { status: 400 });
         try {
             const { payload } = await jose.jwtVerify(token, secretKey);
-            if (!payload || typeof payload.userDid !== "string") return new Response("Invalid token payload", { status: 401 });
-            const userDid = payload.userDid;
-            const success = server.upgrade(req, { data: { userDid, appId } });
+            if (!payload || typeof payload.identityDid !== "string") return new Response("Invalid token payload", { status: 401 }); // Check identityDid
+            const identityDid = payload.identityDid as string; // Use identityDid
+            // Pass identityDid as userDid in WebSocketAuthContext for now, or update WebSocketAuthContext
+            const success = server.upgrade(req, { data: { userDid: identityDid, appId } });
             if (success) return undefined;
             else return new Response("WebSocket upgrade failed", { status: 400 });
         } catch (err: any) {
