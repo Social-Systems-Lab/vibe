@@ -166,6 +166,10 @@ export async function handleSetupImportSeedAndRecoverIdentities(payload: any): P
             let serverProfilePicture;
             let serverCloudUrl;
             let serverIsAdmin;
+            let instanceId;
+            let instanceCreatedAt;
+            let instanceUpdatedAt;
+            let instanceErrorDetails;
 
             try {
                 const statusResponse = await fetch(statusUrl);
@@ -176,13 +180,20 @@ export async function handleSetupImportSeedAndRecoverIdentities(payload: any): P
                     // If active, try to get more details
                     if (isActive) {
                         const identityDetailsUrl = `${Constants.OFFICIAL_VIBE_CLOUD_URL}/api/v1/identities/${currentDid}`;
-                        const detailsResponse = await fetch(identityDetailsUrl); // No auth needed for public read
+                        const detailsResponse = await fetch(identityDetailsUrl);
+                        console.log("detailsResponse", JSON.stringify(detailsResponse, null, 2));
                         if (detailsResponse.ok) {
                             const details = await detailsResponse.json();
-                            serverProfileName = details.profile_name;
-                            serverProfilePicture = details.profile_picture;
+                            serverProfileName = details.profileName;
+                            serverProfilePicture = details.profilePictureUrl;
                             serverCloudUrl = details.instanceUrl;
                             serverIsAdmin = details.isAdmin;
+                            instanceId = details.instanceId;
+                            instanceCreatedAt = details.instanceCreatedAt;
+                            instanceUpdatedAt = details.instanceUpdatedAt;
+                            instanceErrorDetails = details.instanceErrorDetails;
+
+                            console.log("Recovered identity details:", JSON.stringify(details, null, 2));
                         }
                     }
                 } else if (statusResponse.status !== 404) {
@@ -196,11 +207,16 @@ export async function handleSetupImportSeedAndRecoverIdentities(payload: any): P
                 recoveredIdentities.push({
                     identityDid: currentDid,
                     derivationPath: keyPair.derivationPath,
-                    profile_name: serverProfileName || `Recovered Identity ${currentIndex + 1}`,
+                    profile_name: serverProfileName || `Recovered Identity ${currentIndex + 1}`, // Map to internal snake_case
                     profile_picture: serverProfilePicture,
-                    cloudUrl: serverCloudUrl || Constants.OFFICIAL_VIBE_CLOUD_URL, // Assume official if active
+                    instanceUrl: serverCloudUrl,
+                    cloudUrl: serverCloudUrl,
                     instanceStatus: instanceStatus,
                     isAdmin: serverIsAdmin || false,
+                    instanceId: instanceId,
+                    instanceCreatedAt: instanceCreatedAt,
+                    instanceUpdatedAt: instanceUpdatedAt,
+                    instanceErrorDetails: instanceErrorDetails,
                 });
                 consecutiveInactiveCount = 0;
                 try {
@@ -258,7 +274,10 @@ export async function handleSetupImportSeedAndRecoverIdentities(payload: any): P
                 success: true,
                 message: `Recovered ${recoveredIdentities.length} identities.`,
                 recoveredCount: recoveredIdentities.length,
-                primaryDid: recoveredIdentities[0].identityDid, // Use identityDid from AgentIdentity
+                primaryDid: recoveredIdentities[0].identityDid,
+                primaryProfileName: recoveredIdentities[0].profile_name, // Map from internal snake_case to UI's camelCase
+                primaryProfilePicture: recoveredIdentities[0].profile_picture, // Map from internal snake_case to UI's camelCase
+                primaryCloudUrl: recoveredIdentities[0].instanceUrl, // Internal instanceUrl is already camelCase
             };
         } else {
             return { success: true, message: "No active identities found to recover.", recoveredCount: 0 };
