@@ -3,6 +3,12 @@ import { HDKey } from "micro-ed25519-hdkey";
 import * as ed from "@noble/ed25519"; // Re-use existing import for consistency
 import { Buffer } from "buffer"; // Needed for hex conversions
 
+// Polyfill Buffer globally for libraries that might expect it (e.g., bip39 in some environments)
+// Without this bip39.validateMnemonic always returns false
+if (typeof globalThis !== "undefined" && typeof globalThis.Buffer === "undefined") {
+    globalThis.Buffer = Buffer;
+}
+
 // --- Constants ---
 // Standard Ed25519 derivation path for SLIP-0010
 // Example: m / purpose' / coin_type' / account' / change / address_index
