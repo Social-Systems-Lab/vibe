@@ -708,13 +708,21 @@ export const app = new Elysia()
             // JWT derivation and authentication middleware
             .derive(async ({ jwt, request: { headers } }) => {
                 const authHeader = headers.get("authorization");
-                if (!authHeader || !authHeader.startsWith("Bearer ")) return { user: null };
+                if (!authHeader || !authHeader.startsWith("Bearer ")) {
+                    logger.debug("AuthDB derive: No auth header or not Bearer.");
+                    return { user: null };
+                }
                 const token = authHeader.substring(7);
                 try {
-                    const payload = await jwt.verify(token); // Assumes 'jwt' is from .use(jwt(...))
+                    const payload = await jwt.verify(token);
+                    if (!payload) {
+                        logger.warn("AuthDB derive: JWT verification returned falsy payload.", { token });
+                        return { user: null };
+                    }
+                    logger.info("AuthDB derive: JWT payload successfully verified:", payload);
                     return { user: payload as { identityDid: string; isAdmin?: boolean; type?: string } };
                 } catch (error) {
-                    logger.warn("JWT verification failed for /api/v1/authdb request", { error });
+                    logger.warn("AuthDB derive: JWT verification failed with error:", { error, token });
                     return { user: null };
                 }
             })
