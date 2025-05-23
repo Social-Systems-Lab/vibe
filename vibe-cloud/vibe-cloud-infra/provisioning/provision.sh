@@ -11,6 +11,7 @@ TARGET_USER_DID="${TARGET_USER_DID}"
 INSTANCE_IDENTIFIER="${INSTANCE_IDENTIFIER}" # Unique ID for the instance, e.g., vibe-u-xxxx
 CONTROL_PLANE_URL="${CONTROL_PLANE_URL}"     # URL of the control plane API, e.g., http://localhost:3001
 INTERNAL_SECRET_TOKEN="${INTERNAL_SECRET_TOKEN}" # Secret token for internal callback
+SHARED_JWT_SECRET="${SHARED_JWT_SECRET}"         # JWT Secret passed from control plane
 
 # Optional: KUBECONFIG_PATH if not running in-cluster with a service account
 # If KUBECONFIG_PATH is set, kubectl/helm will use it. Otherwise, they assume in-cluster auth.
@@ -53,6 +54,10 @@ if [ -z "$CONTROL_PLANE_URL" ]; then
 fi
 if [ -z "$INTERNAL_SECRET_TOKEN" ]; then
   echo "ERROR: INTERNAL_SECRET_TOKEN environment variable is not set." >&2
+  exit 1
+fi
+if [ -z "$SHARED_JWT_SECRET" ]; then
+  echo "ERROR: SHARED_JWT_SECRET environment variable is not set by the control plane." >&2
   exit 1
 fi
 
@@ -104,10 +109,11 @@ generate_random_string() {
 }
 COUCHDB_USER="user_$(generate_random_string | cut -c1-8)" # Shorter username
 COUCHDB_PASSWORD=$(generate_random_string)
-VIBE_APP_JWT_SECRET=$(generate_random_string)
+# VIBE_APP_JWT_SECRET is no longer generated here; it's passed via SHARED_JWT_SECRET
 
 echo "Generated CouchDB User: ${COUCHDB_USER}"
 # Avoid logging passwords and JWT secrets in production logs if possible
+# The SHARED_JWT_SECRET should not be logged.
 # echo "Generated CouchDB Password: ${COUCHDB_PASSWORD}"
 # echo "Generated Vibe App JWT Secret: ${VIBE_APP_JWT_SECRET}"
 
@@ -153,7 +159,7 @@ helm ${KUBECONFIG_ARG} install "${HELM_RELEASE_NAME}" "${HELM_CHART_PATH}" \
   --set "secrets.create=true" \
   --set "couchdb.auth.username=${COUCHDB_USER}" \
   --set "couchdb.auth.password=${COUCHDB_PASSWORD}" \
-  --set "vibeApp.auth.jwtSecret=${VIBE_APP_JWT_SECRET}" \
+  --set "vibeApp.auth.jwtSecret=${SHARED_JWT_SECRET}" \
   --set "vibeApp.env.TARGET_USER_DID=${TARGET_USER_DID}" \
   --set "vibeApp.env.COUCHDB_DATABASE_NAME=${COUCHDB_DATABASE_NAME}" \
   --set "vibeApp.env.COUCHDB_URL=http://${HELM_RELEASE_NAME}-couchdb:5984" \
