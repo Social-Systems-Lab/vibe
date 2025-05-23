@@ -204,7 +204,7 @@ export const app = new Elysia()
             return { error: "An internal server error occurred." };
         }
     })
-    .get("/health", () => ({ status: "ok" }))
+    .get("/health", () => ({ status: "ok", service: "vibe-cloud-api", version: process.env.APP_VERSION || "unknown" }))
     // --- Removed Admin Claim Route ---
     // --- Protected Data Routes ---
     .group("/api/v1/data", (group) =>
@@ -843,10 +843,10 @@ export function startServer(port: number = 3000): Server {
             websocket: bunWsHandler, // Use the defined WS handler
             fetch: fetchHandler, // Use the defined fetch handler
         });
-        logger.info(`🚀 Vibe Cloud server started at http://${server.hostname}:${server.port}`);
+        logger.info(`🚀 Vibe Cloud API (Version: ${process.env.APP_VERSION || "unknown"}) started at http://${server.hostname}:${server.port}`);
         return server;
     } catch (error) {
-        logger.error(`Failed to start server on port ${port}:`, error);
+        logger.error(`Failed to start Vibe Cloud API server on port ${port}:`, error);
         throw error; // Re-throw to indicate failure
     }
 }
