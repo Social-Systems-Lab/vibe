@@ -114,19 +114,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Handle INSTANCE_READY_FOR_SYNC notification
     if (message && typeof message === "object" && message.type === "VIBE_INTERNAL_NOTIFICATION" && message.action === "INSTANCE_READY_FOR_SYNC") {
         const { did } = message.payload;
-        if (did && SessionManager.isUnlocked && SessionManager.currentActiveDid === did) {
-            const decryptedSeed = SessionManager.getInMemoryDecryptedSeed();
-            if (decryptedSeed) {
-                console.log(`[BG] Received INSTANCE_READY_FOR_SYNC for ${did}. Vault is unlocked. Initializing PouchDB sync.`);
-                PouchDBManager.initializeSync(did, decryptedSeed).catch((err) =>
-                    console.error(`[BG] Error initializing PouchDB sync for ${did} after INSTANCE_READY_FOR_SYNC:`, err)
-                );
+        if (did && SessionManager.currentActiveDid === did) {
+            // Check if it's for the currently active DID
+            if (SessionManager.isUnlocked) {
+                const decryptedSeed = SessionManager.getInMemoryDecryptedSeed();
+                if (decryptedSeed) {
+                    console.log(`[BG] INSTANCE_READY_FOR_SYNC for ${did}: Vault unlocked. Initializing PouchDB sync with password.`);
+                    PouchDBManager.initializeSync(did, decryptedSeed).catch((err) =>
+                        console.error(`[BG] Error initializing PouchDB sync for ${did} (with password) after INSTANCE_READY_FOR_SYNC:`, err)
+                    );
+                } else {
+                    // This case should ideally not happen if isUnlocked is true, but as a fallback:
+                    console.warn(
+                        `[BG] INSTANCE_READY_FOR_SYNC for ${did}: Vault unlocked but no in-memory seed. Attempting sync without password (live credentials only).`
+                    );
+                    PouchDBManager.initializeSync(did, undefined).catch((err) =>
+                        console.error(`[BG] Error initializing PouchDB sync for ${did} (no password, post-unlock anomaly) after INSTANCE_READY_FOR_SYNC:`, err)
+                    );
+                }
             } else {
-                console.warn(`[BG] Received INSTANCE_READY_FOR_SYNC for ${did}, vault unlocked, but no in-memory seed. Sync not started with password.`);
+                // Vault is locked, but instance is ready. Attempt sync using live credentials (will not be stored encrypted).
+                console.log(`[BG] INSTANCE_READY_FOR_SYNC for ${did}: Vault locked. Attempting PouchDB sync without password (live credentials only).`);
+                PouchDBManager.initializeSync(did, undefined).catch((err) =>
+                    console.error(`[BG] Error initializing PouchDB sync for ${did} (no password, vault locked) after INSTANCE_READY_FOR_SYNC:`, err)
+                );
             }
         } else {
             console.log(
-                `[BG] Received INSTANCE_READY_FOR_SYNC for ${did}, but conditions not met (vault locked, or not active DID). Sync not started with password.`
+                `[BG] Received INSTANCE_READY_FOR_SYNC for ${did}, but it's not the current active DID (${SessionManager.currentActiveDid}). Sync not initiated by this event.`
             );
         }
         // This is a notification, no response needed to sender.

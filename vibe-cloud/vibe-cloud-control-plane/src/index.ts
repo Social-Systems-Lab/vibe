@@ -120,7 +120,15 @@ export const app = new Elysia()
 
         return { error: errorMessage };
     })
-    .get("/health", () => ({ status: "ok", service: "control-plane", version: process.env.APP_VERSION || "unknown" }))
+    .get("/health", () => {
+        const secretForDisplay = jwtSecret ? jwtSecret.substring(0, Math.min(jwtSecret.length, 8)) + "..." : "NOT_SET";
+        return {
+            status: "ok",
+            service: "control-plane",
+            version: process.env.APP_VERSION || "unknown",
+            jwtSecretStart: secretForDisplay,
+        };
+    })
 
     // --- Authentication Routes ---
     .group("/api/v1/auth", (authGroup) =>

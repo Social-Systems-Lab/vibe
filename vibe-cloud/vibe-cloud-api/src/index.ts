@@ -204,7 +204,15 @@ export const app = new Elysia()
             return { error: "An internal server error occurred." };
         }
     })
-    .get("/health", () => ({ status: "ok", service: "vibe-cloud-api", version: process.env.APP_VERSION || "unknown" }))
+    .get("/health", () => {
+        const secretForDisplay = jwtSecret ? jwtSecret.substring(0, Math.min(jwtSecret.length, 8)) + "..." : "NOT_SET";
+        return {
+            status: "ok",
+            service: "vibe-cloud-api",
+            version: process.env.APP_VERSION || "unknown",
+            jwtSecretStart: secretForDisplay,
+        };
+    })
     // --- Removed Admin Claim Route ---
     // --- Protected Data Routes ---
     .group("/api/v1/data", (group) =>
