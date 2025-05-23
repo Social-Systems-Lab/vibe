@@ -170,6 +170,7 @@ export async function handleSetupImportSeedAndRecoverIdentities(payload: any): P
             let instanceCreatedAt;
             let instanceUpdatedAt;
             let instanceErrorDetails;
+            let accessToken: string | null = null; // Declare accessToken
 
             try {
                 const statusResponse = await fetch(statusUrl);
@@ -177,11 +178,51 @@ export async function handleSetupImportSeedAndRecoverIdentities(payload: any): P
                     const data = await statusResponse.json();
                     isActive = data.isActive || false;
                     instanceStatus = data.instanceStatus;
-                    // If active, try to get more details
+                    // If active, try to log in and then get more details
                     if (isActive) {
+                        // Attempt proactive login first to get a token
+                        try {
+                            const nonce = crypto.randomUUID().toString();
+                            const timestamp = new Date().toISOString();
+                            const messageToSign = `${currentDid}|${nonce}|${timestamp}`;
+                            const signature = await signMessage(keyPair.privateKey, messageToSign);
+                            const loginResponse = await fetch(`${Constants.OFFICIAL_VIBE_CLOUD_URL}/api/v1/auth/login`, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ did: currentDid, nonce, timestamp, signature }),
+                            });
+                            if (loginResponse.ok) {
+                                const result = await loginResponse.json();
+                                const tokenDetails = result.tokenDetails as Types.TokenDetails;
+                                if (tokenDetails && tokenDetails.accessToken) {
+                                    accessToken = tokenDetails.accessToken; // Store for immediate use
+                                    await TokenManager.storeCpTokens(currentDid, tokenDetails); // Also store persistently
+                                    console.log(`Proactive login successful for ${currentDid}, token obtained.`);
+                                } else {
+                                    console.warn(`Proactive login for ${currentDid} succeeded but no token details found.`);
+                                }
+                            } else {
+                                console.warn(`Proactive login failed for ${currentDid}: ${loginResponse.status} ${loginResponse.statusText}`);
+                                const errorBody = await loginResponse.text().catch(() => "Could not read error body");
+                                console.warn(`Proactive login error body for ${currentDid}: ${errorBody}`);
+                            }
+                        } catch (loginError: any) {
+                            console.error(`Error during proactive login for ${currentDid}:`, loginError.message);
+                        }
+
+                        // Now fetch identity details, using the token if available
                         const identityDetailsUrl = `${Constants.OFFICIAL_VIBE_CLOUD_URL}/api/v1/identities/${currentDid}`;
-                        const detailsResponse = await fetch(identityDetailsUrl);
-                        console.log("detailsResponse", JSON.stringify(detailsResponse, null, 2));
+                        const fetchOptions: RequestInit = {};
+                        if (accessToken) {
+                            fetchOptions.headers = { Authorization: `Bearer ${accessToken}` };
+                        } else {
+                            console.warn(`No access token available for fetching details for ${currentDid}. Proceeding without auth.`);
+                        }
+
+                        const detailsResponse = await fetch(identityDetailsUrl, fetchOptions);
+                        // The user's original log for the raw response object:
+                        console.log("detailsResponse for " + currentDid + ":", JSON.stringify(detailsResponse, null, 2));
+
                         if (detailsResponse.ok) {
                             const details = await detailsResponse.json();
                             serverProfileName = details.profileName;
@@ -193,7 +234,16 @@ export async function handleSetupImportSeedAndRecoverIdentities(payload: any): P
                             instanceUpdatedAt = details.instanceUpdatedAt;
                             instanceErrorDetails = details.instanceErrorDetails;
 
-                            console.log("Recovered identity details:", JSON.stringify(details, null, 2));
+                            console.log("Recovered identity details for " + currentDid + ":", JSON.stringify(details, null, 2));
+                        } else {
+                            // Log details if the fetch for identity details was not ok
+                            console.warn(`Failed to fetch identity details for ${currentDid}. Status: ${detailsResponse.status} ${detailsResponse.statusText}`);
+                            try {
+                                const errorBody = await detailsResponse.text(); // Attempt to get error body as text
+                                console.warn(`Error body for ${currentDid}: ${errorBody}`);
+                            } catch (e) {
+                                console.warn(`Could not parse error body for ${currentDid}.`);
+                            }
                         }
                     }
                 } else if (statusResponse.status !== 404) {
@@ -204,13 +254,16 @@ export async function handleSetupImportSeedAndRecoverIdentities(payload: any): P
             }
 
             if (isActive) {
+                // The proactive login is now done *before* fetching details if isActive.
+                // So, we only push to recoveredIdentities here.
+                // The token storage (TokenManager.storeCpTokens) is handled within the login block above.
                 recoveredIdentities.push({
                     identityDid: currentDid,
                     derivationPath: keyPair.derivationPath,
-                    profile_name: serverProfileName || `Recovered Identity ${currentIndex + 1}`, // Map to internal snake_case
+                    profile_name: serverProfileName || `Recovered Identity ${currentIndex + 1}`,
                     profile_picture: serverProfilePicture,
                     instanceUrl: serverCloudUrl,
-                    cloudUrl: serverCloudUrl,
+                    cloudUrl: serverCloudUrl, // Keep if AgentIdentity type still has it distinctly
                     instanceStatus: instanceStatus,
                     isAdmin: serverIsAdmin || false,
                     instanceId: instanceId,
@@ -219,27 +272,6 @@ export async function handleSetupImportSeedAndRecoverIdentities(payload: any): P
                     instanceErrorDetails: instanceErrorDetails,
                 });
                 consecutiveInactiveCount = 0;
-                try {
-                    // Proactive login to fetch and store tokens
-                    const nonce = crypto.randomUUID().toString();
-                    const timestamp = new Date().toISOString();
-                    const messageToSign = `${currentDid}|${nonce}|${timestamp}`;
-                    const signature = await signMessage(keyPair.privateKey, messageToSign);
-                    const loginResponse = await fetch(`${Constants.OFFICIAL_VIBE_CLOUD_URL}/api/v1/auth/login`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ did: currentDid, nonce, timestamp, signature }),
-                    });
-                    if (loginResponse.ok) {
-                        const result = await loginResponse.json();
-                        const tokenDetails = result.tokenDetails as Types.TokenDetails;
-                        if (tokenDetails) await TokenManager.storeCpTokens(currentDid, tokenDetails);
-                    } else {
-                        console.warn(`Proactive login failed for ${currentDid}: ${loginResponse.status}`);
-                    }
-                } catch (loginError: any) {
-                    console.error(`Error during proactive login for ${currentDid}:`, loginError.message);
-                }
                 nextIdentityIndexToStore = currentIndex + 1;
             } else {
                 consecutiveInactiveCount++;
