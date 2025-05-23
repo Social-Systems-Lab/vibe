@@ -98,6 +98,9 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
             case "GET_ACTIVE_TAB_APP_CONTEXT":
                 responsePayload = await AppSessionHandler.getActiveTabAppContext(payload, sender);
                 break;
+            case "NUKE_ALL_USER_DATABASES": // Added case for nuking all user databases
+                responsePayload = await IdentityHandler.handleNukeAllUserDatabases();
+                break;
             default:
                 console.warn(`[BG_WARN_UnknownAction] Unknown action: ${action}`);
                 responsePayload = { error: { message: `Unknown action: ${action}` } };

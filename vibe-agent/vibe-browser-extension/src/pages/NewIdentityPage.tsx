@@ -48,7 +48,8 @@ export const NewIdentityPage: React.FC = () => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [_currentId, setCurrentIdentity] = useAtom(currentIdentityAtom);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const [_allIds, setAllIdentities] = useAtom(allIdentitiesAtom);
+    const [_allIds, setAllIdentities] = useAtom(allIdentitiesAtom); // _allIds will be used in onResetVibeHandler
+    const [allCurrentIdentities] = useAtom(allIdentitiesAtom); // For direct access in onResetVibeHandler
 
     const [, setLocation] = useLocation();
     const { requestUnlockAndPerformAction } = useVaultUnlock();
@@ -253,8 +254,22 @@ export const NewIdentityPage: React.FC = () => {
     const onResetVibeHandler = async () => {
         if (confirm("Are you sure you want to reset Vibe? This will clear your stored data.")) {
             try {
+                // Get all known identity DIDs to pass to the nuke function
+                const didsToNuke = allCurrentIdentities.map((id) => id.did).filter((did) => !!did) as string[];
+                console.log("NewIdentityPage: DIDs to nuke:", didsToNuke);
+
+                // Instruct the background script to delete all PouchDB user databases
+                await chrome.runtime.sendMessage({
+                    type: "VIBE_AGENT_REQUEST",
+                    action: "NUKE_ALL_USER_DATABASES",
+                    payload: { userDids: didsToNuke }, // Pass the DIDs
+                    requestId: crypto.randomUUID().toString(),
+                });
+
                 await chrome.storage.local.clear();
                 await chrome.storage.session.clear(); // Clear session storage too
+                // User databases are now requested to be nuked by the background script.
+
                 alert("Vibe has been reset. The extension will now re-initialize.");
                 setProps(null);
                 setAppStatus("LOADING"); // Trigger re-initialization

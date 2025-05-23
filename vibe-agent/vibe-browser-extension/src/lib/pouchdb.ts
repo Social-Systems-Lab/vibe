@@ -30,7 +30,8 @@ export interface CouchDbConfig {
     passwordSalt?: string; // Salt used for encrypting the password (hex)
 }
 
-function getLocalDbName(userDid: string): string {
+export function getLocalDbName(userDid: string): string {
+    // Added export
     const sanitizedDid = userDid.replace(/:/g, "_").replace(/\./g, "-");
     return `user_data_${sanitizedDid}`;
 }
@@ -448,4 +449,25 @@ export async function getAppPermissions(userDid: string, appId: string): Promise
         console.error(`Error fetching app permission for ${appId} (user ${userDid}):`, error);
         throw error;
     }
+}
+
+export function clearAllPouchDbCachesAndHandlers(): void {
+    console.log("Clearing all PouchDB in-memory caches and cancelling sync handlers.");
+    // localDbInstances are PouchDB.Database instances.
+    // It's good practice to attempt to close them if they have a close method,
+    // though PouchDB instances are generally robust.
+    // For simplicity in a nuke operation, clearing the map is the primary goal.
+    localDbInstances.clear();
+    remoteDbInstances.clear();
+
+    syncHandlers.forEach((handler) => {
+        try {
+            handler.cancel();
+        } catch (e) {
+            console.warn("Error cancelling sync handler during global clear:", e);
+        }
+    });
+    syncHandlers.clear();
+    couchDbConfigCache.clear();
+    console.log("Successfully cleared PouchDB caches and sync handlers.");
 }

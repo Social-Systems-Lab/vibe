@@ -1,3 +1,4 @@
+import PouchDB from "pouchdb-browser"; // Added PouchDB import
 import { Buffer } from "buffer";
 import * as Constants from "../constants";
 import * as Types from "../types";
@@ -594,4 +595,103 @@ export async function handleDeleteIdentity(payload: any): Promise<any> {
     }
 
     return { success: true, message: `Identity ${didToDelete} removed locally. ${cloudDeletionMessage}` };
+}
+
+export async function handleNukeAllUserDatabases(payload?: { userDids?: string[] }): Promise<any> {
+    console.log("[handleNukeAllUserDatabases] Received request. Payload:", payload);
+    try {
+        // Step 1: Clear all PouchDB related in-memory caches and cancel sync handlers FIRST.
+        console.log("[handleNukeAllUserDatabases] Clearing PouchDB caches and handlers via PouchDBManager...");
+        PouchDBManager.clearAllPouchDbCachesAndHandlers();
+        console.log("[handleNukeAllUserDatabases] Finished clearing PouchDB caches and handlers.");
+
+        const destructionPromises: Promise<any>[] = [];
+
+        // Step 2: Attempt to destroy databases for known userDids
+        if (payload?.userDids && Array.isArray(payload.userDids) && payload.userDids.length > 0) {
+            console.log(`[handleNukeAllUserDatabases] Attempting to destroy databases for ${payload.userDids.length} provided userDids.`);
+            for (const did of payload.userDids) {
+                try {
+                    const dbName = PouchDBManager.getLocalDbName(did);
+                    console.log(`[handleNukeAllUserDatabases] Destroying DB for DID ${did} (DB name: ${dbName})`);
+                    // It's important that PouchDB is imported if not already available globally in this scope.
+                    // Assuming PouchDB is available (e.g. from `import PouchDB from "pouchdb-browser";` if needed,
+                    // but PouchDBManager might re-export or it's globally available via script).
+                    // For safety, ensure PouchDB constructor is accessible.
+                    // The PouchDBManager itself uses `new PouchDB()`, so it should be fine.
+                    const db = new PouchDB(dbName); // Create instance to call destroy
+                    destructionPromises.push(
+                        db
+                            .destroy()
+                            .then((response) => {
+                                console.log(`[handleNukeAllUserDatabases] Successfully destroyed DB ${dbName} for DID ${did}:`, response);
+                                return { name: dbName, status: "destroyed", response };
+                            })
+                            .catch((err) => {
+                                console.error(`[handleNukeAllUserDatabases] Error destroying DB ${dbName} for DID ${did}:`, err);
+                                return { name: dbName, status: "error_destroying", error: err };
+                            })
+                    );
+                } catch (e) {
+                    console.error(`[handleNukeAllUserDatabases] Error preparing PouchDB instance for destruction for DID ${did}:`, e);
+                    // Continue with other DIDs
+                }
+            }
+        } else {
+            console.log("[handleNukeAllUserDatabases] No userDids provided in payload, or empty list.");
+        }
+
+        // Step 3: Fallback/Supplementary - Delete all PouchDB IndexedDB databases matching the pattern using indexedDB.databases()
+        console.log("[handleNukeAllUserDatabases] Attempting supplementary cleanup via indexedDB.databases()...");
+        if (indexedDB.databases) {
+            const dbs = await indexedDB.databases();
+            const pouchDbPrefix = "_pouch_user_data_"; // PouchDB names are prefixed with _pouch_ then the given name.
+
+            if (dbs.length === 0) {
+                console.log("[handleNukeAllUserDatabases] indexedDB.databases() returned no databases for supplementary cleanup.");
+            } else {
+                console.log(`[handleNukeAllUserDatabases] Found ${dbs.length} IndexedDBs to check for supplementary cleanup.`);
+            }
+
+            for (const dbInfo of dbs) {
+                if (dbInfo.name && dbInfo.name.startsWith(pouchDbPrefix)) {
+                    console.log(`[handleNukeAllUserDatabases] (Supplementary) Found matching DB: ${dbInfo.name}. Attempting deletion.`);
+                    destructionPromises.push(
+                        new Promise((resolve, reject) => {
+                            const deleteRequest = indexedDB.deleteDatabase(dbInfo.name!);
+                            deleteRequest.onsuccess = (event) => {
+                                console.log(`[handleNukeAllUserDatabases] (Supplementary) Successfully deleted IndexedDB: ${dbInfo.name}`, event);
+                                resolve({ name: dbInfo.name, status: "success_indexeddb_delete" });
+                            };
+                            deleteRequest.onerror = (event) => {
+                                console.error(`[handleNukeAllUserDatabases] (Supplementary) Error deleting IndexedDB ${dbInfo.name}:`, event);
+                                // Resolve with error status, don't reject the promise from Promise.allSettled
+                                resolve({ name: dbInfo.name, status: "error_indexeddb_delete", event });
+                            };
+                            deleteRequest.onblocked = (event) => {
+                                console.warn(`[handleNukeAllUserDatabases] (Supplementary) Deletion of IndexedDB ${dbInfo.name} blocked:`, event);
+                                resolve({ name: dbInfo.name, status: "blocked_indexeddb_delete", event });
+                            };
+                        })
+                    );
+                }
+            }
+        } else {
+            console.warn("[handleNukeAllUserDatabases] indexedDB.databases() API not available for supplementary cleanup.");
+        }
+
+        if (destructionPromises.length > 0) {
+            console.log(`[handleNukeAllUserDatabases] Awaiting ${destructionPromises.length} destruction/deletion promises.`);
+            const results = await Promise.allSettled(destructionPromises);
+            console.log("[handleNukeAllUserDatabases] All destruction/deletion promises settled. Results:", results);
+        } else {
+            console.log("[handleNukeAllUserDatabases] No databases targeted for destruction or deletion in this run.");
+        }
+
+        console.log("[handleNukeAllUserDatabases] Process completed.");
+        return { success: true, message: "Nuke all user databases process completed." };
+    } catch (error: any) {
+        console.error("[handleNukeAllUserDatabases] Error during overall process:", error, error.stack);
+        return { success: false, error: { message: error.message || "Failed to nuke all user databases." } };
+    }
 }

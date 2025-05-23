@@ -211,8 +211,22 @@ export const SettingsPage: React.FC = () => {
     const handleResetVibe = async () => {
         if (confirm("Are you sure you want to reset Vibe? This will clear your stored data.")) {
             try {
+                // Get all known identity DIDs to pass to the nuke function
+                const didsToNuke = allIdentities.map((id) => id.did).filter((did) => !!did) as string[];
+                console.log("SettingsPage: DIDs to nuke:", didsToNuke);
+
+                // Instruct the background script to delete all PouchDB user databases
+                await chrome.runtime.sendMessage({
+                    type: "VIBE_AGENT_REQUEST",
+                    action: "NUKE_ALL_USER_DATABASES",
+                    payload: { userDids: didsToNuke }, // Pass the DIDs
+                    requestId: crypto.randomUUID().toString(),
+                });
+
                 await chrome.storage.local.clear();
                 await chrome.storage.session.clear(); // Clear session storage too
+                // User databases are now requested to be nuked by the background script.
+
                 alert("Vibe has been reset. The extension will now re-initialize.");
                 setAppStatus("LOADING"); // Trigger re-initialization
                 setLocation("/setup"); // Navigate to root, initializer will pick correct route
