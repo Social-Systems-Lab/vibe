@@ -1,5 +1,5 @@
 // index.ts
-import { Elysia, t, NotFoundError, InternalServerError, type Static } from "elysia";
+import { Elysia, t, NotFoundError, InternalServerError } from "elysia";
 import { jwt } from "@elysiajs/jwt";
 import { cors } from "@elysiajs/cors";
 import { dataService, type ReadResult } from "./services/data.service";
@@ -8,10 +8,8 @@ import { RealtimeService } from "./services/realtime.service";
 import { logger } from "./utils/logger";
 import { randomUUID } from "crypto";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
-import type * as nano from "nano";
 import * as jose from "jose";
-import { ed25519FromDid, getUserDbName } from "./utils/identity.utils";
-import { verify } from "@noble/ed25519";
+import { getUserDbName } from "./utils/identity.utils";
 import { Buffer } from "buffer";
 // Removed spawn and path imports
 import {
@@ -19,23 +17,17 @@ import {
     BlobDownloadResponseSchema,
     BLOBS_COLLECTION,
     BlobUploadBodySchema,
-    CLAIM_CODES_COLLECTION,
     ErrorResponseSchema,
     JWTPayloadSchema,
     ReadPayloadSchema,
     WritePayloadSchema,
     type BlobMetadata,
-    type ClaimCode,
     type WebSocketAuthContext,
-    AppManifestSchema, // Keep for manifest structure
     AppUpsertPayloadSchema, // New schema for upsert payload
     AppStatusResponseSchema, // New schema for status response
     APPS_COLLECTION,
     type App as AppModel, // The DB model
     type AppManifest, // Type alias for manifest part
-    type PermissionSetting, // Keep type
-    type User, // Import User type
-    GrantsSchema, // Need this for validation/typing
     // Removed ProvisionRequestSchema
     CouchDbDetailsResponseSchema, // Added for the new authdb endpoint
 } from "./models/models";
@@ -71,11 +63,11 @@ export const app = new Elysia()
     // --- Add CORS Middleware ---
     .use(
         cors({
-            origin: ["http://localhost:5000", "http://127.0.0.1:5000"], // Allow requests from the test app
-            methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Allow common methods
-            allowedHeaders: ["Content-Type", "Authorization", "X-Vibe-App-ID"], // Allow necessary headers
-            credentials: true, // Allow cookies/auth headers
-            preflight: true, // Handle preflight requests
+            origin: "*",
+            methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allowedHeaders: ["Content-Type", "Authorization", "X-Vibe-App-ID"],
+            credentials: true,
+            preflight: true,
         })
     )
     // --- End CORS Middleware ---

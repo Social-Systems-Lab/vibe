@@ -7,16 +7,11 @@ import { PermissionService } from "./services/permission.service";
 import { logger } from "./utils/logger";
 import { spawn } from "child_process";
 import path from "path";
-import { Buffer } from "buffer";
 import type { Server } from "bun";
 import type * as nano from "nano";
-import { ed25519FromDid, instanceIdFromDid } from "./utils/identity.utils"; // Added instanceIdFromDid
-import { verify } from "@noble/ed25519"; // Added
+import { instanceIdFromDid } from "./utils/identity.utils"; // Added instanceIdFromDid
 import {
-    AdminClaimSchema,
-    CLAIM_CODES_COLLECTION,
     ErrorResponseSchema,
-    JWTPayloadSchema, // Schema for JWT structure
     LoginRequestSchema,
     // LoginResponseSchema, // Will be replaced by LoginFinalResponseSchema for the response
     TokenResponseSchema, // For refresh and new login/register responses
@@ -27,11 +22,7 @@ import {
     IdentitySchema,
     IdentityListResponseSchema,
     IdentityStatusResponseSchema,
-    UpdateIdentityOwnerRequestSchema,
-    UpdateIdentityAdminRequestSchema,
-    UpdateIdentityInternalRequestSchema,
     USERS_COLLECTION,
-    type ClaimCode,
     type Identity,
     type LoginRequest,
     type RegisterRequest,
@@ -39,11 +30,9 @@ import {
     type UpdateIdentityAdminRequest,
     type UpdateIdentityInternalRequest,
     type JWTPayload as JWTPayloadType, // Type for JWT payload
-    type AdminClaimBody,
     UnauthorizedError, // Added import
 } from "./models/models";
 import { SYSTEM_DB } from "./utils/constants";
-import { randomUUID } from "crypto";
 
 // Environment Variable Validation
 const jwtSecret = process.env.JWT_SECRET;
