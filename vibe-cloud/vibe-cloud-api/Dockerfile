@@ -31,6 +31,10 @@ COPY --from=prerelease /usr/src/app/bun.lock .
 COPY --from=prerelease /usr/src/app/tsconfig.json .
 COPY --from=prerelease /usr/src/app/src ./src
 
+# Application version ARG and ENV
+ARG APP_VERSION="unknown"
+ENV APP_VERSION=${APP_VERSION}
+
 # run the app
 USER bun
 # Expose the port defined by APP_PORT, default to 3000
