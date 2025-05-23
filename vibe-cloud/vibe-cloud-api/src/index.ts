@@ -37,6 +37,7 @@ import {
     type User, // Import User type
     GrantsSchema, // Need this for validation/typing
     // Removed ProvisionRequestSchema
+    CouchDbDetailsResponseSchema, // Added for the new authdb endpoint
 } from "./models/models";
 import { SYSTEM_DB } from "./utils/constants";
 import { AuthService } from "./services/auth.service";
@@ -694,6 +695,80 @@ export const app = new Elysia()
                     // Only define the success response schema. Errors are handled by setting status/returning error object or throwing.
                     response: { 200: BlobDownloadResponseSchema, 403: ErrorResponseSchema, 404: ErrorResponseSchema },
                     detail: { summary: "Get a pre-signed URL to download a blob (requires ownership or 'read:blobs')" },
+                }
+            )
+    )
+    // --- New AuthDB Route ---
+    .group("/api/v1", (group) =>
+        group
+            // JWT derivation and authentication middleware
+            .derive(async ({ jwt, request: { headers } }) => {
+                const authHeader = headers.get("authorization");
+                if (!authHeader || !authHeader.startsWith("Bearer ")) return { user: null };
+                const token = authHeader.substring(7);
+                try {
+                    const payload = await jwt.verify(token); // Assumes 'jwt' is from .use(jwt(...))
+                    return { user: payload as { userDid: string } };
+                } catch (error) {
+                    logger.warn("JWT verification failed for /api/v1/authdb request", { error });
+                    return { user: null };
+                }
+            })
+            .onBeforeHandle(({ user, set }) => {
+                if (!user) {
+                    set.status = 401;
+                    logger.warn("Access to /api/v1/authdb denied: Missing or invalid user token.");
+                    return { error: "Unauthorized: Invalid or missing user token." };
+                }
+            })
+            .get(
+                "/authdb",
+                async ({ user, set }) => {
+                    // user is populated by the .derive middleware
+                    const { userDid } = user!; // user is guaranteed non-null due to onBeforeHandle
+
+                    logger.info(`Processing /api/v1/authdb request for user: ${userDid}`);
+
+                    const couchDbUrl = process.env.COUCHDB_URL;
+                    const couchDbUsername = process.env.COUCHDB_USER;
+                    const couchDbPassword = process.env.COUCHDB_PASSWORD;
+
+                    if (!couchDbUrl || !couchDbUsername || !couchDbPassword) {
+                        logger.error(
+                            `CRITICAL: CouchDB connection details (COUCHDB_URL, COUCHDB_USER, or COUCHDB_PASSWORD) are not configured in the environment for the API instance serving user ${userDid}.`
+                        );
+                        set.status = 503; // Service Unavailable
+                        return { error: "CouchDB service details are not configured or available for this instance." };
+                    }
+
+                    // It's important that process.env.COUCHDB_URL is the externally accessible URL for the browser extension.
+                    logger.info(
+                        `Successfully retrieved CouchDB details from env for user ${userDid}. URL starts with: ${couchDbUrl.substring(
+                            0,
+                            Math.min(30, couchDbUrl.length)
+                        )}...`
+                    );
+
+                    set.status = 200;
+                    return {
+                        url: couchDbUrl,
+                        username: couchDbUsername,
+                        password: couchDbPassword,
+                    };
+                },
+                {
+                    response: {
+                        // Define expected responses
+                        200: CouchDbDetailsResponseSchema,
+                        401: ErrorResponseSchema, // For unauthorized
+                        503: ErrorResponseSchema, // For service configuration issues
+                    },
+                    detail: {
+                        // OpenAPI documentation details
+                        summary: "Get CouchDB connection details for the authenticated user.",
+                        description:
+                            "Provides the externally accessible URL, username, and password for the user's CouchDB instance. Requires JWT authentication. These details are read from the API instance's environment variables.",
+                    },
                 }
             )
     );

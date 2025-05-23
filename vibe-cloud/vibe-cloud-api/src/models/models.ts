@@ -206,6 +206,16 @@ export const AppStatusResponseSchema = t.Object({
 });
 export type AppStatusResponse = Static<typeof AppStatusResponseSchema>;
 
+// Schema for CouchDB details response
+export const CouchDbDetailsResponseSchema = t.Object({
+    url: t.String({
+        description: "The full URL to the CouchDB instance, accessible by the client (browser extension).",
+    }),
+    username: t.String({ description: "The username for CouchDB authentication." }),
+    password: t.String({ description: "The password for CouchDB authentication." }),
+});
+export type CouchDbDetailsResponse = Static<typeof CouchDbDetailsResponseSchema>; // Added type export
+
 // Schema for setting app grants via API (KEEPING for potential direct grant updates if needed later, but upsert is primary)
 export const SetAppGrantsPayloadSchema = t.Object({
     appId: t.String({ description: "The ID of the application whose grants are being set." }),

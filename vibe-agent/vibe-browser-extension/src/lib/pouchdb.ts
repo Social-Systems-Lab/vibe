@@ -135,7 +135,7 @@ export async function initializeSync(userDid: string, mainVaultPasswordIfAvailab
                 return;
             }
 
-            const response = await fetch(`${instanceUrl}/api/v1/instance/couchdb-details`, {
+            const response = await fetch(`${instanceUrl}/api/v1/authdb`, {
                 headers: {
                     Authorization: `Bearer ${accessToken}`,
                     "Content-Type": "application/json",
