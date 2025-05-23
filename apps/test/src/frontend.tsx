@@ -10,6 +10,7 @@ import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import { VibeProvider } from "./vibe/react.tsx"; // Import VibeProvider for the real SDK
 import type { AppManifest } from "./vibe/types";
+import logoSvg from "./logo.svg"; // Import logo for the app
 
 // Define the manifest for the test application
 const testAppManifest: AppManifest = {
@@ -21,7 +22,7 @@ const testAppManifest: AppManifest = {
         "write:notes", // Request permission to write notes
         // Add other permissions as needed, e.g., "read:profile"
     ],
-    iconUrl: `${window.location.origin}/_bun/asset/335ed0fce7e3a596.svglogo.svg`, // Optional: URL to an icon for the app
+    iconUrl: `${window.location.origin}${logoSvg}`, // Optional: URL to an icon for the app
     // TODO: Add other manifest fields if necessary (e.g., website, privacyPolicyUrl)
 };
 
@@ -30,9 +31,9 @@ const testAppManifest: AppManifest = {
 function AppEntry() {
     return (
         <BrowserRouter>
-            <VibeProvider manifest={testAppManifest}>
-                <App />
-            </VibeProvider>
+            {/* <VibeProvider manifest={testAppManifest}> */}
+            <App />
+            {/* </VibeProvider> */}
         </BrowserRouter>
     );
 }
