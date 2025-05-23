@@ -75,11 +75,8 @@ export const app = new Elysia()
         jwt({
             name: "jwt",
             secret: jwtSecret,
-            schema: JWTPayloadSchema,
-            alg: "HS256", // Match control plane
-            iss: process.env.JWT_ISSUER || "vibe-cloud-control-plane", // Match control plane
-            // exp is typically handled by the library during verification based on token content
-            // clockTolerance can also be added if needed, but iss and alg are primary
+            alg: "HS256",
+            iss: process.env.JWT_ISSUER || "vibe-cloud-control-plane",
         })
     )
     .onError(({ code, error, set }) => {
