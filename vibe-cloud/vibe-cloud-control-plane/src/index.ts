@@ -229,42 +229,76 @@ export const app = new Elysia()
                             INSTANCE_IDENTIFIER: instanceId,
                             CONTROL_PLANE_URL: controlPlaneBaseUrl,
                             INTERNAL_SECRET_TOKEN: process.env.INTERNAL_SECRET_TOKEN || "dev-secret-token",
+                            SHARED_JWT_SECRET: process.env.JWT_SECRET || "", // Pass the raw JWT_SECRET
                         };
                         Object.keys(provisionEnv).forEach((key) => (provisionEnv as any)[key] === undefined && delete (provisionEnv as any)[key]);
 
-                        logger.info(`Executing provisioning script for ${instanceId} (identity: ${did})`);
+                        if (!provisionEnv.SHARED_JWT_SECRET) {
+                            logger.error("CRITICAL: JWT_SECRET is not defined in control plane env, cannot pass to provision.sh. Aborting provisioning.");
+                            // Optionally, update identity status to failed here
+                            await authService.updateIdentity(
+                                did,
+                                { instanceStatus: "failed", instanceErrorDetails: "Control plane JWT_SECRET missing, cannot provision." },
+                                "internal"
+                            );
+                            set.status = 500;
+                            return { error: "Internal configuration error: Control plane JWT_SECRET missing." };
+                        }
+
+                        logger.info(`Executing provisioning script for ${instanceId} (identity: ${did}) with SHARED_JWT_SECRET.`);
                         const provisionProcess = spawn("/usr/bin/bash", [scriptPath], { cwd: scriptCwd, env: provisionEnv, stdio: "pipe", detached: true });
                         provisionProcess.unref();
+
+                        let scriptStderr = "";
                         provisionProcess.stdout.on("data", (data) => logger.info(`[Provision STDOUT - ${instanceId}]: ${data.toString().trim()}`));
-                        provisionProcess.stderr.on("data", (data) => logger.error(`[Provision STDERR - ${instanceId}]: ${data.toString().trim()}`));
+                        provisionProcess.stderr.on("data", (data) => {
+                            const errData = data.toString().trim();
+                            logger.error(`[Provision STDERR - ${instanceId}]: ${errData}`);
+                            scriptStderr += errData + "\n"; // Accumulate stderr
+                        });
 
                         provisionProcess.on("close", async (code) => {
                             logger.info(`Provisioning script for instance '${instanceId}' exited with code ${code}.`);
                             if (code !== 0) {
+                                // This is a fallback if the script couldn't make its own callback
+                                // or if it exited before its callback logic (e.g., early script error)
+                                const errorDetail = `Provisioning script exited with code ${code}. Stderr: ${scriptStderr.substring(0, 500)}${
+                                    scriptStderr.length > 500 ? "..." : ""
+                                }`;
+                                logger.error(`Attempting to mark instance ${instanceId} as failed. Detail: ${errorDetail}`);
                                 try {
-                                    await authService.updateIdentity(
-                                        did,
-                                        { instanceStatus: "failed", instanceErrorDetails: `Provisioning script exited with code ${code}.` },
-                                        "internal"
-                                    );
+                                    // Check current status first to avoid overwriting a "completed" status if script's callback raced and succeeded
+                                    const currentIdentity = await dataService.getDocument<Identity>(SYSTEM_DB, `${USERS_COLLECTION}/${did}`);
+                                    if (currentIdentity && currentIdentity.instanceStatus !== "completed") {
+                                        await authService.updateIdentity(did, { instanceStatus: "failed", instanceErrorDetails: errorDetail }, "internal");
+                                    } else if (currentIdentity?.instanceStatus === "completed") {
+                                        logger.warn(
+                                            `Instance ${instanceId} status is already 'completed'. Not overriding with failure from script exit code ${code}. Script callback might have succeeded before exit.`
+                                        );
+                                    } else if (!currentIdentity) {
+                                        logger.error(`Identity ${did} not found when trying to mark as failed after script error.`);
+                                    }
                                 } catch (updateErr) {
-                                    logger.error(`Failed to mark instance ${instanceId} as failed after script error:`, updateErr);
+                                    logger.error(`Failed to mark instance ${instanceId} as failed after script error (exit code ${code}):`, updateErr);
                                 }
                             }
+                            // If code is 0, we assume the script made a successful callback itself,
+                            // or it will make one shortly if it's still running detached tasks.
+                            // The script's own callback is the primary source of truth for "completed" or "failed" with specific script-internal errors.
                         });
                         provisionProcess.on("error", async (err) => {
+                            // Error spawning the process itself
                             logger.error(`Failed to start provisioning script for ${instanceId}:`, err);
+                            const errorDetail = `Failed to start provisioning script: ${err.message}`;
                             try {
-                                await authService.updateIdentity(
-                                    did,
-                                    { instanceStatus: "failed", instanceErrorDetails: `Failed to start provisioning script: ${err.message}` },
-                                    "internal"
-                                );
+                                await authService.updateIdentity(did, { instanceStatus: "failed", instanceErrorDetails: errorDetail }, "internal");
                             } catch (updateErr) {
                                 logger.error(`Failed to mark instance ${instanceId} as failed after script spawn error:`, updateErr);
                             }
                         });
 
+                        // Set initial status to "provisioning"
+                        // This happens before the script finishes, so it's expected.
                         await authService.updateIdentity(registrationResult.identity.identityDid, { instanceStatus: "provisioning" }, "internal");
 
                         set.status = 201;
