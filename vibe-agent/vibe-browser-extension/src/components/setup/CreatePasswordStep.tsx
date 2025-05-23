@@ -6,10 +6,10 @@ import { zxcvbn, zxcvbnOptions } from "@zxcvbn-ts/core";
 import * as zxcvbnCommonPackage from "@zxcvbn-ts/language-common";
 import * as zxcvbnEnPackage from "@zxcvbn-ts/language-en";
 import { useEffect } from "react";
-import { Lock } from "lucide-react"; // Import Lock icon
+import { Lock, Loader2 } from "lucide-react"; // Import Lock and Loader2 icons
 
 interface CreatePasswordStepProps {
-    onPasswordSet: (password: string) => void;
+    onPasswordSet: (password: string) => Promise<void>; // Assuming onPasswordSet might be async
     isImportFlow?: boolean;
 }
 
@@ -19,6 +19,7 @@ export function CreatePasswordStep({ onPasswordSet, isImportFlow = false }: Crea
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [zxcvbnLoaded, setZxcvbnLoaded] = useState(false);
+    const [isLoading, setIsLoading] = useState(false); // Added isLoading state
 
     useEffect(() => {
         const loadOptions = async () => {
@@ -60,7 +61,7 @@ export function CreatePasswordStep({ onPasswordSet, isImportFlow = false }: Crea
     }, [passwordsMatch, strength]);
 
     const handleSubmit = useCallback(
-        (e: React.FormEvent) => {
+        async (e: React.FormEvent) => {
             e.preventDefault();
             setError(null);
             if (!password || !confirmPassword) {
@@ -75,9 +76,19 @@ export function CreatePasswordStep({ onPasswordSet, isImportFlow = false }: Crea
                 setError("Password is too weak. Please choose a stronger one.");
                 return;
             }
-            onPasswordSet(password);
+
+            setIsLoading(true);
+            try {
+                await onPasswordSet(password);
+            } catch (err) {
+                // Error handling might be done by the parent component calling onPasswordSet
+                // or could be surfaced here if onPasswordSet throws and doesn't handle its own errors.
+                // For now, we assume parent handles errors from onPasswordSet.
+                console.error("Error during onPasswordSet:", err);
+                setIsLoading(false);
+            }
         },
-        [password, confirmPassword, passwordsMatch, strength, onPasswordSet]
+        [password, confirmPassword, passwordsMatch, strength, onPasswordSet, isImportFlow]
     );
 
     const getStrengthColor = (score: number | undefined | null): string => {
@@ -170,9 +181,18 @@ export function CreatePasswordStep({ onPasswordSet, isImportFlow = false }: Crea
                 <Button
                     type="submit"
                     className="w-full bg-violet-500 hover:bg-violet-600 text-primary-foreground font-semibold py-3 text-base"
-                    disabled={!canProceed}
+                    disabled={!canProceed || isLoading}
                 >
-                    {isImportFlow ? "Set Password & Import" : "Set Password"}
+                    {isLoading ? (
+                        <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            {isImportFlow ? "Importing..." : "Setting Password..."}
+                        </>
+                    ) : isImportFlow ? (
+                        "Set Password & Import"
+                    ) : (
+                        "Set Password"
+                    )}
                 </Button>
             </form>
             <p className="text-xs text-muted-foreground text-center max-w-xs pt-1">
