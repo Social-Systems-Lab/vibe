@@ -3,7 +3,8 @@ import { Buffer } from "buffer"; // Standard import
 import * as Constants from "./background-modules/constants";
 import * as SessionManager from "./background-modules/session-manager";
 import * as EventListeners from "./background-modules/event-listeners";
-import * as MessageHandler from "./background-modules/message-handler"; // Added this import
+import * as MessageHandler from "./background-modules/message-handler";
+import * as DataHandler from "./background-modules/action-handlers/data.handler"; // For cleanup
 
 // Explicitly make Buffer available on self, for environments where it might be needed globally.
 if (typeof self !== "undefined" && typeof (self as any).Buffer === "undefined") {
@@ -40,30 +41,99 @@ import * as PouchDBManager from "./lib/pouchdb"; // Import PouchDBManager
 
 EventListeners.registerEventListeners();
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message && typeof message === "object" && message.type === "VIBE_AGENT_REQUEST" && message.action) {
-        if (message.action === "USER_CLICKED_CONSENT_POPOVER") {
-            // Attempt to open side panel immediately in response to user gesture
-            if (sender.tab && sender.tab.id) {
-                // Check both sender.tab and sender.tab.id
-                const tabId = sender.tab.id; // Assign to a new const
-                chrome.sidePanel
-                    .open({ tabId: tabId }) // Use the new const
-                    .then(() => console.log(`[BG] Side panel open triggered for tab ${tabId} by USER_CLICKED_CONSENT_POPOVER.`))
-                    .catch((err) => console.error(`[BG] Error opening side panel for USER_CLICKED_CONSENT_POPOVER on tab ${tabId}:`, err));
+// Listener for long-lived connections (primarily for SDK communication from vibe-inpage.ts)
+chrome.runtime.onConnect.addListener((port) => {
+    console.log(`[BG] Connection established from: ${port.name}, sender: ${port.sender?.origin}, tabId: ${port.sender?.tab?.id}`);
+
+    // All Vibe SDK requests should come through this port.
+    // The port name can be used to differentiate if needed, e.g., "vibe-sdk-port"
+    if (port.name === Constants.VIBE_SDK_PORT_NAME) {
+        port.onMessage.addListener((message, p) => {
+            // Note: `p` here is the port object itself.
+            // We need a way to send a response back for single messages,
+            // while keeping the port open for subscriptions.
+            // MessageHandler.handleMessage is adapted to handle this.
+            if (message && typeof message === "object" && message.type === "VIBE_AGENT_REQUEST" && message.action) {
+                // Pass the port for potential subscription handling
+                MessageHandler.handleMessage(
+                    message,
+                    p.sender!,
+                    (response) => {
+                        // For non-subscription messages, or initial ack of subscription
+                        try {
+                            p.postMessage(response);
+                        } catch (e) {
+                            console.warn(`[BG] Error posting response to port for action ${message.action}:`, e);
+                            // Port might have been closed if page navigated away quickly
+                        }
+                    },
+                    p
+                );
             } else {
-                console.error("[BG] USER_CLICKED_CONSENT_POPOVER: sender.tab or sender.tab.id is undefined. Cannot trigger side panel open.");
+                console.warn("[BG] Received non-VIBE_AGENT_REQUEST message on SDK port:", message);
             }
-            // Regardless of side panel success/failure, proceed to MessageHandler for data processing & response.
-            // MessageHandler will call sendResponse.
-            MessageHandler.handleMessage(message, sender, sendResponse);
-        } else {
-            // For other VIBE_AGENT_REQUEST actions
-            MessageHandler.handleMessage(message, sender, sendResponse);
+        });
+
+        port.onDisconnect.addListener((p) => {
+            let errorMessage = "No error message";
+            // @ts-ignore // Ignoring persistent type issue with p.error
+            const portError = p.error;
+            if (portError) {
+                if (typeof portError === "object" && portError.message) {
+                    errorMessage = String(portError.message);
+                } else {
+                    errorMessage = String(portError);
+                }
+            }
+            console.log(`[BG] Port disconnected: ${p.name}, sender: ${p.sender?.origin}, tabId: ${p.sender?.tab?.id}, error: ${errorMessage}`);
+            if (p.sender?.tab?.id) {
+                DataHandler.cleanupSubscriptionsForTab(p.sender.tab.id);
+            }
+        });
+    } else {
+        console.warn(`[BG] Connection from unknown port name: ${port.name}. Disconnecting.`);
+        port.disconnect();
+    }
+});
+
+// Listener for simple, one-off messages (e.g., from content scripts not using the SDK port, or internal messages)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // Handle messages not coming through the dedicated Vibe SDK port
+    // These should generally not be VIBE_AGENT_REQUEST types that require complex handling or subscriptions.
+    if (message && typeof message === "object" && message.type === "VIBE_AGENT_REQUEST" && message.action) {
+        // If a VIBE_AGENT_REQUEST somehow comes here, and it's a subscription, it will fail
+        // because the `port` argument to handleMessage will be undefined.
+        // This path should ideally be for simpler requests or internal comms not needing a persistent port.
+        if (message.action === "VIBE_READ_DATA_SUBSCRIPTION") {
+            console.error("[BG] VIBE_READ_DATA_SUBSCRIPTION received via onMessage. This requires onConnect. Ignoring.");
+            sendResponse({
+                type: "VIBE_AGENT_RESPONSE_ERROR",
+                requestId: message.requestId,
+                error: { message: "Subscriptions must use a long-lived connection." },
+            });
+            return false; // Do not keep channel open
         }
-        return true; // Crucial for asynchronous sendResponse from MessageHandler for all VIBE_AGENT_REQUEST types
+
+        // Handle USER_CLICKED_CONSENT_POPOVER specifically if it comes via onMessage
+        // (though it might also come via onConnect if the click handler uses the SDK port)
+        if (message.action === "USER_CLICKED_CONSENT_POPOVER") {
+            if (sender.tab?.id) {
+                chrome.sidePanel
+                    .open({ tabId: sender.tab.id })
+                    .then(() => console.log(`[BG] Side panel open triggered for tab ${sender.tab?.id} by USER_CLICKED_CONSENT_POPOVER (onMessage).`))
+                    .catch((err) => console.error(`[BG] Error opening side panel for USER_CLICKED_CONSENT_POPOVER (onMessage) on tab ${sender.tab?.id}:`, err));
+            }
+            // Let MessageHandler process it, but without a port.
+            MessageHandler.handleMessage(message, sender, sendResponse, undefined);
+            return true; // Keep channel open for async response from MessageHandler
+        }
+
+        // For other VIBE_AGENT_REQUEST actions not needing a port.
+        MessageHandler.handleMessage(message, sender, sendResponse, undefined);
+        return true; // Keep channel open for async response
     } else if (message && typeof message === "object" && message.type === "SHOW_VIBE_PROFILE") {
-        console.log("Background: Received SHOW_VIBE_PROFILE for", message.payload);
+        // This seems like a custom message type, handle as before.
+        console.log("[BG] Received SHOW_VIBE_PROFILE for", message.payload);
         (async () => {
             try {
                 if (sender.tab && sender.tab.windowId) {

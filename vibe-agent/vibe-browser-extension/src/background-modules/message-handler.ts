@@ -7,7 +7,13 @@ import * as AppSessionHandler from "./action-handlers/app-session.handler";
 import * as AgentHandler from "./action-handlers/agent.handler";
 import * as DataHandler from "./action-handlers/data.handler"; // Added DataHandler import
 
-export async function handleMessage(message: any, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void): Promise<void> {
+export async function handleMessage(
+    message: any,
+    sender: chrome.runtime.MessageSender,
+    sendResponse: (response?: any) => void,
+    port?: chrome.runtime.Port // Optional: for long-lived connections like subscriptions
+): Promise<void | boolean> {
+    // Allow returning true for async sendResponse
     const { action, payload, requestId } = message;
 
     let responsePayload: any;
@@ -89,6 +95,23 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
             case "WRITE_DATA": // Added case for WRITE_DATA
                 responsePayload = await DataHandler.handleWriteData(payload, sender);
                 break;
+            case "VIBE_READ_DATA_SUBSCRIPTION": // Renamed from READ_DATA_SUBSCRIPTION for clarity
+                if (!port) {
+                    console.error("[BG] VIBE_READ_DATA_SUBSCRIPTION: Port is required for subscriptions.");
+                    responsePayload = { error: { message: "Port is required for subscriptions." } };
+                    responseType = "VIBE_AGENT_RESPONSE_ERROR";
+                } else {
+                    // handleReadDataSubscription will send initial data via sendResponse,
+                    // and subsequent updates via port.postMessage.
+                    // It needs sendResponse to send back the subscriptionId or an initial error.
+                    responsePayload = await DataHandler.handleReadDataSubscription(payload, sender, port);
+                    // The actual updates are sent via port.postMessage by the handler itself.
+                    // We send the initial response (ack/error + subscriptionId + initial data) here.
+                }
+                break;
+            case "VIBE_UNSUBSCRIBE_DATA_SUBSCRIPTION": // Renamed from UNSUBSCRIBE_DATA_SUBSCRIPTION
+                responsePayload = await DataHandler.handleUnsubscribeDataSubscription(payload);
+                break;
             case "USER_CLICKED_CONSENT_POPOVER":
                 responsePayload = await AppSessionHandler.handleUserClickedConsentPopover(payload, sender);
                 break;
@@ -107,13 +130,17 @@ export async function handleMessage(message: any, sender: chrome.runtime.Message
                 responseType = "VIBE_AGENT_RESPONSE_ERROR";
         }
 
-        if (responseType === "VIBE_AGENT_RESPONSE_ERROR") {
-            sendResponse({ type: responseType, requestId, error: responsePayload.error });
+        // For subscriptions, the initial response is sent here. Subsequent updates go via port.
+        if (action === "VIBE_READ_DATA_SUBSCRIPTION" && responsePayload?.ok) {
+            sendResponse({ type: responseType, requestId, payload: responsePayload });
+            return true; // Indicate that the response will be sent asynchronously (or port kept open)
+        } else if (responseType === "VIBE_AGENT_RESPONSE_ERROR" || (action === "VIBE_READ_DATA_SUBSCRIPTION" && !responsePayload?.ok)) {
+            sendResponse({ type: "VIBE_AGENT_RESPONSE_ERROR", requestId, error: responsePayload.error || responsePayload });
         } else {
             sendResponse({ type: responseType, requestId, payload: responsePayload });
         }
     } catch (error: any) {
-        console.error(`[BG_ERROR_HANDLER] Error processing ${action}:`, error.message, error.stack);
+        console.error(`[BG_ERROR_HANDLER] Error processing ${action} for requestId ${requestId}:`, error.message, error.stack);
         let errorPayloadToSend;
         if (error instanceof Types.HandledError) {
             errorPayloadToSend = error.payload.error; // The HandledError constructor wraps the payload in an 'error' object

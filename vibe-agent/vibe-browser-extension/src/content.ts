@@ -22,6 +22,32 @@ function injectScript(filePath: string, tag: string) {
 // Assuming vibe-inpage.js will be at the root of the extension build output.
 injectScript(chrome.runtime.getURL("vibe-inpage.js"), "body");
 
+let sdkPort: chrome.runtime.Port | null = null;
+
+function ensureSdkPortConnected() {
+    if (!sdkPort) {
+        console.log("Content script: Connecting to background script for Vibe SDK.");
+        sdkPort = chrome.runtime.connect({ name: "vibe-sdk-port" }); // Use constant if available, or hardcode for now
+
+        sdkPort.onMessage.addListener((message) => {
+            // Messages from background (responses or subscription updates)
+            console.log("Content script received message from background via port:", message);
+            // Forward to the inpage script
+            window.postMessage(message, "*");
+        });
+
+        sdkPort.onDisconnect.addListener(() => {
+            console.error("Content script: Vibe SDK port disconnected from background.");
+            sdkPort = null;
+            // Optionally, notify the inpage script about the disconnection
+            window.postMessage({ type: "VIBE_SDK_DISCONNECTED" }, "*");
+        });
+    }
+}
+
+// Ensure port is connected early, e.g., on script load or first message
+ensureSdkPortConnected();
+
 // Listen for messages from the injected script (window.vibe)
 window.addEventListener(
     "message",
@@ -32,25 +58,58 @@ window.addEventListener(
         }
 
         if (event.data.type && event.data.type.startsWith("VIBE_AGENT_REQUEST")) {
-            console.log("Content script received VIBE_AGENT_REQUEST:", event.data);
-            // Forward the request to the background script
-            chrome.runtime.sendMessage(event.data, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.error("Content script error sending message to background or receiving response:", chrome.runtime.lastError);
-                    // Optionally, post a message back to the page if there's an error
-                    window.postMessage({ type: "VIBE_AGENT_RESPONSE_ERROR", requestId: event.data.requestId, error: chrome.runtime.lastError.message }, "*");
-                    return;
+            console.log("Content script received VIBE_AGENT_REQUEST from inpage:", event.data);
+            ensureSdkPortConnected(); // Ensure port is active
+            if (sdkPort) {
+                try {
+                    sdkPort.postMessage(event.data);
+                } catch (e) {
+                    console.error("Content script: Error posting message to background via port:", e);
+                    // If postMessage fails, port might be disconnected. Try to reconnect.
+                    sdkPort = null; // Mark as disconnected
+                    ensureSdkPortConnected(); // Attempt to reconnect
+                    if (sdkPort) {
+                        // Re-check sdkPort after ensureSdkPortConnected
+                        try {
+                            // @ts-ignore TS an be overly cautious with type narrowing in catch blocks after re-assignment
+                            sdkPort.postMessage(event.data);
+                        } catch (e2) {
+                            console.error("Content script: Error posting message to background via port (after reconnect attempt):", e2);
+                            window.postMessage(
+                                {
+                                    type: "VIBE_AGENT_RESPONSE_ERROR",
+                                    requestId: event.data.requestId,
+                                    error: { message: "Failed to communicate with Vibe Agent background after reconnect." },
+                                },
+                                "*"
+                            );
+                        }
+                    } else {
+                        console.error("Content script: SDK port still not connected after reconnect attempt.");
+                        window.postMessage(
+                            {
+                                type: "VIBE_AGENT_RESPONSE_ERROR",
+                                requestId: event.data.requestId,
+                                error: { message: "Vibe Agent background port disconnected, reconnect failed." },
+                            },
+                            "*"
+                        );
+                    }
                 }
-                console.log("Content script received response from background:", response);
-                // Forward the response back to the injected script (window.vibe)
-                window.postMessage(response, "*");
-            });
+            } else {
+                console.error("Content script: SDK port not connected. Cannot forward VIBE_AGENT_REQUEST.");
+                // Send error back to inpage
+                window.postMessage(
+                    { type: "VIBE_AGENT_RESPONSE_ERROR", requestId: event.data.requestId, error: { message: "Vibe Agent not connected." } },
+                    "*"
+                );
+            }
         }
     },
     false
 );
 
-console.log("Vibe Content Script loaded and listener attached.");
+console.log("Vibe Content Script loaded and listeners attached.");
 
 // To handle responses from the background script for async operations initiated by the page
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

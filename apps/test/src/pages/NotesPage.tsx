@@ -34,51 +34,44 @@ const notesAppManifest: AppManifest = {
 // that interacts with the Vibe SDK via the useVibe hook.
 function AppContent() {
     // Get state and methods from useVibe
-    const { activeIdentity, readOnce, write } = useVibe(); // `read` for subscriptions removed for now
+    const { activeIdentity, readOnce, read, write } = useVibe(); // Added `read` back for subscriptions
     const [notes, setNotes] = useState<NoteDoc[]>([]);
     const [newNoteTitle, setNewNoteTitle] = useState<string>("");
     const [newNoteContent, setNewNoteContent] = useState<string>("");
     const [editingNote, setEditingNote] = useState<NoteDoc | null>(null);
-    // const [tasks, setTasks] = useState<any[]>([]); // Tasks functionality commented out
     const [status, setStatus] = useState<string>("Initializing VibeProvider...");
-    // const taskSubscription = useRef<Unsubscribe | null>(null); // Tasks functionality commented out
+    const notesSubscription = useRef<Unsubscribe | null>(null); // Changed from taskSubscription
 
     // --- Effect to update status based on active identity ---
     useEffect(() => {
         if (activeIdentity) {
             setStatus("VibeProvider initialized. Ready.");
-            handleReadNotesOnce(); // Load notes when identity is active
+            // Initial load will be handled by the subscription effect now
         } else {
             setStatus("Waiting for Vibe initialization...");
             setNotes([]); // Clear notes if no active identity
         }
-    }, [activeIdentity]); // Removed handleReadNotesOnce from here to avoid loop, called directly above
+    }, [activeIdentity]);
 
     // --- Handlers (using methods from useVibe) ---
+    // handleReadNotesOnce can be kept for manual refresh button, or removed if subscription is sole source
     const handleReadNotesOnce = useCallback(async () => {
         if (!activeIdentity) {
             setStatus("Active identity not initialized. Cannot read notes.");
             return;
         }
-        setStatus("Reading notes...");
+        setStatus("Refreshing notes manually...");
         try {
             const result = await readOnce("notes"); // No filter, get all notes
-            setNotes((result.data as NoteDoc[]) || []);
-            setStatus(result.data?.length ? "Notes read successfully." : "No notes found or empty.");
-            console.log("[AppPage] Notes read:", result.data);
+            setNotes((result.data as NoteDoc[]) || []); // Update notes state
+            setStatus(result.data?.length ? "Notes refreshed successfully." : "No notes found or empty.");
+            console.log("[AppPage] Notes read manually:", result.data);
         } catch (error) {
-            console.error("[AppPage] Error reading notes:", error);
-            setStatus(`Error reading notes: ${error instanceof Error ? error.message : String(error)}`);
-            setNotes([]);
+            console.error("[AppPage] Error reading notes manually:", error);
+            setStatus(`Error refreshing notes: ${error instanceof Error ? error.message : String(error)}`);
+            // Do not clear notes here, let subscription handle it or keep existing
         }
     }, [readOnce, activeIdentity]);
-
-    // Call handleReadNotesOnce when component mounts and activeIdentity is available
-    useEffect(() => {
-        if (activeIdentity) {
-            handleReadNotesOnce();
-        }
-    }, [activeIdentity, handleReadNotesOnce]);
 
     const handleSaveNote = useCallback(
         async (e?: FormEvent) => {
@@ -118,13 +111,14 @@ function AppContent() {
                 setNewNoteTitle("");
                 setNewNoteContent("");
                 setEditingNote(null);
-                handleReadNotesOnce(); // Re-read notes after write/update
+                // Notes will be updated by subscription, no need for manual re-read here
+                // handleReadNotesOnce();
             } catch (error) {
                 console.error("[AppPage] Error writing/updating note:", error);
                 setStatus(`Error writing/updating note: ${error instanceof Error ? error.message : String(error)}`);
             }
         },
-        [write, activeIdentity, newNoteTitle, newNoteContent, editingNote, handleReadNotesOnce]
+        [write, activeIdentity, newNoteTitle, newNoteContent, editingNote] // Removed handleReadNotesOnce
     );
 
     const handleDeleteNote = useCallback(
@@ -143,13 +137,14 @@ function AppContent() {
                 const result = await write("notes", { _id: noteId, operation: "delete" });
                 setStatus(`Note deleted: ${result.ids?.[0] ?? "N/A"}`);
                 console.log("[AppPage] Note deleted:", result);
-                handleReadNotesOnce(); // Refresh notes list
+                // Notes will be updated by subscription
+                // handleReadNotesOnce();
             } catch (error) {
                 console.error(`[AppPage] Error deleting note ${noteId}:`, error);
                 setStatus(`Error deleting note: ${error instanceof Error ? error.message : String(error)}`);
             }
         },
-        [write, activeIdentity, handleReadNotesOnce]
+        [write, activeIdentity] // Removed handleReadNotesOnce
     );
 
     const handleEditNote = (note: NoteDoc) => {
@@ -164,67 +159,70 @@ function AppContent() {
         setNewNoteContent("");
     };
 
-    // --- Subscription Effect (Commented out as per plan for now) ---
-    // useEffect(() => {
-    //     // Subscription depends on the 'read' function from useVibe and the activeIdentity
-    //     // It should only run when 'read' is available (implies VibeProvider is ready)
-    //     // and when activeIdentity changes.
-    //     if (!read || !activeIdentity) {
-    //         // Clear tasks if identity becomes null or 'read' is not available
-    //         setTasks([]);
-    //         if (taskSubscription.current) {
-    //             console.log("[AppPage] Cleaning up task subscription due to missing read/identity.");
-    //             taskSubscription.current();
-    //             taskSubscription.current = null;
-    //         }
-    //         setStatus(activeIdentity ? "Vibe ready, waiting for read function..." : "No active identity for subscription.");
-    //         return;
-    //     }
+    // --- Notes Subscription Effect ---
+    useEffect(() => {
+        if (!read || !activeIdentity) {
+            setNotes([]); // Clear notes if identity becomes null or 'read' is not available
+            if (notesSubscription.current) {
+                console.log("[AppPage] Cleaning up notes subscription due to missing read/identity.");
+                notesSubscription.current();
+                notesSubscription.current = null;
+            }
+            setStatus(activeIdentity ? "Vibe ready, waiting for read function for notes..." : "No active identity for notes subscription.");
+            return;
+        }
 
-    //     console.log("[AppPage] Active Identity changed or read function available. Setting up subscription for:", activeIdentity.did);
-    //     setStatus("Subscribing to tasks...");
-    //     let isMounted = true;
+        console.log("[AppPage] Active Identity changed or read function available. Setting up notes subscription for:", activeIdentity.did);
+        setStatus("Subscribing to notes...");
+        let isMounted = true;
 
-    //     const subscribeToTasks = async () => {
-    //         // Cleanup previous subscription before starting new one
-    //         if (taskSubscription.current) {
-    //             await taskSubscription.current();
-    //             taskSubscription.current = null;
-    //         }
+        const subscribeToNotes = async () => {
+            if (notesSubscription.current) {
+                await notesSubscription.current(); // Ensure previous is cleaned up
+                notesSubscription.current = null;
+            }
 
-    //         try {
-    //             taskSubscription.current = await read("tasks", undefined, (result) => {
-    //                 if (isMounted) {
-    //                     console.log("[AppPage] Task subscription update:", result.data);
-    //                     setTasks(result.data || []);
-    //                     setStatus("Task subscription active.");
-    //                 }
-    //             });
-    //             console.log("[AppPage] Subscribed to tasks.");
-    //         } catch (error) {
-    //             console.error("[AppPage] Error subscribing to tasks:", error);
-    //             if (isMounted) {
-    //                 setStatus(`Error subscribing to tasks: ${error instanceof Error ? error.message : String(error)}`);
-    //                 setTasks([]);
-    //             }
-    //         }
-    //     };
+            try {
+                // Subscribe to the "notes" collection. No specific filter means all notes for the user.
+                // The callback will receive ReadResult<NoteDoc[]>
+                notesSubscription.current = await read("notes", undefined, (result) => {
+                    if (isMounted) {
+                        if (result.ok && result.data) {
+                            console.log("[AppPage] Notes subscription update:", result.data);
+                            setNotes(result.data as NoteDoc[]); // Cast to NoteDoc[]
+                            setStatus(result.data.length ? "Notes subscription active." : "Notes subscription active. No notes yet.");
+                        } else if (!result.ok) {
+                            console.error("[AppPage] Notes subscription error update:", result.error);
+                            setStatus(`Error in notes subscription: ${result.error || "Unknown error"}`);
+                            // Optionally clear notes or handle error display
+                        }
+                    }
+                });
+                console.log("[AppPage] Subscribed to notes.");
+                // Initial data should be sent by the subscription handler itself upon connection.
+                // If not, a readOnce might be needed here, or the subscription handler enhanced.
+                // For now, assuming subscription sends initial data.
+            } catch (error) {
+                console.error("[AppPage] Error subscribing to notes:", error);
+                if (isMounted) {
+                    setStatus(`Error subscribing to notes: ${error instanceof Error ? error.message : String(error)}`);
+                    setNotes([]);
+                }
+            }
+        };
 
-    //     subscribeToTasks();
+        subscribeToNotes();
 
-    //     // Cleanup function for when component unmounts or dependencies change
-    //     return () => {
-    //         isMounted = false;
-    //         console.log("[AppPage] Cleaning up task subscription effect...");
-    //         if (taskSubscription.current) {
-    //             taskSubscription.current();
-    //             taskSubscription.current = null;
-    //             console.log("[AppPage] Task subscription cleaned up.");
-    //         }
-    //         // Don't reset status here, as it might be misleading during identity switch
-    //     };
-    //     // Depend on read function stability and activeIdentity DID
-    // }, [read, activeIdentity]); // Re-run if read function changes or activeIdentity changes
+        return () => {
+            isMounted = false;
+            console.log("[AppPage] Cleaning up notes subscription effect...");
+            if (notesSubscription.current) {
+                notesSubscription.current();
+                notesSubscription.current = null;
+                console.log("[AppPage] Notes subscription cleaned up.");
+            }
+        };
+    }, [read, activeIdentity]); // Depend on read function and activeIdentity
 
     return (
         <>

@@ -1,6 +1,7 @@
 import * as SessionManager from "../session-manager";
 import { getLocalUserDataDb } from "../../lib/pouchdb"; // Generic PouchDB instance getter
 import { v4 as uuidv4 } from "uuid"; // For generating document IDs
+import PouchDB from "pouchdb-core";
 
 // Define a generic document type that PouchDB expects, including common fields
 interface GenericDoc {
@@ -12,6 +13,9 @@ interface GenericDoc {
     updatedAt: string;
     [key: string]: any; // Allow other app-specific fields
 }
+
+// Store for active PouchDB changes feeds for subscriptions
+const activeSubscriptions: Map<string, PouchDB.Core.Changes<GenericDoc>> = new Map();
 
 export async function handleReadDataOnce(payload: any, sender: chrome.runtime.MessageSender): Promise<{ ok: boolean; data?: GenericDoc[]; error?: string }> {
     const { collection, filter } = payload;
@@ -219,5 +223,134 @@ export async function handleWriteData(
         // Catch errors from the main try block (e.g., if activeDid is missing early)
         console.error(`[BG] WRITE_DATA: General error writing to collection '${collection}':`, error);
         return { ok: false, errors: [{ error: error.message || "General failure to write data." }] };
+    }
+}
+
+// Handles setting up a live subscription to data changes.
+// The actual sending of updates will be managed by message-handler.ts, which will call this
+// and then use the provided port to send ongoing messages.
+export async function handleReadDataSubscription(
+    payload: any,
+    sender: chrome.runtime.MessageSender,
+    port: chrome.runtime.Port // Port to send updates back to the content script
+): Promise<{ ok: boolean; subscriptionId?: string; initialData?: GenericDoc[]; error?: string }> {
+    const { collection, filter } = payload;
+    const origin = sender.origin;
+    const tabId = sender.tab?.id;
+    const activeDid = SessionManager.currentActiveDid;
+
+    if (!activeDid) {
+        return { ok: false, error: "No active identity. Cannot subscribe to data." };
+    }
+    if (!collection) {
+        return { ok: false, error: "Collection name is required for subscription." };
+    }
+    if (!tabId) {
+        return { ok: false, error: "Tab ID is required for subscription." };
+    }
+
+    console.log(`[BG] READ_DATA_SUBSCRIPTION: collection='${collection}', origin='${origin}', tabId=${tabId}, activeDid='${activeDid}', filter:`, filter);
+
+    // TODO: Implement actual permission check for 'read' on the collection
+
+    const db = getLocalUserDataDb(activeDid);
+    if (!db) {
+        return { ok: false, error: `PouchDB instance not found for user ${activeDid}` };
+    }
+
+    const subscriptionId = `sub:${tabId}:${collection}:${uuidv4()}`;
+
+    try {
+        // Fetch initial data to send immediately
+        const findSelector = { type: collection, userDid: activeDid, ...filter?.selector };
+        const initialFindResult = await db.find({ selector: findSelector });
+        const initialData = initialFindResult.docs as GenericDoc[];
+
+        console.log(`[BG] READ_DATA_SUBSCRIPTION: Initial data for ${subscriptionId} - ${initialData.length} docs.`);
+
+        const changesFeed = db
+            .changes<GenericDoc>({
+                live: true,
+                since: "now",
+                include_docs: false, // We'll re-fetch to ensure consistency with selector
+                selector: findSelector, // Apply selector directly if PouchDB version supports it well for changes
+            })
+            .on("change", async (change) => {
+                console.log(`[BG] READ_DATA_SUBSCRIPTION: Change detected for ${subscriptionId}:`, change);
+                // Re-fetch data based on the original filter to ensure consistency
+                // This is simpler than trying to incrementally update the client-side state from `change.doc`
+                // especially if the change might affect whether a doc matches the filter or not.
+                try {
+                    const updatedFindResult = await db.find({ selector: findSelector });
+                    const updatedData = updatedFindResult.docs as GenericDoc[];
+                    console.log(`[BG] READ_DATA_SUBSCRIPTION: Posting update for ${subscriptionId}, ${updatedData.length} docs.`);
+                    port.postMessage({ type: "VIBE_SUBSCRIPTION_UPDATE", subscriptionId, data: updatedData, ok: true });
+                } catch (fetchError: any) {
+                    console.error(`[BG] READ_DATA_SUBSCRIPTION: Error fetching updated data for ${subscriptionId}:`, fetchError);
+                    port.postMessage({
+                        type: "VIBE_SUBSCRIPTION_UPDATE",
+                        subscriptionId,
+                        error: fetchError.message || "Failed to fetch updated data.",
+                        ok: false,
+                    });
+                }
+            })
+            .on("error", (err) => {
+                console.error(`[BG] READ_DATA_SUBSCRIPTION: Error on changes feed for ${subscriptionId}:`, err);
+                // Notify client about the error. The subscription might be dead now.
+                port.postMessage({ type: "VIBE_SUBSCRIPTION_ERROR", subscriptionId, error: "Subscription encountered an error.", ok: false });
+                // Clean up this subscription
+                if (activeSubscriptions.has(subscriptionId)) {
+                    activeSubscriptions.get(subscriptionId)?.cancel();
+                    activeSubscriptions.delete(subscriptionId);
+                    console.log(`[BG] READ_DATA_SUBSCRIPTION: Cleaned up errored subscription ${subscriptionId}.`);
+                }
+            });
+
+        activeSubscriptions.set(subscriptionId, changesFeed);
+        console.log(`[BG] READ_DATA_SUBSCRIPTION: Subscription ${subscriptionId} established for collection '${collection}'.`);
+
+        // Return subscriptionId and initial data
+        return { ok: true, subscriptionId, initialData };
+    } catch (error: any) {
+        console.error(`[BG] READ_DATA_SUBSCRIPTION: Error setting up subscription for '${collection}':`, error);
+        return { ok: false, error: error.message || "Failed to set up data subscription." };
+    }
+}
+
+export async function handleUnsubscribeDataSubscription(payload: any): Promise<{ ok: boolean; error?: string }> {
+    const { subscriptionId } = payload;
+
+    if (!subscriptionId) {
+        return { ok: false, error: "Subscription ID is required to unsubscribe." };
+    }
+
+    const changesFeed = activeSubscriptions.get(subscriptionId);
+    if (changesFeed) {
+        changesFeed.cancel();
+        activeSubscriptions.delete(subscriptionId);
+        console.log(`[BG] UNSUBSCRIBE_DATA_SUBSCRIPTION: Subscription ${subscriptionId} cancelled.`);
+        return { ok: true };
+    } else {
+        console.warn(`[BG] UNSUBSCRIBE_DATA_SUBSCRIPTION: Subscription ${subscriptionId} not found or already cancelled.`);
+        return { ok: false, error: "Subscription not found or already cancelled." };
+    }
+}
+
+export function cleanupSubscriptionsForTab(tabId: number): void {
+    if (!tabId) return;
+    let cleanedCount = 0;
+    for (const [subscriptionId, changesFeed] of activeSubscriptions.entries()) {
+        // Subscription ID format is `sub:${tabId}:${collection}:${uuidv4()}`
+        const parts = subscriptionId.split(":");
+        if (parts.length > 1 && parts[0] === "sub" && parseInt(parts[1], 10) === tabId) {
+            changesFeed.cancel();
+            activeSubscriptions.delete(subscriptionId);
+            cleanedCount++;
+            console.log(`[BG] Cleaned up subscription ${subscriptionId} for disconnected tab ${tabId}.`);
+        }
+    }
+    if (cleanedCount > 0) {
+        console.log(`[BG] Total ${cleanedCount} subscriptions cleaned up for tab ${tabId}.`);
     }
 }

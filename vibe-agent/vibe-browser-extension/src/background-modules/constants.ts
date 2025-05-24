@@ -14,3 +14,6 @@ export const SESSION_STORAGE_CP_ACCESS_TOKEN_PREFIX = "cp_access_token_";
 export const SESSION_STORAGE_CP_ACCESS_TOKEN_EXPIRES_AT_PREFIX = "cp_access_token_expires_at_";
 export const LOCAL_STORAGE_CP_REFRESH_TOKEN_PREFIX = "cp_refresh_token_";
 export const LOCAL_STORAGE_CP_REFRESH_TOKEN_EXPIRES_AT_PREFIX = "cp_refresh_token_expires_at_";
+
+// Port name for SDK connections
+export const VIBE_SDK_PORT_NAME = "vibe-sdk-port";
