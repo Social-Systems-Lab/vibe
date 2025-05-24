@@ -160,6 +160,9 @@ export async function initializeSync(userDid: string, mainVaultPasswordIfAvailab
             couchDbPasswordPlaintext = fetchedCloudApiConfig.password; // Use live password for this session
             console.log(`Successfully fetched live CouchDB credentials for ${userDid}.`);
 
+            // DEBUG: Log credentials for manual inspection
+            console.log(`[DEBUG] CouchDB Access for ${userDid}: URL: ${couchDbUrl}, User: ${couchDbUsername}, Pass: ${couchDbPasswordPlaintext}`);
+
             // If vault is unlocked, encrypt and store these newly fetched credentials
             if (vaultUnlocked && mainVaultPasswordForCrypto && couchDbPasswordPlaintext) {
                 // mainVaultPasswordForCrypto is confirmed not null by the if condition
@@ -402,18 +405,22 @@ export async function upsertAppPermission(
     }
     const docId = `app_permission:${appId}`;
     const now = new Date().toISOString();
+    let docToSave: AppPermissionDoc;
 
     try {
         const existingDoc = await db.get<AppPermissionDoc>(docId);
-        return await db.put({
+        docToSave = {
             ...existingDoc,
-            userDid,
+            userDid, // Ensure userDid is part of the doc
+            appId, // Ensure appId is part of the doc
             grants,
             updatedAt: now,
-        });
+        };
+        console.log(`[pouchdb] Updating existing app permission: ${docId}`, docToSave);
+        return await db.put(docToSave);
     } catch (error: any) {
         if (error.name === "not_found") {
-            return await db.put<AppPermissionDoc>({
+            docToSave = {
                 _id: docId,
                 type: "app_permission",
                 appId,
@@ -421,7 +428,9 @@ export async function upsertAppPermission(
                 grants,
                 createdAt: now,
                 updatedAt: now,
-            });
+            };
+            console.log(`[pouchdb] Creating new app permission: ${docId}`, docToSave);
+            return await db.put<AppPermissionDoc>(docToSave);
         } else {
             console.error(`Error upserting app permission for ${appId} (user ${userDid}):`, error);
             throw error;

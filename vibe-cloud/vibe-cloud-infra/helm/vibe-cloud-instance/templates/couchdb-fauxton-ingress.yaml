@@ -1,0 +1,53 @@
+{{- if .Values.ingress.enabled -}}
+apiVersion: {{ include "vibe-cloud-instance.ingress.apiVersion" . }}
+kind: Ingress
+metadata:
+  name: {{ include "vibe-cloud-instance.couchdb.fullname" . }}-fauxton # Unique name
+  namespace: {{ include "vibe-cloud-instance.namespace" . }}
+  labels:
+    {{- include "vibe-cloud-instance.labels" . | nindent 4 }}
+    app.kubernetes.io/component: couchdb-fauxton-ingress
+  annotations:
+    # Inherit common annotations, especially for cert-manager
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    # NO middleware for this path
+    # To explicitly state no middleware for this specific Ingress if needed,
+    # though Traefik usually doesn't require clearing middlewares unless inherited.
+    # For clarity, one might add:
+    # "traefik.ingress.kubernetes.io/router.middlewares": ""
+spec:
+  {{- if and (.Values.ingress.className) (eq (include "vibe-cloud-instance.ingress.apiVersion" .) "networking.k8s.io/v1") }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  rules:
+    - host: {{ include "vibe-cloud-instance.ingress.host" . | quote }}
+      http:
+        paths:
+          - path: /_utils # Match the path Fauxton redirects to
+            pathType: Prefix
+            backend:
+              {{- if eq (include "vibe-cloud-instance.ingress.apiVersion" .) "networking.k8s.io/v1" }}
+              service:
+                name: {{ include "vibe-cloud-instance.couchdb.fullname" . }}
+                port:
+                  number: {{ .Values.couchdb.service.port }}
+              {{- else }}
+              serviceName: {{ include "vibe-cloud-instance.couchdb.fullname" . }}
+              servicePort: {{ .Values.couchdb.service.port }}
+              {{- end }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    {{- range .Values.ingress.tls }}
+    - hosts:
+        - {{ include "vibe-cloud-instance.ingress.host" $ | quote }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- else if (hasKey .Values.ingress.annotations "cert-manager.io/cluster-issuer") }}
+  tls:
+    - hosts:
+        - {{ include "vibe-cloud-instance.ingress.host" . | quote }}
+      secretName: {{ .Values.instanceIdentifier }}-tls # Ensure this matches the main ingress TLS secret name
+  {{- end }}
+{{- end }}
