@@ -163,6 +163,7 @@ helm ${KUBECONFIG_ARG} install "${HELM_RELEASE_NAME}" "${HELM_CHART_PATH}" \
   --set "vibeApp.env.TARGET_USER_DID=${TARGET_USER_DID}" \
   --set "vibeApp.env.COUCHDB_DATABASE_NAME=${COUCHDB_DATABASE_NAME}" \
   --set "vibeApp.env.COUCHDB_URL=http://${HELM_RELEASE_NAME}-couchdb:5984" \
+  --set "vibeApp.env.PUBLIC_INSTANCE_URL=https://${INGRESS_HOST}" \
   --set "vibeApp.env.COUCHDB_USER_FROM_SECRET=true" \
   --set "vibeApp.env.COUCHDB_PASSWORD_FROM_SECRET=true" \
   --timeout 10m \

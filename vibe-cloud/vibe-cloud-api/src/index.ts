@@ -738,29 +738,35 @@ export const app = new Elysia()
 
                     logger.info(`Processing /api/v1/authdb request for user: ${identityDid}`);
 
-                    const couchDbUrl = process.env.COUCHDB_URL;
-                    const couchDbUsername = process.env.COUCHDB_USER;
-                    const couchDbPassword = process.env.COUCHDB_PASSWORD;
+                    const publicInstanceUrl = process.env.PUBLIC_INSTANCE_URL;
+                    const couchDbUsername = process.env.COUCHDB_USER; // This should be the generated user for the instance's CouchDB
+                    const couchDbPassword = process.env.COUCHDB_PASSWORD; // This should be the generated password
 
-                    if (!couchDbUrl || !couchDbUsername || !couchDbPassword) {
+                    if (!publicInstanceUrl) {
                         logger.error(
-                            `CRITICAL: CouchDB connection details (COUCHDB_URL, COUCHDB_USER, or COUCHDB_PASSWORD) are not configured in the environment for the API instance serving user ${identityDid}.`
+                            `CRITICAL: PUBLIC_INSTANCE_URL is not configured in the environment for the API instance serving user ${identityDid}. Cannot construct public CouchDB URL.`
                         );
                         set.status = 503; // Service Unavailable
-                        return { error: "CouchDB service details are not configured or available for this instance." };
+                        return { error: "API instance public URL is not configured." };
                     }
 
-                    // It's important that process.env.COUCHDB_URL is the externally accessible URL for the browser extension.
-                    logger.info(
-                        `Successfully retrieved CouchDB details from env for user ${identityDid}. URL starts with: ${couchDbUrl.substring(
-                            0,
-                            Math.min(30, couchDbUrl.length)
-                        )}...`
-                    );
+                    if (!couchDbUsername || !couchDbPassword) {
+                        logger.error(
+                            `CRITICAL: CouchDB credentials (COUCHDB_USER or COUCHDB_PASSWORD) are not available (likely not sourced from secret correctly) for API instance serving user ${identityDid}.`
+                        );
+                        set.status = 503; // Service Unavailable
+                        return { error: "CouchDB credentials are not configured for this instance." };
+                    }
+
+                    // Construct the publicly accessible CouchDB URL
+                    // Assuming CouchDB is exposed at the /couchdb path on the same host as the API instance
+                    const publicCouchDbUrl = `${publicInstanceUrl.replace(/\/$/, "")}/couchdb`;
+
+                    logger.info(`Providing CouchDB details for user ${identityDid}. Public URL: ${publicCouchDbUrl}`);
 
                     set.status = 200;
                     return {
-                        url: couchDbUrl,
+                        url: publicCouchDbUrl,
                         username: couchDbUsername,
                         password: couchDbPassword,
                     };
