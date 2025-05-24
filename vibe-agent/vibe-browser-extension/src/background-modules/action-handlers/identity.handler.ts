@@ -197,11 +197,47 @@ export async function handleFetchFullIdentityDetails(payload: any): Promise<any>
         accessToken = await TokenManager.getValidCpAccessToken(did);
     } catch (tokenError: any) {
         if (tokenError.message && tokenError.message.startsWith("FULL_LOGIN_REQUIRED")) {
-            throw new Types.HandledError({
-                error: { message: `FULL_LOGIN_REQUIRED: Authentication required for ${did}.`, code: "FULL_LOGIN_REQUIRED", did: did },
-            });
+            // --- START MODIFICATION ---
+            // Check if vault is unlocked for this DID and attempt automatic re-login
+            if (SessionManager.isUnlocked && SessionManager.currentActiveDid === did) {
+                console.info(`[identity.handler] FULL_LOGIN_REQUIRED for ${did}, vault is unlocked. Attempting automatic re-login flow.`);
+                try {
+                    // Attempt to re-login. handleRequestLoginFlow might need adjustment
+                    // if it strictly requires a password even when unlocked.
+                    // For now, assume it can proceed if SessionManager.getInMemoryDecryptedSeed() is available.
+                    // The existing handleRequestLoginFlow already checks SessionManager.getInMemoryDecryptedSeed()
+                    // and doesn't require 'password' if the seed is available.
+                    await handleRequestLoginFlow({ did }); // No password needed if already unlocked for this DID
+
+                    console.info(`[identity.handler] Automatic re-login flow successful for ${did}. Retrying getValidCpAccessToken.`);
+                    // After successful automatic login, try getting the token again.
+                    accessToken = await TokenManager.getValidCpAccessToken(did);
+                    // If this succeeds, the function will proceed normally.
+                } catch (autoLoginError: any) {
+                    console.warn(
+                        `[identity.handler] Automatic re-login flow failed for ${did}: ${autoLoginError.message}. Falling back to manual login prompt.`
+                    );
+                    // If auto-login fails, then throw the original error to prompt UI login.
+                    throw new Types.HandledError({
+                        error: {
+                            message: `FULL_LOGIN_REQUIRED: Authentication required for ${did}. Automatic re-login failed.`,
+                            code: "FULL_LOGIN_REQUIRED",
+                            did: did,
+                        },
+                    });
+                }
+            } else {
+                // Vault is locked or for a different DID, so throw to prompt UI login.
+                console.info(`[identity.handler] FULL_LOGIN_REQUIRED for ${did}, vault is locked or for different DID. Prompting manual login.`);
+                throw new Types.HandledError({
+                    error: { message: `FULL_LOGIN_REQUIRED: Authentication required for ${did}.`, code: "FULL_LOGIN_REQUIRED", did: did },
+                });
+            }
+            // --- END MODIFICATION ---
+        } else {
+            // Added 'else' for original non-FULL_LOGIN_REQUIRED token errors
+            throw new Types.HandledError({ error: { message: `Token error for ${did}: ${tokenError.message}`, code: "TOKEN_ERROR" } });
         }
-        throw new Types.HandledError({ error: { message: `Token error for ${did}: ${tokenError.message}`, code: "TOKEN_ERROR" } });
     }
 
     const fetchUrl = `${Constants.OFFICIAL_VIBE_CLOUD_URL}/api/v1/identities/${did}`;
