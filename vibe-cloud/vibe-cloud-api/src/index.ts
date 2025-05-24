@@ -1,5 +1,5 @@
 // index.ts
-import { Elysia, t, NotFoundError, InternalServerError } from "elysia";
+import { Elysia, t, NotFoundError, InternalServerError, type Context as ElysiaContext } from "elysia";
 import { jwt } from "@elysiajs/jwt";
 import { cors } from "@elysiajs/cors";
 import { dataService, type ReadResult } from "./services/data.service";
@@ -52,6 +52,57 @@ await blobService.initialize();
 const permissionService = new PermissionService(dataService);
 const authService = new AuthService(dataService, permissionService, blobService); // Pass blobService here
 const realtimeService = new RealtimeService(dataService, permissionService);
+
+// --- Common JWT verification middleware ---
+const jwtVerificationDerive = async ({ jwt, request: { headers } }: { jwt: { verify: (token: string) => Promise<any> }; request: { headers: Headers } }) => {
+    const authHeader = headers.get("authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        logger.debug("Unauthorized: No auth header or not Bearer.");
+        return { currentIdentity: null as JWTPayload | null };
+    }
+    const token = authHeader.substring(7);
+    try {
+        const payload = (await jwt.verify(token)) as JWTPayload | false;
+        if (!payload || typeof payload === "boolean" || !payload.identityDid) {
+            logger.warn("JWT verification returned invalid payload or missing identityDid.", { tokenString: token, rawPayload: payload });
+            return { currentIdentity: null as JWTPayload | null };
+        }
+        return { currentIdentity: payload as JWTPayload };
+    } catch (error) {
+        logger.warn("JWT verification failed with error:", { error, tokenString: token });
+        return { currentIdentity: null as JWTPayload | null };
+    }
+};
+
+// --- Common instance validation middleware ---
+// Define the type for the handler's context, using JWTPayload from models
+type InstanceValidationHandlerContext = ElysiaContext & {
+    currentIdentity: JWTPayload | null;
+};
+
+const instanceValidationHandler = async ({ currentIdentity, set }: InstanceValidationHandlerContext) => {
+    if (!currentIdentity) {
+        set.status = 401;
+        logger.warn("Access denied: Missing or invalid user token.");
+        return { error: "Unauthorized: Invalid or missing user token." };
+    }
+
+    const instanceTargetDid = process.env.TARGET_USER_DID;
+    if (instanceTargetDid && currentIdentity.identityDid !== instanceTargetDid) {
+        set.status = 403;
+        logger.warn(`Forbidden: Token identityDid (${currentIdentity.identityDid}) does not match instance target DID (${instanceTargetDid}).`);
+        return { error: "Forbidden: Token identity does not match this instance." };
+    }
+    if (!instanceTargetDid) {
+        logger.error("CRITICAL: TARGET_USER_DID is not set for this API instance. Cannot validate token scope.");
+        set.status = 503;
+        return { error: "Instance configuration error: Target user DID not set." };
+    }
+
+    // Set a default status if no error occurred
+    set.status = 200;
+    return undefined;
+};
 
 // --- App Initialization ---
 export const app = new Elysia()
@@ -220,7 +271,7 @@ export const app = new Elysia()
                     const token = authHeader.substring(7);
                     try {
                         // Use the injected jwt instance for verification
-                        const rawPayload = await jwt.verify(token);
+                        const rawPayload = (await jwt.verify(token)) as JWTPayload | false;
                         if (rawPayload && typeof rawPayload.identityDid === "string") {
                             user = rawPayload as { identityDid: string; isAdmin?: boolean; type?: string };
                         } else {
@@ -380,7 +431,7 @@ export const app = new Elysia()
                 if (!authHeader || !authHeader.startsWith("Bearer ")) return { user: null };
                 const token = authHeader.substring(7);
                 try {
-                    const rawPayload = await jwt.verify(token);
+                    const rawPayload = (await jwt.verify(token)) as JWTPayload | false;
                     if (rawPayload && typeof rawPayload.identityDid === "string") {
                         // Add appId as null or undefined if needed by other parts,
                         // but it's not used for direct permission checks here.
@@ -446,7 +497,7 @@ export const app = new Elysia()
                         await blobService.uploadObject(objectId, fileBuffer, file.size, file.type, bucketName);
 
                         const metadata: Omit<BlobMetadata, "_rev"> = {
-                            _id: `${BLOBS_COLLECTION}/${objectId}`,
+                            _id: `${BLOBS_COLLECTION}:${objectId}`,
                             originalFilename: file.name || "untitled",
                             contentType: file.type,
                             size: file.size,
@@ -455,7 +506,8 @@ export const app = new Elysia()
                             bucket: bucketName,
                             collection: BLOBS_COLLECTION,
                         };
-                        await dataService.createDocument(SYSTEM_DB, BLOBS_COLLECTION, metadata);
+                        const userDbName = getUserDbName(identityDid);
+                        await dataService.createDocument(userDbName, BLOBS_COLLECTION, metadata);
                         logger.info(`Blob ${objectId} metadata saved for user ${identityDid}`);
                         set.status = 201;
                         return {
@@ -489,8 +541,8 @@ export const app = new Elysia()
 
                     try {
                         // 1. Fetch Metadata
-                        logger.debug(`Attempting to fetch metadata for objectId: ${objectId} from DB: ${SYSTEM_DB}`);
-                        const metadata = (await dataService.getDocument(SYSTEM_DB, `${BLOBS_COLLECTION}/${objectId}`)) as BlobMetadata;
+                        const userDbName = getUserDbName(identityDid);
+                        const metadata = (await dataService.getDocument(userDbName, `${BLOBS_COLLECTION}/${objectId}`)) as BlobMetadata;
                         logger.debug(`Successfully fetched metadata for objectId: ${objectId}`, metadata); // Log successful fetch
 
                         // 2. Permission Check (Owner only for now)
@@ -547,46 +599,8 @@ export const app = new Elysia()
     .group("/api/v1", (group) =>
         group
             // JWT derivation and authentication middleware
-            .derive(async ({ jwt, request: { headers } }) => {
-                const authHeader = headers.get("authorization");
-                if (!authHeader || !authHeader.startsWith("Bearer ")) {
-                    logger.debug("Unauthorized: No auth header or not Bearer.");
-                    return { currentIdentity: null as JWTPayload | null };
-                }
-                const token = authHeader.substring(7);
-                try {
-                    const payload = (await jwt.verify(token)) as JWTPayload | false;
-                    if (!payload || typeof payload === "boolean" || !payload.identityDid) {
-                        logger.warn("JWT verification returned invalid payload or missing identityDid.", { tokenString: token, rawPayload: payload });
-                        return { currentIdentity: null as JWTPayload | null };
-                    }
-                    return { currentIdentity: payload as JWTPayload };
-                } catch (error) {
-                    logger.warn("JWT verification failed with error:", { error, tokenString: token }); // Avoid logging full token object if it's sensitive
-                    return { currentIdentity: null as JWTPayload | null };
-                }
-            })
-            .onBeforeHandle(({ currentIdentity, set }) => {
-                if (!currentIdentity) {
-                    set.status = 401;
-                    logger.warn("Access to /api/v1/authdb denied: Missing or invalid user token.");
-                    return { error: "Unauthorized: Invalid or missing user token." };
-                }
-                // Validate that the token's identityDid matches the instance's TARGET_USER_DID
-                const instanceTargetDid = process.env.TARGET_USER_DID;
-                if (instanceTargetDid && currentIdentity.identityDid !== instanceTargetDid) {
-                    set.status = 403;
-                    logger.warn(
-                        `Forbidden: Token identityDid (${currentIdentity.identityDid}) does not match instance target DID (${instanceTargetDid}) for authdb.`
-                    );
-                    return { error: "Forbidden: Token identity does not match this instance." };
-                }
-                if (!instanceTargetDid) {
-                    logger.error("CRITICAL: TARGET_USER_DID is not set for this API instance. Cannot validate token scope for authdb.");
-                    set.status = 503;
-                    return { error: "Instance configuration error: Target user DID not set." };
-                }
-            })
+            .derive(jwtVerificationDerive)
+            .onBeforeHandle(instanceValidationHandler)
             .get(
                 "/authdb",
                 async ({ currentIdentity, set }) => {
