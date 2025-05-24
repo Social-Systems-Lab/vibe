@@ -186,6 +186,50 @@ echo "Helm deployment for instance ${INSTANCE_IDENTIFIER} completed successfully
 INSTANCE_URL="https://${INGRESS_HOST}"
 echo "Instance URL: ${INSTANCE_URL}"
 
+# --- Post-Provisioning Health Check ---
+echo "Performing health check on ${INSTANCE_URL}/health..."
+HEALTH_CHECK_URL="${INSTANCE_URL}/health"
+MAX_RETRIES=5
+RETRY_DELAY_SECONDS=30
+RETRY_COUNT=0
+HEALTHY=false
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+  echo "Health check attempt $((RETRY_COUNT + 1)) of ${MAX_RETRIES}..."
+  # Use --insecure or --cacert if using self-signed certs for health check endpoint internally,
+  # but for public Let's Encrypt, standard curl should work.
+  # Adding -L to follow redirects, though not expected for /health.
+  # Adding -f to fail silently on server errors (HTTP 4xx/5xx will make curl return non-zero).
+  # Adding -s for silent, -o /dev/null to discard output.
+  # We only care about the HTTP status code from --write-out.
+  HTTP_STATUS=$(curl -L -s -f -o /dev/null --write-out "%{http_code}" --max-time 15 "${HEALTH_CHECK_URL}")
+  CURL_EXIT_CODE=$?
+
+  if [ $CURL_EXIT_CODE -eq 0 ] && [ "$HTTP_STATUS" -eq 200 ]; then
+    echo "Health check successful. Instance is healthy."
+    HEALTHY=true
+    break
+  else
+    echo "Health check failed. Curl exit code: ${CURL_EXIT_CODE}, HTTP status: ${HTTP_STATUS}."
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+      echo "Retrying in ${RETRY_DELAY_SECONDS} seconds..."
+      sleep "${RETRY_DELAY_SECONDS}"
+    else
+      echo "Max retries reached for health check."
+    fi
+  fi
+done
+
+if [ "$HEALTHY" != "true" ]; then
+  echo "ERROR: Instance ${INSTANCE_IDENTIFIER} failed health check at ${HEALTH_CHECK_URL} after ${MAX_RETRIES} attempts." >&2
+  # Attempt to clean up namespace
+  echo "Attempting to clean up namespace ${K8S_NAMESPACE} due to health check failure..."
+  kubectl ${KUBECONFIG_ARG} delete namespace "${K8S_NAMESPACE}" --ignore-not-found=true
+  callback_control_plane "failed" "" "Instance health check failed after provisioning. Namespace cleanup attempted."
+  exit 1
+fi
+
 # Callback to control plane with success
 callback_control_plane "completed" "${INSTANCE_URL}" ""
 
