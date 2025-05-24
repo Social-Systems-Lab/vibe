@@ -16,6 +16,9 @@ interface GenericDoc {
 
 // Store for active PouchDB changes feeds for subscriptions
 const activeSubscriptions: Map<string, PouchDB.Core.Changes<GenericDoc>> = new Map();
+// Store for heartbeat interval IDs, keyed by subscriptionId
+const heartbeatIntervals: Map<string, NodeJS.Timeout> = new Map();
+const HEARTBEAT_INTERVAL_MS = 25 * 1000; // 25 seconds
 
 export async function handleReadDataOnce(payload: any, sender: chrome.runtime.MessageSender): Promise<{ ok: boolean; data?: GenericDoc[]; error?: string }> {
     const { collection, filter } = payload;
@@ -270,6 +273,7 @@ export async function handleReadDataSubscription(
 
         const changesFeed = db
             .changes<GenericDoc>({
+                // Explicitly type the changes feed
                 live: true,
                 since: "now",
                 include_docs: false, // We'll re-fetch to ensure consistency with selector
@@ -303,12 +307,43 @@ export async function handleReadDataSubscription(
                 if (activeSubscriptions.has(subscriptionId)) {
                     activeSubscriptions.get(subscriptionId)?.cancel();
                     activeSubscriptions.delete(subscriptionId);
+                    // Clear heartbeat if it exists for this errored subscription
+                    if (heartbeatIntervals.has(subscriptionId)) {
+                        clearInterval(heartbeatIntervals.get(subscriptionId)!);
+                        heartbeatIntervals.delete(subscriptionId);
+                        console.log(`[BG] READ_DATA_SUBSCRIPTION: Cleared heartbeat for errored subscription ${subscriptionId}.`);
+                    }
                     console.log(`[BG] READ_DATA_SUBSCRIPTION: Cleaned up errored subscription ${subscriptionId}.`);
                 }
             });
 
         activeSubscriptions.set(subscriptionId, changesFeed);
-        console.log(`[BG] READ_DATA_SUBSCRIPTION: Subscription ${subscriptionId} established for collection '${collection}'.`);
+
+        // Start heartbeat for this subscription
+        const heartbeatIntervalId = setInterval(() => {
+            if (activeSubscriptions.has(subscriptionId) && port) {
+                // Check if port still exists
+                try {
+                    port.postMessage({ type: "VIBE_HEARTBEAT", subscriptionId });
+                    console.log(`[BG] Sent heartbeat for subscription ${subscriptionId}`);
+                } catch (e) {
+                    console.warn(`[BG] Error sending heartbeat for ${subscriptionId}, port might be closed:`, e);
+                    // If sending heartbeat fails, the port is likely dead. Clean up.
+                    changesFeed.cancel();
+                    activeSubscriptions.delete(subscriptionId);
+                    clearInterval(heartbeatIntervalId); // Clear this interval
+                    heartbeatIntervals.delete(subscriptionId);
+                    console.log(`[BG] Cleaned up subscription ${subscriptionId} due to heartbeat send failure.`);
+                }
+            } else {
+                // Subscription or port no longer exists, clear interval
+                clearInterval(heartbeatIntervalId);
+                heartbeatIntervals.delete(subscriptionId); // Ensure it's removed if somehow missed
+            }
+        }, HEARTBEAT_INTERVAL_MS);
+        heartbeatIntervals.set(subscriptionId, heartbeatIntervalId);
+
+        console.log(`[BG] READ_DATA_SUBSCRIPTION: Subscription ${subscriptionId} established for collection '${collection}'. Heartbeat started.`);
 
         // Return subscriptionId and initial data
         return { ok: true, subscriptionId, initialData };
@@ -329,10 +364,21 @@ export async function handleUnsubscribeDataSubscription(payload: any): Promise<{
     if (changesFeed) {
         changesFeed.cancel();
         activeSubscriptions.delete(subscriptionId);
+        // Clear heartbeat
+        if (heartbeatIntervals.has(subscriptionId)) {
+            clearInterval(heartbeatIntervals.get(subscriptionId)!);
+            heartbeatIntervals.delete(subscriptionId);
+            console.log(`[BG] UNSUBSCRIBE_DATA_SUBSCRIPTION: Cleared heartbeat for ${subscriptionId}.`);
+        }
         console.log(`[BG] UNSUBSCRIBE_DATA_SUBSCRIPTION: Subscription ${subscriptionId} cancelled.`);
         return { ok: true };
     } else {
         console.warn(`[BG] UNSUBSCRIBE_DATA_SUBSCRIPTION: Subscription ${subscriptionId} not found or already cancelled.`);
+        // Ensure heartbeat is also cleared if somehow orphaned
+        if (heartbeatIntervals.has(subscriptionId)) {
+            clearInterval(heartbeatIntervals.get(subscriptionId)!);
+            heartbeatIntervals.delete(subscriptionId);
+        }
         return { ok: false, error: "Subscription not found or already cancelled." };
     }
 }
@@ -346,6 +392,12 @@ export function cleanupSubscriptionsForTab(tabId: number): void {
         if (parts.length > 1 && parts[0] === "sub" && parseInt(parts[1], 10) === tabId) {
             changesFeed.cancel();
             activeSubscriptions.delete(subscriptionId);
+            // Clear heartbeat
+            if (heartbeatIntervals.has(subscriptionId)) {
+                clearInterval(heartbeatIntervals.get(subscriptionId)!);
+                heartbeatIntervals.delete(subscriptionId);
+                console.log(`[BG] cleanupSubscriptionsForTab: Cleared heartbeat for ${subscriptionId}.`);
+            }
             cleanedCount++;
             console.log(`[BG] Cleaned up subscription ${subscriptionId} for disconnected tab ${tabId}.`);
         }
