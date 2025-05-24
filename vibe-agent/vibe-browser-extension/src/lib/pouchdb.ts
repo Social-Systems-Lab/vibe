@@ -12,6 +12,7 @@ import { isUnlocked as isVaultUnlocked } from "../background-modules/session-man
 PouchDB.plugin(PouchDBFind); // Initialize pouchdb-find plugin
 
 const COUCHDB_CONFIG_STORAGE_KEY = "couchDbConfig";
+const USER_DB_PREFIX_CLIENT = "userdata-"; // Mirroring server-side constant
 
 // In-memory cache for CouchDB configurations, keyed by userDid
 const couchDbConfigCache = new Map<string, CouchDbConfig>();
@@ -33,7 +34,20 @@ export interface CouchDbConfig {
 export function getLocalDbName(userDid: string): string {
     // Added export
     const sanitizedDid = userDid.replace(/:/g, "_").replace(/\./g, "-");
-    return `user_data_${sanitizedDid}`;
+    return `user_data_${sanitizedDid}`; // This is for the *local* PouchDB name, can remain different if desired
+}
+
+// New function to generate remote DB name consistent with server's getUserDbName
+export function getClientSideRemoteUserDbName(userDid: string): string {
+    if (!userDid) {
+        throw new Error("Cannot generate remote database name from empty userDid.");
+    }
+    let baseId = userDid;
+    const lowerCaseId = baseId.toLowerCase();
+    // Server sanitization: replace ':' with '-', then remove any char not in a-z, 0-9, _, $, (, ), +, -, /
+    const sanitizedId = lowerCaseId.replace(/:/g, "-").replace(/[^a-z0-9_$( )+-/]/g, "-");
+    const dbName = `${USER_DB_PREFIX_CLIENT}${sanitizedId}`;
+    return dbName;
 }
 
 /**
@@ -229,7 +243,12 @@ export async function initializeSync(userDid: string, mainVaultPasswordIfAvailab
     };
     // Add fetch options for timeout if needed, e.g. remoteDbOpts.fetch = (url, opts) => { opts.timeout = 10000; return PouchDB.fetch(url, opts); };
 
-    const remoteDb = new PouchDB(couchDbUrl, remoteDbOpts);
+    const remoteUserDbName = getClientSideRemoteUserDbName(userDid);
+    const fullRemoteUrl = `${couchDbUrl.replace(/\/$/, "")}/${remoteUserDbName}`;
+
+    console.log(`Initializing PouchDB sync for ${userDid} with full remote URL: ${fullRemoteUrl}`);
+
+    const remoteDb = new PouchDB(fullRemoteUrl, remoteDbOpts);
     remoteDbInstances.set(userDid, remoteDb);
 
     const currentSyncHandler = localDb.sync(remoteDb, {

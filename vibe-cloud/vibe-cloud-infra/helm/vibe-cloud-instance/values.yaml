@@ -86,6 +86,8 @@ couchdb:
         #   cpu: 250m
         #   memory: 256Mi
         {} # No default resources
+    setupJob:
+        enabled: true # Enable the job to set up system databases
 
 ingress:
     enabled: true

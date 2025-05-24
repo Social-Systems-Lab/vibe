@@ -11,27 +11,18 @@ import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
 import * as jose from "jose";
 import { getUserDbName } from "./utils/identity.utils";
 import { Buffer } from "buffer";
-// Removed spawn and path imports
 import {
-    // Removed AdminClaimSchema
     BlobDownloadResponseSchema,
     BLOBS_COLLECTION,
     BlobUploadBodySchema,
+    CouchDbDetailsResponseSchema,
     ErrorResponseSchema,
-    JWTPayloadSchema,
     ReadPayloadSchema,
     WritePayloadSchema,
     type BlobMetadata,
+    type JWTPayload,
     type WebSocketAuthContext,
-    AppUpsertPayloadSchema, // New schema for upsert payload
-    AppStatusResponseSchema, // New schema for status response
-    APPS_COLLECTION,
-    type App as AppModel, // The DB model
-    type AppManifest, // Type alias for manifest part
-    // Removed ProvisionRequestSchema
-    CouchDbDetailsResponseSchema, // Added for the new authdb endpoint
 } from "./models/models";
-import { SYSTEM_DB } from "./utils/constants";
 import { AuthService } from "./services/auth.service";
 import { PermissionService } from "./services/permission.service";
 
@@ -45,13 +36,22 @@ const secretKey = new TextEncoder().encode(jwtSecret);
 
 // --- Service Initialization & DB Setup ---
 await dataService.connect();
-await dataService.ensureDatabaseExists(SYSTEM_DB);
+
+// Ensure the user-specific database for this API instance exists
+const targetUserDid = process.env.TARGET_USER_DID;
+if (targetUserDid) {
+    const userSpecificDbName = getUserDbName(targetUserDid);
+    logger.info(`Ensuring database exists for this instance's target user DID ${targetUserDid}: ${userSpecificDbName}`);
+    await dataService.ensureDatabaseExists(userSpecificDbName);
+} else {
+    logger.warn("TARGET_USER_DID environment variable is not set. Cannot ensure user-specific database exists.");
+    throw new Error("TARGET_USER_DID environment variable is not configured.");
+}
+
 await blobService.initialize();
 const permissionService = new PermissionService(dataService);
 const authService = new AuthService(dataService, permissionService, blobService); // Pass blobService here
 const realtimeService = new RealtimeService(dataService, permissionService);
-
-// --- Removed Initial Admin Claim Code Bootstrap ---
 
 // --- App Initialization ---
 export const app = new Elysia()
@@ -198,15 +198,12 @@ export const app = new Elysia()
         }
     })
     .get("/health", () => {
-        const secretForDisplay = jwtSecret ? jwtSecret.substring(0, Math.min(jwtSecret.length, 8)) + "..." : "NOT_SET";
         return {
             status: "ok",
             service: "vibe-cloud-api",
             version: process.env.APP_VERSION || "unknown",
-            jwtSecretStart: secretForDisplay,
         };
     })
-    // --- Removed Admin Claim Route ---
     // --- Protected Data Routes ---
     .group("/api/v1/data", (group) =>
         group
@@ -223,24 +220,40 @@ export const app = new Elysia()
                     const token = authHeader.substring(7);
                     try {
                         // Use the injected jwt instance for verification
-                        const payload = await jwt.verify(token);
-                        if (payload) {
-                            user = payload as { identityDid: string; isAdmin?: boolean; type?: string };
+                        const rawPayload = await jwt.verify(token);
+                        if (rawPayload && typeof rawPayload.identityDid === "string") {
+                            user = rawPayload as { identityDid: string; isAdmin?: boolean; type?: string };
+                        } else {
+                            logger.warn("JWT payload verification in /data derive: payload is invalid or missing identityDid.", rawPayload);
+                            user = null;
                         }
                     } catch (error) {
-                        logger.debug("JWT verification failed in derive");
+                        logger.debug("JWT verification failed in /data derive");
                         user = null; // Invalid JWT
                     }
                 }
                 return { user, appId };
             })
-            // 2. Authentication & Permission Check Middleware
+            // 2. Authentication, Instance DID Validation & Permission Check Middleware
             .onBeforeHandle(async ({ user, appId, permissionService, request, body, set }) => {
                 // Check User JWT authentication
                 if (!user) {
                     set.status = 401;
                     logger.warn("Data API access denied: Missing or invalid user token.");
                     return { error: "Unauthorized: Invalid or missing user token." };
+                }
+
+                // Validate that the token's identityDid matches the instance's TARGET_USER_DID
+                const instanceTargetDid = process.env.TARGET_USER_DID;
+                if (instanceTargetDid && user.identityDid !== instanceTargetDid) {
+                    set.status = 403;
+                    logger.warn(`Forbidden: Token identityDid (${user.identityDid}) does not match instance target DID (${instanceTargetDid}).`);
+                    return { error: "Forbidden: Token identity does not match this instance." };
+                }
+                if (!instanceTargetDid) {
+                    logger.error("CRITICAL: TARGET_USER_DID is not set for this API instance. Cannot validate token scope.");
+                    set.status = 503; // Service Unavailable or Internal Server Error
+                    return { error: "Instance configuration error: Target user DID not set." };
                 }
 
                 // Check if App ID was provided (required for data access via Agent)
@@ -358,196 +371,6 @@ export const app = new Elysia()
                 }
             )
     )
-    // --- Protected App Routes ---
-    .group("/api/v1/apps", (group) =>
-        group
-            // Derive JWT user context (same as data routes)
-            .derive(async ({ jwt, request: { headers } }) => {
-                const authHeader = headers.get("authorization");
-                if (!authHeader || !authHeader.startsWith("Bearer ")) return { user: null };
-                const token = authHeader.substring(7);
-                try {
-                    const payload = await jwt.verify(token);
-                    return { user: payload as { identityDid: string; isAdmin?: boolean; type?: string } };
-                } catch (error) {
-                    return { user: null };
-                }
-            })
-            // Middleware: Just check User JWT exists
-            .onBeforeHandle(({ user, set }) => {
-                if (!user) {
-                    set.status = 401;
-                    return { error: "Unauthorized: Invalid or missing user token." };
-                }
-            })
-            // GET /api/v1/apps/status - Get registration status and details for a specific app for the user
-            .get(
-                "/status",
-                async ({ dataService, user, query, set }) => {
-                    if (!user) throw new InternalServerError("User context missing after auth check.");
-                    const { identityDid } = user;
-                    const { appId } = query; // Get appId from query parameters
-
-                    // Add validation for appId presence in query
-                    if (!appId || typeof appId !== "string") {
-                        set.status = 400;
-                        return { error: "Bad Request: Missing or invalid 'appId' query parameter." };
-                    }
-
-                    logger.debug(`Checking status for app '${appId}' (from query) for user '${identityDid}'`);
-                    const docId = `${APPS_COLLECTION}/${identityDid}/${appId}`;
-
-                    try {
-                        const doc = await dataService.getDocument<AppModel>(SYSTEM_DB, docId);
-                        // ... rest of the handler remains the same ...
-                        const manifest: AppManifest = {
-                            appId: doc.appId,
-                            name: doc.name,
-                            description: doc.description,
-                            pictureUrl: doc.pictureUrl,
-                            permissions: doc.permissions,
-                        };
-                        logger.info(`Found registration for app '${appId}' for user '${identityDid}'.`);
-                        set.status = 200;
-                        return {
-                            isRegistered: true,
-                            manifest: manifest,
-                            grants: doc.grants,
-                        };
-                    } catch (error: any) {
-                        // Log the specific error type and message BEFORE the check
-                        logger.error(
-                            `[/status] Caught error fetching status for app '${appId}', user ${identityDid}. Error type: ${
-                                error?.constructor?.name
-                            }, Status code: ${error?.statusCode}, IsNotFoundError: ${error instanceof NotFoundError}, Message: ${error?.message}`,
-                            error
-                        );
-
-                        if (error instanceof NotFoundError || error.statusCode === 404) {
-                            logger.info(`[/status] Handling as NotFoundError. Returning 200 status with isRegistered: false.`);
-                            set.status = 200;
-                            return {
-                                isRegistered: false,
-                                manifest: undefined,
-                                grants: undefined,
-                            };
-                        } else {
-                            logger.error(`[/status] Handling as non-NotFoundError. Throwing InternalServerError.`);
-                            throw new InternalServerError("Failed to fetch application status.");
-                        }
-                    }
-                },
-                {
-                    // CHANGE: Define query parameter instead of path parameter
-                    query: t.Object({ appId: t.String() }),
-                    response: {
-                        200: AppStatusResponseSchema, // Schema for 200 OK (found or not found)
-                        400: ErrorResponseSchema, // Schema for 400 Bad Request
-                        // You could add 401, 403, 500 etc. if the handler could directly return those
-                    },
-                    detail: { summary: "Get the registration status, manifest, and grants for a specific app (via query param) for the authenticated user." },
-                }
-            )
-
-            // POST /api/v1/apps/upsert - Create or update a user-specific app registration
-            .post(
-                "/upsert",
-                async ({ dataService, user, body, set }) => {
-                    if (!user) throw new InternalServerError("User context missing after auth check.");
-                    const { identityDid } = user;
-                    // Body is validated against AppUpsertPayloadSchema (manifest + grants)
-                    const { appId, name, description, pictureUrl, permissions, grants } = body;
-
-                    logger.info(`App upsert attempt by user ${identityDid} for appId ${appId}`);
-
-                    const docId = `${APPS_COLLECTION}/${identityDid}/${appId}`;
-                    const now = new Date().toISOString();
-
-                    try {
-                        // Try to fetch existing document
-                        const existingDoc = await dataService.getDocument<AppModel>(SYSTEM_DB, docId);
-
-                        // If exists, update it
-                        const updatedDoc: AppModel = {
-                            ...existingDoc, // Keep _id, _rev, registeredAt
-                            userDid: identityDid, // Ensure userDid is correct (now identityDid)
-                            appId: appId, // Update manifest fields
-                            name: name,
-                            description: description,
-                            pictureUrl: pictureUrl,
-                            permissions: permissions,
-                            grants: grants, // Update grants
-                            grantsUpdatedAt: now, // Update timestamp
-                            collection: APPS_COLLECTION, // Ensure collection is set
-                        };
-                        // Log the exact object being sent for update
-                        logger.debug("Updating app registration document:", JSON.stringify(updatedDoc, null, 2));
-                        const updateResult = await dataService.updateDocument(SYSTEM_DB, APPS_COLLECTION, docId, existingDoc._rev!, updatedDoc);
-                        logger.info(`App registration for '${appId}' updated successfully for user ${identityDid}. Rev: ${updateResult.rev}`);
-                        set.status = 200; // OK
-                        return { ok: true, id: updateResult.id, rev: updateResult.rev };
-                    } catch (error: any) {
-                        if (error instanceof NotFoundError || error.statusCode === 404) {
-                            // If not found, create it
-                            logger.info(`No existing registration found for app '${appId}' and user ${identityDid}. Creating new document with ID: ${docId}`);
-                            const newDoc: Omit<AppModel, "_rev"> = {
-                                // Include _id in the type
-                                _id: docId, // Set the derived document ID explicitly
-                                userDid: identityDid, // Use identityDid
-                                appId: appId,
-                                name: name,
-                                description: description,
-                                pictureUrl: pictureUrl,
-                                permissions: permissions,
-                                grants: grants,
-                                registeredAt: now, // Set initial registration time
-                                grantsUpdatedAt: now, // Set initial grant time
-                                collection: APPS_COLLECTION,
-                            };
-                            try {
-                                // Log the exact object being sent for creation
-                                logger.debug("Creating new app registration document:", JSON.stringify(newDoc, null, 2));
-                                // Call createDocument with 3 arguments: dbName, collection, data (which includes _id)
-                                const createResult = await dataService.createDocument(SYSTEM_DB, APPS_COLLECTION, newDoc);
-                                logger.info(
-                                    `App registration for '${appId}' created successfully for user ${identityDid}. ID: ${createResult.id}, Rev: ${createResult.rev}`
-                                );
-                                set.status = 201; // Created
-                                return { ok: true, id: createResult.id, rev: createResult.rev }; // Use ID from result
-                            } catch (createError: any) {
-                                // Handle potential conflict during creation (e.g., race condition)
-                                if (createError.message?.includes("Document update conflict") || createError.statusCode === 409) {
-                                    logger.warn(`Conflict during creation for app '${appId}', user ${identityDid}. Might already exist now.`);
-                                    set.status = 409; // Conflict
-                                    return { error: `Conflict creating registration for application ID '${appId}'.` };
-                                } else {
-                                    logger.error(`Failed to create registration for app '${appId}', user ${identityDid}:`, createError);
-                                    throw new InternalServerError("Failed to create application registration.");
-                                }
-                            }
-                        } else if (error.message?.includes("Revision conflict") || error.statusCode === 409) {
-                            // Handle conflict during update
-                            logger.warn(`Conflict during update for app '${appId}', user ${identityDid}.`);
-                            set.status = 409; // Conflict
-                            return { error: `Revision conflict updating registration for application ID '${appId}'. Please retry.` };
-                        } else {
-                            // Handle other errors during fetch/update
-                            logger.error(`Failed to upsert registration for app '${appId}', user ${identityDid}:`, error);
-                            throw new InternalServerError("Failed to upsert application registration.");
-                        }
-                    }
-                },
-                {
-                    body: AppUpsertPayloadSchema,
-                    response: {
-                        200: t.Object({ ok: t.Boolean(), id: t.String(), rev: t.String() }), // Update response
-                        201: t.Object({ ok: t.Boolean(), id: t.String(), rev: t.String() }), // Create response
-                        409: ErrorResponseSchema,
-                    },
-                    detail: { summary: "Create or update a user-specific application registration and grants." },
-                }
-            )
-    )
     // --- Protected Blob Routes ---
     .group("/api/v1/blob", (group) =>
         group
@@ -557,19 +380,40 @@ export const app = new Elysia()
                 if (!authHeader || !authHeader.startsWith("Bearer ")) return { user: null };
                 const token = authHeader.substring(7);
                 try {
-                    const payload = await jwt.verify(token);
-                    // Add appId as null or undefined if needed by other parts,
-                    // but it's not used for direct permission checks here.
-                    return { user: payload as { identityDid: string; isAdmin?: boolean; type?: string }, appId: null };
+                    const rawPayload = await jwt.verify(token);
+                    if (rawPayload && typeof rawPayload.identityDid === "string") {
+                        // Add appId as null or undefined if needed by other parts,
+                        // but it's not used for direct permission checks here.
+                        return { user: rawPayload as { identityDid: string; isAdmin?: boolean; type?: string }, appId: null };
+                    } else {
+                        logger.warn("JWT payload verification in /blob derive: payload is invalid or missing identityDid.", rawPayload);
+                        return { user: null, appId: null };
+                    }
                 } catch (error) {
+                    logger.debug("JWT verification failed in /blob derive");
                     return { user: null, appId: null };
                 }
             })
-            // Middleware: Just check User JWT exists
+            // Middleware: User JWT check and Instance DID Validation
             .onBeforeHandle(({ user, set }) => {
                 if (!user) {
                     set.status = 401;
+                    logger.warn("Access to /api/v1/blob denied: Missing or invalid user token.");
                     return { error: "Unauthorized: Invalid or missing user token." };
+                }
+                // Validate that the token's identityDid matches the instance's TARGET_USER_DID
+                const instanceTargetDid = process.env.TARGET_USER_DID;
+                if (instanceTargetDid && user.identityDid !== instanceTargetDid) {
+                    set.status = 403;
+                    logger.warn(
+                        `Forbidden: Token identityDid (${user.identityDid}) does not match instance target DID (${instanceTargetDid}) for blob routes.`
+                    );
+                    return { error: "Forbidden: Token identity does not match this instance." };
+                }
+                if (!instanceTargetDid) {
+                    logger.error("CRITICAL: TARGET_USER_DID is not set for this API instance. Cannot validate token scope for blob routes.");
+                    set.status = 503;
+                    return { error: "Instance configuration error: Target user DID not set." };
                 }
             })
             // POST /api/v1/blob/upload - Upload a file
@@ -699,42 +543,55 @@ export const app = new Elysia()
                 }
             )
     )
-    // --- New AuthDB Route ---
+    // --- New Route ---
     .group("/api/v1", (group) =>
         group
             // JWT derivation and authentication middleware
             .derive(async ({ jwt, request: { headers } }) => {
                 const authHeader = headers.get("authorization");
                 if (!authHeader || !authHeader.startsWith("Bearer ")) {
-                    logger.debug("AuthDB derive: No auth header or not Bearer.");
-                    return { user: null };
+                    logger.debug("Unauthorized: No auth header or not Bearer.");
+                    return { currentIdentity: null as JWTPayload | null };
                 }
                 const token = authHeader.substring(7);
                 try {
-                    const payload = await jwt.verify(token);
-                    if (!payload) {
-                        logger.warn("AuthDB derive: JWT verification returned falsy payload.", { token });
-                        return { user: null };
+                    const payload = (await jwt.verify(token)) as JWTPayload | false;
+                    if (!payload || typeof payload === "boolean" || !payload.identityDid) {
+                        logger.warn("JWT verification returned invalid payload or missing identityDid.", { tokenString: token, rawPayload: payload });
+                        return { currentIdentity: null as JWTPayload | null };
                     }
-                    logger.info("AuthDB derive: JWT payload successfully verified:", payload);
-                    return { user: payload as { identityDid: string; isAdmin?: boolean; type?: string } };
+                    return { currentIdentity: payload as JWTPayload };
                 } catch (error) {
-                    logger.warn("AuthDB derive: JWT verification failed with error:", { error, token });
-                    return { user: null };
+                    logger.warn("JWT verification failed with error:", { error, tokenString: token }); // Avoid logging full token object if it's sensitive
+                    return { currentIdentity: null as JWTPayload | null };
                 }
             })
-            .onBeforeHandle(({ user, set }) => {
-                if (!user) {
+            .onBeforeHandle(({ currentIdentity, set }) => {
+                if (!currentIdentity) {
                     set.status = 401;
                     logger.warn("Access to /api/v1/authdb denied: Missing or invalid user token.");
                     return { error: "Unauthorized: Invalid or missing user token." };
                 }
+                // Validate that the token's identityDid matches the instance's TARGET_USER_DID
+                const instanceTargetDid = process.env.TARGET_USER_DID;
+                if (instanceTargetDid && currentIdentity.identityDid !== instanceTargetDid) {
+                    set.status = 403;
+                    logger.warn(
+                        `Forbidden: Token identityDid (${currentIdentity.identityDid}) does not match instance target DID (${instanceTargetDid}) for authdb.`
+                    );
+                    return { error: "Forbidden: Token identity does not match this instance." };
+                }
+                if (!instanceTargetDid) {
+                    logger.error("CRITICAL: TARGET_USER_DID is not set for this API instance. Cannot validate token scope for authdb.");
+                    set.status = 503;
+                    return { error: "Instance configuration error: Target user DID not set." };
+                }
             })
             .get(
                 "/authdb",
-                async ({ user, set }) => {
+                async ({ currentIdentity, set }) => {
                     // user is populated by the .derive middleware
-                    const { identityDid } = user!; // user is guaranteed non-null due to onBeforeHandle
+                    const { identityDid } = currentIdentity!; // user is guaranteed non-null due to onBeforeHandle
 
                     logger.info(`Processing /api/v1/authdb request for user: ${identityDid}`);
 
@@ -787,7 +644,6 @@ export const app = new Elysia()
                 }
             )
     );
-// --- Removed Provisioning Routes ---
 
 // --- WebSocket Handler Definition ---
 // Define the pure Bun WebSocket handler logic BEFORE startServer uses it
