@@ -1,4 +1,4 @@
-// apps/test/src/vibe/types.ts
+// packages/vibe-sdk/src/types.ts
 
 /**
  * Defines the permissions an application requests.
@@ -12,14 +12,16 @@ export interface AppManifest {
     permissions: string[]; // Array of permission strings (e.g., "read:notes", "write:tasks")
 }
 
-import type { Ed25519KeyPair } from "../lib/identity";
+// This type is defined in the browser extension, so we can remove it from here.
+// import type { Ed25519KeyPair } from "../lib/identity";
 
 // --- Identity Management Types ---
 
 /**
  * Represents a single user identity managed by the agent.
  */
-export interface Identity extends Ed25519KeyPair {
+export interface Identity {
+    // extends Ed25519KeyPair {
     did: string;
     label: string;
     pictureUrl?: string;

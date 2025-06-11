@@ -1,0 +1,22 @@
+{
+    "name": "vibe-react",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build": "bun build src/index.ts --outdir dist"
+    },
+    "dependencies": {
+        "vibe-sdk": "workspace:*"
+    },
+    "peerDependencies": {
+        "react": "^19"
+    },
+    "devDependencies": {
+        "@types/bun": "latest",
+        "@types/react": "^19",
+        "@types/react-dom": "^19"
+    }
+}

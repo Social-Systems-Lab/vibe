@@ -5,8 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useVibe, VibeProvider } from "../vibe/react.tsx";
-import type { Unsubscribe, AppManifest } from "../vibe/types.ts"; // Assuming NoteDoc might be added here later
+import { useVibe, VibeProvider } from "vibe-react";
+import type { Unsubscribe, AppManifest } from "vibe-sdk"; // Assuming NoteDoc might be added here later
 import logoSvg from "../logo.svg";
 
 // Define NoteDoc structure, matching pouchdb.ts

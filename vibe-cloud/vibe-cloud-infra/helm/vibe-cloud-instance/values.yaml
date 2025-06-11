@@ -96,8 +96,8 @@ ingress:
         # Only include annotations needed for the working setup
         "cert-manager.io/cluster-issuer": "letsencrypt-prod"
     # The host for the Ingress resource.
-    host: "test-cloud.vibeapp.dev" # Updated from temp values
-    # mainDomain: "vibe.example.com" # Removed, host is now explicit
+    host: "" # Set dynamically in templates
+    mainDomain: "vibeapp.dev"
     tls:
         # Secrets must be manually created in the namespace.
         # Or, if using cert-manager, it will create them.

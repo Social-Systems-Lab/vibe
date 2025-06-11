@@ -1,13 +1,9 @@
-// apps/test/src/vibe/react.tsx
+// packages/vibe-react/src/index.tsx
 "use client";
 
 import React, { createContext, useState, useEffect, useContext, useCallback } from "react";
 import type { ReactNode } from "react"; // Import ReactNode as a type
-// Removed SDK/Agent instance imports
-// Removed ui-context import
-import type { IVibeSDK } from "./sdk"; // Import the SDK interface type
-// Import types
-import type { AppManifest, Unsubscribe, VibeState, PermissionSetting, Identity, ReadResult, WriteResult } from "./types"; // Added Identity, ReadResult, WriteResult
+import type { IVibeSDK, AppManifest, Unsubscribe, VibeState, PermissionSetting, Identity, ReadResult, WriteResult } from "vibe-sdk";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

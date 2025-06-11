@@ -13,6 +13,7 @@ import {
     appStatusAtom,
     // initializeAppStateAtom // Not directly set here, but could be if UNLOCK_VAULT returns a new state code
 } from "../store/appAtoms";
+import { allIdentitiesAtom } from "@/store/identityAtoms";
 // Import for identity data loading if unlock is successful and we need to trigger it
 // import { loadIdentityDataAtom } from "../store/identityAtoms"; // Example, might be a function atom
 
@@ -32,6 +33,7 @@ export const UnlockPage: React.FC = () => {
     const [, setAppStatus] = useAtom(appStatusAtom);
     // const [, setInitializeAppState] = useAtom(initializeAppStateAtom); // If needed
     const [, setLocation] = useLocation();
+    const [allIdentities, setAllIdentities] = useAtom(allIdentitiesAtom);
     // const loadIdentities = useAtomCallback(loadIdentityDataAtom); // Example if using a function atom
 
     const handleUnlockSubmit = useCallback(
@@ -75,6 +77,34 @@ export const UnlockPage: React.FC = () => {
         [password, isUnlocking, setIsUnlocking, setUnlockError, setAppStatus, setLocation]
     );
 
+    const handleResetVibe = async () => {
+        if (confirm("Are you sure you want to reset Vibe? This will clear your stored data.")) {
+            try {
+                // Get all known identity DIDs to pass to the nuke function
+                const didsToNuke = allIdentities.map((id) => id.did).filter((did) => !!did) as string[];
+                console.log("SettingsPage: DIDs to nuke:", didsToNuke);
+
+                // Instruct the background script to delete all PouchDB user databases
+                await chrome.runtime.sendMessage({
+                    type: "VIBE_AGENT_REQUEST",
+                    action: "NUKE_ALL_USER_DATABASES",
+                    payload: { userDids: didsToNuke }, // Pass the DIDs
+                    requestId: crypto.randomUUID().toString(),
+                });
+
+                await chrome.storage.local.clear();
+                await chrome.storage.session.clear(); // Clear session storage too
+                // User databases are now requested to be nuked by the background script.
+
+                alert("Vibe has been reset. The extension will now re-initialize.");
+                setAppStatus("LOADING"); // Trigger re-initialization
+                setLocation("/setup"); // Navigate to root, initializer will pick correct route
+            } catch (err) {
+                console.error("Error resetting storage:", err);
+            }
+        }
+    };
+
     return (
         <div className="w-full h-full flex flex-col items-center justify-center p-4 bg-background text-foreground">
             <div className="w-full max-w-sm">
@@ -110,6 +140,9 @@ export const UnlockPage: React.FC = () => {
                         {unlockError && <p className="text-sm text-red-500 px-1">{unlockError}</p>}
                         <Button type="submit" className="w-full" disabled={isUnlocking || !password}>
                             {isUnlocking ? "Unlocking..." : "Unlock"}
+                        </Button>
+                        <Button onClick={handleResetVibe} variant="outline" className="w-full">
+                            Reset Vibe
                         </Button>
                     </form>
                 </div>

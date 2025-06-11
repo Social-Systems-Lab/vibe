@@ -1,7 +1,7 @@
 // App.tsx - Sets up routing for the Vibe integration test
 import { Routes, Route, Outlet, Link } from "react-router-dom"; // Added Link
 import "./index.css";
-import { useVibe } from "./vibe/react.tsx"; // Import useVibe hook
+import { useVibe } from "vibe-react";
 
 // Import Page Components
 import NotesPage from "./pages/NotesPage.tsx"; // Added NotesPage import

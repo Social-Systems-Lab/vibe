@@ -21,7 +21,7 @@ spec:
   ingressClassName: {{ .Values.ingress.className }}
   {{- end }}
   rules:
-    - host: {{ include "vibe-cloud-instance.ingress.host" . | quote }}
+    - host: {{ .Values.instanceIdentifier }}.{{ .Values.ingress.mainDomain }}
       http:
         paths:
           - path: /couchdb
@@ -43,13 +43,13 @@ spec:
   tls:
     {{- range .Values.ingress.tls }}
     - hosts:
-        - {{ include "vibe-cloud-instance.ingress.host" $ | quote }}
+        - {{ .Values.instanceIdentifier }}.{{ .Values.ingress.mainDomain }}
       secretName: {{ .secretName }}
     {{- end }}
   {{- else if (hasKey .Values.ingress.annotations "cert-manager.io/cluster-issuer") }}
   tls:
     - hosts:
-        - {{ include "vibe-cloud-instance.ingress.host" . | quote }}
+        - {{ .Values.instanceIdentifier }}.{{ .Values.ingress.mainDomain }}
       # cert-manager will use the existing secret for this host, or create one if it doesn't exist
       # based on the main ingress's TLS config (e.g., {{ .Values.instanceIdentifier }}-tls)
       secretName: {{ .Values.instanceIdentifier }}-tls # Ensure this matches the main ingress TLS secret name

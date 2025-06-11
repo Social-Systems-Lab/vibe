@@ -8,8 +8,8 @@
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
-import { VibeProvider } from "./vibe/react.tsx"; // Import VibeProvider for the real SDK
-import type { AppManifest } from "./vibe/types";
+import { VibeProvider } from "vibe-react";
+import type { AppManifest } from "vibe-sdk";
 import logoSvg from "./logo.svg"; // Import logo for the app
 
 // Define the manifest for the test application

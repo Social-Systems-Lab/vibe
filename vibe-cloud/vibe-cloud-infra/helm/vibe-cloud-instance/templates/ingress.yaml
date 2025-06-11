@@ -16,7 +16,7 @@ spec:
   ingressClassName: {{ .Values.ingress.className }}
   {{- end }}
   rules:
-    - host: {{ include "vibe-cloud-instance.ingress.host" . | quote }}
+    - host: {{ .Values.instanceIdentifier }}.{{ .Values.ingress.mainDomain }}
       http:
         paths:
           - path: /
@@ -36,14 +36,14 @@ spec:
   tls:
     {{- range .Values.ingress.tls }}
     - hosts:
-        - {{ include "vibe-cloud-instance.ingress.host" $ | quote }}
+        - {{ .Values.instanceIdentifier }}.{{ .Values.ingress.mainDomain }}
       secretName: {{ .secretName }}
     {{- end }}
   {{- else if (hasKey .Values.ingress.annotations "cert-manager.io/cluster-issuer") }}
   # If cert-manager annotation is present, assume it will handle TLS
   tls:
     - hosts:
-        - {{ include "vibe-cloud-instance.ingress.host" . | quote }}
+        - {{ .Values.instanceIdentifier }}.{{ .Values.ingress.mainDomain }}
       # cert-manager will create a secret with this name, or use an existing one if specified
       # Defaulting to a name based on the instance identifier for cert-manager to create
       secretName: {{ .Values.instanceIdentifier }}-tls
