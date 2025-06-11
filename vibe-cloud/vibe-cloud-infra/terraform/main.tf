@@ -212,6 +212,16 @@ resource "helm_release" "traefik" {
     value = "true" # Make Traefik the default Ingress controller
   }
 
+  set {
+    name = "providers.kubernetescrd.namespaces"
+    value = "traefik,vibe-control-plane"
+  }
+
+  set {
+    name = "providers.kubernetesingress.namespaces"
+    value = "traefik,vibe-control-plane"
+  }
+
   depends_on = [
     scaleway_k8s_pool.vibe-pool, # Ensure cluster is ready
     kubernetes_namespace.traefik_ns
