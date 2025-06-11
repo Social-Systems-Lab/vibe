@@ -214,12 +214,12 @@ resource "helm_release" "traefik" {
 
   set {
     name = "providers.kubernetescrd.namespaces"
-    value = "traefik,vibe-control-plane"
+    value = "{traefik,vibe-control-plane}"
   }
 
   set {
     name = "providers.kubernetesingress.namespaces"
-    value = "traefik,vibe-control-plane"
+    value = "{traefik,vibe-control-plane}"
   }
 
   depends_on = [
