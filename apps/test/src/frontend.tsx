@@ -31,9 +31,7 @@ const testAppManifest: AppManifest = {
 function AppEntry() {
     return (
         <BrowserRouter>
-            {/* <VibeProvider manifest={testAppManifest}> */}
             <App />
-            {/* </VibeProvider> */}
         </BrowserRouter>
     );
 }
