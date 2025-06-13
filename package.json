@@ -2,22 +2,11 @@
     "name": "vibe",
     "version": "0.1.0",
     "private": true,
-    "workspaces": [
-        "apps/*",
-        "packages/*",
-        "vibe-agent/*",
-        "vibe-cloud/*"
-    ],
     "scripts": {
         "build": "bun run build:sdk && bun run build:react",
-        "build:sdk": "cd packages/vibe-sdk && bun run build",
-        "build:react": "cd packages/vibe-react && bun run build",
-        "dev": "concurrently \"bun:watch:*\" \"bun:start-app\"",
-        "watch:sdk": "cd packages/vibe-sdk && bun run build --watch",
-        "watch:react": "cd packages/vibe-react && bun run build --watch",
+        "build:sdk": "cd vibe-sdk && bun run build",
+        "build:react": "cd vibe-react && bun run build",
+        "dev": "bun run build && bun run start-app",
         "start-app": "cd apps/test && bun run dev"
-    },
-    "devDependencies": {
-        "concurrently": "^8.2.2"
     }
 }

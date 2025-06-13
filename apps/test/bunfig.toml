@@ -1,6 +1,0 @@
-[install]
-# No specific install config needed here for now
-
-[run]
-# Aliases for the 'bun run' command, including the dev server
-[run.alias]

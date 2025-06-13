@@ -39,6 +39,8 @@ Vibe is actively prototyping its core components. This repository contains the s
 
 -   `vibe-agent/`: The Vibe Agent browser extension.
 -   `vibe-cloud/`: The Vibe Cloud backend, including the API for individual instances (`vibe-cloud-api`), the control plane for instance management (`vibe-cloud-control-plane`), infrastructure definitions (`vibe-cloud-infra`), and self-hosting configurations (`vibe-cloud-selfhost`).
+-   `vibe-sdk/`: Vibe SDK for interfacing with the Vibe Agent.
+-   `vibe-react/`: React hooks and components for interfacing with the Vibe Agent.
 -   `apps/`: Example and test applications built using the Vibe SDK (e.g., `apps/test`).
 
 ## Getting Started

@@ -9,7 +9,7 @@
         "build": "bun build ./src/index.tsx --outdir ./dist --external react --external react-dom"
     },
     "dependencies": {
-        "vibe-sdk": "workspace:*"
+        "vibe-sdk": "file:../vibe-sdk"
     },
     "peerDependencies": {
         "react": "^19",

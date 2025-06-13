@@ -11,8 +11,8 @@
         "build": "bun run build.ts"
     },
     "dependencies": {
-        "vibe-sdk": "file:../../packages/vibe-sdk",
-        "vibe-react": "file:../../packages/vibe-react",
+        "vibe-sdk": "file:../../vibe-sdk",
+        "vibe-react": "file:../../vibe-react",
         "@hookform/resolvers": "^4.1.0",
         "@noble/ed25519": "^2.2.3",
         "@noble/hashes": "^1.8.0",
