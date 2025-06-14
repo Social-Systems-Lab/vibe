@@ -2,6 +2,7 @@
 // Defines the interface for the `window.vibe` object provided by the agent.
 
 // Import necessary types
+export * from "./types";
 import type { AppManifest, ReadResult, Unsubscribe, VibeState, WriteResult } from "./types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

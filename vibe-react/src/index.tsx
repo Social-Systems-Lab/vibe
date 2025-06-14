@@ -5,7 +5,8 @@ import React, { createContext, useState, useEffect, useContext, useCallback } fr
 import type { ReactNode } from "react"; // Import ReactNode as a type
 import type { IVibeSDK, AppManifest, Unsubscribe, VibeState, PermissionSetting, Identity, ReadResult, WriteResult } from "vibe-sdk";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+// Export all types from the vibe-sdk
+export type { AppManifest, Unsubscribe, VibeState, PermissionSetting, Identity, ReadResult, WriteResult };
 
 // Define the shape of the context value (includes more state now)
 interface VibeContextValue {
@@ -167,5 +168,3 @@ export function useVibe() {
     }
     return context;
 }
-
-/* eslint-enable @typescript-eslint/no-explicit-any */

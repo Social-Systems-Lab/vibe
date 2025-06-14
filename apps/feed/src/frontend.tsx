@@ -9,9 +9,10 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { VibeProvider } from "vibe-react";
+import type { AppManifest } from "vibe-react";
 import logoSvg from "./logo.svg";
 
-const feedsAppManifest = {
+const feedsAppManifest: AppManifest = {
     appId: "feeds-app",
     name: "Feeds App",
     description: "A decentralized feed of posts.",

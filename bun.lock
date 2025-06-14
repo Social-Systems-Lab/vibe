@@ -5,7 +5,7 @@
       "name": "vibe",
     },
     "apps/feed": {
-      "name": "feed-app",
+      "name": "feed",
       "version": "0.1.0",
       "dependencies": {
         "@hookform/resolvers": "^4.1.0",
@@ -23,7 +23,6 @@
         "tailwindcss": "^4.0.6",
         "tailwindcss-animate": "^1.0.7",
         "vibe-react": "workspace:*",
-        "vibe-sdk": "workspace:*",
         "zod": "^3.24.2",
       },
       "devDependencies": {
@@ -265,7 +264,7 @@
 
     "fastest-levenshtein": ["fastest-levenshtein@1.0.16", "", {}, "sha512-eRnCtTTtGZFpQCwhJiUOuxPQWRXVKYDn0b2PeHfXL6/Zi53SLAzAHfVhVWK2AryC/WH05kGfxhFIPvTF0SXQzg=="],
 
-    "feed-app": ["feed-app@workspace:apps/feed"],
+    "feed": ["feed@workspace:apps/feed"],
 
     "get-nonce": ["get-nonce@1.0.1", "", {}, "sha512-FJhYRoDaiatfEkUK8HKlicmu/3SGFD51q3itKDGoSTysQJBnfOcxU5GxnhE1E6soB76MbT0MBtnKJuXyAx+96Q=="],
 
@@ -328,13 +327,5 @@
     "micro-ed25519-hdkey/@noble/ed25519": ["@noble/ed25519@1.7.5", "", {}, "sha512-xuS0nwRMQBvSxDa7UxMb61xTiH3MxTgUfhyPUALVIe0FlOAz4sjELwyDRyUvqeEYfRSG9qNjFIycqLZppg4RSA=="],
 
     "micro-ed25519-hdkey/@noble/hashes": ["@noble/hashes@1.1.5", "", {}, "sha512-LTMZiiLc+V4v1Yi16TD6aX2gmtKszNye0pQgbaLqkvhIqP7nVsSaJsWloGQjJfJ8offaoP5GtX3yY5swbcJxxQ=="],
-
-    "vibe-react/vibe-sdk": ["vibe-sdk@file:vibe-sdk", { "devDependencies": { "@types/bun": "latest" } }],
-
-    "vibe-test-app/vibe-react": ["vibe-react@file:vibe-react", { "dependencies": { "vibe-sdk": "file:../vibe-sdk" }, "devDependencies": { "@types/bun": "latest" }, "peerDependencies": { "react": "^19", "react-dom": "^19" } }],
-
-    "vibe-test-app/vibe-sdk": ["vibe-sdk@file:vibe-sdk", { "devDependencies": { "@types/bun": "latest" } }],
-
-    "vibe-test-app/vibe-react/vibe-sdk": ["vibe-sdk@file:vibe-sdk", {}],
   }
 }
