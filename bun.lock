@@ -327,5 +327,9 @@
     "micro-ed25519-hdkey/@noble/ed25519": ["@noble/ed25519@1.7.5", "", {}, "sha512-xuS0nwRMQBvSxDa7UxMb61xTiH3MxTgUfhyPUALVIe0FlOAz4sjELwyDRyUvqeEYfRSG9qNjFIycqLZppg4RSA=="],
 
     "micro-ed25519-hdkey/@noble/hashes": ["@noble/hashes@1.1.5", "", {}, "sha512-LTMZiiLc+V4v1Yi16TD6aX2gmtKszNye0pQgbaLqkvhIqP7nVsSaJsWloGQjJfJ8offaoP5GtX3yY5swbcJxxQ=="],
+
+    "vibe-react/vibe-sdk": ["vibe-sdk@file:vibe-sdk", { "devDependencies": { "@types/bun": "latest" } }],
+
+    "vibe-test-app/vibe-sdk": ["vibe-sdk@file:vibe-sdk", { "devDependencies": { "@types/bun": "latest" } }],
   }
 }

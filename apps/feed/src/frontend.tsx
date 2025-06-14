@@ -7,25 +7,11 @@
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./App";
-import { VibeProvider } from "vibe-react";
-import type { AppManifest } from "vibe-react";
-import logoSvg from "./logo.svg";
-
-const feedsAppManifest: AppManifest = {
-    appId: "feeds-app",
-    name: "Feeds App",
-    description: "A decentralized feed of posts.",
-    permissions: ["read:posts", "write:posts"],
-    iconUrl: `${window.location.origin}${logoSvg}`,
-};
-
+import App from "./App";
 const elem = document.getElementById("root")!;
 const app = (
     <StrictMode>
-        <VibeProvider manifest={feedsAppManifest}>
-            <App />
-        </VibeProvider>
+        <App />
     </StrictMode>
 );
 
