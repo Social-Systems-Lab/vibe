@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useVibe, VibeProvider } from "vibe-react";
@@ -32,6 +31,7 @@ function AppContent() {
     const [posts, setPosts] = useState<PostDoc[]>([]);
     const [newPostContent, setNewPostContent] = useState<string>("");
     const [status, setStatus] = useState<string>("Initializing...");
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
     const postsSubscription = useRef<Unsubscribe | null>(null);
 
     useEffect(() => {
@@ -66,6 +66,7 @@ function AppContent() {
                 const result = await write("posts", postData);
                 setStatus(`Post created successfully. ID: ${result.ids?.[0] ?? "N/A"}`);
                 setNewPostContent("");
+                setIsDialogOpen(false); // Close dialog on successful post
             } catch (error) {
                 console.error("[AppContent] Error creating post:", error);
                 setStatus(`Error creating post: ${error instanceof Error ? error.message : String(error)}`);
@@ -122,65 +123,77 @@ function AppContent() {
     }, [read, activeIdentity]);
 
     return (
-        <div className="container mx-auto p-4 max-w-2xl">
-            <header className="flex justify-center my-4">
-                <nav className="flex gap-4">
-                    <Button variant="ghost" disabled>
-                        Following
-                    </Button>
-                    <Button variant="default">Discover</Button>
-                </nav>
-            </header>
-
-            <Card className="mb-6">
-                <CardContent className="p-4">
-                    <form onSubmit={handleCreatePost} className="space-y-4">
-                        <Textarea
-                            value={newPostContent}
-                            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setNewPostContent(e.target.value)}
-                            placeholder="Share your story..."
-                            required
-                            rows={3}
-                            disabled={!activeIdentity}
+        <div className="bg-gray-50 min-h-screen">
+            <div className="container mx-auto p-4 max-w-2xl">
+                <div className="bg-white p-4 rounded-lg shadow-lg mb-6 cursor-pointer" onClick={() => setIsDialogOpen(true)}>
+                    <div className="flex items-center">
+                        <img
+                            src={activeIdentity?.profile?.avatarUrl || `https://i.pravatar.cc/40?u=${activeIdentity?.did}`}
+                            alt="Your profile"
+                            className="w-10 h-10 rounded-full mr-4"
                         />
-                        <div className="flex justify-end">
-                            <Button type="submit" disabled={!activeIdentity || !newPostContent.trim()}>
-                                Post
-                            </Button>
-                        </div>
-                    </form>
-                </CardContent>
-            </Card>
+                        <div className="text-gray-500">Create a post...</div>
+                    </div>
+                </div>
 
-            <div className="space-y-4">
-                {posts.map((post) => (
-                    <Card key={post._id}>
-                        <CardHeader>
-                            <CardTitle className="text-sm font-normal">{post.userDid}</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <p>{post.content}</p>
-                            <p className="text-xs text-muted-foreground mt-2">{new Date(post.createdAt).toLocaleString()}</p>
-                        </CardContent>
-                    </Card>
-                ))}
+                {isDialogOpen && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg">
+                            <div className="flex items-center mb-4">
+                                <img
+                                    src={activeIdentity?.profile?.avatarUrl || `https://i.pravatar.cc/40?u=${activeIdentity?.did}`}
+                                    alt="Your profile"
+                                    className="w-10 h-10 rounded-full mr-4"
+                                />
+                                <div>
+                                    <p className="font-semibold">{activeIdentity?.label}</p>
+                                    <p className="text-sm text-gray-500">Everyone</p>
+                                </div>
+                                <button onClick={() => setIsDialogOpen(false)} className="ml-auto text-gray-500 hover:text-gray-800">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <form onSubmit={handleCreatePost}>
+                                <Textarea
+                                    value={newPostContent}
+                                    onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setNewPostContent(e.target.value)}
+                                    placeholder="Share your story..."
+                                    required
+                                    rows={5}
+                                    className="w-full p-2 border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                    disabled={!activeIdentity}
+                                />
+                                <div className="flex justify-end items-center mt-4 space-x-2">
+                                    <div className="flex-grow"></div>
+                                    <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)}>
+                                        Cancel
+                                    </Button>
+                                    <Button type="submit" disabled={!activeIdentity || !newPostContent.trim()}>
+                                        Post
+                                    </Button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                <div className="space-y-4">
+                    {posts.map((post) => (
+                        <div key={post._id} className="bg-white p-4 rounded-lg shadow-lg">
+                            <div className="flex items-start">
+                                <img src={`https://i.pravatar.cc/40?u=${post.userDid}`} alt="User profile" className="w-10 h-10 rounded-full mr-4" />
+                                <div className="flex-1">
+                                    <p className="font-semibold">{post.userDid}</p>
+                                    <p className="text-xs text-gray-500 mb-2">{new Date(post.createdAt).toLocaleString()}</p>
+                                    <p className="whitespace-pre-wrap">{post.content}</p>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
             </div>
-            <Card className="bg-card/50 backdrop-blur-sm border-muted mt-6">
-                <CardHeader>
-                    <CardTitle>App Status</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <p>
-                        <span className="italic">{status}</span>
-                    </p>
-                    <p className="mt-2">
-                        Vibe Active Identity:{" "}
-                        <code className="relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm">
-                            {activeIdentity?.label ?? "None"} ({activeIdentity?.did ?? "N/A"})
-                        </code>
-                    </p>
-                </CardContent>
-            </Card>
         </div>
     );
 }
