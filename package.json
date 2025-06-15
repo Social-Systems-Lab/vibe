@@ -1,17 +1,9 @@
 {
-    "name": "vibe",
-    "version": "0.1.0",
     "private": true,
+    "name": "vibe",
     "workspaces": [
         "apps/*",
-        "vibe-sdk",
-        "vibe-react"
-    ],
-    "scripts": {
-        "build": "bun run build:sdk && bun run build:react",
-        "build:sdk": "cd vibe-sdk && bun run build",
-        "build:react": "cd vibe-react && bun run build",
-        "dev": "bun run build && bun run start-app",
-        "start-app": "cd apps/test && bun run dev"
-    }
+        "packages/*",
+        "infra"
+    ]
 }

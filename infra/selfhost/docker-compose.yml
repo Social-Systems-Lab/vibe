@@ -1,0 +1,34 @@
+services:
+    couchdb:
+        image: couchdb:3
+        ports:
+            - "5984:5984"
+        environment:
+            - COUCHDB_USER=admin
+            - COUCHDB_PASSWORD=password
+    minio:
+        image: minio/minio
+        ports:
+            - "9000:9000"
+            - "9001:9001"
+        environment:
+            - MINIO_ROOT_USER=minioadmin
+            - MINIO_ROOT_PASSWORD=minioadmin
+        command: server /data --console-address ":9001"
+    vibe-cloud-api:
+        build:
+            context: ../../
+            dockerfile: apps/vibe-cloud-api/Dockerfile
+        ports:
+            - "3000:3000"
+        depends_on:
+            - couchdb
+            - minio
+    vibe-web:
+        build:
+            context: ../../
+            dockerfile: apps/vibe-web/Dockerfile
+        ports:
+            - "3001:3001"
+        depends_on:
+            - vibe-cloud-api

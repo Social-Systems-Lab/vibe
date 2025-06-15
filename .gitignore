@@ -50,13 +50,4 @@ vibe-cluster.kubeconfig
 *.tfplan
 **/.terraform/
 
-# Kubernetes secrets files - consider using a template and populating sensitive values out-of-band
-# Example: vibe-cloud/vibe-cloud-infra/kubernetes/control-plane/04-secrets.yaml
-vibe-cloud/vibe-cloud-infra/kubernetes/control-plane/04-secrets.yaml
-vibe-cloud/vibe-cloud-infra/kubernetes/control-plane/07-ingress.yaml
-
-# Specific service .env files
-vibe-cloud/vibe-cloud-api/.env
-vibe-cloud/vibe-cloud-control-plane/.env
-
-vibe-browser-extension/icon-dev.png
+old/*
