@@ -25,6 +25,6 @@
         "noPropertyAccessFromIndexSignature": false,
 
         // Type definitions
-        "types": ["bun-types", "vitest/globals"] // Add bun-types and vitest globals
+        "types": ["bun-types"] // Add bun-types
     }
 }

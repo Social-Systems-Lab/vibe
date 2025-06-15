@@ -53,7 +53,7 @@ export type PermissionSetting = "always" | "ask" | "never";
 export interface VibeState {
     activeIdentity?: Identity | null; // The currently selected identity
     identities?: Identity[]; // All available identities
-    permissions?: Record<string, PermissionSetting>; // Permissions granted for the active identity and current origin
+    permissions?: Record<string, PermissionSetting> | null; // Permissions granted for the active identity and current origin
     // Add other state properties like connection status, errors, etc.
 }
 
@@ -181,4 +181,38 @@ export interface VibeAgent {
 
     // --- Authentication/Claim ---
     claimIdentityWithCode(identityDid: string, claimCode: string): Promise<{ jwt: string }>; // Returns JWT for the identity
+}
+
+// --- Blob Storage Types ---
+
+export interface BlobMetadata {
+    _id: string; // The unique object key
+    _rev?: string;
+    originalFilename: string;
+    contentType: string;
+    size: number;
+    ownerDid: string;
+    uploadTimestamp: string; // ISO date-time string
+    bucket: string;
+    collection: string;
+    blobCollection: "blobs";
+}
+
+export interface PresignedUploadRequest {
+    collectionName: string;
+    originalFilename: string;
+    contentType: string;
+}
+
+export interface PresignedUploadResponse {
+    presignedUrl: string;
+    objectKey: string;
+}
+
+export interface FinalizeUploadRequest {
+    objectKey: string;
+    originalFilename: string;
+    contentType: string;
+    size: number;
+    collectionName: string;
 }

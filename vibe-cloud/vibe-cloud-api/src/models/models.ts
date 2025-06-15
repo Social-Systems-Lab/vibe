@@ -44,7 +44,8 @@ export const BlobMetadataSchema = t.Object({
     ownerDid: t.String(),
     uploadTimestamp: t.String({ format: "date-time" }), // ISO date-time string
     bucket: t.String(), // e.g., S3 bucket name
-    collection: t.Literal(BLOBS_COLLECTION),
+    collection: t.String(), // User-defined collection for the blob, e.g., 'profile_pictures'
+    blobCollection: t.Literal(BLOBS_COLLECTION),
 });
 export type BlobMetadata = Static<typeof BlobMetadataSchema>; // Single definition derived from schema
 
@@ -171,10 +172,27 @@ export const AdminClaimSchema = t.Object({
 export type AdminClaimBody = Static<typeof AdminClaimSchema>;
 
 // Blob Schemas (for API interaction)
-export const BlobUploadBodySchema = t.Object({
-    file: t.File({ error: "File upload is required." }),
+export const PresignedUploadRequestSchema = t.Object({
+    collectionName: t.String(),
+    originalFilename: t.String(),
+    contentType: t.String(),
 });
-export type BlobUploadBody = Static<typeof BlobUploadBodySchema>;
+export type PresignedUploadRequest = Static<typeof PresignedUploadRequestSchema>;
+
+export const PresignedUploadResponseSchema = t.Object({
+    presignedUrl: t.String({ format: "uri" }),
+    objectKey: t.String(),
+});
+export type PresignedUploadResponse = Static<typeof PresignedUploadResponseSchema>;
+
+export const FinalizeUploadRequestSchema = t.Object({
+    objectKey: t.String(),
+    originalFilename: t.String(),
+    contentType: t.String(),
+    size: t.Number(),
+    collectionName: t.String(),
+});
+export type FinalizeUploadRequest = Static<typeof FinalizeUploadRequestSchema>;
 
 export const BlobDownloadResponseSchema = t.Object({
     url: t.String({ format: "uri", error: "Invalid URL format." }),

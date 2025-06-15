@@ -10,6 +10,7 @@ export type { AppManifest, Unsubscribe, VibeState, PermissionSetting, Identity, 
 
 // Define the shape of the context value (includes more state now)
 interface VibeContextValue {
+    vibe: IVibeSDK | null;
     permissions: Record<string, PermissionSetting> | null | undefined;
     activeIdentity: Identity | null | undefined; // Still part of VibeState
     identities: Identity[] | undefined; // Still part of VibeState
@@ -36,6 +37,7 @@ interface VibeProviderProps {
 }
 
 export function VibeProvider({ children, manifest }: VibeProviderProps) {
+    const [vibe, setVibe] = useState<IVibeSDK | null>(null);
     const [vibeState, setVibeState] = useState<VibeState | undefined>(undefined);
     const [sdkUnsubscribe, setSdkUnsubscribe] = useState<Unsubscribe | null>(null);
     // Removed agentUI hook
@@ -52,6 +54,7 @@ export function VibeProvider({ children, manifest }: VibeProviderProps) {
             if (sdkInitialized) return; // Prevent multiple initializations
 
             const sdk = getSdk();
+            setVibe(sdk);
             if (!sdk) {
                 console.warn("[VibeProvider] window.vibe SDK not yet available. Waiting for 'vibeReady' event.");
                 // VibeState remains undefined until SDK is ready
@@ -146,6 +149,7 @@ export function VibeProvider({ children, manifest }: VibeProviderProps) {
 
     // Provide the application-level state and SDK methods through the context
     const contextValue: VibeContextValue = {
+        vibe,
         permissions: vibeState?.permissions,
         activeIdentity: vibeState?.activeIdentity,
         identities: vibeState?.identities,

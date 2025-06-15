@@ -117,6 +117,56 @@ echo "Generated CouchDB User: ${COUCHDB_USER}"
 # echo "Generated CouchDB Password: ${COUCHDB_PASSWORD}"
 # echo "Generated Vibe App JWT Secret: ${VIBE_APP_JWT_SECRET}"
 
+# --- S3 Bucket and IAM Policy Provisioning (Scaleway) ---
+S3_BUCKET_NAME="vibe-instance-${INSTANCE_IDENTIFIER}"
+S3_POLICY_NAME="vibe-instance-policy-${INSTANCE_IDENTIFIER}"
+S3_REGION="fr-par" # Or make this configurable
+
+echo "Provisioning S3 bucket '${S3_BUCKET_NAME}'..."
+scw object-storage bucket create "s3://${S3_BUCKET_NAME}" --region ${S3_REGION} --acl="private"
+if [ $? -ne 0 ]; then
+  echo "ERROR: Failed to create S3 bucket ${S3_BUCKET_NAME}." >&2
+  callback_control_plane "failed" "" "Failed to create S3 bucket."
+  exit 1
+fi
+
+echo "Creating IAM policy '${S3_POLICY_NAME}' for bucket '${S3_BUCKET_NAME}'..."
+# Create a temporary policy JSON file
+POLICY_JSON=$(cat <<EOF
+{
+  "rules": [
+    {
+      "bucket_names": ["${S3_BUCKET_NAME}"],
+      "permission_set_names": ["all"]
+    }
+  ]
+}
+EOF
+)
+IAM_POLICY_ID=$(scw iam policy create name=${S3_POLICY_NAME} rules:="$POLICY_JSON" -o json | jq -r '.id')
+if [ $? -ne 0 ] || [ -z "$IAM_POLICY_ID" ]; then
+  echo "ERROR: Failed to create IAM policy." >&2
+  callback_control_plane "failed" "" "Failed to create IAM policy."
+  exit 1
+fi
+echo "IAM Policy created with ID: ${IAM_POLICY_ID}"
+
+echo "Creating API keys for policy '${S3_POLICY_NAME}'..."
+API_KEYS_JSON=$(scw iam api-key create application-id=$(scw iam application list name=vibe-control-plane -o json | jq -r '.[0].id') description="Keys for ${INSTANCE_IDENTIFIER}")
+S3_ACCESS_KEY=$(echo "$API_KEYS_JSON" | jq -r '.access_key')
+S3_SECRET_KEY=$(echo "$API_KEYS_JSON" | jq -r '.secret_key')
+
+if [ -z "$S3_ACCESS_KEY" ] || [ -z "$S3_SECRET_KEY" ]; then
+    echo "ERROR: Failed to create or parse API keys." >&2
+    callback_control_plane "failed" "" "Failed to create S3 API keys."
+    exit 1
+fi
+
+echo "Attaching policy to API key..."
+scw iam policy attach policy-id=${IAM_POLICY_ID} api-key-id=${S3_ACCESS_KEY}
+
+echo "S3 resources provisioned successfully."
+
 
 # --- Kubernetes Namespace ---
 K8S_NAMESPACE="vibe-${INSTANCE_IDENTIFIER}"
@@ -166,6 +216,12 @@ helm ${KUBECONFIG_ARG} install "${HELM_RELEASE_NAME}" "${HELM_CHART_PATH}" \
   --set "vibeApp.env.PUBLIC_INSTANCE_URL=https://${INGRESS_HOST}" \
   --set "vibeApp.env.COUCHDB_USER_FROM_SECRET=true" \
   --set "vibeApp.env.COUCHDB_PASSWORD_FROM_SECRET=true" \
+  --set "vibeApp.env.S3_ENABLED=true" \
+  --set "vibeApp.env.S3_ENDPOINT=https://s3.${S3_REGION}.scw.cloud" \
+  --set "vibeApp.env.S3_REGION=${S3_REGION}" \
+  --set "vibeApp.env.S3_BUCKET_NAME=${S3_BUCKET_NAME}" \
+  --set "secrets.s3AccessKey=${S3_ACCESS_KEY}" \
+  --set "secrets.s3SecretKey=${S3_SECRET_KEY}" \
   --timeout 10m \
   --wait
 

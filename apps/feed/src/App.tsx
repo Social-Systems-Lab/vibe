@@ -21,27 +21,64 @@ const feedsAppManifest: AppManifest = {
     appId: "feed-app",
     name: "Feeds App",
     description: "A decentralized feed of posts.",
-    permissions: ["read:posts", "write:posts"],
+    permissions: ["read:posts", "write:posts", "blob:read:profile", "blob:write:profile"],
     iconUrl: `${window.location.origin}${logoSvg}`,
 };
 
 // --- Inner Component using useVibe ---
 function AppContent() {
-    const { activeIdentity, read, write } = useVibe();
+    const { vibe, activeIdentity, read, write, readOnce } = useVibe();
     const [posts, setPosts] = useState<PostDoc[]>([]);
     const [newPostContent, setNewPostContent] = useState<string>("");
     const [status, setStatus] = useState<string>("Initializing...");
     const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [profilePicUrl, setProfilePicUrl] = useState<string>("");
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const postsSubscription = useRef<Unsubscribe | null>(null);
 
     useEffect(() => {
-        if (activeIdentity) {
+        if (activeIdentity && vibe) {
             setStatus("VibeProvider initialized. Ready.");
+            // Fetch user profile to get profile picture
+            readOnce("profile").then((result) => {
+                if (result.ok && result.data.length > 0) {
+                    const profile = result.data[0];
+                    if (profile.avatarObjectKey) {
+                        vibe.blob.getReadUrl(profile.avatarObjectKey).then(setProfilePicUrl);
+                    }
+                }
+            });
         } else {
             setStatus("Waiting for Vibe initialization...");
             setPosts([]);
+            setProfilePicUrl("");
         }
-    }, [activeIdentity]);
+    }, [activeIdentity, vibe]);
+
+    const handleProfilePicUpload = useCallback(
+        async (e: ChangeEvent<HTMLInputElement>) => {
+            if (!e.target.files || e.target.files.length === 0 || !vibe) {
+                return;
+            }
+            const file = e.target.files[0];
+            setStatus("Uploading profile picture...");
+            try {
+                const metadata = await vibe.blob.upload("profile", file);
+                setStatus("Profile picture uploaded. Saving reference...");
+
+                // Save the object key in the user's profile document
+                await write("profile", { _id: "main", avatarObjectKey: metadata._id });
+
+                const url = await vibe.blob.getReadUrl(metadata._id);
+                setProfilePicUrl(url);
+                setStatus("Profile picture updated.");
+            } catch (error) {
+                console.error("Error uploading profile picture:", error);
+                setStatus(`Error uploading profile picture: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        },
+        [vibe, write]
+    );
 
     const handleCreatePost = useCallback(
         async (e?: FormEvent) => {
@@ -123,16 +160,20 @@ function AppContent() {
     }, [read, activeIdentity]);
 
     return (
-        <div className="bg-gray-50 min-h-screen">
+        <div className="bg-gray-50 min-h-screen w-screen">
             <div className="container mx-auto p-4 max-w-2xl">
-                <div className="bg-white p-4 rounded-lg shadow-lg mb-6 cursor-pointer" onClick={() => setIsDialogOpen(true)}>
+                <div className="bg-white p-4 rounded-lg shadow-lg mb-6">
                     <div className="flex items-center">
+                        <input type="file" ref={fileInputRef} onChange={handleProfilePicUpload} style={{ display: "none" }} accept="image/*" />
                         <img
-                            src={activeIdentity?.profile?.avatarUrl || `https://i.pravatar.cc/40?u=${activeIdentity?.did}`}
+                            src={profilePicUrl || `https://i.pravatar.cc/40?u=${activeIdentity?.did}`}
                             alt="Your profile"
-                            className="w-10 h-10 rounded-full mr-4"
+                            className="w-10 h-10 rounded-full mr-4 cursor-pointer"
+                            onClick={() => fileInputRef.current?.click()}
                         />
-                        <div className="text-gray-500">Create a post...</div>
+                        <div className="text-gray-500 flex-grow cursor-pointer" onClick={() => setIsDialogOpen(true)}>
+                            Create a post...
+                        </div>
                     </div>
                 </div>
 
@@ -141,7 +182,7 @@ function AppContent() {
                         <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg">
                             <div className="flex items-center mb-4">
                                 <img
-                                    src={activeIdentity?.profile?.avatarUrl || `https://i.pravatar.cc/40?u=${activeIdentity?.did}`}
+                                    src={profilePicUrl || `https://i.pravatar.cc/40?u=${activeIdentity?.did}`}
                                     alt="Your profile"
                                     className="w-10 h-10 rounded-full mr-4"
                                 />
@@ -183,7 +224,11 @@ function AppContent() {
                     {posts.map((post) => (
                         <div key={post._id} className="bg-white p-4 rounded-lg shadow-lg">
                             <div className="flex items-start">
-                                <img src={`https://i.pravatar.cc/40?u=${post.userDid}`} alt="User profile" className="w-10 h-10 rounded-full mr-4" />
+                                <img
+                                    src={profilePicUrl || `https://i.pravatar.cc/40?u=${post.userDid}`}
+                                    alt="User profile"
+                                    className="w-10 h-10 rounded-full mr-4"
+                                />
                                 <div className="flex-1">
                                     <p className="font-semibold">{post.userDid}</p>
                                     <p className="text-xs text-gray-500 mb-2">{new Date(post.createdAt).toLocaleString()}</p>

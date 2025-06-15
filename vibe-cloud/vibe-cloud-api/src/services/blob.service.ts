@@ -1,45 +1,51 @@
 // blob.service.ts
-import * as Minio from "minio";
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { v4 as uuidv4 } from "uuid";
 import { logger } from "../utils/logger";
-import { Readable } from "stream";
-import { InternalServerError } from "elysia"; // Import for consistency
-
-// --- Types ---
-interface UploadedObjectInfo {
-    etag: string;
-    versionId?: string | null;
-}
+import { InternalServerError, NotFoundError } from "elysia";
+import { dataService } from "./data.service";
+import type { BlobMetadata } from "../models/models";
+import { BLOBS_COLLECTION } from "../models/models";
 
 // --- Configuration ---
-const s3Enabled = process.env.S3_ENABLED !== "false"; // Defaults to true if not set or 'false'
+const s3Enabled = process.env.S3_ENABLED !== "false";
+const s3Endpoint = process.env.S3_ENDPOINT; // e.g., 'https://s3.fr-par.scw.cloud'
+const s3Region = process.env.S3_REGION; // e.g., 'fr-par'
+const s3AccessKey = process.env.S3_ACCESS_KEY;
+const s3SecretKey = process.env.S3_SECRET_KEY;
+const s3BucketName = process.env.S3_BUCKET_NAME;
 
-const minioEndpoint = process.env.MINIO_ENDPOINT || "127.0.0.1";
-const minioPort = parseInt(process.env.MINIO_PORT || "9000", 10);
-const minioUseSSL = process.env.MINIO_USE_SSL === "true";
-const minioAccessKey = process.env.MINIO_ACCESS_KEY || "minioadmin";
-const minioSecretKey = process.env.MINIO_SECRET_KEY || "minioadmin";
-const defaultBucketName = process.env.MINIO_BUCKET_NAME || "vibe-storage";
+// Placeholder function to derive user-specific database name
+// In a real implementation, this would be based on a consistent rule.
+const getUserDbName = (userDid: string) => `userdata-${userDid.replace(/:/g, "-")}`;
 
 export class BlobService {
-    private minioClient!: Minio.Client; // Definite assignment assertion, initialized if s3Enabled
-    public readonly defaultBucketName: string = defaultBucketName;
-    private initializationPromise: Promise<void> | null = null;
-    private isS3Enabled: boolean = s3Enabled; // Store for easy access in methods
+    private s3Client!: S3Client;
+    public readonly defaultBucketName: string = s3BucketName || "vibe-storage";
+    private isS3Enabled: boolean = s3Enabled;
 
     constructor() {
         if (this.isS3Enabled) {
+            if (!s3Endpoint || !s3Region || !s3AccessKey || !s3SecretKey || !s3BucketName) {
+                logger.error(
+                    "S3 is enabled, but one or more required environment variables (S3_ENDPOINT, S3_REGION, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET_NAME) are missing."
+                );
+                throw new Error("S3 client configuration failed due to missing environment variables.");
+            }
             try {
-                this.minioClient = new Minio.Client({
-                    endPoint: minioEndpoint,
-                    port: minioPort,
-                    useSSL: minioUseSSL,
-                    accessKey: minioAccessKey,
-                    secretKey: minioSecretKey,
+                this.s3Client = new S3Client({
+                    endpoint: s3Endpoint,
+                    region: s3Region,
+                    credentials: {
+                        accessKeyId: s3AccessKey,
+                        secretAccessKey: s3SecretKey,
+                    },
                 });
-                logger.info(`Minio client configured for endpoint: ${minioEndpoint}:${minioPort}, SSL: ${minioUseSSL}`);
+                logger.info(`S3 client configured for endpoint: ${s3Endpoint}, region: ${s3Region}`);
             } catch (error) {
-                logger.error("Failed to configure Minio client:", error);
-                throw new Error("Minio client configuration failed."); // Throw during construction
+                logger.error("Failed to configure S3 client:", error);
+                throw new Error("S3 client configuration failed.");
             }
         } else {
             logger.info("S3/Minio storage is DISABLED via S3_ENABLED=false environment variable.");
@@ -47,133 +53,171 @@ export class BlobService {
     }
 
     /**
-     * Initializes the service, ensuring the default bucket exists if S3 is enabled.
-     * Should be called during application bootstrap.
+     * Generates a pre-signed URL for uploading an object to a specific collection.
+     * The key is structured as {ownerDid}/{collectionName}/{objectId}-{originalFilename}.
      */
-    async initialize(): Promise<void> {
+    async getPresignedUploadUrl(
+        ownerDid: string,
+        collectionName: string,
+        originalFilename: string,
+        contentType: string,
+        expirySeconds: number = 300 // 5 minutes
+    ): Promise<{ presignedUrl: string; objectKey: string }> {
         if (!this.isS3Enabled) {
-            logger.info("S3/Minio is disabled, skipping bucket initialization.");
-            return Promise.resolve();
-        }
-
-        // Ensure minioClient is initialized if S3 is enabled
-        if (!this.minioClient) {
-            logger.error("Minio client not initialized despite S3 being enabled. This indicates an issue in constructor logic or an unexpected state.");
-            throw new Error("Minio client not initialized for S3 operations.");
-        }
-
-        // Prevent multiple initializations
-        if (!this.initializationPromise) {
-            this.initializationPromise = this._ensureBucketExists(this.defaultBucketName);
-        }
-        return this.initializationPromise;
-    }
-
-    /**
-     * Ensures the specified bucket exists in Minio, creating it if necessary.
-     * (Internal helper, public initialize calls this for the default bucket)
-     * @param bucketName The name of the bucket to ensure exists.
-     */
-    private async _ensureBucketExists(bucketName: string): Promise<void> {
-        // Note: isS3Enabled and minioClient presence is already checked by the initialize method before calling this.
-        try {
-            const exists = await this.minioClient.bucketExists(bucketName);
-            if (!exists) {
-                await this.minioClient.makeBucket(bucketName);
-                logger.info(`Minio bucket "${bucketName}" created successfully.`);
-            } else {
-                logger.info(`Minio bucket "${bucketName}" already exists.`);
-            }
-        } catch (error) {
-            logger.error(`Error ensuring Minio bucket "${bucketName}" exists:`, error);
-            // Throw specific error for bootstrap phase
-            throw new Error(`Failed to ensure Minio bucket "${bucketName}"`);
-        }
-    }
-
-    /**
-     * Uploads an object (file) to the specified Minio bucket.
-     */
-    async uploadObject(
-        objectName: string,
-        data: Buffer | Readable,
-        size: number,
-        contentType: string = "application/octet-stream",
-        bucketName: string = this.defaultBucketName
-    ): Promise<UploadedObjectInfo> {
-        if (!this.isS3Enabled) {
-            logger.warn(`Attempted to call uploadObject for "${objectName}" when S3 is disabled.`);
             throw new Error("S3 storage functionality is currently disabled.");
         }
-        if (!this.minioClient) {
-            // Should ideally be caught by isS3Enabled check
-            throw new Error("Minio client not available for uploadObject.");
-        }
+
+        const objectId = uuidv4();
+        // Sanitize filename to prevent issues with special characters in the key
+        const sanitizedFilename = originalFilename.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const objectKey = `${ownerDid}/${collectionName}/${objectId}-${sanitizedFilename}`;
+
+        const command = new PutObjectCommand({
+            Bucket: this.defaultBucketName,
+            Key: objectKey,
+            ContentType: contentType,
+        });
 
         try {
-            const metaData = { "Content-Type": contentType };
-            logger.info(`Uploading object "${objectName}" to bucket "${bucketName}" (Size: ${size}, Type: ${contentType})`);
-            const result = await this.minioClient.putObject(bucketName, objectName, data, size, metaData);
-            logger.info(`Successfully uploaded object "${objectName}" to bucket "${bucketName}". ETag: ${result.etag}`);
-            return result;
+            logger.info(`Generating pre-signed upload URL for key "${objectKey}" in bucket "${this.defaultBucketName}"`);
+            const presignedUrl = await getSignedUrl(this.s3Client, command, { expiresIn: expirySeconds });
+            logger.info(`Successfully generated pre-signed upload URL for key "${objectKey}"`);
+            return { presignedUrl, objectKey };
         } catch (error) {
-            logger.error(`Error uploading object "${objectName}" to Minio bucket "${bucketName}":`, error);
-            throw new InternalServerError(`Failed to upload object "${objectName}"`);
+            logger.error(`Error generating pre-signed upload URL for key "${objectKey}":`, error);
+            throw new InternalServerError("Failed to generate upload URL.");
         }
     }
 
     /**
-     * Generates a pre-signed URL for downloading an object from Minio.
+     * Creates a metadata document in CouchDB to finalize an upload.
+     * This should be called after the client successfully PUTs the file to the pre-signed URL.
+     */
+    async finalizeUpload(
+        objectKey: string,
+        originalFilename: string,
+        contentType: string,
+        size: number,
+        ownerDid: string,
+        collectionName: string
+    ): Promise<BlobMetadata> {
+        if (!this.isS3Enabled) {
+            throw new Error("S3 storage functionality is currently disabled.");
+        }
+
+        const metadata: Omit<BlobMetadata, "_rev"> = {
+            _id: objectKey,
+            originalFilename,
+            contentType,
+            size,
+            ownerDid,
+            collection: collectionName,
+            uploadTimestamp: new Date().toISOString(),
+            bucket: this.defaultBucketName,
+            blobCollection: BLOBS_COLLECTION,
+        };
+
+        try {
+            const dbName = getUserDbName(ownerDid);
+            logger.info(`Creating blob metadata document for key "${objectKey}" in db "${dbName}"`);
+            const response = await dataService.write(dbName, BLOBS_COLLECTION, metadata);
+            logger.info(`Successfully created blob metadata for key "${objectKey}"`);
+
+            const finalDoc = {
+                ...metadata,
+                _rev: Array.isArray(response) ? response[0].rev : response.rev,
+            };
+            return finalDoc;
+        } catch (error) {
+            logger.error(`Failed to create blob metadata for key "${objectKey}":`, error);
+            logger.error(`ORPHAN ALERT: S3 object "${objectKey}" may exist without a metadata document.`);
+            throw new InternalServerError("Failed to finalize blob upload.");
+        }
+    }
+
+    /**
+     * Generates a pre-signed URL for downloading an object from S3.
      */
     async getPresignedDownloadUrl(
-        objectName: string,
-        bucketName: string = this.defaultBucketName,
-        expirySeconds: number = 3600 // 1 hour default expiry
+        objectKey: string,
+        expirySeconds: number = 3600 // 1 hour
     ): Promise<string> {
         if (!this.isS3Enabled) {
-            logger.warn(`Attempted to call getPresignedDownloadUrl for "${objectName}" when S3 is disabled.`);
             throw new Error("S3 storage functionality is currently disabled.");
         }
-        if (!this.minioClient) {
-            throw new Error("Minio client not available for getPresignedDownloadUrl.");
-        }
+
+        const command = new GetObjectCommand({
+            Bucket: this.defaultBucketName,
+            Key: objectKey,
+        });
 
         try {
-            logger.info(`Generating pre-signed download URL for object "${objectName}" in bucket "${bucketName}" (Expiry: ${expirySeconds}s)`);
-            const url = await this.minioClient.presignedGetObject(bucketName, objectName, expirySeconds);
-            logger.info(`Successfully generated pre-signed URL for object "${objectName}"`);
+            logger.info(`Generating pre-signed download URL for key "${objectKey}"`);
+            const url = await getSignedUrl(this.s3Client, command, { expiresIn: expirySeconds });
+            logger.info(`Successfully generated pre-signed download URL for key "${objectKey}"`);
             return url;
         } catch (error: any) {
-            logger.error(`Error generating pre-signed download URL for object "${objectName}" in Minio bucket "${bucketName}":`, error);
-            if (error.code === "NoSuchKey") {
-                throw new Error(`Object not found in storage: ${objectName}`);
+            logger.error(`Error generating pre-signed download URL for key "${objectKey}":`, error);
+            if (error.name === "NoSuchKey") {
+                throw new NotFoundError(`Object not found in storage: ${objectKey}`);
             }
-            throw new InternalServerError(`Failed to generate download URL for object "${objectName}"`);
+            throw new InternalServerError("Failed to generate download URL.");
         }
     }
 
     /**
-     * Deletes an object from the specified Minio bucket.
+     * Deletes an object from S3 and its corresponding metadata from CouchDB.
      */
-    async deleteObject(objectName: string, bucketName: string = this.defaultBucketName): Promise<void> {
+    async deleteObject(objectKey: string, ownerDid: string): Promise<void> {
         if (!this.isS3Enabled) {
-            logger.warn(`Attempted to call deleteObject for "${objectName}" when S3 is disabled.`);
             throw new Error("S3 storage functionality is currently disabled.");
         }
-        if (!this.minioClient) {
-            throw new Error("Minio client not available for deleteObject.");
+
+        const dbName = getUserDbName(ownerDid);
+
+        // Step 1: Get metadata from CouchDB to get the _rev
+        let metadata;
+        try {
+            metadata = await dataService.getDocument<BlobMetadata>(dbName, objectKey);
+            if (!metadata._rev) {
+                throw new InternalServerError("Metadata document is missing _rev, cannot delete.");
+            }
+        } catch (error) {
+            if (error instanceof NotFoundError) {
+                logger.warn(`Metadata document "${objectKey}" not found. Assuming it's already deleted.`);
+                // We can still try to delete the S3 object just in case it's an orphan.
+            } else {
+                throw error; // Rethrow other errors
+            }
         }
 
+        // Step 2: Delete the object from S3
+        const command = new DeleteObjectCommand({
+            Bucket: this.defaultBucketName,
+            Key: objectKey,
+        });
+
         try {
-            logger.info(`Attempting to delete object "${objectName}" from bucket "${bucketName}"...`);
-            await this.minioClient.removeObject(bucketName, objectName);
-            logger.info(`Successfully deleted object "${objectName}" from bucket "${bucketName}".`);
+            logger.info(`Attempting to delete S3 object "${objectKey}"...`);
+            await this.s3Client.send(command);
+            logger.info(`Successfully deleted S3 object "${objectKey}".`);
         } catch (error: any) {
-            if (error.code === "NoSuchKey") {
-                logger.warn(`Object "${objectName}" not found in bucket "${bucketName}" during deletion (might already be deleted).`);
-            } else {
-                logger.error(`Error deleting object "${objectName}" from Minio bucket "${bucketName}":`, error.message || error);
-                // Optional: throw new InternalServerError(`Failed to delete object "${objectName}"`);
+            logger.error(`Error deleting S3 object "${objectKey}", but proceeding to delete metadata. Error:`, error);
+        }
+
+        // Step 3: Delete the metadata document from CouchDB if it was found
+        if (metadata && metadata._rev) {
+            try {
+                logger.info(`Attempting to delete metadata document "${objectKey}"...`);
+                await dataService.deleteDocument(dbName, objectKey, metadata._rev);
+                logger.info(`Successfully deleted metadata document "${objectKey}".`);
+            } catch (error: any) {
+                if (error instanceof NotFoundError || (error.message && error.message.includes("conflict"))) {
+                    logger.warn(`Metadata document "${objectKey}" was already deleted or had a revision conflict.`);
+                } else {
+                    logger.error(`Error deleting metadata document "${objectKey}":`, error);
+                    throw new InternalServerError("Failed to delete object metadata.");
+                }
             }
         }
     }

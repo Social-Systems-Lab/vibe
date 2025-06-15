@@ -14,8 +14,10 @@ import { Buffer } from "buffer";
 import {
     BlobDownloadResponseSchema,
     BLOBS_COLLECTION,
-    BlobUploadBodySchema,
     CouchDbDetailsResponseSchema,
+    FinalizeUploadRequestSchema,
+    PresignedUploadRequestSchema,
+    PresignedUploadResponseSchema,
     ErrorResponseSchema,
     ReadPayloadSchema,
     WritePayloadSchema,
@@ -48,7 +50,6 @@ if (targetUserDid) {
     throw new Error("TARGET_USER_DID environment variable is not configured.");
 }
 
-await blobService.initialize();
 const permissionService = new PermissionService(dataService);
 const authService = new AuthService(dataService, permissionService, blobService); // Pass blobService here
 const realtimeService = new RealtimeService(dataService, permissionService);
@@ -425,173 +426,149 @@ export const app = new Elysia()
     // --- Protected Blob Routes ---
     .group("/api/v1/blob", (group) =>
         group
-            // Derive JWT user context (same as data routes)
             .derive(async ({ jwt, request: { headers } }) => {
                 const authHeader = headers.get("authorization");
-                if (!authHeader || !authHeader.startsWith("Bearer ")) return { user: null };
-                const token = authHeader.substring(7);
-                try {
-                    const rawPayload = (await jwt.verify(token)) as JWTPayload | false;
-                    if (rawPayload && typeof rawPayload.identityDid === "string") {
-                        // Add appId as null or undefined if needed by other parts,
-                        // but it's not used for direct permission checks here.
-                        return { user: rawPayload as { identityDid: string; isAdmin?: boolean; type?: string }, appId: null };
-                    } else {
-                        logger.warn("JWT payload verification in /blob derive: payload is invalid or missing identityDid.", rawPayload);
-                        return { user: null, appId: null };
+                const appIdHeader = headers.get("x-vibe-app-id");
+                let user: JWTPayload | null = null;
+                let appId: string | null = appIdHeader || null;
+                if (authHeader && authHeader.startsWith("Bearer ")) {
+                    const token = authHeader.substring(7);
+                    try {
+                        const rawPayload = (await jwt.verify(token)) as JWTPayload | false;
+                        if (rawPayload && typeof rawPayload.identityDid === "string") {
+                            user = rawPayload;
+                        }
+                    } catch (error) {
+                        user = null;
                     }
-                } catch (error) {
-                    logger.debug("JWT verification failed in /blob derive");
-                    return { user: null, appId: null };
                 }
+                return { user, appId };
             })
-            // Middleware: User JWT check and Instance DID Validation
             .onBeforeHandle(({ user, set }) => {
                 if (!user) {
                     set.status = 401;
-                    logger.warn("Access to /api/v1/blob denied: Missing or invalid user token.");
                     return { error: "Unauthorized: Invalid or missing user token." };
                 }
-                // Validate that the token's identityDid matches the instance's TARGET_USER_DID
                 const instanceTargetDid = process.env.TARGET_USER_DID;
                 if (instanceTargetDid && user.identityDid !== instanceTargetDid) {
                     set.status = 403;
-                    logger.warn(
-                        `Forbidden: Token identityDid (${user.identityDid}) does not match instance target DID (${instanceTargetDid}) for blob routes.`
-                    );
                     return { error: "Forbidden: Token identity does not match this instance." };
                 }
-                if (!instanceTargetDid) {
-                    logger.error("CRITICAL: TARGET_USER_DID is not set for this API instance. Cannot validate token scope for blob routes.");
-                    set.status = 503;
-                    return { error: "Instance configuration error: Target user DID not set." };
-                }
             })
-            // POST /api/v1/blob/upload - Upload a file
             .post(
-                "/upload",
-                async ({ blobService, dataService, permissionService, user, body, set }) => {
-                    if (!user) throw new InternalServerError("User context missing");
-                    const { identityDid } = user;
-                    // TODO: Re-evaluate blob write permissions. For now, allow any authenticated user.
-                    // const requiredPermission = `write:${BLOBS_COLLECTION}`;
-                    // logger.info(`User ${identityDid} attempting upload. Checking permission: ${requiredPermission}`);
-                    // const canWrite = await permissionService.userHasDirectPermission(identityDid, requiredPermission); // Method removed/commented out
-                    // logger.info(`User ${identityDid} direct write permission for ${BLOBS_COLLECTION}: ${canWrite}`);
-                    // if (!canWrite) {
-                    //     set.status = 403;
-                    //     return { error: `Forbidden: Missing '${requiredPermission}' permission.` };
-                    // }
-                    logger.info(`User ${identityDid} attempting upload. Bypassing direct permission check for now.`);
+                "/upload-url",
+                async ({ blobService, permissionService, user, appId, body, set }) => {
+                    const { identityDid } = user!;
+                    const { collectionName, originalFilename, contentType } = body;
 
-                    const { file } = body;
-                    if (!file || typeof file.arrayBuffer !== "function") {
-                        logger.error("File object is missing or invalid in request body.");
+                    if (!appId) {
                         set.status = 400;
-                        return { error: "Invalid file upload." };
+                        return { error: "Bad Request: Missing X-Vibe-App-ID header." };
                     }
-                    const objectId = randomUUID();
-                    const bucketName = blobService.defaultBucketName;
-                    try {
-                        const fileBuffer = Buffer.from(await file.arrayBuffer());
-                        await blobService.uploadObject(objectId, fileBuffer, file.size, file.type, bucketName);
 
-                        const metadata: Omit<BlobMetadata, "_rev"> = {
-                            _id: `${BLOBS_COLLECTION}:${objectId}`,
-                            originalFilename: file.name || "untitled",
-                            contentType: file.type,
-                            size: file.size,
-                            ownerDid: identityDid, // Use identityDid
-                            uploadTimestamp: new Date().toISOString(),
-                            bucket: bucketName,
-                            collection: BLOBS_COLLECTION,
-                        };
-                        const userDbName = getUserDbName(identityDid);
-                        await dataService.createDocument(userDbName, BLOBS_COLLECTION, metadata);
-                        logger.info(`Blob ${objectId} metadata saved for user ${identityDid}`);
-                        set.status = 201;
-                        return {
-                            message: "File uploaded successfully.",
-                            objectId: objectId,
-                            filename: metadata.originalFilename,
-                            contentType: metadata.contentType,
-                            size: metadata.size,
-                        };
-                    } catch (error: any) {
-                        logger.error(`Blob upload failed for user ${identityDid}, objectId ${objectId}:`, error);
-                        // Attempt to clean up Minio object if metadata saving failed? (Complex)
-                        // For now, just return error
-                        throw new InternalServerError("Blob upload failed."); // Let generic handler catch
+                    const requiredPermission = `blob:write:${collectionName}`;
+                    const isAllowed = await permissionService.canAppActForUser(identityDid, appId, requiredPermission);
+                    if (!isAllowed) {
+                        set.status = 403;
+                        return { error: `Forbidden: Application does not have permission '${requiredPermission}'.` };
                     }
+
+                    return await blobService.getPresignedUploadUrl(identityDid, collectionName, originalFilename, contentType);
                 },
                 {
-                    body: BlobUploadBodySchema,
-                    detail: { summary: `Upload a blob (requires user direct permission 'write:${BLOBS_COLLECTION}')` },
+                    body: PresignedUploadRequestSchema,
+                    response: { 200: PresignedUploadResponseSchema, 403: ErrorResponseSchema },
+                    detail: { summary: "Get a pre-signed URL for uploading a file to a collection." },
                 }
             )
-            // GET /api/v1/blob/download/:objectId - Get pre-signed download URL
-            .get(
-                "/download/:objectId",
-                async ({ blobService, dataService, permissionService, user, params, set }) => {
-                    logger.debug(`[GET /download/:objectId] Received params: ${JSON.stringify(params)}`);
-                    if (!user) throw new InternalServerError("User context missing after auth check.");
+            .post(
+                "/finalize-upload",
+                async ({ blobService, permissionService, user, appId, body, set }) => {
+                    const { identityDid } = user!;
+                    const { objectKey, originalFilename, contentType, size, collectionName } = body;
 
-                    const { objectId } = params;
-                    const { identityDid } = user;
-
-                    try {
-                        // 1. Fetch Metadata
-                        const userDbName = getUserDbName(identityDid);
-                        const metadata = (await dataService.getDocument(userDbName, `${BLOBS_COLLECTION}/${objectId}`)) as BlobMetadata;
-                        logger.debug(`Successfully fetched metadata for objectId: ${objectId}`, metadata); // Log successful fetch
-
-                        // 2. Permission Check (Owner only for now)
-                        // TODO: Re-evaluate blob read permissions. Maybe check for a specific direct permission if needed later.
-                        const isOwner = metadata.ownerDid === identityDid;
-                        logger.debug(`Permission check: isOwner=${isOwner}, identityDid=${identityDid}, metadata.ownerDid=${metadata.ownerDid}`);
-                        // const canReadDirectly = await permissionService.userHasDirectPermission(identityDid, requiredPermission); // Method removed/commented out
-                        // logger.debug(`Permission check: isOwner=${isOwner}, userHasDirectRead=${canReadDirectly}`);
-
-                        if (!isOwner /* && !canReadDirectly */) {
-                            // Only check ownership for now
-                            logger.warn(`Forbidden access attempt for blob ${objectId} by user ${identityDid} (not owner).`);
-                            set.status = 403; // Set status before throwing
-                            return { error: "Forbidden: You do not have permission to access this blob." };
-                        }
-
-                        // 3. Generate Pre-signed URL
-                        logger.info(`Generating download URL for blob ${objectId} requested by user ${identityDid}`);
-                        const url = await blobService.getPresignedDownloadUrl(
-                            objectId,
-                            metadata.bucket // Use bucket from metadata
-                            // Optional: Adjust expiry time if needed
-                        );
-                        logger.debug(`Successfully generated download URL for objectId: ${objectId}: ${url.substring(0, 100)}...`); // Log success
-
-                        set.status = 200;
-                        return { url: url };
-                    } catch (error: any) {
-                        if (error instanceof NotFoundError) {
-                            logger.warn(`Download request for non-existent blob ${objectId} by user ${identityDid}`);
-                            // Use the error message from NotFoundError
-                            set.status = 404;
-                            return { error: error.message };
-                        }
-                        // Keep Minio object not found check
-                        if (error.message?.includes("Object not found in storage")) {
-                            logger.warn(`Download request for blob ${objectId} (metadata found, but object missing) by user ${identityDid}`);
-                            set.status = 404;
-                            return { error: error.message };
-                        }
-                        logger.error(`Failed to generate download URL for blob ${objectId}, user ${identityDid}:`, error);
-                        throw new InternalServerError("Failed to generate download URL.");
+                    if (!appId) {
+                        set.status = 400;
+                        return { error: "Bad Request: Missing X-Vibe-App-ID header." };
                     }
+
+                    const requiredPermission = `blob:write:${collectionName}`;
+                    const isAllowed = await permissionService.canAppActForUser(identityDid, appId, requiredPermission);
+                    if (!isAllowed) {
+                        set.status = 403;
+                        return { error: `Forbidden: Application does not have permission '${requiredPermission}'.` };
+                    }
+
+                    const metadata = await blobService.finalizeUpload(objectKey, originalFilename, contentType, size, identityDid, collectionName);
+                    set.status = 201;
+                    return metadata;
                 },
                 {
-                    params: t.Object({ objectId: t.String() }),
-                    // Only define the success response schema. Errors are handled by setting status/returning error object or throwing.
+                    body: FinalizeUploadRequestSchema,
+                    response: { 201: t.Any(), 403: ErrorResponseSchema },
+                    detail: { summary: "Finalize a blob upload by creating its metadata document." },
+                }
+            )
+            .get(
+                "/download-url/:objectKey",
+                async ({ blobService, permissionService, user, appId, params, set }) => {
+                    const { identityDid } = user!;
+                    const { objectKey } = params;
+
+                    if (!appId) {
+                        set.status = 400;
+                        return { error: "Bad Request: Missing X-Vibe-App-ID header." };
+                    }
+
+                    const userDbName = getUserDbName(identityDid);
+                    const metadata = await dataService.getDocument<BlobMetadata>(userDbName, objectKey);
+                    const collectionName = metadata.collection;
+
+                    const requiredPermission = `blob:read:${collectionName}`;
+                    const isAllowed = await permissionService.canAppActForUser(identityDid, appId, requiredPermission);
+                    if (!isAllowed) {
+                        set.status = 403;
+                        return { error: `Forbidden: Application does not have permission '${requiredPermission}'.` };
+                    }
+
+                    const url = await blobService.getPresignedDownloadUrl(objectKey);
+                    return { url };
+                },
+                {
+                    params: t.Object({ objectKey: t.String() }),
                     response: { 200: BlobDownloadResponseSchema, 403: ErrorResponseSchema, 404: ErrorResponseSchema },
-                    detail: { summary: "Get a pre-signed URL to download a blob (requires ownership or 'read:blobs')" },
+                    detail: { summary: "Get a pre-signed URL to download a blob." },
+                }
+            )
+            .delete(
+                "/:objectKey",
+                async ({ blobService, permissionService, user, appId, params, set }) => {
+                    const { identityDid } = user!;
+                    const { objectKey } = params;
+
+                    if (!appId) {
+                        set.status = 400;
+                        return { error: "Bad Request: Missing X-Vibe-App-ID header." };
+                    }
+
+                    const userDbName = getUserDbName(identityDid);
+                    const metadata = await dataService.getDocument<BlobMetadata>(userDbName, objectKey);
+                    const collectionName = metadata.collection;
+
+                    const requiredPermission = `blob:delete:${collectionName}`;
+                    const isAllowed = await permissionService.canAppActForUser(identityDid, appId, requiredPermission);
+                    if (!isAllowed) {
+                        set.status = 403;
+                        return { error: `Forbidden: Application does not have permission '${requiredPermission}'.` };
+                    }
+
+                    await blobService.deleteObject(objectKey, identityDid);
+                    set.status = 204; // No Content
+                },
+                {
+                    params: t.Object({ objectKey: t.String() }),
+                    response: { 204: t.Void(), 403: ErrorResponseSchema, 404: ErrorResponseSchema },
+                    detail: { summary: "Delete a blob and its metadata." },
                 }
             )
     )

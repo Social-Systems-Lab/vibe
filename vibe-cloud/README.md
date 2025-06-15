@@ -30,11 +30,12 @@ Based on the project specifications and current implementation (`vibe-cloud-api`
     -   The `DataService` (`vibe-cloud-api/src/services/data.service.ts`) provides comprehensive CRUD operations and database interaction logic.
     -   Data models and schemas (e.g., `UserSchema`, `AppSchema`, `GenericDataDocumentSchema`) are defined in `vibe-cloud-api/src/models/models.ts`.
 
--   **Blob Storage Integration (Minio/S3):**
+-   **Blob Storage (S3-Compatible):**
 
-    -   Manages storage and retrieval of larger binary files (images, videos, documents) via an S3-compatible interface.
-    -   The `BlobService` (`vibe-cloud-api/src/services/blob.service.ts`) handles object uploads, presigned URLs, and deletions.
-    -   Metadata is stored in CouchDB (see `BlobMetadataSchema`).
+    -   Manages storage and retrieval of larger binary files (images, videos, documents) via a standard S3-compatible API.
+    -   This allows for flexibility in choosing a storage provider. While self-hosters can use services like Minio, the official Vibe Cloud infrastructure is provisioned using **Scaleway Object Storage**.
+    -   The `BlobService` (`vibe-cloud-api/src/services/blob.service.ts`) handles object uploads, presigned URLs, and deletions, abstracting the specific provider.
+    -   Metadata for blobs is stored in CouchDB (see `BlobMetadataSchema`).
 
 -   **Cross-Device Synchronization (via CouchDB):**
 
@@ -106,7 +107,7 @@ To run the Vibe Cloud services locally for development:
 | Runtime          | **Bun**                                      | Executes server-side JS/TS.                 |
 | Web Framework    | **ElysiaJS**                                 | Handles HTTP/WebSocket routing, middleware. |
 | Database         | **Apache CouchDB**                           | Primary document store; handles sync.       |
-| Blob Storage     | **Minio** / S3-compatible                    | Stores larger binary files.                 |
+| Blob Storage     | **S3-Compatible** (e.g., Scaleway, Minio)    | Stores larger binary files.                 |
 | Real-time        | **WebSockets** (via ElysiaJS + CouchDB Feed) | Pushes real-time data updates.              |
 | Containerization | **Docker**                                   | Packages Vibe Cloud for deployment.         |
 | Reverse Proxy    | Nginx, Caddy, etc. (User/Provider deployed)  | Handles HTTPS, hides IP. **Essential.**     |
