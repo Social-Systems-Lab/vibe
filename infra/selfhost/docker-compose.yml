@@ -20,7 +20,7 @@ services:
             context: ../../
             dockerfile: apps/vibe-cloud-api/Dockerfile
         ports:
-            - "3000:3000"
+            - "5000:5000"
         depends_on:
             - couchdb
             - minio

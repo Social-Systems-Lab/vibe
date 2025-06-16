@@ -1,4 +1,4 @@
-import { Link } from "waku";
+import { Link } from "waku/router/client";
 
 import { Counter } from "../components/counter";
 import { HealthChecker } from "../components/health-checker";
@@ -11,9 +11,17 @@ export default function HomePage() {
             <p>Welcome to the Vibe monorepo.</p>
             <Counter />
             <HealthChecker />
-            <Link to="/about" className="mt-4 inline-block underline">
-                About page
-            </Link>
+            <div className="flex gap-4 mt-4">
+                <Link to="/about" className="underline">
+                    About page
+                </Link>
+                <Link to="/signup" className="underline">
+                    Sign Up
+                </Link>
+                <Link to="/login" className="underline">
+                    Login
+                </Link>
+            </div>
         </div>
     );
 }
