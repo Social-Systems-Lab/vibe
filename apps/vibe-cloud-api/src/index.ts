@@ -1,24 +1,21 @@
 import { Elysia, t } from "elysia";
-import { env } from "@yolk-oss/elysia-env";
 import { IdentityService } from "./services/identity";
 
+const identityService = new IdentityService({
+    url: process.env.COUCHDB_URL!,
+    user: process.env.COUCHDB_USER!,
+    pass: process.env.COUCHDB_PASSWORD!,
+});
+
+console.log("🦊 Initializing CouchDB connection...");
+console.log(`CouchDB URL: ${process.env.COUCHDB_URL}`);
+console.log(`CouchDB User: ${process.env.COUCHDB_USER}`);
+
+await identityService.onApplicationBootstrap(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
+
+console.log("🦊 CouchDB connection initialized successfully");
+
 const app = new Elysia()
-    .use(
-        env({
-            COUCHDB_URL: t.String(),
-            COUCHDB_USER: t.String(),
-            COUCHDB_PASSWORD: t.String(),
-        })
-    )
-    .decorate("identityService", ({ env }) => {
-        const service = new IdentityService({
-            url: env.COUCHDB_URL,
-            user: env.COUCHDB_USER,
-            pass: env.COUCHDB_PASSWORD,
-        });
-        service.onApplicationBootstrap(env.COUCHDB_USER, env.COUCHDB_PASSWORD);
-        return service;
-    })
     .get("/health", () => ({
         status: "ok",
     }))
@@ -26,7 +23,7 @@ const app = new Elysia()
         app
             .post(
                 "/signup",
-                async ({ body, identityService }) => {
+                async ({ body }) => {
                     const { email, password } = body;
                     const existingUser = await identityService.findByEmail(email);
                     if (existingUser) {
@@ -45,7 +42,7 @@ const app = new Elysia()
             )
             .post(
                 "/login",
-                async ({ body, identityService }) => {
+                async ({ body }) => {
                     const { email, password } = body;
                     const user = await identityService.findByEmail(email);
                     if (!user) {

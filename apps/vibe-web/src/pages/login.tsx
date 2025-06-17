@@ -1,10 +1,33 @@
+"use client";
+
+import { useFormState, useFormStatus } from "react-dom";
 import { login } from "../actions";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { useEffect } from "react";
+import { useRouter } from "waku/router/client";
+
+function SubmitButton() {
+    const { pending } = useFormStatus();
+    return (
+        <Button type="submit" className="w-full" disabled={pending}>
+            {pending ? "Logging in..." : "Login"}
+        </Button>
+    );
+}
 
 export default function LoginPage() {
+    const [state, formAction] = useFormState(login, null);
+    const router = useRouter();
+
+    useEffect(() => {
+        if (state?.token) {
+            router.push("/");
+        }
+    }, [state, router]);
+
     return (
         <div className="flex justify-center items-center h-screen">
             <Card className="w-[350px]">
@@ -12,7 +35,7 @@ export default function LoginPage() {
                     <CardTitle>Login</CardTitle>
                     <CardDescription>Enter your credentials to login.</CardDescription>
                 </CardHeader>
-                <form action={login}>
+                <form action={formAction}>
                     <CardContent>
                         <div className="grid w-full items-center gap-4">
                             <div className="flex flex-col space-y-1.5">
@@ -23,12 +46,11 @@ export default function LoginPage() {
                                 <Label htmlFor="password">Password</Label>
                                 <Input id="password" name="password" type="password" placeholder="Enter your password" />
                             </div>
+                            {state?.error && <p className="text-red-500 text-sm">{state.error}</p>}
                         </div>
                     </CardContent>
-                    <CardFooter>
-                        <Button type="submit" className="w-full">
-                            Login
-                        </Button>
+                    <CardFooter className="pt-4">
+                        <SubmitButton />
                     </CardFooter>
                 </form>
             </Card>

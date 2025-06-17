@@ -1,8 +1,9 @@
 "use server";
 
+import { getEnv } from "waku";
 import { createSdk } from "vibe-sdk";
 
-const sdk = createSdk(process.env.API_URL ?? "http://127.0.0.1:5000");
+const sdk = createSdk(getEnv("API_URL") ?? "http://127.0.0.1:5000");
 
 export const checkApiHealth = async () => {
     try {
@@ -13,14 +14,18 @@ export const checkApiHealth = async () => {
     }
 };
 
-export const signup = async (formData: FormData) => {
+export const signup = async (prevState: any, formData: FormData) => {
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
-    return sdk.auth.signup({ email, password });
+    const result = await sdk.auth.signup({ email, password });
+    console.log("signup result", result);
+    return result;
 };
 
-export const login = async (formData: FormData) => {
+export const login = async (prevState: any, formData: FormData) => {
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
-    return sdk.auth.login({ email, password });
+    const result = await sdk.auth.login({ email, password });
+    console.log("login result", result);
+    return result;
 };
