@@ -1,12 +1,12 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useFormStatus } from "react-dom";
 import { signup } from "../actions";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { useEffect } from "react";
+import { useActionState, useEffect } from "react";
 import { useRouter } from "waku/router/client";
 
 function SubmitButton() {
@@ -19,7 +19,7 @@ function SubmitButton() {
 }
 
 export default function SignupPage() {
-    const [state, formAction] = useFormState(signup, null);
+    const [state, formAction] = useActionState(signup, null);
     const router = useRouter();
 
     useEffect(() => {

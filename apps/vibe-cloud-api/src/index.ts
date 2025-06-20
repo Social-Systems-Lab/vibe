@@ -7,10 +7,6 @@ const identityService = new IdentityService({
     pass: process.env.COUCHDB_PASSWORD!,
 });
 
-console.log("🦊 Initializing CouchDB connection...");
-console.log(`CouchDB URL: ${process.env.COUCHDB_URL}`);
-console.log(`CouchDB User: ${process.env.COUCHDB_USER}`);
-
 await identityService.onApplicationBootstrap(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
 
 console.log("🦊 CouchDB connection initialized successfully");

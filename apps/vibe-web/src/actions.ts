@@ -27,5 +27,8 @@ export const login = async (prevState: any, formData: FormData) => {
     const password = formData.get("password") as string;
     const result = await sdk.auth.login({ email, password });
     console.log("login result", result);
+    if (result.token) {
+        return { ...result, email };
+    }
     return result;
 };

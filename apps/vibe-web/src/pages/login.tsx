@@ -1,13 +1,15 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useFormStatus } from "react-dom";
 import { login } from "../actions";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { useEffect } from "react";
+import { useActionState, useEffect } from "react";
 import { useRouter } from "waku/router/client";
+import { useSetAtom } from "jotai";
+import { userAtom } from "../store/auth";
 
 function SubmitButton() {
     const { pending } = useFormStatus();
@@ -19,14 +21,16 @@ function SubmitButton() {
 }
 
 export default function LoginPage() {
-    const [state, formAction] = useFormState(login, null);
+    const [state, formAction] = useActionState(login, null);
     const router = useRouter();
+    const setUser = useSetAtom(userAtom);
 
     useEffect(() => {
-        if (state?.token) {
+        if (state?.token && "email" in state) {
+            setUser({ email: state.email, token: state.token });
             router.push("/");
         }
-    }, [state, router]);
+    }, [state, router, setUser]);
 
     return (
         <div className="flex justify-center items-center h-screen">
