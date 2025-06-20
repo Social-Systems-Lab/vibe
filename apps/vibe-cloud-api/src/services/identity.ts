@@ -20,6 +20,14 @@ export class IdentityService {
             if (!dbList.includes("users")) {
                 await this.nano.db.create("users");
                 console.log('Database "users" created.');
+                const usersDb = this.nano.db.use("users");
+                await usersDb.insert(
+                    {
+                        admins: { names: [], roles: ["_admin"] },
+                        members: { names: [], roles: ["_admin"] },
+                    } as any,
+                    "_security"
+                );
             }
             this.usersDb = this.nano.db.use("users");
         } catch (error) {

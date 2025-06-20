@@ -1,6 +1,6 @@
 services:
     couchdb:
-        image: couchdb:3
+        image: couchdb:3.5
         ports:
             - "5984:5984"
         environment:
@@ -21,6 +21,10 @@ services:
             dockerfile: apps/vibe-cloud-api/Dockerfile
         ports:
             - "5000:5000"
+        environment:
+            - COUCHDB_URL=http://couchdb:5984
+            - COUCHDB_USER=admin
+            - COUCHDB_PASSWORD=password
         depends_on:
             - couchdb
             - minio
