@@ -92,7 +92,7 @@ const app = new Elysia()
                 }
             )
             .post("/refresh", async ({ jwt, cookie, set }) => {
-                const refreshToken = cookie.refreshToken;
+                const refreshToken = cookie.refreshToken.value;
                 if (!refreshToken) {
                     set.status = 401;
                     return { error: "Unauthorized" };

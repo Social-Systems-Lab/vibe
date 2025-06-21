@@ -6,12 +6,7 @@ export class IdentityService {
     private usersDb: Nano.DocumentScope<any> | undefined;
 
     constructor(config: { url: string; user: string; pass: string }) {
-        this.nano = Nano({
-            url: config.url,
-            requestDefaults: {
-                jar: true,
-            },
-        });
+        this.nano = Nano(config.url);
     }
 
     async onApplicationBootstrap(user: string, pass: string) {
