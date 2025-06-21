@@ -98,7 +98,6 @@ export const createSdk = (apiUrl: string) => {
                     const newToken = data.token;
                     if (typeof newToken === "string") {
                         accessToken = newToken;
-                        localStorage.setItem("accessToken", accessToken);
                     }
                     return data;
                 } catch (error: any) {
@@ -119,7 +118,6 @@ export const createSdk = (apiUrl: string) => {
                     const newToken = data.token;
                     if (typeof newToken === "string") {
                         accessToken = newToken;
-                        localStorage.setItem("accessToken", accessToken);
                     }
                     return data;
                 } catch (error: any) {

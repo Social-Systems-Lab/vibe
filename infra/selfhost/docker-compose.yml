@@ -6,6 +6,24 @@ services:
         environment:
             - COUCHDB_USER=admin
             - COUCHDB_PASSWORD=password
+    couchdb-setup:
+        image: curlimages/curl:latest
+        depends_on:
+            - couchdb
+        command: >
+            /bin/sh -c "
+              set -ex;
+              echo 'Waiting for CouchDB...';
+              until curl -s -f http://couchdb:5984/; do
+                sleep 5;
+              done;
+              echo 'CouchDB is up.';
+              COUCHDB_ENDPOINT='http://admin:password@couchdb:5984';
+              curl -X PUT $${COUCHDB_ENDPOINT}/_users || true;
+              curl -X PUT $${COUCHDB_ENDPOINT}/_replicator || true;
+              curl -X PUT $${COUCHDB_ENDPOINT}/_global_changes || true;
+              echo 'CouchDB setup complete.';
+            "
     minio:
         image: minio/minio
         ports:
@@ -26,7 +44,7 @@ services:
             - COUCHDB_USER=admin
             - COUCHDB_PASSWORD=password
         depends_on:
-            - couchdb
+            - couchdb-setup
             - minio
     vibe-web:
         build:

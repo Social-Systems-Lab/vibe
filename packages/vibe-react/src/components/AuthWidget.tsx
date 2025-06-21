@@ -7,7 +7,7 @@ export const AuthWidget = () => {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [user, setUser] = useState<any>(null);
 
-    const apiUrl = "http://localhost:5000"; // Replace with your API URL
+    const apiUrl = "http://127.0.0.1:5000"; // Replace with your API URL
     const sdk = createSdk(apiUrl);
 
     useEffect(() => {

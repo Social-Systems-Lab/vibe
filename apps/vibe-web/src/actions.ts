@@ -19,6 +19,10 @@ export const signup = async (prevState: any, formData: FormData) => {
     const password = formData.get("password") as string;
     const result = await sdk.auth.signup({ email, password });
     console.log("signup result", result);
+    if (result.token) {
+        sdk.setAccessToken(result.token);
+        return { ...result, email };
+    }
     return result;
 };
 
@@ -28,6 +32,7 @@ export const login = async (prevState: any, formData: FormData) => {
     const result = await sdk.auth.login({ email, password });
     console.log("login result", result);
     if (result.token) {
+        sdk.setAccessToken(result.token);
         return { ...result, email };
     }
     return result;
