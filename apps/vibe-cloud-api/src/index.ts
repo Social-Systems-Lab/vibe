@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import { jwt } from "@elysiajs/jwt";
+import { cookie } from "@elysiajs/cookie";
 import { IdentityService } from "./services/identity";
 
 const identityService = new IdentityService({
@@ -17,8 +18,10 @@ const app = new Elysia()
         jwt({
             name: "jwt",
             secret: process.env.JWT_SECRET!,
+            exp: "15m",
         })
     )
+    .use(cookie())
     .get("/health", () => ({
         status: "ok",
     }))
@@ -26,18 +29,28 @@ const app = new Elysia()
         app
             .post(
                 "/signup",
-                async ({ body, jwt }) => {
+                async ({ body, jwt, cookie }) => {
                     const { email, password } = body;
                     const existingUser = await identityService.findByEmail(email);
                     if (existingUser) {
                         return { error: "User already exists" };
                     }
                     const password_hash = await Bun.password.hash(password);
-                    const user = await identityService.register(email, password_hash);
-                    const token = await jwt.sign({
+                    const user = await identityService.register(email, password_hash, password);
+                    const accessToken = await jwt.sign({
                         id: user.id,
                     });
-                    return { token };
+                    const refreshToken = await jwt.sign({
+                        id: user.id,
+                    });
+
+                    cookie.refreshToken.set({
+                        value: refreshToken,
+                        httpOnly: true,
+                        maxAge: 7 * 86400,
+                    });
+
+                    return { token: accessToken };
                 },
                 {
                     body: t.Object({
@@ -48,7 +61,7 @@ const app = new Elysia()
             )
             .post(
                 "/login",
-                async ({ body, jwt }) => {
+                async ({ body, jwt, cookie }) => {
                     const { email, password } = body;
                     const user = await identityService.findByEmail(email);
                     if (!user) {
@@ -58,10 +71,18 @@ const app = new Elysia()
                     if (!isMatch) {
                         return { error: "Invalid credentials" };
                     }
-                    const token = await jwt.sign({
+                    const accessToken = await jwt.sign({
                         id: user._id,
                     });
-                    return { token };
+                    const refreshToken = await jwt.sign({
+                        id: user._id,
+                    });
+                    cookie.refreshToken.set({
+                        value: refreshToken,
+                        httpOnly: true,
+                        maxAge: 7 * 86400,
+                    });
+                    return { token: accessToken };
                 },
                 {
                     body: t.Object({
@@ -70,6 +91,27 @@ const app = new Elysia()
                     }),
                 }
             )
+            .post("/refresh", async ({ jwt, cookie, set }) => {
+                const refreshToken = cookie.refreshToken;
+                if (!refreshToken) {
+                    set.status = 401;
+                    return { error: "Unauthorized" };
+                }
+
+                const decoded = await jwt.verify(refreshToken);
+                if (!decoded) {
+                    set.status = 401;
+                    return { error: "Unauthorized" };
+                }
+                const token = await jwt.sign({
+                    id: decoded.id,
+                });
+                return { token };
+            })
+            .post("/logout", ({ cookie }) => {
+                cookie.refreshToken.remove();
+                return { success: true };
+            })
     )
     .group("/users", (app) =>
         app.get("/me", async ({ jwt, set }) => {

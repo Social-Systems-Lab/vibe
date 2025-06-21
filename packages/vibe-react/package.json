@@ -1,5 +1,13 @@
 {
     "name": "vibe-react",
     "version": "0.0.1",
-    "private": true
+    "private": true,
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "peerDependencies": {
+        "react": "19.1.0",
+        "react-dom": "19.1.0"
+    },
+    "devDependencies": {}
 }

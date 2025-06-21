@@ -1,4 +1,5 @@
 import Nano from "nano";
+import { generateMnemonic, seedFromMnemonic, getMasterHDKeyFromSeed, deriveChildKeyPair, generateSalt, deriveEncryptionKey, encryptData } from "../lib/crypto";
 
 export class IdentityService {
     private nano: Nano.ServerScope;
@@ -36,15 +37,29 @@ export class IdentityService {
         }
     }
 
-    async register(email: string, password_hash: string) {
+    async register(email: string, password_hash: string, password_raw: string) {
         if (!this.usersDb) {
             throw new Error("Database not initialized");
         }
-        // TODO: Check if user exists
+
+        const mnemonic = generateMnemonic();
+        const seed = await seedFromMnemonic(mnemonic);
+        const masterKey = getMasterHDKeyFromSeed(seed);
+        const keyPair = deriveChildKeyPair(masterKey, 0);
+
+        const salt = generateSalt();
+        const encryptionKey = await deriveEncryptionKey(password_raw, salt);
+        const encryptedMnemonic = await encryptData(mnemonic, encryptionKey);
+
         return this.usersDb.insert({
             _id: `user:${email}`,
             email,
             password_hash,
+            publicKey: Buffer.from(keyPair.publicKey).toString("hex"),
+            encryptedMnemonic: {
+                ...encryptedMnemonic,
+                salt: Buffer.from(salt).toString("hex"),
+            },
         });
     }
 
