@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { jwt } from "@elysiajs/jwt";
 import { IdentityService } from "./services/identity";
 
 const identityService = new IdentityService({
@@ -12,6 +13,12 @@ await identityService.onApplicationBootstrap(process.env.COUCHDB_USER!, process.
 console.log("🦊 CouchDB connection initialized successfully");
 
 const app = new Elysia()
+    .use(
+        jwt({
+            name: "jwt",
+            secret: process.env.JWT_SECRET!,
+        })
+    )
     .get("/health", () => ({
         status: "ok",
     }))
@@ -19,15 +26,18 @@ const app = new Elysia()
         app
             .post(
                 "/signup",
-                async ({ body }) => {
+                async ({ body, jwt }) => {
                     const { email, password } = body;
                     const existingUser = await identityService.findByEmail(email);
                     if (existingUser) {
                         return { error: "User already exists" };
                     }
                     const password_hash = await Bun.password.hash(password);
-                    await identityService.register(email, password_hash);
-                    return { success: true };
+                    const user = await identityService.register(email, password_hash);
+                    const token = await jwt.sign({
+                        id: user.id,
+                    });
+                    return { token };
                 },
                 {
                     body: t.Object({
@@ -38,7 +48,7 @@ const app = new Elysia()
             )
             .post(
                 "/login",
-                async ({ body }) => {
+                async ({ body, jwt }) => {
                     const { email, password } = body;
                     const user = await identityService.findByEmail(email);
                     if (!user) {
@@ -48,8 +58,10 @@ const app = new Elysia()
                     if (!isMatch) {
                         return { error: "Invalid credentials" };
                     }
-                    // TODO: JWT
-                    return { token: "placeholder-token" };
+                    const token = await jwt.sign({
+                        id: user._id,
+                    });
+                    return { token };
                 },
                 {
                     body: t.Object({
@@ -58,6 +70,16 @@ const app = new Elysia()
                     }),
                 }
             )
+    )
+    .group("/users", (app) =>
+        app.get("/me", async ({ jwt, set }) => {
+            const decoded = await jwt.verify();
+            if (!decoded) {
+                set.status = 401;
+                return { error: "Unauthorized" };
+            }
+            return { user: decoded.id };
+        })
     )
     .listen(5000);
 
