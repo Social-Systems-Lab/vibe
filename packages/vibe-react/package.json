@@ -8,6 +8,11 @@
     "scripts": {
         "build": "bun build ./src/index.tsx --outdir ./dist --external react --external react-dom --external react/jsx-runtime"
     },
+    "bun": {
+        "banner": {
+            "js": "\"use client\";"
+        }
+    },
     "dependencies": {
         "vibe-sdk": "workspace:*"
     },
