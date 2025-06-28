@@ -86,7 +86,7 @@ export const createSdk = (apiUrl: string) => {
     });
 
     return {
-        ...client,
+        client,
         setAccessToken: (token: string | null) => {
             accessToken = token;
             if (token && typeof window !== "undefined") {
