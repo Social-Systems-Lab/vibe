@@ -10,6 +10,11 @@
         "build:types": "tsc --emitDeclarationOnly",
         "build": "bun run build:js && bun run build:types"
     },
+    "bun": {
+        "banner": {
+            "js": "\"use client\";"
+        }
+    },
     "dependencies": {
         "vibe-sdk": "workspace:*"
     },
