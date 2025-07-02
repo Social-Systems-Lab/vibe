@@ -64,7 +64,7 @@ export class IdentityService {
         const encryptionKey = await deriveEncryptionKey(password_raw, salt);
         const encryptedMnemonic = await encryptData(mnemonic, encryptionKey);
 
-        return this.usersDb.insert({
+        const userDocument = {
             _id: `user:${email}`,
             email,
             password_hash,
@@ -73,7 +73,9 @@ export class IdentityService {
                 ...encryptedMnemonic,
                 salt: Buffer.from(salt).toString("hex"),
             },
-        });
+        };
+        await this.usersDb.insert(userDocument);
+        return userDocument;
     }
 
     async findByEmail(email: string) {

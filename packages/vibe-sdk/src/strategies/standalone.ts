@@ -13,6 +13,12 @@ function openCenteredPopup(url: string, width: number, height: number): Window |
 export class StandaloneStrategy implements VibeTransportStrategy {
     private token: string | null = null;
 
+    constructor() {
+        if (typeof window !== "undefined") {
+            this.token = localStorage.getItem("vibe_token");
+        }
+    }
+
     private async _auth(path: "login" | "signup"): Promise<void> {
         const authUrl = `${VIBE_WEB_URL}/auth/${path}`;
         const popup = openCenteredPopup(authUrl, 500, 600);
@@ -30,6 +36,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
                 if (event.data && event.data.type === "VIBE_AUTH_SUCCESS") {
                     this.token = event.data.token;
+                    localStorage.setItem("vibe_token", this.token!);
                     console.log("Received and stored auth token:", this.token);
                     window.removeEventListener("message", messageListener);
                     popup.close();
@@ -61,6 +68,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
     async logout(): Promise<void> {
         this.token = null;
+        localStorage.removeItem("vibe_token");
         console.log("Standalone logout called, token cleared");
     }
 

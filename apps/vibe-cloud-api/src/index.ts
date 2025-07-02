@@ -21,7 +21,7 @@ const startServer = async () => {
     const app = new Elysia()
         .use(
             cors({
-                origin: "http://localhost:3000",
+                origin: ["http://localhost:3000", "http://localhost:3001"],
                 credentials: true,
             })
         )
@@ -50,10 +50,10 @@ const startServer = async () => {
                         const password_hash = await Bun.password.hash(password);
                         const user = await identityService.register(email, password_hash, password);
                         const accessToken = await jwt.sign({
-                            id: user.id,
+                            id: user._id,
                         });
                         const refreshToken = await jwt.sign({
-                            id: user.id,
+                            id: user._id,
                         });
 
                         cookie.refreshToken.set({

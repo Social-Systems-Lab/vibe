@@ -83,7 +83,7 @@ export function deriveChildKeyPair(masterHDKey: HDKey, index: number): { publicK
     // We need the 32-byte private seed for signing with @noble/ed25519
     const privateKeySeed = childKey.privateKey.slice(0, 32);
 
-    const publicKeyFromMicroHDKey = childKey.publicKey; // From micro-ed25519-hdkey
+    const publicKeyFromMicroHDKey = childKey.publicKey.slice(1); // From micro-ed25519-hdkey
     const publicKeyFromNoble = ed.getPublicKey(privateKeySeed); // From @noble/ed25519
 
     // Log if there's a notable difference, especially in length.
