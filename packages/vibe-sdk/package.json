@@ -2,13 +2,22 @@
     "name": "vibe-sdk",
     "version": "0.0.1",
     "private": true,
-    "main": "./src/index.ts",
-    "module": "./src/index.ts",
+    "type": "module",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build:js": "bun build ./src/index.ts --outdir ./dist",
+        "build:types": "tsc --emitDeclarationOnly",
+        "build": "bun run build:js && bun run build:types"
+    },
     "files": [
-        "src"
+        "dist"
     ],
     "dependencies": {
         "@elysiajs/eden": "^1.3.2",
         "vibe-cloud-api": "workspace:*"
+    },
+    "devDependencies": {
+        "typescript": "5.8.3"
     }
 }

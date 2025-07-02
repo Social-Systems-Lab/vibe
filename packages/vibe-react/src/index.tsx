@@ -65,3 +65,5 @@ export function useVibe() {
 export * from "./components/LoginButton";
 export * from "./components/SignupButton";
 export * from "./components/ProfileMenu";
+
+// Vibe React Library

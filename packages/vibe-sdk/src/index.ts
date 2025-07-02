@@ -1,6 +1,6 @@
-export interface VibeSDKConfig {
+export type VibeSDKConfig = {
     apiUrl: string;
-}
+};
 
 export class VibeSDK {
     private config: VibeSDKConfig;

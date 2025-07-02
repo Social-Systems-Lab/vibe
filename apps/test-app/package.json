@@ -1,0 +1,23 @@
+{
+    "name": "test-app",
+    "version": "0.0.0",
+    "type": "module",
+    "private": true,
+    "scripts": {
+        "dev": "waku dev --port 3001",
+        "build": "waku build",
+        "start": "waku start"
+    },
+    "dependencies": {
+        "react": "19.1.0",
+        "react-dom": "19.1.0",
+        "react-server-dom-webpack": "19.1.0",
+        "vibe-react": "workspace:*",
+        "waku": "^0.23.3"
+    },
+    "devDependencies": {
+        "@types/react": "19.1.6",
+        "@types/react-dom": "19.1.6",
+        "typescript": "5.8.3"
+    }
+}

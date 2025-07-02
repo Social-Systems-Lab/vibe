@@ -1,5 +1,4 @@
 import { Link } from "waku";
-import { AuthWidget } from "vibe-react";
 
 export const Header = () => {
     return (
@@ -7,7 +6,6 @@ export const Header = () => {
             <h2 className="text-lg font-bold tracking-tight">
                 <Link to="/">Vibe</Link>
             </h2>
-            <AuthWidget />
         </header>
     );
 };
