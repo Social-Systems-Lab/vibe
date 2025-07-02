@@ -66,8 +66,14 @@ export const login = async (prevState: AuthState | null, formData: FormData): Pr
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            return { error: errorData.error || "Login failed" };
+            const errorText = await response.text();
+            console.error("Login failed with status:", response.status, "and response:", errorText);
+            try {
+                const errorData = JSON.parse(errorText);
+                return { error: errorData.error || "Login failed" };
+            } catch (e) {
+                return { error: "An unexpected error occurred and the response was not valid JSON." };
+            }
         }
 
         const data = await response.json();
