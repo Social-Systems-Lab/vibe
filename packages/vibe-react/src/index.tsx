@@ -1,30 +1,67 @@
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, { createContext, useContext, ReactNode, useState, useCallback } from "react";
+import { VibeSDK, createSdk, VibeSDKConfig } from "vibe-sdk";
 
-interface VibeContextType {
-    user: any | null;
-    setUser: (user: any | null) => void;
+interface VibeContextValue {
+    sdk: VibeSDK | null;
+    isAuthenticated: boolean;
+    user: any;
+    login: () => Promise<void>;
+    logout: () => Promise<void>;
+    signup: () => Promise<void>;
 }
 
-const VibeContext = createContext<VibeContextType | null>(null);
+const VibeContext = createContext<VibeContextValue | undefined>(undefined);
 
 interface VibeProviderProps {
     children: ReactNode;
+    config: VibeSDKConfig;
 }
 
-export const VibeProvider = ({ children }: VibeProviderProps) => {
-    const [user, setUser] = useState<any>(null);
+export function VibeProvider({ children, config }: VibeProviderProps) {
+    const [sdk] = useState(() => createSdk(config));
+    const [isAuthenticated, setIsAuthenticated] = useState(sdk.isAuthenticated);
+    const [user, setUser] = useState<any>(sdk.user);
 
-    return <VibeContext.Provider value={{ user, setUser }}>{children}</VibeContext.Provider>;
-};
+    const login = useCallback(async () => {
+        await sdk.login();
+        setIsAuthenticated(sdk.isAuthenticated);
+        setUser(sdk.user);
+    }, [sdk]);
 
-export const useVibe = (): VibeContextType => {
+    const logout = useCallback(async () => {
+        await sdk.logout();
+        setIsAuthenticated(sdk.isAuthenticated);
+        setUser(sdk.user);
+    }, [sdk]);
+
+    const signup = useCallback(async () => {
+        await sdk.signup();
+        setIsAuthenticated(sdk.isAuthenticated);
+        setUser(sdk.user);
+    }, [sdk]);
+
+    const contextValue: VibeContextValue = {
+        sdk,
+        isAuthenticated,
+        user,
+        login,
+        logout,
+        signup,
+    };
+
+    return <VibeContext.Provider value={contextValue}>{children}</VibeContext.Provider>;
+}
+
+export function useVibe() {
     const context = useContext(VibeContext);
-    if (!context) {
+    if (context === undefined) {
         throw new Error("useVibe must be used within a VibeProvider");
     }
     return context;
-};
+}
 
-export * from "./components/AuthWidget";
+export * from "./components/LoginButton";
+export * from "./components/SignupButton";
+export * from "./components/ProfileMenu";
