@@ -1,13 +1,11 @@
 "use client";
 
+import { useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
-import { signup } from "../../actions";
+import { signup } from "./auth-actions";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
-import { useActionState, useEffect } from "react";
-import { useRouter } from "waku/router/client";
 
 function SubmitButton() {
     const { pending } = useFormStatus();
@@ -18,42 +16,42 @@ function SubmitButton() {
     );
 }
 
+import { type AuthState } from "./auth-actions";
+
+const initialState: AuthState = {};
+
 export default function SignupPage() {
-    const [state, formAction] = useActionState(signup, null);
-    const router = useRouter();
+    const [state, formAction] = useActionState(signup, initialState);
 
     useEffect(() => {
-        if (state?.success) {
-            router.push("/auth/login");
+        if (state?.token) {
+            if (window.opener) {
+                window.opener.postMessage({ type: "VIBE_AUTH_SUCCESS", token: state.token }, "*");
+                window.close();
+            }
         }
-    }, [state, router]);
+    }, [state]);
 
     return (
-        <div className="flex justify-center items-center h-screen">
-            <Card className="w-[350px]">
-                <CardHeader>
-                    <CardTitle>Sign Up</CardTitle>
-                    <CardDescription>Create your account to continue.</CardDescription>
-                </CardHeader>
-                <form action={formAction}>
-                    <CardContent>
-                        <div className="grid w-full items-center gap-4">
-                            <div className="flex flex-col space-y-1.5">
-                                <Label htmlFor="email">Email</Label>
-                                <Input id="email" name="email" placeholder="Enter your email" />
-                            </div>
-                            <div className="flex flex-col space-y-1.5">
-                                <Label htmlFor="password">Password</Label>
-                                <Input id="password" name="password" type="password" placeholder="Enter your password" />
-                            </div>
-                            {state?.error && <p className="text-red-500 text-sm">{state.error}</p>}
-                        </div>
-                    </CardContent>
-                    <CardFooter className="pt-4">
-                        <SubmitButton />
-                    </CardFooter>
+        <div className="flex flex-col items-center justify-center min-h-screen bg-white">
+            <div className="w-full max-w-xs">
+                <div className="mb-8 text-center">
+                    <h1 className="text-2xl font-semibold">Create an account</h1>
+                    <p className="text-gray-500">to continue to Vibe</p>
+                </div>
+                <form action={formAction} className="space-y-6">
+                    <div className="space-y-2">
+                        <Label htmlFor="email">Email</Label>
+                        <Input id="email" name="email" type="email" required />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="password">Password</Label>
+                        <Input id="password" name="password" type="password" required />
+                    </div>
+                    {state?.error && <p className="text-red-500 text-sm">{state.error}</p>}
+                    <SubmitButton />
                 </form>
-            </Card>
+            </div>
         </div>
     );
 }

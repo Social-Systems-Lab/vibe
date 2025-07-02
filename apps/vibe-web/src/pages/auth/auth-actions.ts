@@ -15,21 +15,38 @@ export const checkApiHealth = async () => {
     }
 };
 
-export const signup = async (prevState: any, formData: FormData) => {
+export type AuthState = {
+    token?: string;
+    error?: string;
+};
+
+export const signup = async (prevState: AuthState | null, formData: FormData): Promise<AuthState> => {
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
 
-    // const { data } = await sdk.client.auth.signup.post({ email, password });
-    // console.log("signup result", data);
-    // if (data?.token) {
-    //     sdk.setAccessToken(data.token);
-    //     return { ...data, email };
-    // }
-    const data = {};
-    return data;
+    try {
+        const response = await fetch(`${getEnv("WAKU_PUBLIC_API_URL")}/auth/signup`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ email, password }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            return { error: errorData.error || "Signup failed" };
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error("Signup error:", error);
+        return { error: "An unexpected error occurred" };
+    }
 };
 
-export const login = async (prevState: any, formData: FormData) => {
+export const login = async (prevState: AuthState | null, formData: FormData): Promise<AuthState> => {
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
 
@@ -43,7 +60,8 @@ export const login = async (prevState: any, formData: FormData) => {
         });
 
         if (!response.ok) {
-            return { error: "Login failed" };
+            const errorData = await response.json();
+            return { error: errorData.error || "Login failed" };
         }
 
         const data = await response.json();

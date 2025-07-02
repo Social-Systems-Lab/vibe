@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
-import { login } from "../../actions";
+import { login, type AuthState } from "./auth-actions";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -16,8 +16,10 @@ function SubmitButton() {
     );
 }
 
+const initialState: AuthState = {};
+
 export default function LoginPage() {
-    const [state, formAction] = useActionState(login, null);
+    const [state, formAction] = useActionState(login, initialState);
 
     useEffect(() => {
         if (state?.token) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { checkApiHealth } from "../actions";
+import { checkApiHealth } from "../pages/auth/auth-actions";
 import { Button } from "./ui/button";
 
 export const HealthChecker = () => {

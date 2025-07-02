@@ -13,9 +13,9 @@ function openCenteredPopup(url: string, width: number, height: number): Window |
 export class StandaloneStrategy implements VibeTransportStrategy {
     private token: string | null = null;
 
-    async login(): Promise<void> {
-        const loginUrl = `${VIBE_WEB_URL}/auth/login`;
-        const popup = openCenteredPopup(loginUrl, 500, 600);
+    private async _auth(path: "login" | "signup"): Promise<void> {
+        const authUrl = `${VIBE_WEB_URL}/auth/${path}`;
+        const popup = openCenteredPopup(authUrl, 500, 600);
 
         return new Promise((resolve, reject) => {
             if (!popup) {
@@ -55,16 +55,17 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         });
     }
 
+    async login(): Promise<void> {
+        return this._auth("login");
+    }
+
     async logout(): Promise<void> {
         this.token = null;
         console.log("Standalone logout called, token cleared");
     }
 
     async signup(): Promise<void> {
-        // This would be a similar popup flow to login
-        console.log("Standalone signup called");
-        // For now, we'll just simulate a login
-        return this.login();
+        return this._auth("signup");
     }
 
     async getUser(): Promise<any> {
