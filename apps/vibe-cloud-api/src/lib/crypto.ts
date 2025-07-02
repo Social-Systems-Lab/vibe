@@ -2,6 +2,9 @@ import * as bip39 from "bip39";
 import { HDKey } from "micro-ed25519-hdkey";
 import * as ed from "@noble/ed25519"; // Re-use existing import for consistency
 import { Buffer } from "buffer"; // Needed for hex conversions
+import { sha512 } from "@noble/hashes/sha2.js";
+
+ed.etc.sha512Sync = (...m) => sha512(ed.etc.concatBytes(...m));
 
 // Polyfill Buffer globally for libraries that might expect it (e.g., bip39 in some environments)
 // Without this bip39.validateMnemonic always returns false

@@ -17,7 +17,9 @@
         "buffer": "^6.0.3",
         "elysia": "^1.3.4",
         "micro-ed25519-hdkey": "^0.1.2",
-        "nano": "^10.1.4"
+        "nano": "^10.1.4",
+        "@noble/hashes": "^1.4.0",
+        "@noble/curves": "^1.4.0"
     },
     "devDependencies": {
         "typescript": "^5.8.3",
