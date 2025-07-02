@@ -1,6 +1,7 @@
 import { VibeTransportStrategy } from "../strategy";
 
 const VIBE_WEB_URL = "http://localhost:3000"; // This should be the real URL of vibe-web
+const VIBE_API_URL = "http://localhost:5000"; // This should be the real URL of vibe-cloud-api
 
 function openCenteredPopup(url: string, width: number, height: number): Window | null {
     const left = (screen.width - width) / 2;
@@ -13,7 +14,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
     private token: string | null = null;
 
     async login(): Promise<void> {
-        const loginUrl = `${VIBE_WEB_URL}/login`;
+        const loginUrl = `${VIBE_WEB_URL}/auth/login`;
         const popup = openCenteredPopup(loginUrl, 500, 600);
 
         return new Promise((resolve, reject) => {
@@ -70,9 +71,24 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         if (!this.token) {
             return null;
         }
-        // In a real app, you'd use the token to fetch user data from the API
-        console.log("Standalone getUser called, returning dummy user");
-        return { name: "Authenticated User" };
+
+        try {
+            const response = await fetch(`${VIBE_API_URL}/users/me`, {
+                headers: {
+                    Authorization: `Bearer ${this.token}`,
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error("Failed to fetch user");
+            }
+
+            const data = await response.json();
+            return data.user;
+        } catch (error) {
+            console.error("Error fetching user:", error);
+            return null;
+        }
     }
 
     async read(collection: string, filter?: any): Promise<any> {

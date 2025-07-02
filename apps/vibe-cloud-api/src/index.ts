@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia";
 import { jwt } from "@elysiajs/jwt";
 import { cookie } from "@elysiajs/cookie";
+import { cors } from "@elysiajs/cors";
 import { IdentityService } from "./services/identity";
 
 const startServer = async () => {
@@ -18,6 +19,12 @@ const startServer = async () => {
     }
 
     const app = new Elysia()
+        .use(
+            cors({
+                origin: "http://localhost:3000",
+                credentials: true,
+            })
+        )
         .use(
             jwt({
                 name: "jwt",

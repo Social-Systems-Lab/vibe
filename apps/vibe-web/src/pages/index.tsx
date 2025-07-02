@@ -7,10 +7,10 @@ export default function HomePage() {
             <title>Vibe</title>
             <HealthChecker />
             <div className="flex gap-4 mt-4">
-                <Link to="/signup" className="underline">
+                <Link to="/auth/signup" className="underline">
                     Sign Up
                 </Link>
-                <Link to="/login" className="underline">
+                <Link to="/auth/login" className="underline">
                     Login
                 </Link>
             </div>

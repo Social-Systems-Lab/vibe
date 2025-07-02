@@ -1,11 +1,11 @@
 "use client";
 
 import { useFormStatus } from "react-dom";
-import { signup } from "../actions";
-import { Button } from "../components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
+import { signup } from "../../actions";
+import { Button } from "../../components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
 import { useActionState, useEffect } from "react";
 import { useRouter } from "waku/router/client";
 
@@ -24,7 +24,7 @@ export default function SignupPage() {
 
     useEffect(() => {
         if (state?.success) {
-            router.push("/login");
+            router.push("/auth/login");
         }
     }, [state, router]);
 

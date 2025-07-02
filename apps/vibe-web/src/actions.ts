@@ -32,12 +32,24 @@ export const signup = async (prevState: any, formData: FormData) => {
 export const login = async (prevState: any, formData: FormData) => {
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
-    // const { data } = await sdk.client.auth.login.post({ email, password });
-    // console.log("login result", data);
-    // if (data?.token) {
-    //     sdk.setAccessToken(data.token);
-    //     return { ...data, email };
-    // }
-    const data = {};
-    return data;
+
+    try {
+        const response = await fetch(`${getEnv("WAKU_PUBLIC_API_URL")}/auth/login`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ email, password }),
+        });
+
+        if (!response.ok) {
+            return { error: "Login failed" };
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error("Login error:", error);
+        return { error: "An unexpected error occurred" };
+    }
 };
