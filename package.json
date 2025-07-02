@@ -12,7 +12,10 @@
         "dev:test-app": "cd apps/test-app && bun run dev"
     },
     "trustedDependencies": [
-        "waku"
+        "waku",
+        "@swc/core",
+        "@tailwindcss/oxide",
+        "esbuild"
     ],
     "dependencies": {
         "undici": "^7.10.0"

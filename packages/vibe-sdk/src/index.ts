@@ -1,39 +1,38 @@
+import { StandaloneStrategy } from "./strategies/standalone";
+import { AgentStrategy } from "./strategies/agent";
+import { VibeTransportStrategy } from "./strategy";
+
 export type VibeSDKConfig = {
     apiUrl: string;
 };
 
 export class VibeSDK {
-    private config: VibeSDKConfig;
+    private strategy: VibeTransportStrategy;
     public isAuthenticated = false;
     public user: any = null;
 
     constructor(config: VibeSDKConfig) {
-        this.config = config;
-        console.log("Vibe SDK Initialized with API URL:", this.config.apiUrl);
-    }
-
-    async init() {
-        console.log("Vibe SDK init method called");
+        // For now, we default to Standalone. Later we'll add agent detection.
+        this.strategy = new StandaloneStrategy();
+        console.log("Vibe SDK Initialized with Standalone Strategy");
     }
 
     async login() {
-        console.log("Login called");
-        // In a real scenario, this would involve a popup and communication with the backend
-        this.isAuthenticated = true;
-        this.user = { name: "Test User" };
+        await this.strategy.login();
+        this.user = await this.strategy.getUser();
+        this.isAuthenticated = !!this.user;
     }
 
     async logout() {
-        console.log("Logout called");
+        await this.strategy.logout();
         this.isAuthenticated = false;
         this.user = null;
     }
 
     async signup() {
-        console.log("Signup called");
-        // In a real scenario, this would involve a popup and communication with the backend
-        this.isAuthenticated = true;
-        this.user = { name: "New User" };
+        await this.strategy.signup();
+        this.user = await this.strategy.getUser();
+        this.isAuthenticated = !!this.user;
     }
 }
 

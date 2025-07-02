@@ -7,8 +7,8 @@ const config = {
 
 export default function Layout({ children }: { children: ReactNode }) {
     return (
-        // <VibeProvider config={config}>
-        <div className="font-sans">{children}</div>
-        // </VibeProvider>
+        <VibeProvider config={config}>
+            <div className="font-sans">{children}</div>
+        </VibeProvider>
     );
 }

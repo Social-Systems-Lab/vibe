@@ -2,31 +2,97 @@
 import { createContext, useContext, useState, useCallback } from "react";
 
 // ../vibe-sdk/dist/index.js
+var VIBE_WEB_URL = "http://localhost:3000";
+function openCenteredPopup(url, width, height) {
+  const left = (screen.width - width) / 2;
+  const top = (screen.height - height) / 2;
+  const features = `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`;
+  return window.open(url, "vibeLogin", features);
+}
+
+class StandaloneStrategy {
+  token = null;
+  async login() {
+    const loginUrl = `${VIBE_WEB_URL}/login`;
+    const popup = openCenteredPopup(loginUrl, 500, 600);
+    return new Promise((resolve, reject) => {
+      if (!popup) {
+        return reject(new Error("Popup failed to open."));
+      }
+      const messageListener = (event) => {
+        if (event.origin !== VIBE_WEB_URL) {
+          return;
+        }
+        if (event.data && event.data.type === "VIBE_AUTH_SUCCESS") {
+          this.token = event.data.token;
+          console.log("Received and stored auth token:", this.token);
+          window.removeEventListener("message", messageListener);
+          popup.close();
+          resolve();
+        }
+        if (event.data && event.data.type === "VIBE_AUTH_FAIL") {
+          window.removeEventListener("message", messageListener);
+          popup.close();
+          reject(new Error("Authentication failed."));
+        }
+      };
+      window.addEventListener("message", messageListener);
+      const timer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(timer);
+          window.removeEventListener("message", messageListener);
+          reject(new Error("Login window was closed by the user."));
+        }
+      }, 500);
+    });
+  }
+  async logout() {
+    this.token = null;
+    console.log("Standalone logout called, token cleared");
+  }
+  async signup() {
+    console.log("Standalone signup called");
+    return this.login();
+  }
+  async getUser() {
+    if (!this.token) {
+      return null;
+    }
+    console.log("Standalone getUser called, returning dummy user");
+    return { name: "Authenticated User" };
+  }
+  async read(collection, filter) {
+    console.log("Standalone read called", collection, filter);
+    return [];
+  }
+  async write(collection, data) {
+    console.log("Standalone write called", collection, data);
+    return { ok: true };
+  }
+}
+
 class VibeSDK {
-  config;
+  strategy;
   isAuthenticated = false;
   user = null;
   constructor(config) {
-    this.config = config;
-    console.log("Vibe SDK Initialized with API URL:", this.config.apiUrl);
-  }
-  async init() {
-    console.log("Vibe SDK init method called");
+    this.strategy = new StandaloneStrategy;
+    console.log("Vibe SDK Initialized with Standalone Strategy");
   }
   async login() {
-    console.log("Login called");
-    this.isAuthenticated = true;
-    this.user = { name: "Test User" };
+    await this.strategy.login();
+    this.user = await this.strategy.getUser();
+    this.isAuthenticated = !!this.user;
   }
   async logout() {
-    console.log("Logout called");
+    await this.strategy.logout();
     this.isAuthenticated = false;
     this.user = null;
   }
   async signup() {
-    console.log("Signup called");
-    this.isAuthenticated = true;
-    this.user = { name: "New User" };
+    await this.strategy.signup();
+    this.user = await this.strategy.getUser();
+    this.isAuthenticated = !!this.user;
   }
 }
 var createSdk = (config) => {
