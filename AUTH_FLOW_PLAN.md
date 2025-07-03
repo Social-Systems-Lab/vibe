@@ -1,99 +1,87 @@
-# Vibe Auth Flow and SDK Plan
+# Vibe Cloud API - Authentication and Registration Flow
 
-This document outlines the plan for creating a self-contained and easy-to-use authentication and data interaction flow for third-party developers using the Vibe ecosystem.
+This document outlines the architecture and implementation plan for updating the user registration and authentication flow in the `vibe-cloud-api`. The primary goal is to integrate Decentralized Identifiers (DIDs) and provision user-specific resources upon signup.
 
-## 1. Core Components
+## 1. Consolidate Identity Logic into `vibe-crypto`
 
-The new implementation will be centered around two main packages:
+To ensure the DID and `instanceId` logic is centralized and reusable, we will place it in the `packages/vibe-crypto` shared library.
 
--   `vibe-sdk`: A low-level library responsible for all communication with the `vibe-cloud` API and handling the authentication logic.
--   `vibe-react`: A React-specific library that provides a `VibeProvider` context and a `useVibe` hook, making it easy to integrate the SDK into React applications.
+-   **Action:** Create a new file, `packages/vibe-crypto/src/did.ts`, and migrate the necessary functions: `generateEd25519KeyPair`, `didFromEd25519`, `ed25519FromDid`, and `instanceIdFromDid`.
+-   **Action:** Update `packages/vibe-crypto/package.json` to include the required dependencies (`@noble/ed25519`, `multibase`, `varint`).
+-   **Action:** Confirm that `apps/vibe-cloud-api/package.json` correctly references the `vibe-crypto` workspace package.
 
-## 2. `vibe-sdk` Architecture: The Strategy Pattern
+## 2. Enhance the `IdentityService`
 
-To cleanly handle different communication methods (direct API calls vs. using the Vibe Agent), the SDK will be built using the **Strategy Pattern**.
+The core registration logic will be expanded within `apps/vibe-cloud-api/src/services/identity.ts`.
 
-### `VibeTransportStrategy` Interface
+-   **Action:** The `register` method within the `IdentityService` will be updated to perform the following sequence:
+    1.  Generate a new `Ed25519KeyPair`.
+    2.  Derive the `did` from the public key.
+    3.  Derive the `instanceId` from the `did`.
+    4.  Provision the user's dedicated CouchDB database (e.g., `userdb-{instanceId}`).
+    5.  Create a new CouchDB user with credentials scoped specifically to that new database.
+    6.  Securely encrypt and store the user's private key and their new CouchDB credentials within the user's record in the main system database.
+    7.  Return the complete user object, which will now include the `did` and `instanceId`.
 
-A central interface will define the complete contract for all backend interactions:
+## 3. Update the Signup Endpoint and JWT Structure
 
--   **Auth Methods:** `login()`, `logout()`, `signup()`, `getUser()`
--   **Data Methods:** `read()`, `write()`
+We will modify the API layer in `apps/vibe-cloud-api/src/index.ts` to align with these changes.
 
-### Concrete Strategies
+-   **Action:** The JWT schema will be updated to carry the `did` (as the subject) and the `instanceId`.
 
-Two classes will implement this interface, providing the specific logic for each mode:
+    ```typescript
+    // From:
+    schema: t.Object({
+        id: t.String(),
+    }),
 
-1.  **`StandaloneStrategy` (Default):**
+    // To:
+    schema: t.Object({
+        sub: t.String(), // Standard JWT claim for subject (user's DID)
+        instanceId: t.String()
+    }),
+    ```
 
-    -   `login()`: Manages the popup window flow to the `vibe-web` portal for authentication and consent.
-    -   `read()`/`write()`: Makes direct, authenticated `fetch` requests to the `vibe-cloud-api` using a JWT.
+-   **Action:** The `/auth/signup` handler will be updated to sign the new JWT payload.
 
-2.  **`AgentStrategy`:**
-    -   This strategy will be used when the Vibe Agent browser extension is detected.
-    -   All methods (`login`, `read`, `write`, etc.) will be implemented by delegating the calls to the Vibe Agent's exposed API.
+    ```typescript
+    // From:
+    const accessToken = await jwt.sign({
+        id: user._id,
+    });
 
-### `VibeSDK` (Context)
+    // To:
+    const accessToken = await jwt.sign({
+        sub: user.did,
+        instanceId: user.instanceId,
+    });
+    ```
 
-The main `VibeSDK` class will orchestrate which strategy to use:
+-   **Action:** All other code that verifies and uses the JWT (e.g., the `/users/me` endpoint) will be updated to reference `profile.sub` instead of `profile.id` for the user's identifier.
 
--   On initialization, it detects if the Vibe Agent is present.
--   It instantiates and holds a reference to the appropriate strategy (`StandaloneStrategy` or `AgentStrategy`).
--   All public methods of the SDK (e.g., `sdk.login()`, `sdk.read()`) will simply delegate the call to the currently active strategy.
-
-This design keeps the `vibe-react` layer completely unaware of the underlying communication channel.
-
-## 3. `vibe-react` Implementation
-
-This package will provide the primary interface for React developers.
-
--   **`VibeProvider`**: A context provider that initializes the `vibe-sdk` and manages the global state (e.g., user identity, connection status, data).
--   **`useVibe`**: A hook that gives components access to the state and the SDK's methods.
--   **UI Components**: A set of pre-built, customizable React components:
-    -   `LoginButton`
-    -   `SignupButton`
-    -   `ProfileMenu`
-
-## 4. Testing and Validation: `test-app`
-
-To ensure the third-party developer experience is robust and well-tested, a new, separate `apps/test-app` will be created. This application will:
-
--   Be a minimal React application.
--   Install and use the `vibe-react` library as a third-party dependency.
--   Serve as the primary environment for developing and validating the "Standalone Mode" flow.
-
-## 5. "Eating Our Own Dogfood"
-
-The main `vibe-web` application will use the `vibe-react` library for its standard user authentication, demonstrating its capabilities. However, for privileged, administrative functions, it will make direct API calls to the `vibe-cloud-api`.
-
-## 6. Architecture Diagram
+## Updated Flow Diagram
 
 ```mermaid
-graph TD
-    subgraph "Consumer Apps"
-        A[test-app] --> B(vibe-react);
-        C[vibe-web Portal] -->|For standard auth| B;
-    end
+sequenceDiagram
+    participant Client
+    participant VibeCloudAPI as /auth/signup
+    participant IdentityService
+    participant VibeCryptoLib as vibe-crypto
+    participant CouchDB
 
-    subgraph "vibe-sdk (Context)"
-        B --> D[VibeSDK];
-        D -- delegates to --> E{Active Transport Strategy};
-        D -- on init --> F{Agent Detected?};
-        F -- No --> G[StandaloneStrategy];
-        F -- Yes --> H[AgentStrategy];
-    end
-
-    subgraph "Strategies"
-        G -- implements --> I([VibeTransportStrategy Interface]);
-        H -- implements --> I;
-        E -- is a --> G;
-        E -- or is a --> H;
-    end
-
-    subgraph "Backend/Browser"
-        G -- "fetch(jwt)" --> J[vibe-cloud API];
-        H -- "postMessage()" --> K[Vibe Agent Extension];
-        K --> J;
-        C -->|For admin tasks| J;
-    end
+    Client->>+VibeCloudAPI: POST (email, password)
+    VibeCloudAPI->>+IdentityService: register(email, password)
+    IdentityService->>+VibeCryptoLib: generateEd25519KeyPair()
+    VibeCryptoLib-->>-IdentityService: keyPair
+    IdentityService->>+VibeCryptoLib: didFromEd25519(keyPair.publicKey)
+    VibeCryptoLib-->>-IdentityService: did
+    IdentityService->>+VibeCryptoLib: instanceIdFromDid(did)
+    VibeCryptoLib-->>-IdentityService: instanceId
+    IdentityService->>+CouchDB: Create DB (userdb-{instanceId}) & User
+    CouchDB-->>-IdentityService: Success
+    IdentityService->>+CouchDB: Store user document (did, instanceId, etc.)
+    CouchDB-->>-IdentityService: User document saved
+    IdentityService-->>-VibeCloudAPI: Return user object { did, instanceId }
+    VibeCloudAPI->>VibeCloudAPI: Generate JWT with did & instanceId
+    VibeCloudAPI-->>-Client: Return JWT
 ```

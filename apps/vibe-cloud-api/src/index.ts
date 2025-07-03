@@ -30,6 +30,9 @@ const startServer = async () => {
                 name: "jwt",
                 secret: process.env.JWT_SECRET!,
                 exp: "15m",
+                schema: t.Object({
+                    id: t.String(),
+                }),
             })
         )
         .use(cookie())
@@ -126,14 +129,29 @@ const startServer = async () => {
                 })
         )
         .group("/users", (app) =>
-            app.get("/me", async ({ jwt, set }) => {
-                const decoded = await jwt.verify();
-                if (!decoded) {
-                    set.status = 401;
-                    return { error: "Unauthorized" };
-                }
-                return { user: decoded.id };
-            })
+            app
+                .derive(async ({ jwt, headers }) => {
+                    const auth = headers.authorization;
+                    const token = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
+                    const profile = await jwt.verify(token);
+                    return { profile };
+                })
+                .guard({
+                    beforeHandle: ({ profile, set }) => {
+                        if (!profile) {
+                            set.status = 401;
+                            return { error: "Unauthorized" };
+                        }
+                    },
+                })
+                .get("/me", ({ profile, set }) => {
+                    if (!profile) {
+                        // This should be unreachable due to the guard, but it satisfies TypeScript
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    return { user: profile.id };
+                })
         )
         .listen(5000);
 
