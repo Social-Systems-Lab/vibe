@@ -9,6 +9,7 @@ const startServer = async () => {
         url: process.env.COUCHDB_URL!,
         user: process.env.COUCHDB_USER!,
         pass: process.env.COUCHDB_PASSWORD!,
+        instanceIdSecret: process.env.INSTANCE_ID_SECRET!,
     });
 
     try {
@@ -31,7 +32,8 @@ const startServer = async () => {
                 secret: process.env.JWT_SECRET!,
                 exp: "15m",
                 schema: t.Object({
-                    id: t.String(),
+                    sub: t.String(),
+                    instanceId: t.String(),
                 }),
             })
         )
@@ -53,10 +55,12 @@ const startServer = async () => {
                         const password_hash = await Bun.password.hash(password);
                         const user = await identityService.register(email, password_hash, password);
                         const accessToken = await jwt.sign({
-                            id: user._id,
+                            sub: user.did,
+                            instanceId: user.instanceId,
                         });
                         const refreshToken = await jwt.sign({
-                            id: user._id,
+                            sub: user.did,
+                            instanceId: user.instanceId,
                         });
 
                         cookie.refreshToken.set({
@@ -87,10 +91,12 @@ const startServer = async () => {
                             return { error: "Invalid credentials" };
                         }
                         const accessToken = await jwt.sign({
-                            id: user._id,
+                            sub: user.did,
+                            instanceId: user.instanceId,
                         });
                         const refreshToken = await jwt.sign({
-                            id: user._id,
+                            sub: user.did,
+                            instanceId: user.instanceId,
                         });
                         cookie.refreshToken.set({
                             value: refreshToken,
@@ -119,7 +125,8 @@ const startServer = async () => {
                         return { error: "Unauthorized" };
                     }
                     const token = await jwt.sign({
-                        id: decoded.id,
+                        sub: decoded.sub,
+                        instanceId: decoded.instanceId,
                     });
                     return { token };
                 })
@@ -150,7 +157,7 @@ const startServer = async () => {
                         set.status = 401;
                         return { error: "Unauthorized" };
                     }
-                    return { user: profile.id };
+                    return { user: profile.sub };
                 })
         )
         .listen(5000);

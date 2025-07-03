@@ -1,13 +1,17 @@
 import Nano from "nano";
-import { generateMnemonic, seedFromMnemonic, getMasterHDKeyFromSeed, deriveChildKeyPair, generateSalt, deriveEncryptionKey, encryptData } from "../lib/crypto";
+import { generateSalt, deriveEncryptionKey, encryptData } from "../lib/crypto";
+import { generateEd25519KeyPair, didFromEd25519, instanceIdFromDid } from "vibe-crypto/src/did";
+import { randomBytes } from "crypto";
 
 export class IdentityService {
     private nano: Nano.ServerScope;
     private usersDb: Nano.DocumentScope<any> | undefined;
+    private instanceIdSecret: string;
     public isConnected = false;
 
-    constructor(config: { url: string; user: string; pass: string }) {
+    constructor(config: { url: string; user: string; pass: string; instanceIdSecret: string }) {
         this.nano = Nano(config.url);
+        this.instanceIdSecret = config.instanceIdSecret;
     }
 
     async onApplicationBootstrap(user: string, pass: string) {
@@ -55,22 +59,53 @@ export class IdentityService {
             throw new Error("Database not connected");
         }
 
-        const mnemonic = generateMnemonic();
-        const seed = await seedFromMnemonic(mnemonic);
-        const masterKey = getMasterHDKeyFromSeed(seed);
-        const keyPair = deriveChildKeyPair(masterKey, 0);
+        // 1. Generate key pair and DID
+        const keyPair = generateEd25519KeyPair();
+        const did = didFromEd25519(keyPair.publicKey);
+        const instanceId = instanceIdFromDid(did, this.instanceIdSecret);
 
+        // 2. Provision user database
+        const userDbName = `userdb-${instanceId}`;
+        await this.nano.db.create(userDbName);
+
+        // 3. Create CouchDB user with access to the new database
+        const dbUser = `user-${instanceId}`;
+        const dbPass = randomBytes(16).toString("hex");
+        const couchUser = {
+            _id: `org.couchdb.user:${dbUser}`,
+            name: dbUser,
+            roles: [],
+            type: "user",
+            password: dbPass,
+        };
+        await this.nano.db.use("_users").insert(couchUser);
+        await this.nano.db.use(userDbName).insert({
+            _id: "_security",
+            admins: { names: [dbUser], roles: [] },
+            members: { names: [dbUser], roles: [] },
+        } as any);
+
+        // 4. Encrypt private key and db credentials
         const salt = generateSalt();
         const encryptionKey = await deriveEncryptionKey(password_raw, salt);
-        const encryptedMnemonic = await encryptData(mnemonic, encryptionKey);
+        const encryptedPrivateKey = await encryptData(Buffer.from(keyPair.privateKey).toString("hex"), encryptionKey);
+        const encryptedDbPass = await encryptData(dbPass, encryptionKey);
 
+        // 5. Store user document
         const userDocument = {
             _id: `user:${email}`,
             email,
             password_hash,
+            did,
+            instanceId,
             publicKey: Buffer.from(keyPair.publicKey).toString("hex"),
-            encryptedMnemonic: {
-                ...encryptedMnemonic,
+            encryptedPrivateKey: {
+                ...encryptedPrivateKey,
+                salt: Buffer.from(salt).toString("hex"),
+            },
+            dbUser,
+            encryptedDbPass: {
+                ...encryptedDbPass,
                 salt: Buffer.from(salt).toString("hex"),
             },
         };
