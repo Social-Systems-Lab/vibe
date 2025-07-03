@@ -26,13 +26,15 @@ export class IdentityService {
                     await this.nano.db.create("users");
                     console.log('Database "users" created.');
                     const usersDb = this.nano.db.use("users");
-                    await usersDb.insert(
-                        {
-                            admins: { names: [], roles: ["_admin"] },
-                            members: { names: [], roles: ["_admin"] },
-                        } as any,
-                        "_security"
-                    );
+                    await this.nano.request({
+                        db: "users",
+                        method: "put",
+                        path: "_security",
+                        body: {
+                            admins: { names: [user], roles: ["_admin"] },
+                            members: { names: [user], roles: ["_admin"] },
+                        },
+                    });
                 }
                 this.usersDb = this.nano.db.use("users");
                 this.isConnected = true;
@@ -79,11 +81,15 @@ export class IdentityService {
             password: dbPass,
         };
         await this.nano.db.use("_users").insert(couchUser);
-        await this.nano.db.use(userDbName).insert({
-            _id: "_security",
-            admins: { names: [dbUser], roles: [] },
-            members: { names: [dbUser], roles: [] },
-        } as any);
+        await this.nano.request({
+            db: userDbName,
+            method: "put",
+            path: "_security",
+            body: {
+                admins: { names: [dbUser], roles: [] },
+                members: { names: [dbUser], roles: [] },
+            },
+        });
 
         // 4. Encrypt private key and db credentials
         const salt = generateSalt();
