@@ -58,15 +58,11 @@ const startServer = async () => {
                             sub: user.did,
                             instanceId: user.instanceId,
                         });
-                        const refreshToken = await jwt.sign({
-                            sub: user.did,
-                            instanceId: user.instanceId,
-                        });
-
                         cookie.refreshToken.set({
-                            value: refreshToken,
+                            value: user.refreshToken,
                             httpOnly: true,
-                            maxAge: 7 * 86400,
+                            maxAge: 30 * 86400, // 30 days
+                            path: "/",
                         });
 
                         return { token: accessToken };
@@ -82,28 +78,22 @@ const startServer = async () => {
                     "/login",
                     async ({ body, jwt, cookie }) => {
                         const { email, password } = body;
-                        const user = await identityService.findByEmail(email);
-                        if (!user) {
-                            return { error: "Invalid credentials" };
+                        try {
+                            const user = await identityService.login(email, password);
+                            const accessToken = await jwt.sign({
+                                sub: user.did,
+                                instanceId: user.instanceId,
+                            });
+                            cookie.refreshToken.set({
+                                value: user.refreshToken,
+                                httpOnly: true,
+                                maxAge: 30 * 86400, // 30 days
+                                path: "/",
+                            });
+                            return { token: accessToken };
+                        } catch (error: any) {
+                            return { error: error.message };
                         }
-                        const isMatch = await Bun.password.verify(password, user.password_hash);
-                        if (!isMatch) {
-                            return { error: "Invalid credentials" };
-                        }
-                        const accessToken = await jwt.sign({
-                            sub: user.did,
-                            instanceId: user.instanceId,
-                        });
-                        const refreshToken = await jwt.sign({
-                            sub: user.did,
-                            instanceId: user.instanceId,
-                        });
-                        cookie.refreshToken.set({
-                            value: refreshToken,
-                            httpOnly: true,
-                            maxAge: 7 * 86400,
-                        });
-                        return { token: accessToken };
                     },
                     {
                         body: t.Object({
@@ -113,26 +103,49 @@ const startServer = async () => {
                     }
                 )
                 .post("/refresh", async ({ jwt, cookie, set }) => {
-                    const refreshToken = cookie.refreshToken.value;
-                    if (!refreshToken) {
+                    const { refreshToken } = cookie;
+
+                    if (!refreshToken.value) {
                         set.status = 401;
                         return { error: "Unauthorized" };
                     }
 
-                    const decoded = await jwt.verify(refreshToken);
-                    if (!decoded) {
+                    try {
+                        const payload = await jwt.verify(refreshToken.value);
+                        if (!payload) {
+                            set.status = 401;
+                            return { error: "Unauthorized" };
+                        }
+                        const user = await identityService.validateRefreshToken(payload.sub, refreshToken.value);
+                        const newAccessToken = await jwt.sign({
+                            sub: user.did,
+                            instanceId: user.instanceId,
+                        });
+                        return { token: newAccessToken };
+                    } catch (error) {
                         set.status = 401;
                         return { error: "Unauthorized" };
                     }
-                    const token = await jwt.sign({
-                        sub: decoded.sub,
-                        instanceId: decoded.instanceId,
-                    });
-                    return { token };
                 })
-                .post("/logout", ({ cookie }) => {
-                    cookie.refreshToken.remove();
-                    return { success: true };
+                .post("/logout", async ({ jwt, cookie, set }) => {
+                    const { refreshToken } = cookie;
+                    if (!refreshToken.value) {
+                        return { success: true }; // No token to logout
+                    }
+                    try {
+                        const payload = await jwt.verify(refreshToken.value);
+                        if (!payload) {
+                            refreshToken.remove();
+                            return { success: true };
+                        }
+                        await identityService.logout(payload.sub, refreshToken.value);
+                        refreshToken.remove();
+                        return { success: true };
+                    } catch (error) {
+                        // If the token is invalid, we can just remove the cookie
+                        refreshToken.remove();
+                        return { success: true };
+                    }
                 })
         )
         .group("/users", (app) =>

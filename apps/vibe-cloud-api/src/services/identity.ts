@@ -1,7 +1,7 @@
 import Nano from "nano";
 import { generateSalt, deriveEncryptionKey, encryptData } from "../lib/crypto";
 import { generateEd25519KeyPair, didFromEd25519, instanceIdFromDid } from "vibe-crypto";
-import { randomBytes } from "crypto";
+import { randomBytes, createHash } from "crypto";
 
 export class IdentityService {
     private nano: Nano.ServerScope;
@@ -97,7 +97,13 @@ export class IdentityService {
         const encryptedPrivateKey = await encryptData(Buffer.from(keyPair.privateKey).toString("hex"), encryptionKey);
         const encryptedDbPass = await encryptData(dbPass, encryptionKey);
 
-        // 5. Store user document
+        // 5. Generate and store refresh token
+        const refreshToken = randomBytes(32).toString("hex");
+        const hashedRefreshToken = createHash("sha256").update(refreshToken).digest("hex");
+        const refreshTokenExpiry = new Date();
+        refreshTokenExpiry.setDate(refreshTokenExpiry.getDate() + 30); // 30-day validity
+
+        // 6. Store user document
         const userDocument = {
             _id: `user:${email}`,
             email,
@@ -114,9 +120,15 @@ export class IdentityService {
                 ...encryptedDbPass,
                 salt: Buffer.from(salt).toString("hex"),
             },
+            refreshTokens: [
+                {
+                    hash: hashedRefreshToken,
+                    expires: refreshTokenExpiry.toISOString(),
+                },
+            ],
         };
         await this.usersDb.insert(userDocument);
-        return userDocument;
+        return { ...userDocument, refreshToken };
     }
 
     async findByEmail(email: string) {
@@ -131,5 +143,92 @@ export class IdentityService {
             }
             throw error;
         }
+    }
+
+    async login(email: string, password_raw: string) {
+        if (!this.usersDb || !this.isConnected) {
+            throw new Error("Database not connected");
+        }
+        const user = await this.findByEmail(email);
+        if (!user) {
+            throw new Error("Invalid credentials");
+        }
+
+        const isMatch = await Bun.password.verify(password_raw, user.password_hash);
+        if (!isMatch) {
+            throw new Error("Invalid credentials");
+        }
+
+        // Generate and store a new refresh token
+        const refreshToken = randomBytes(32).toString("hex");
+        const hashedRefreshToken = createHash("sha256").update(refreshToken).digest("hex");
+        const refreshTokenExpiry = new Date();
+        refreshTokenExpiry.setDate(refreshTokenExpiry.getDate() + 30); // 30-day validity
+
+        if (!user.refreshTokens) {
+            user.refreshTokens = [];
+        }
+        user.refreshTokens.push({
+            hash: hashedRefreshToken,
+            expires: refreshTokenExpiry.toISOString(),
+        });
+
+        await this.usersDb.insert(user);
+
+        return { ...user, refreshToken };
+    }
+
+    async findByDid(did: string) {
+        if (!this.usersDb || !this.isConnected) {
+            throw new Error("Database not connected");
+        }
+        const selector = {
+            selector: {
+                did: did,
+            },
+            limit: 1,
+        };
+        const result = await this.usersDb.find(selector);
+        if (result.docs.length > 0) {
+            return result.docs[0];
+        }
+        return null;
+    }
+
+    async validateRefreshToken(did: string, refreshToken: string) {
+        const user = await this.findByDid(did);
+        if (!user || !user.refreshTokens) {
+            throw new Error("Invalid refresh token");
+        }
+
+        const hashedRefreshToken = createHash("sha256").update(refreshToken).digest("hex");
+
+        const tokenRecord = user.refreshTokens.find((token: any) => token.hash === hashedRefreshToken);
+
+        if (!tokenRecord) {
+            throw new Error("Invalid refresh token");
+        }
+
+        if (new Date(tokenRecord.expires) < new Date()) {
+            throw new Error("Refresh token expired");
+        }
+
+        return user;
+    }
+
+    async logout(did: string, refreshToken: string) {
+        if (!this.usersDb || !this.isConnected) {
+            throw new Error("Database not connected");
+        }
+        const user = await this.findByDid(did);
+        if (!user || !user.refreshTokens) {
+            return; // No tokens to logout from
+        }
+
+        const hashedRefreshToken = createHash("sha256").update(refreshToken).digest("hex");
+
+        user.refreshTokens = user.refreshTokens.filter((token: any) => token.hash !== hashedRefreshToken);
+
+        await this.usersDb.insert(user);
     }
 }

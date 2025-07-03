@@ -1,14 +1,16 @@
 {
     "compilerOptions": {
         "outDir": "dist",
-        "rootDir": "src",
         "declaration": true,
         "module": "ESNext",
         "target": "ESNext",
         "moduleResolution": "node",
         "allowSyntheticDefaultImports": true,
         "esModuleInterop": true,
-        "strict": true
+        "strict": true,
+        "paths": {
+            "vibe-cloud-api": ["../../apps/vibe-cloud-api/src/index"]
+        }
     },
     "include": ["src"],
     "exclude": ["node_modules", "dist"]
