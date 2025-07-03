@@ -1,6 +1,6 @@
 import Nano from "nano";
 import { generateSalt, deriveEncryptionKey, encryptData } from "../lib/crypto";
-import { generateEd25519KeyPair, didFromEd25519, instanceIdFromDid } from "vibe-crypto/src/did";
+import { generateEd25519KeyPair, didFromEd25519, instanceIdFromDid } from "vibe-crypto";
 import { randomBytes } from "crypto";
 
 export class IdentityService {
