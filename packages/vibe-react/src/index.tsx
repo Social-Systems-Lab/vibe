@@ -21,17 +21,19 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
     const [isLoggedIn, setIsLoggedIn] = useState(false);
 
     useEffect(() => {
-        const checkUser = async () => {
+        const init = async () => {
+            await sdk.init();
             const currentUser = await sdk.getUser();
             setUser(currentUser);
             setIsLoggedIn(!!currentUser);
         };
-        checkUser();
+        init();
 
-        const unsubscribe = sdk.onStateChange((loggedIn: boolean) => {
+        const unsubscribe = sdk.onStateChange(async (loggedIn: boolean) => {
             setIsLoggedIn(loggedIn);
             if (loggedIn) {
-                checkUser();
+                const currentUser = await sdk.getUser();
+                setUser(currentUser);
             } else {
                 setUser(null);
             }

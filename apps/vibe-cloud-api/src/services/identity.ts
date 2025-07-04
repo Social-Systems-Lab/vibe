@@ -195,8 +195,29 @@ export class IdentityService {
         return null;
     }
 
-    async validateRefreshToken(did: string, refreshToken: string) {
-        const user = await this.findByDid(did);
+    async findUserByRefreshToken(refreshToken: string) {
+        if (!this.usersDb || !this.isConnected) {
+            throw new Error("Database not connected");
+        }
+        const hashedRefreshToken = createHash("sha256").update(refreshToken).digest("hex");
+        const selector = {
+            selector: {
+                "refreshTokens.hash": hashedRefreshToken,
+            },
+            limit: 1,
+        };
+        const result = await this.usersDb.find(selector);
+        if (result.docs.length > 0) {
+            return result.docs[0];
+        }
+        return null;
+    }
+
+    async validateRefreshToken(refreshToken: string) {
+        const user = await this.findUserByRefreshToken(refreshToken);
+        if (!this.usersDb || !this.isConnected) {
+            throw new Error("Database not connected");
+        }
         if (!user || !user.refreshTokens) {
             throw new Error("Invalid refresh token");
         }
@@ -213,14 +234,27 @@ export class IdentityService {
             throw new Error("Refresh token expired");
         }
 
-        return user;
+        const newRefreshToken = randomBytes(32).toString("hex");
+        const hashedNewRefreshToken = createHash("sha256").update(newRefreshToken).digest("hex");
+        const newRefreshTokenExpiry = new Date();
+        newRefreshTokenExpiry.setDate(newRefreshTokenExpiry.getDate() + 30);
+
+        user.refreshTokens = user.refreshTokens.filter((token: any) => token.hash !== hashedRefreshToken);
+        user.refreshTokens.push({
+            hash: hashedNewRefreshToken,
+            expires: newRefreshTokenExpiry.toISOString(),
+        });
+
+        await this.usersDb.insert(user);
+
+        return { ...user, refreshToken: newRefreshToken };
     }
 
-    async logout(did: string, refreshToken: string) {
+    async logout(refreshToken: string) {
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
         }
-        const user = await this.findByDid(did);
+        const user = await this.findUserByRefreshToken(refreshToken);
         if (!user || !user.refreshTokens) {
             return; // No tokens to logout from
         }

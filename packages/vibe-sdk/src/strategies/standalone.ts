@@ -11,6 +11,7 @@ class AuthManager {
     private accessToken: string | null = null;
     private user: User | null = null;
     private stateChangeListeners: ((isLoggedIn: boolean) => void)[] = [];
+    constructor() {}
 
     getAccessToken() {
         return this.accessToken;
@@ -30,7 +31,7 @@ class AuthManager {
     }
 
     isLoggedIn() {
-        return !!this.accessToken;
+        return !!this.getAccessToken();
     }
 
     onStateChange(listener: (isLoggedIn: boolean) => void) {
@@ -47,17 +48,18 @@ class AuthManager {
 
 // --- Standalone Strategy ---
 export class StandaloneStrategy implements VibeTransportStrategy {
-    private authManager = new AuthManager();
+    private authManager: AuthManager;
     private api;
     private isRefreshing = false;
     private refreshPromise: Promise<any> | null = null;
 
     constructor() {
+        this.authManager = new AuthManager();
         this.api = edenTreaty<App>(VIBE_API_URL);
+    }
 
-        this.handleTokenRefresh().catch(() => {
-            // This is expected to fail on first load if not logged in.
-        });
+    async init() {
+        await this.handleTokenRefresh();
     }
 
     private async handleTokenRefresh() {

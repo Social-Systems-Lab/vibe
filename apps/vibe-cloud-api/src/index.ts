@@ -102,7 +102,7 @@ const startServer = async () => {
                         }),
                     }
                 )
-                .post("/refresh", async ({ jwt, cookie, set }) => {
+                .post("/refresh", async ({ jwt, cookie, set, headers }) => {
                     const { refreshToken } = cookie;
 
                     if (!refreshToken.value) {
@@ -111,15 +111,30 @@ const startServer = async () => {
                     }
 
                     try {
-                        const payload = await jwt.verify(refreshToken.value);
+                        const authHeader = headers.authorization;
+                        const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+
+                        if (!token) {
+                            set.status = 401;
+                            return { error: "Unauthorized" };
+                        }
+
+                        const payload = await jwt.verify(token);
                         if (!payload) {
                             set.status = 401;
                             return { error: "Unauthorized" };
                         }
-                        const user = await identityService.validateRefreshToken(payload.sub, refreshToken.value);
+
+                        const result = await identityService.validateRefreshToken(refreshToken.value);
                         const newAccessToken = await jwt.sign({
-                            sub: user.did,
-                            instanceId: user.instanceId,
+                            sub: result.did,
+                            instanceId: result.instanceId,
+                        });
+                        cookie.refreshToken.set({
+                            value: result.refreshToken,
+                            httpOnly: true,
+                            maxAge: 30 * 86400, // 30 days
+                            path: "/",
                         });
                         return { token: newAccessToken };
                     } catch (error) {
@@ -127,18 +142,21 @@ const startServer = async () => {
                         return { error: "Unauthorized" };
                     }
                 })
-                .post("/logout", async ({ jwt, cookie, set }) => {
+                .post("/logout", async ({ jwt, cookie, set, headers }) => {
                     const { refreshToken } = cookie;
                     if (!refreshToken.value) {
                         return { success: true }; // No token to logout
                     }
                     try {
-                        const payload = await jwt.verify(refreshToken.value);
-                        if (!payload) {
-                            refreshToken.remove();
-                            return { success: true };
+                        const authHeader = headers.authorization;
+                        const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+
+                        if (token) {
+                            const payload = await jwt.verify(token);
+                            if (payload) {
+                                await identityService.logout(refreshToken.value);
+                            }
                         }
-                        await identityService.logout(payload.sub, refreshToken.value);
                         refreshToken.remove();
                         return { success: true };
                     } catch (error) {
@@ -177,7 +195,6 @@ const startServer = async () => {
                     }
                     const user = {
                         did: userDoc.did,
-                        did2: "booh",
                     };
                     return { user };
                 })
