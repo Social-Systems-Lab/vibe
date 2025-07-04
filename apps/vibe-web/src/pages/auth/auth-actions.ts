@@ -17,6 +17,7 @@ export const checkApiHealth = async () => {
 
 export type AuthState = {
     token?: string;
+    refreshToken?: string;
     error?: string;
 };
 

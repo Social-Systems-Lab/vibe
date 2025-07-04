@@ -37,7 +37,6 @@ const startServer = async () => {
                 }),
             })
         )
-        .use(cookie())
         .get("/health", () => ({
             status: identityService.isConnected ? "ok" : "error",
             details: identityService.isConnected ? "All systems operational" : "Database connection failed",
@@ -46,7 +45,7 @@ const startServer = async () => {
             app
                 .post(
                     "/signup",
-                    async ({ body, jwt, cookie }) => {
+                    async ({ body, jwt }) => {
                         const { email, password } = body;
                         const existingUser = await identityService.findByEmail(email);
                         if (existingUser) {
@@ -58,14 +57,8 @@ const startServer = async () => {
                             sub: user.did,
                             instanceId: user.instanceId,
                         });
-                        cookie.refreshToken.set({
-                            value: user.refreshToken,
-                            httpOnly: true,
-                            maxAge: 30 * 86400, // 30 days
-                            path: "/",
-                        });
 
-                        return { token: accessToken };
+                        return { token: accessToken, refreshToken: user.refreshToken };
                     },
                     {
                         body: t.Object({
@@ -76,7 +69,7 @@ const startServer = async () => {
                 )
                 .post(
                     "/login",
-                    async ({ body, jwt, cookie }) => {
+                    async ({ body, jwt }) => {
                         const { email, password } = body;
                         try {
                             const user = await identityService.login(email, password);
@@ -84,13 +77,7 @@ const startServer = async () => {
                                 sub: user.did,
                                 instanceId: user.instanceId,
                             });
-                            cookie.refreshToken.set({
-                                value: user.refreshToken,
-                                httpOnly: true,
-                                maxAge: 30 * 86400, // 30 days
-                                path: "/",
-                            });
-                            return { token: accessToken };
+                            return { token: accessToken, refreshToken: user.refreshToken };
                         } catch (error: any) {
                             return { error: error.message };
                         }
@@ -102,74 +89,55 @@ const startServer = async () => {
                         }),
                     }
                 )
-                .post("/refresh", async ({ jwt, cookie, set, headers }) => {
-                    const { refreshToken } = cookie;
-                    console.log("Refresh token from cookie:", refreshToken);
+                .post(
+                    "/refresh",
+                    async ({ jwt, body, set }) => {
+                        const { refreshToken } = body;
 
-                    if (!refreshToken.value) {
-                        console.log("No refresh token found in cookie");
-                        set.status = 401;
-                        return { error: "Unauthorized" };
-                    }
-
-                    try {
-                        const authHeader = headers.authorization;
-                        const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
-
-                        if (!token) {
+                        if (!refreshToken) {
                             set.status = 401;
                             return { error: "Unauthorized" };
                         }
 
-                        const payload = await jwt.verify(token);
-                        if (!payload) {
+                        try {
+                            const result = await identityService.validateRefreshToken(refreshToken);
+                            const newAccessToken = await jwt.sign({
+                                sub: result.did,
+                                instanceId: result.instanceId,
+                            });
+                            return { token: newAccessToken, refreshToken: result.refreshToken };
+                        } catch (error: any) {
+                            console.error("Error refreshing token:", error.message);
                             set.status = 401;
                             return { error: "Unauthorized" };
                         }
-
-                        console.log("Validating refresh token:", refreshToken.value);
-                        const result = await identityService.validateRefreshToken(refreshToken.value);
-                        console.log("Refresh token validation result:", result);
-                        const newAccessToken = await jwt.sign({
-                            sub: result.did,
-                            instanceId: result.instanceId,
-                        });
-                        cookie.refreshToken.set({
-                            value: result.refreshToken,
-                            httpOnly: true,
-                            maxAge: 30 * 86400, // 30 days
-                            path: "/",
-                        });
-                        return { token: newAccessToken };
-                    } catch (error: any) {
-                        console.error("Error refreshing token:", error.message);
-                        set.status = 401;
-                        return { error: "Unauthorized" };
+                    },
+                    {
+                        body: t.Object({
+                            refreshToken: t.String(),
+                        }),
                     }
-                })
-                .post("/logout", async ({ jwt, cookie, set, headers }) => {
-                    const { refreshToken } = cookie;
-                    if (!refreshToken.value) {
-                        return { success: true }; // No token to logout
-                    }
-                    try {
-                        const authHeader = headers.authorization;
-                        const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
-
-                        if (token) {
-                            const payload = await jwt.verify(token);
-                            if (payload) {
-                                await identityService.logout(refreshToken.value);
-                            }
+                )
+                .post(
+                    "/logout",
+                    async ({ body }) => {
+                        const { refreshToken } = body;
+                        if (!refreshToken) {
+                            return { success: true }; // No token to logout
                         }
-                        refreshToken.remove();
+                        try {
+                            await identityService.logout(refreshToken);
+                        } catch (error) {
+                            // Fail silently if token is invalid
+                        }
                         return { success: true };
-                    } catch (error) {
-                        // If the token is invalid, we can just remove the cookie
-                        refreshToken.remove();
-                        return { success: true };
+                    },
+                    {
+                        body: t.Object({
+                            refreshToken: t.String(),
+                        }),
                     }
-                })
+                )
         )
         .group("/users", (app) =>
             app

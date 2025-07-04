@@ -9,9 +9,16 @@ const VIBE_API_URL = "http://localhost:5000";
 // --- Internal Auth Manager ---
 class AuthManager {
     private accessToken: string | null = null;
+    private refreshToken: string | null = null;
     private user: User | null = null;
     private stateChangeListeners: ((isLoggedIn: boolean) => void)[] = [];
-    constructor() {}
+    private storageKey = "vibe_refresh_token";
+
+    constructor() {
+        if (typeof window !== "undefined") {
+            this.refreshToken = window.localStorage.getItem(this.storageKey);
+        }
+    }
 
     getAccessToken() {
         return this.accessToken;
@@ -20,6 +27,21 @@ class AuthManager {
     setAccessToken(token: string | null) {
         this.accessToken = token;
         this.notifyStateChange();
+    }
+
+    getRefreshToken() {
+        return this.refreshToken;
+    }
+
+    setRefreshToken(token: string | null) {
+        this.refreshToken = token;
+        if (typeof window !== "undefined") {
+            if (token) {
+                window.localStorage.setItem(this.storageKey, token);
+            } else {
+                window.localStorage.removeItem(this.storageKey);
+            }
+        }
     }
 
     getUser() {
@@ -55,34 +77,49 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
     constructor() {
         this.authManager = new AuthManager();
-        this.api = edenTreaty<App>(VIBE_API_URL, {
-            $fetch: {
-                credentials: "include",
-            },
-        });
+        this.api = edenTreaty<App>(VIBE_API_URL);
     }
 
     async init() {
-        await this.handleTokenRefresh();
+        if (this.authManager.getRefreshToken()) {
+            await this.handleTokenRefresh();
+        }
     }
 
     private async handleTokenRefresh() {
+        const refreshToken = this.authManager.getRefreshToken();
+        if (!refreshToken) {
+            this.authManager.setAccessToken(null);
+            this.authManager.setUser(null);
+            return;
+        }
+
         console.log("Attempting to refresh token...");
         try {
-            const { data, error } = await this.api.auth.refresh.post();
+            const { data, error } = await (this.api.auth.refresh as any).post({ refreshToken });
             console.log("Refresh API response:", { data, error });
+
             if (error) {
                 this.authManager.setAccessToken(null);
+                this.authManager.setRefreshToken(null);
                 this.authManager.setUser(null);
                 throw new Error("Failed to refresh token");
             }
-            if (data && typeof data === "object" && "token" in data) {
+
+            if (data && typeof data === "object" && "token" in data && "refreshToken" in data) {
                 this.authManager.setAccessToken(data.token as string);
+                this.authManager.setRefreshToken(data.refreshToken as string);
                 await this.getUser();
+            } else {
+                this.authManager.setAccessToken(null);
+                this.authManager.setRefreshToken(null);
+                this.authManager.setUser(null);
+                throw new Error("Invalid response from token refresh");
             }
         } catch (e) {
             console.error("Exception during token refresh:", e);
             this.authManager.setAccessToken(null);
+            this.authManager.setRefreshToken(null);
             this.authManager.setUser(null);
             throw e;
         }
@@ -109,6 +146,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
                 if (event.data && event.data.type === "VIBE_AUTH_SUCCESS") {
                     this.authManager.setAccessToken(event.data.token);
+                    this.authManager.setRefreshToken(event.data.refreshToken);
                     await this.getUser();
                     window.removeEventListener("message", messageListener);
                     popup.close();
@@ -139,8 +177,12 @@ export class StandaloneStrategy implements VibeTransportStrategy {
     }
 
     async logout(): Promise<void> {
-        await this.api.auth.logout.post();
+        const refreshToken = this.authManager.getRefreshToken();
+        if (refreshToken) {
+            await (this.api.auth.logout as any).post({ refreshToken });
+        }
         this.authManager.setAccessToken(null);
+        this.authManager.setRefreshToken(null);
         this.authManager.setUser(null);
     }
 

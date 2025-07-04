@@ -26,7 +26,7 @@ export default function SignupPage() {
     useEffect(() => {
         if (state?.token) {
             if (window.opener) {
-                window.opener.postMessage({ type: "VIBE_AUTH_SUCCESS", token: state.token }, "*");
+                window.opener.postMessage({ type: "VIBE_AUTH_SUCCESS", token: state.token, refreshToken: state.refreshToken }, "*");
                 window.close();
             }
         }
