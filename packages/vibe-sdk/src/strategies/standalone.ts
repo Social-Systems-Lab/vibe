@@ -55,7 +55,11 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
     constructor() {
         this.authManager = new AuthManager();
-        this.api = edenTreaty<App>(VIBE_API_URL);
+        this.api = edenTreaty<App>(VIBE_API_URL, {
+            $fetch: {
+                credentials: "include",
+            },
+        });
     }
 
     async init() {
@@ -63,8 +67,10 @@ export class StandaloneStrategy implements VibeTransportStrategy {
     }
 
     private async handleTokenRefresh() {
+        console.log("Attempting to refresh token...");
         try {
             const { data, error } = await this.api.auth.refresh.post();
+            console.log("Refresh API response:", { data, error });
             if (error) {
                 this.authManager.setAccessToken(null);
                 this.authManager.setUser(null);
@@ -75,6 +81,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                 await this.getUser();
             }
         } catch (e) {
+            console.error("Exception during token refresh:", e);
             this.authManager.setAccessToken(null);
             this.authManager.setUser(null);
             throw e;

@@ -104,8 +104,10 @@ const startServer = async () => {
                 )
                 .post("/refresh", async ({ jwt, cookie, set, headers }) => {
                     const { refreshToken } = cookie;
+                    console.log("Refresh token from cookie:", refreshToken);
 
                     if (!refreshToken.value) {
+                        console.log("No refresh token found in cookie");
                         set.status = 401;
                         return { error: "Unauthorized" };
                     }
@@ -125,7 +127,9 @@ const startServer = async () => {
                             return { error: "Unauthorized" };
                         }
 
+                        console.log("Validating refresh token:", refreshToken.value);
                         const result = await identityService.validateRefreshToken(refreshToken.value);
+                        console.log("Refresh token validation result:", result);
                         const newAccessToken = await jwt.sign({
                             sub: result.did,
                             instanceId: result.instanceId,
@@ -137,7 +141,8 @@ const startServer = async () => {
                             path: "/",
                         });
                         return { token: newAccessToken };
-                    } catch (error) {
+                    } catch (error: any) {
+                        console.error("Error refreshing token:", error.message);
                         set.status = 401;
                         return { error: "Unauthorized" };
                     }

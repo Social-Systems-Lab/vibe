@@ -8,10 +8,16 @@ export class IdentityService {
     private usersDb: Nano.DocumentScope<any> | undefined;
     private instanceIdSecret: string;
     public isConnected = false;
+    private config: { url: string; user: string; pass: string; instanceIdSecret: string };
 
     constructor(config: { url: string; user: string; pass: string; instanceIdSecret: string }) {
+        this.config = config;
         this.nano = Nano(config.url);
         this.instanceIdSecret = config.instanceIdSecret;
+    }
+
+    private async reauthenticate() {
+        await this.nano.auth(this.config.user, this.config.pass);
     }
 
     async onApplicationBootstrap(user: string, pass: string) {
@@ -57,6 +63,7 @@ export class IdentityService {
     }
 
     async register(email: string, password_hash: string, password_raw: string) {
+        await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
         }
@@ -132,6 +139,7 @@ export class IdentityService {
     }
 
     async findByEmail(email: string) {
+        await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
         }
@@ -146,6 +154,7 @@ export class IdentityService {
     }
 
     async login(email: string, password_raw: string) {
+        await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
         }
@@ -179,6 +188,7 @@ export class IdentityService {
     }
 
     async findByDid(did: string) {
+        await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
         }
@@ -196,6 +206,7 @@ export class IdentityService {
     }
 
     async findUserByRefreshToken(refreshToken: string) {
+        await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
         }
@@ -214,6 +225,7 @@ export class IdentityService {
     }
 
     async validateRefreshToken(refreshToken: string) {
+        await this.reauthenticate();
         const user = await this.findUserByRefreshToken(refreshToken);
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
@@ -251,6 +263,7 @@ export class IdentityService {
     }
 
     async logout(refreshToken: string) {
+        await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
         }
