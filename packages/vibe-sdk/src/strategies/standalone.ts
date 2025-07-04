@@ -94,7 +94,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             return;
         }
 
-        console.log("Attempting to refresh token...");
+        console.log("Attempting to refresh token with token:", refreshToken);
         try {
             const { data, error } = await (this.api.auth.refresh as any).post({ refreshToken });
             console.log("Refresh API response:", { data, error });
@@ -145,6 +145,10 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                 if (event.origin !== VIBE_WEB_URL) return;
 
                 if (event.data && event.data.type === "VIBE_AUTH_SUCCESS") {
+                    console.log("Received tokens from popup:", {
+                        token: event.data.token,
+                        refreshToken: event.data.refreshToken,
+                    });
                     this.authManager.setAccessToken(event.data.token);
                     this.authManager.setRefreshToken(event.data.refreshToken);
                     await this.getUser();

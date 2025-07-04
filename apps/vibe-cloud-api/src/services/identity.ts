@@ -213,7 +213,11 @@ export class IdentityService {
         const hashedRefreshToken = createHash("sha256").update(refreshToken).digest("hex");
         const selector = {
             selector: {
-                "refreshTokens.hash": hashedRefreshToken,
+                refreshTokens: {
+                    $elemMatch: {
+                        hash: hashedRefreshToken,
+                    },
+                },
             },
             limit: 1,
         };
