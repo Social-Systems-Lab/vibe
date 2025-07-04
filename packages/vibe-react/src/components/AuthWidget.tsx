@@ -9,7 +9,7 @@ export const AuthWidget = () => {
     if (isLoggedIn) {
         return (
             <div>
-                <p>DID: {user?.did}</p>
+                <p>{user?.did}</p>
                 <button onClick={logout}>Log Out</button>
             </div>
         );

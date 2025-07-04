@@ -6,7 +6,15 @@
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "scripts": {
-        "build": "bun run ./build.ts"
+        "build:js": "bun build ./src/index.tsx --outdir ./dist --external react --external react-dom --external react/jsx-runtime",
+        "build:types": "tsc --emitDeclarationOnly",
+        "postbuild": "bun run ./postbuild.ts",
+        "build": "bun run build:js && bun run build:types && bun run postbuild"
+    },
+    "bun": {
+        "banner": {
+            "js": "\"use client\";"
+        }
     },
     "dependencies": {
         "vibe-sdk": "workspace:*"
@@ -17,7 +25,6 @@
     },
     "devDependencies": {
         "@types/bun": "latest",
-        "typescript": "5.8.3",
-        "bun-plugin-dts": "^0.2.1"
+        "typescript": "5.8.3"
     }
 }
