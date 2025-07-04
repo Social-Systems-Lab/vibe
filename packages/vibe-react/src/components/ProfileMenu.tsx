@@ -12,7 +12,7 @@ export const ProfileMenu = () => {
 
     return (
         <div>
-            <span>Hello, {user?.name}</span>
+            <span>Hello, {user?.did}</span>
             <button onClick={logout}>Log out</button>
         </div>
     );

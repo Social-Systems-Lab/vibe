@@ -2,10 +2,11 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { StandaloneStrategy } from "vibe-sdk/src/strategies/standalone";
+import { User } from "vibe-sdk/src/types";
 
 interface VibeContextType {
     sdk: StandaloneStrategy;
-    user: any | null;
+    user: User | null;
     isLoggedIn: boolean;
     login: () => Promise<void>;
     logout: () => Promise<void>;
@@ -16,7 +17,7 @@ const VibeContext = createContext<VibeContextType | undefined>(undefined);
 
 export const VibeProvider = ({ children, config }: { children: ReactNode; config: any }) => {
     const [sdk] = useState(() => new StandaloneStrategy());
-    const [user, setUser] = useState<any | null>(null);
+    const [user, setUser] = useState<User | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
 
     useEffect(() => {

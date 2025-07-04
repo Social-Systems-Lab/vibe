@@ -164,13 +164,22 @@ const startServer = async () => {
                         }
                     },
                 })
-                .get("/me", ({ profile, set }) => {
+                .get("/me", async ({ profile, set }) => {
                     if (!profile) {
                         // This should be unreachable due to the guard, but it satisfies TypeScript
                         set.status = 401;
                         return { error: "Unauthorized" };
                     }
-                    return { user: profile.sub };
+                    const userDoc = await identityService.findByDid(profile.sub);
+                    if (!userDoc) {
+                        set.status = 404;
+                        return { error: "User not found" };
+                    }
+                    const user = {
+                        did: userDoc.did,
+                        did2: "booh",
+                    };
+                    return { user };
                 })
         )
         .listen(5000);

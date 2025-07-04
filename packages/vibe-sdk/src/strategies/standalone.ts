@@ -1,6 +1,7 @@
 import { VibeTransportStrategy } from "../strategy";
 import { edenTreaty } from "@elysiajs/eden";
 import type { App } from "vibe-cloud-api";
+import { User } from "../types";
 
 const VIBE_WEB_URL = "http://localhost:3000";
 const VIBE_API_URL = "http://localhost:5000";
@@ -8,7 +9,7 @@ const VIBE_API_URL = "http://localhost:5000";
 // --- Internal Auth Manager ---
 class AuthManager {
     private accessToken: string | null = null;
-    private user: any | null = null;
+    private user: User | null = null;
     private stateChangeListeners: ((isLoggedIn: boolean) => void)[] = [];
 
     getAccessToken() {
@@ -24,7 +25,7 @@ class AuthManager {
         return this.user;
     }
 
-    setUser(user: any | null) {
+    setUser(user: User | null) {
         this.user = user;
     }
 
@@ -138,7 +139,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         return this._auth("signup");
     }
 
-    async getUser(): Promise<any> {
+    async getUser(): Promise<User | null> {
         if (!this.authManager.isLoggedIn()) {
             return null;
         }
@@ -164,8 +165,10 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                 console.error("Error fetching user:", error.value);
                 return null;
             }
-            this.authManager.setUser(data?.user);
-            return data?.user;
+
+            const user = data?.user as User | undefined;
+            this.authManager.setUser(user ?? null);
+            return user ?? null;
         } catch (e) {
             console.error("Exception fetching user:", e);
             return null;

@@ -6,10 +6,10 @@ import { useVibe } from "../index";
 export const AuthWidget = () => {
     const { user, isLoggedIn, login, logout, signup } = useVibe();
 
-    if (isLoggedIn) {
+    if (isLoggedIn && user) {
         return (
             <div>
-                <p>{user?.did}</p>
+                <p>User: {JSON.stringify(user)}</p>
                 <button onClick={logout}>Log Out</button>
             </div>
         );
