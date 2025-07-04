@@ -1,0 +1,20 @@
+{
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "strict": true,
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "allowImportingTsExtensions": true,
+        "baseUrl": ".",
+        "paths": {
+            "vibe-cloud-api": ["./apps/vibe-cloud-api/src/index.ts"],
+            "vibe-sdk": ["./packages/vibe-sdk/src/index.ts"],
+            "vibe-react": ["./packages/vibe-react/src/index.tsx"]
+        }
+    },
+    "include": ["types"],
+    "exclude": ["node_modules", "dist"]
+}

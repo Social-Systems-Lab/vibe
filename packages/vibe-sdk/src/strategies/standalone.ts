@@ -52,41 +52,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
     private refreshPromise: Promise<any> | null = null;
 
     constructor() {
-        this.api = edenTreaty<App>(VIBE_API_URL, {
-            fetcher: async (input, init) => {
-                const requestInit: RequestInit = { ...init, headers: { ...init?.headers } };
-
-                const token = this.authManager.getAccessToken();
-                if (token) {
-                    (requestInit.headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
-                }
-
-                let response = await fetch(input, requestInit);
-
-                if (response.status === 401 && !input.toString().includes("/auth/refresh")) {
-                    if (!this.isRefreshing) {
-                        this.isRefreshing = true;
-                        this.refreshPromise = this.handleTokenRefresh();
-                    }
-
-                    try {
-                        await this.refreshPromise;
-                    } finally {
-                        this.isRefreshing = false;
-                        this.refreshPromise = null;
-                    }
-
-                    const newToken = this.authManager.getAccessToken();
-                    if (newToken) {
-                        (requestInit.headers as Record<string, string>)["Authorization"] = `Bearer ${newToken}`;
-                    }
-
-                    response = await fetch(input, requestInit);
-                }
-
-                return response;
-            },
-        });
+        this.api = edenTreaty<App>(VIBE_API_URL);
 
         this.handleTokenRefresh().catch(() => {
             // This is expected to fail on first load if not logged in.
@@ -177,8 +143,24 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             return null;
         }
         try {
-            const { data, error } = await this.api.users.me.get();
+            const { data, error } = await this.api.users.me.get({
+                $headers: {
+                    Authorization: `Bearer ${this.authManager.getAccessToken()}`,
+                },
+            });
+
             if (error) {
+                if (error.status === 401) {
+                    if (!this.isRefreshing) {
+                        this.isRefreshing = true;
+                        this.refreshPromise = this.handleTokenRefresh();
+                    }
+                    await this.refreshPromise;
+                    this.isRefreshing = false;
+                    this.refreshPromise = null;
+                    // Retry the request
+                    return this.getUser();
+                }
                 console.error("Error fetching user:", error.value);
                 return null;
             }
@@ -188,6 +170,10 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             console.error("Exception fetching user:", e);
             return null;
         }
+    }
+
+    onStateChange(callback: (isLoggedIn: boolean) => void) {
+        return this.authManager.onStateChange(callback);
     }
 
     // --- Vibe DB Methods (Not Implemented) ---

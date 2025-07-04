@@ -1,16 +1,9 @@
 {
+    "extends": "../../tsconfig.base.json",
     "compilerOptions": {
         "outDir": "dist",
         "declaration": true,
-        "module": "ESNext",
-        "target": "ESNext",
-        "moduleResolution": "node",
-        "allowSyntheticDefaultImports": true,
-        "esModuleInterop": true,
-        "strict": true,
-        "paths": {
-            "vibe-cloud-api": ["../../apps/vibe-cloud-api/src/index"]
-        }
+        "emitDeclarationOnly": true
     },
     "include": ["src"],
     "exclude": ["node_modules", "dist"]

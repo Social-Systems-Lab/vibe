@@ -1,14 +1,10 @@
 {
+    "extends": "../../tsconfig.base.json",
     "compilerOptions": {
         "outDir": "dist",
         "rootDir": "src",
         "declaration": true,
-        "module": "ESNext",
-        "target": "ESNext",
-        "moduleResolution": "node",
-        "allowSyntheticDefaultImports": true,
-        "esModuleInterop": true,
-        "strict": true,
+        "emitDeclarationOnly": true,
         "jsx": "react-jsx"
     },
     "include": ["src"],

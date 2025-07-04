@@ -1,69 +1,60 @@
 "use client";
 
-import React, { createContext, useContext, ReactNode, useState, useCallback } from "react";
-import { VibeSDK, createSdk, VibeSDKConfig } from "vibe-sdk";
+import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { StandaloneStrategy } from "vibe-sdk/src/strategies/standalone";
 
-interface VibeContextValue {
-    sdk: VibeSDK | null;
-    isAuthenticated: boolean;
-    user: any;
+interface VibeContextType {
+    sdk: StandaloneStrategy;
+    user: any | null;
+    isLoggedIn: boolean;
     login: () => Promise<void>;
     logout: () => Promise<void>;
     signup: () => Promise<void>;
 }
 
-const VibeContext = createContext<VibeContextValue | undefined>(undefined);
+const VibeContext = createContext<VibeContextType | undefined>(undefined);
 
-interface VibeProviderProps {
-    children: ReactNode;
-    config: VibeSDKConfig;
-}
+export const VibeProvider = ({ children, config }: { children: ReactNode; config: any }) => {
+    const [sdk] = useState(() => new StandaloneStrategy());
+    const [user, setUser] = useState<any | null>(null);
+    const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-export function VibeProvider({ children, config }: VibeProviderProps) {
-    const [sdk] = useState(() => createSdk(config));
-    const [isAuthenticated, setIsAuthenticated] = useState(sdk.isAuthenticated);
-    const [user, setUser] = useState<any>(sdk.user);
+    useEffect(() => {
+        const checkUser = async () => {
+            const currentUser = await sdk.getUser();
+            setUser(currentUser);
+            setIsLoggedIn(!!currentUser);
+        };
+        checkUser();
 
-    const login = useCallback(async () => {
-        await sdk.login();
-        setIsAuthenticated(sdk.isAuthenticated);
-        setUser(sdk.user);
+        const unsubscribe = sdk.onStateChange((loggedIn: boolean) => {
+            setIsLoggedIn(loggedIn);
+            if (loggedIn) {
+                checkUser();
+            } else {
+                setUser(null);
+            }
+        });
+
+        return () => unsubscribe();
     }, [sdk]);
 
-    const logout = useCallback(async () => {
-        await sdk.logout();
-        setIsAuthenticated(sdk.isAuthenticated);
-        setUser(sdk.user);
-    }, [sdk]);
+    const login = () => sdk.login();
+    const logout = () => sdk.logout();
+    const signup = () => sdk.signup();
 
-    const signup = useCallback(async () => {
-        await sdk.signup();
-        setIsAuthenticated(sdk.isAuthenticated);
-        setUser(sdk.user);
-    }, [sdk]);
+    return <VibeContext.Provider value={{ sdk, user, isLoggedIn, login, logout, signup }}>{children}</VibeContext.Provider>;
+};
 
-    const contextValue: VibeContextValue = {
-        sdk,
-        isAuthenticated,
-        user,
-        login,
-        logout,
-        signup,
-    };
-
-    return <VibeContext.Provider value={contextValue}>{children}</VibeContext.Provider>;
-}
-
-export function useVibe() {
+export const useVibe = () => {
     const context = useContext(VibeContext);
     if (context === undefined) {
         throw new Error("useVibe must be used within a VibeProvider");
     }
     return context;
-}
+};
 
 export * from "./components/LoginButton";
 export * from "./components/SignupButton";
 export * from "./components/ProfileMenu";
-
-// Vibe React Library
+export * from "./components/AuthWidget";

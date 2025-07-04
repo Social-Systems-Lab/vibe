@@ -4,9 +4,9 @@ import React from "react";
 import { useVibe } from "../index";
 
 export const ProfileMenu = () => {
-    const { isAuthenticated, user, logout } = useVibe();
+    const { isLoggedIn, user, logout } = useVibe();
 
-    if (!isAuthenticated) {
+    if (!isLoggedIn) {
         return null;
     }
 
