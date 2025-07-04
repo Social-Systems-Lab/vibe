@@ -10,7 +10,8 @@
         "dev:api": "bun run --watch --env-file=apps/vibe-cloud-api/.env apps/vibe-cloud-api/src/index.ts",
         "dev:web": "cd apps/vibe-web && bun run dev",
         "dev:test-app": "cd apps/test-app && bun run dev",
-        "dev": "concurrently \"bun run dev:api\" \"bun run dev:web\" \"bun run dev:test-app\""
+        "dev": "concurrently \"bun run dev:api\" \"bun run dev:web\" \"bun run dev:test-app\"",
+        "build": "bun run ./build.ts"
     },
     "trustedDependencies": [
         "waku",
@@ -22,6 +23,7 @@
         "undici": "^7.10.0"
     },
     "devDependencies": {
-        "concurrently": "^9.2.0"
+        "concurrently": "^9.2.0",
+        "@types/varint": "^6.0.0"
     }
 }

@@ -10,11 +10,11 @@
         "allowImportingTsExtensions": true,
         "baseUrl": ".",
         "paths": {
-            "vibe-cloud-api": ["./apps/vibe-cloud-api/src/index.ts"],
-            "vibe-sdk": ["./packages/vibe-sdk/src/index.ts"],
-            "vibe-react": ["./packages/vibe-react/src/index.tsx"]
-        }
+            "vibe-cloud-api": ["./apps/vibe-cloud-api/dist/index.d.ts"],
+            "vibe-sdk": ["./packages/vibe-sdk/dist/index.d.ts"],
+            "vibe-react": ["./packages/vibe-react/dist/index.d.ts"]
+        },
+        "typeRoots": ["./node_modules/@types", "./types"]
     },
-    "include": ["types"],
     "exclude": ["node_modules", "dist"]
 }
