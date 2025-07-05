@@ -28,4 +28,8 @@ export class AgentStrategy implements VibeTransportStrategy {
     async write(collection: string, data: any): Promise<any> {
         throw new Error("Agent write not implemented");
     }
+
+    async delete(collection: string, data: any): Promise<any> {
+        throw new Error("Agent delete not implemented");
+    }
 }

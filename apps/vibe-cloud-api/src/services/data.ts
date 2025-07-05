@@ -25,18 +25,23 @@ export class DataService {
         return this.couch.use(dbName);
     }
 
-    async write(collection: string, doc: any, user: JwtPayload) {
+    async write(collection: string, data: any, user: JwtPayload) {
         // TODO: Add authorization logic here to check if the user has write permissions for this collection.
         console.log(`Authorization TODO: Check if user ${user.sub} can write to ${collection}`);
 
         const db = this.getDb(user.instanceId);
-        if (!doc._id) {
-            // TODO: Consider a more robust ID generation strategy
-            doc._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
-        }
-        doc.collection = collection;
+        const itemsToProcess = Array.isArray(data) ? data : [data];
 
-        const response = await db.insert(doc);
+        const docs = itemsToProcess.map((doc) => {
+            if (!doc._id) {
+                // TODO: Consider a more robust ID generation strategy
+                doc._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            }
+            doc.collection = collection;
+            return doc;
+        });
+
+        const response = await db.bulk({ docs });
         return response;
     }
 

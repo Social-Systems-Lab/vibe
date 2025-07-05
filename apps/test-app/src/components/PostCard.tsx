@@ -1,5 +1,7 @@
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useVibe } from "vibe-react";
+import { Button } from "./ui/button";
 
 // TODO: Define a proper type for the post object
 interface PostCardProps {
@@ -7,6 +9,16 @@ interface PostCardProps {
 }
 
 export function PostCard({ post }: PostCardProps) {
+    const { delete: deletePost } = useVibe();
+
+    const handleDelete = async () => {
+        try {
+            await deletePost("posts", post);
+        } catch (error) {
+            console.error("Failed to delete post", error);
+        }
+    };
+
     return (
         <Card>
             <CardHeader>
@@ -34,11 +46,14 @@ export function PostCard({ post }: PostCardProps) {
             <CardContent>
                 <p>{post.content}</p>
             </CardContent>
-            <CardFooter>
+            <CardFooter className="flex justify-between">
                 <p className="text-sm text-muted-foreground">
                     {/* TODO: Format date */}
                     {new Date(post._id.split("/")[1].split("-")[0] * 1).toLocaleString()}
                 </p>
+                <Button variant="destructive" size="sm" onClick={handleDelete}>
+                    Delete
+                </Button>
             </CardFooter>
         </Card>
     );

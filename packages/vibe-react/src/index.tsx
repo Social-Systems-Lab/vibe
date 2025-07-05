@@ -14,6 +14,7 @@ interface VibeContextType {
     read: (collection: string, filter?: any) => Promise<any>;
     readOnce: (collection: string, filter?: any) => Promise<any>;
     write: (collection: string, data: any) => Promise<any>;
+    delete: (collection: string, data: any) => Promise<any>;
 }
 
 const VibeContext = createContext<VibeContextType | undefined>(undefined);
@@ -51,8 +52,9 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
     const read = (collection: string, filter?: any) => sdk.read(collection, filter);
     const readOnce = (collection: string, filter?: any) => sdk.readOnce(collection, filter);
     const write = (collection: string, data: any) => sdk.write(collection, data);
+    const del = (collection: string, data: any) => sdk.delete(collection, data);
 
-    return <VibeContext.Provider value={{ sdk, user, isLoggedIn, login, logout, signup, read, readOnce, write }}>{children}</VibeContext.Provider>;
+    return <VibeContext.Provider value={{ sdk, user, isLoggedIn, login, logout, signup, read, readOnce, write, delete: del }}>{children}</VibeContext.Provider>;
 };
 
 export const useVibe = () => {
