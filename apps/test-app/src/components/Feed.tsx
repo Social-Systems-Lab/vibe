@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useState } from "react";
 import { useVibe } from "vibe-react";
 import { CreatePost } from "./CreatePost";
