@@ -3,7 +3,9 @@ import { jwt } from "@elysiajs/jwt";
 import { cookie } from "@elysiajs/cookie";
 import { cors } from "@elysiajs/cors";
 import { IdentityService } from "./services/identity";
-import { DataService } from "./services/data";
+import { DataService, JwtPayload } from "./services/data";
+import { getUserDbName } from "./lib/db";
+import nano, { Change } from "nano";
 
 const startServer = async () => {
     const identityService = new IdentityService({
@@ -12,6 +14,8 @@ const startServer = async () => {
         pass: process.env.COUCHDB_PASSWORD!,
         instanceIdSecret: process.env.INSTANCE_ID_SECRET!,
     });
+
+    const couch = nano(process.env.COUCHDB_URL!);
 
     const dataService = new DataService({
         url: process.env.COUCHDB_URL!,
@@ -235,28 +239,51 @@ const startServer = async () => {
                     }
                 )
                 .ws("/:collection", {
-                    // TODO: Add authorization logic here
-                    open(ws) {
-                        const { collection } = ws.data.params;
-                        const { profile } = ws.data;
-                        if (!profile) {
-                            ws.close(4001, "Unauthorized");
-                            return;
-                        }
-                        console.log(`WebSocket opened for collection: ${collection} by user ${profile.sub}`);
-                        // TODO: Subscribe to database changes for this user and collection
+                    async open(ws) {
+                        console.log("WebSocket connection opened");
                     },
-                    message(ws, message) {
-                        console.log("WebSocket message received:", message);
-                        // TODO: Handle incoming messages, e.g., for filtering
+                    async message(ws, message: { type: string; token?: string; filter?: any }) {
+                        const { collection } = ws.data.params;
+
+                        if (message.type === "auth") {
+                            const profile = await ws.data.jwt.verify(message.token);
+                            if (!profile) {
+                                ws.close(4001, "Unauthorized");
+                                return;
+                            }
+                            (ws.data as any).profile = profile;
+                            console.log(`WebSocket authenticated for collection: ${collection} by user ${profile.sub}`);
+
+                            const dbName = getUserDbName(profile.instanceId);
+                            const db = couch.use(dbName);
+
+                            const initialDocs = await dataService.readOnce(collection, {}, profile);
+                            ws.send(initialDocs);
+
+                            const feed = db.follow({ since: "now", include_docs: true });
+                            (ws.data as any).feed = feed;
+
+                            feed.on("change", async (change: Change) => {
+                                if (change.doc?.collection === collection) {
+                                    const docs = await dataService.readOnce(collection, {}, profile);
+                                    ws.send(docs);
+                                }
+                            });
+                            feed.follow();
+                        }
                     },
                     close(ws) {
                         const { collection } = ws.data.params;
-                        const { profile } = ws.data;
+                        const { profile, feed } = ws.data as any;
+
+                        if (feed) {
+                            feed.stop();
+                        }
+
                         if (profile) {
                             console.log(`WebSocket closed for collection: ${collection} by user ${profile.sub}`);
                         } else {
-                            console.log(`WebSocket closed for collection: ${collection} by unauthenticated user`);
+                            console.log(`WebSocket closed for collection: ${collection}`);
                         }
                     },
                 })
