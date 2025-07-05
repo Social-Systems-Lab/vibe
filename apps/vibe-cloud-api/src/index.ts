@@ -5,7 +5,7 @@ import { cors } from "@elysiajs/cors";
 import { IdentityService } from "./services/identity";
 import { DataService, JwtPayload } from "./services/data";
 import { getUserDbName } from "./lib/db";
-import nano, { Change } from "nano";
+import nano from "nano";
 
 const startServer = async () => {
     const identityService = new IdentityService({
@@ -26,6 +26,7 @@ const startServer = async () => {
     try {
         await identityService.onApplicationBootstrap(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
         await dataService.init();
+        await couch.auth(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
     } catch (error) {
         console.error("Failed to start server:", error);
         process.exit(1); // Exit if cannot connect to DB
@@ -189,26 +190,21 @@ const startServer = async () => {
                 .derive(async ({ jwt, headers }) => {
                     const auth = headers.authorization;
                     const token = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
-                    const profile = await jwt.verify(token);
-                    return { profile };
-                })
-                .guard({
-                    beforeHandle: ({ profile, set }) => {
-                        if (!profile) {
-                            set.status = 401;
-                            return { error: "Unauthorized" };
-                        }
-                    },
+                    if (!token) {
+                        return { profile: null };
+                    }
+                    try {
+                        const profile = await jwt.verify(token);
+                        return { profile };
+                    } catch {
+                        return { profile: null };
+                    }
                 })
                 .post(
                     "/:collection",
                     async ({ profile, params, body, set }) => {
-                        if (!profile) {
-                            set.status = 401;
-                            return { error: "Unauthorized" };
-                        }
                         try {
-                            const result = await dataService.write(params.collection, body, profile);
+                            const result = await dataService.write(params.collection, body, profile as JwtPayload);
                             return { success: true, ...result };
                         } catch (error: any) {
                             set.status = 500;
@@ -217,17 +213,19 @@ const startServer = async () => {
                     },
                     {
                         params: t.Object({ collection: t.String() }),
+                        beforeHandle: ({ profile, set }) => {
+                            if (!profile) {
+                                set.status = 401;
+                                return { error: "Unauthorized" };
+                            }
+                        },
                     }
                 )
                 .post(
                     "/:collection/query",
                     async ({ profile, params, body, set }) => {
-                        if (!profile) {
-                            set.status = 401;
-                            return { error: "Unauthorized" };
-                        }
                         try {
-                            const docs = await dataService.readOnce(params.collection, body, profile);
+                            const docs = await dataService.readOnce(params.collection, body, profile as JwtPayload);
                             return { docs };
                         } catch (error: any) {
                             set.status = 500;
@@ -236,6 +234,12 @@ const startServer = async () => {
                     },
                     {
                         params: t.Object({ collection: t.String() }),
+                        beforeHandle: ({ profile, set }) => {
+                            if (!profile) {
+                                set.status = 401;
+                                return { error: "Unauthorized" };
+                            }
+                        },
                     }
                 )
                 .ws("/:collection", {
@@ -257,27 +261,27 @@ const startServer = async () => {
                             const dbName = getUserDbName(profile.instanceId);
                             const db = couch.use(dbName);
 
-                            const initialDocs = await dataService.readOnce(collection, {}, profile);
+                            const initialDocs = await dataService.readOnce(collection, {}, profile as JwtPayload);
                             ws.send(initialDocs);
 
-                            const feed = db.follow({ since: "now", include_docs: true });
-                            (ws.data as any).feed = feed;
+                            const changes = db.changesReader.start({ since: "now", includeDocs: true });
+                            (ws.data as any).changes = changes;
 
-                            feed.on("change", async (change: Change) => {
+                            changes.on("change", async (change) => {
                                 if (change.doc?.collection === collection) {
-                                    const docs = await dataService.readOnce(collection, {}, profile);
+                                    // Re-fetch the full list to ensure consistency
+                                    const docs = await dataService.readOnce(collection, {}, profile as JwtPayload);
                                     ws.send(docs);
                                 }
                             });
-                            feed.follow();
                         }
                     },
                     close(ws) {
                         const { collection } = ws.data.params;
-                        const { profile, feed } = ws.data as any;
+                        const { profile, changes } = ws.data as any;
 
-                        if (feed) {
-                            feed.stop();
+                        if (changes) {
+                            changes.stop();
                         }
 
                         if (profile) {
