@@ -1,10 +1,10 @@
-"use client";
+import { Feed } from "@/components/Feed";
 
 export default function HomePage() {
     return (
-        <div>
-            <h1>Vibe Test App</h1>
-            <p>This is a test application for the Vibe SDK and React components.</p>
+        <div className="container mx-auto py-8">
+            <h1 className="text-3xl font-bold mb-4">Vibe Feed</h1>
+            <Feed />
         </div>
     );
 }

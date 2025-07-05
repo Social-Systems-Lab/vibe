@@ -13,7 +13,11 @@
         "lib": ["DOM", "DOM.Iterable", "ESNext"],
         "isolatedModules": true,
         "esModuleInterop": true,
-        "allowSyntheticDefaultImports": true
+        "allowSyntheticDefaultImports": true,
+        "baseUrl": ".",
+        "paths": {
+            "@/*": ["./src/*"]
+        }
     },
     "include": ["src"]
 }

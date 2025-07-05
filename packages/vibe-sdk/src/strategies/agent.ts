@@ -21,6 +21,10 @@ export class AgentStrategy implements VibeTransportStrategy {
         throw new Error("Agent read not implemented");
     }
 
+    async readOnce(collection: string, filter?: any): Promise<any> {
+        throw new Error("Agent readOnce not implemented");
+    }
+
     async write(collection: string, data: any): Promise<any> {
         throw new Error("Agent write not implemented");
     }
