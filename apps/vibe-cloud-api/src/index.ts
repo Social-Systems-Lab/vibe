@@ -93,10 +93,8 @@ const startServer = async () => {
                     "/refresh",
                     async ({ jwt, body, set }) => {
                         const { refreshToken } = body;
-                        console.log("Received refresh token in API:", refreshToken);
 
                         if (!refreshToken) {
-                            console.log("No refresh token in body");
                             set.status = 401;
                             return { error: "Unauthorized" };
                         }
