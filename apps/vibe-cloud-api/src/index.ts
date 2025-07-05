@@ -21,6 +21,7 @@ const startServer = async () => {
 
     try {
         await identityService.onApplicationBootstrap(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
+        await dataService.init();
     } catch (error) {
         console.error("Failed to start server:", error);
         process.exit(1); // Exit if cannot connect to DB

@@ -9,9 +9,15 @@ export interface JwtPayload {
 
 export class DataService {
     private couch: nano.ServerScope;
+    private config: { url: string; user: string; pass: string };
 
-    constructor(private options: { url: string; user: string; pass: string }) {
-        this.couch = nano(options.url);
+    constructor(config: { url: string; user: string; pass: string }) {
+        this.config = config;
+        this.couch = nano(config.url);
+    }
+
+    async init() {
+        await this.couch.auth(this.config.user, this.config.pass);
     }
 
     private getDb(instanceId: string): DocumentScope<unknown> {
@@ -28,7 +34,7 @@ export class DataService {
             // TODO: Consider a more robust ID generation strategy
             doc._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
         }
-        doc.$collection = collection;
+        doc.collection = collection;
 
         const response = await db.insert(doc);
         return response;
@@ -42,7 +48,7 @@ export class DataService {
         const query = {
             selector: {
                 ...filter,
-                $collection: collection,
+                collection: collection,
             },
         };
         const result = await db.find(query);

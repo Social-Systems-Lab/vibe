@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Providers } from "../components/providers";
 import { AuthWidget, VibeProvider } from "vibe-react";
+import "../styles.css";
 
 const config = {
     apiUrl: "http://localhost:3000/api", // This should be your Vibe Cloud API endpoint
