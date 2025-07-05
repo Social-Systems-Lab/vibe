@@ -10,7 +10,7 @@
         "build:types": "tsc --emitDeclarationOnly",
         "postbuild": "bun run ./postbuild.ts",
         "build": "bun run build:js && bun run build:types && bun run postbuild",
-        "dev": "concurrently \"bun run build:js --watch\" \"bun run build:types --watch\""
+        "dev": "onchange 'src/**/*.tsx' -- bun run build"
     },
     "bun": {
         "banner": {
@@ -27,6 +27,7 @@
     "devDependencies": {
         "@types/bun": "latest",
         "typescript": "5.8.3",
-        "concurrently": "^8.2.2"
+        "concurrently": "^8.2.2",
+        "onchange": "^7.1.0"
     }
 }
