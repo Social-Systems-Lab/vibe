@@ -271,7 +271,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         return data;
     }
 
-    async delete(collection: string, data: any): Promise<any> {
+    async remove(collection: string, data: any): Promise<any> {
         const itemsToProcess = Array.isArray(data) ? data : [data];
         const docsToDelete = itemsToProcess.map((doc) => ({ ...doc, _deleted: true }));
         return this.write(collection, docsToDelete);

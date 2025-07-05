@@ -9,13 +9,13 @@ interface PostCardProps {
 }
 
 export function PostCard({ post }: PostCardProps) {
-    const { delete: deletePost } = useVibe();
+    const { remove: removePost } = useVibe();
 
-    const handleDelete = async () => {
+    const handleRemove = async () => {
         try {
-            await deletePost("posts", post);
+            await removePost("posts", post);
         } catch (error) {
-            console.error("Failed to delete post", error);
+            console.error("Failed to remove post", error);
         }
     };
 
@@ -51,7 +51,7 @@ export function PostCard({ post }: PostCardProps) {
                     {/* TODO: Format date */}
                     {new Date(post._id.split("/")[1].split("-")[0] * 1).toLocaleString()}
                 </p>
-                <Button variant="destructive" size="sm" onClick={handleDelete}>
+                <Button variant="destructive" size="sm" onClick={handleRemove}>
                     Delete
                 </Button>
             </CardFooter>

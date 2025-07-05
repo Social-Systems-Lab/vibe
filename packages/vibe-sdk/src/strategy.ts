@@ -6,5 +6,5 @@ export interface VibeTransportStrategy {
     read(collection: string, filter?: any): Promise<any>;
     readOnce(collection: string, filter?: any): Promise<any>;
     write(collection: string, data: any): Promise<any>;
-    delete(collection: string, data: any): Promise<any>;
+    remove(collection: string, data: any): Promise<any>;
 }
