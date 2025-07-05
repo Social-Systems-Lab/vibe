@@ -1,4 +1,5 @@
 import { VibeTransportStrategy } from "../strategy";
+import { ReadCallback, Subscription } from "../types";
 
 export class AgentStrategy implements VibeTransportStrategy {
     async login(): Promise<void> {
@@ -17,7 +18,7 @@ export class AgentStrategy implements VibeTransportStrategy {
         throw new Error("Agent getUser not implemented");
     }
 
-    async read(collection: string, filter?: any): Promise<any> {
+    async read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription> {
         throw new Error("Agent read not implemented");
     }
 

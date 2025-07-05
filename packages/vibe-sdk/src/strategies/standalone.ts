@@ -1,7 +1,7 @@
 import { VibeTransportStrategy } from "../strategy";
 import { edenTreaty } from "@elysiajs/eden";
 import type { App } from "vibe-cloud-api";
-import { User } from "../types";
+import { User, ReadCallback, Subscription } from "../types";
 
 const VIBE_WEB_URL = "http://localhost:3000";
 const VIBE_API_URL = "http://localhost:5000";
@@ -277,21 +277,48 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         return this.write(collection, docsToDelete);
     }
 
-    async read(collection: string, filter: any = {}): Promise<any> {
-        console.log("Standalone read (subscription) called", collection, filter);
-        // TODO: Implement a more robust subscription object with event emitters
+    async read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription> {
+        if (!this.authManager.isLoggedIn()) {
+            // TODO: queue request until logged in?
+            throw new Error("User is not authenticated.");
+        }
+
         const VIBE_WS_URL = VIBE_API_URL.replace(/^http/, "ws");
         const wsApi = edenTreaty<App>(VIBE_WS_URL);
-
-        const ws = (wsApi.data as any)[collection].subscribe();
+        const ws = (wsApi.data as any)[collection].subscribe({
+            filter,
+        });
 
         ws.on("open", () => {
             console.log("WebSocket connection opened");
-            // TODO: Implement auth and filter messages to the server
-            // ws.send(JSON.stringify({ type: 'auth', token: this.authManager.getAccessToken() }));
-            // ws.send(JSON.stringify({ type: 'filter', payload: filter }));
+            ws.send(
+                JSON.stringify({
+                    type: "auth",
+                    token: this.authManager.getAccessToken(),
+                })
+            );
         });
 
-        return ws; // Returning the raw WebSocket object for now
+        ws.on("message", (message: any) => {
+            try {
+                // eden-treaty ws client returns the data directly
+                callback({ ok: true, data: message.data });
+            } catch (error: any) {
+                callback({ ok: false, error: "Failed to parse message" });
+            }
+        });
+
+        ws.on("error", (error: any) => {
+            console.error("WebSocket error:", error);
+            callback({ ok: false, error: error.message || "WebSocket error" });
+        });
+
+        const subscription: Subscription = {
+            unsubscribe: () => {
+                ws.close();
+            },
+        };
+
+        return Promise.resolve(subscription);
     }
 }

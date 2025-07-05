@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { StandaloneStrategy } from "vibe-sdk/src/strategies/standalone";
-import { User } from "vibe-sdk/src/types";
+import { User, ReadCallback, Subscription } from "vibe-sdk/src/types";
 
 interface VibeContextType {
     sdk: StandaloneStrategy;
@@ -11,7 +11,8 @@ interface VibeContextType {
     login: () => Promise<void>;
     logout: () => Promise<void>;
     signup: () => Promise<void>;
-    read: (collection: string, filter?: any) => Promise<any>;
+    read(collection: string, callback: ReadCallback): Promise<Subscription>;
+    read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription>;
     readOnce: (collection: string, filter?: any) => Promise<any>;
     write: (collection: string, data: any) => Promise<any>;
     remove: (collection: string, data: any) => Promise<any>;
@@ -49,7 +50,14 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
     const login = () => sdk.login();
     const logout = () => sdk.logout();
     const signup = () => sdk.signup();
-    const read = (collection: string, filter?: any) => sdk.read(collection, filter);
+    function read(collection: string, callback: ReadCallback): Promise<Subscription>;
+    function read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription>;
+    function read(collection: string, filterOrCb: ReadCallback | any, callback?: ReadCallback): Promise<Subscription> {
+        if (typeof filterOrCb === "function") {
+            return sdk.read(collection, undefined, filterOrCb);
+        }
+        return sdk.read(collection, filterOrCb, callback as ReadCallback);
+    }
     const readOnce = (collection: string, filter?: any) => sdk.readOnce(collection, filter);
     const write = (collection: string, data: any) => sdk.write(collection, data);
     const remove = (collection: string, data: any) => sdk.remove(collection, data);

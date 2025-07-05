@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { Providers } from "../components/providers";
 import { AuthWidget, VibeProvider } from "vibe-react";
 import "../styles.css";
 
