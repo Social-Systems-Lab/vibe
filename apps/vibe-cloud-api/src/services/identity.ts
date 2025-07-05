@@ -94,8 +94,8 @@ export class IdentityService {
             method: "put",
             path: "_security",
             body: {
-                admins: { names: [dbUser], roles: [] },
-                members: { names: [dbUser], roles: [] },
+                admins: { names: [this.config.user, dbUser], roles: [] },
+                members: { names: [this.config.user, dbUser], roles: [] },
             },
         });
 
