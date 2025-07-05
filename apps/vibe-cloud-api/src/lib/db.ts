@@ -6,5 +6,5 @@
 export function getUserDbName(instanceId: string): string {
     // The instanceId should already be safe for use as a database name,
     // but we can add a prefix for clarity.
-    return `vibe-user-db-${instanceId}`;
+    return `userdb-${instanceId}`;
 }

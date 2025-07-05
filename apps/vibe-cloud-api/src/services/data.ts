@@ -14,18 +14,8 @@ export class DataService {
         this.couch = nano(options.url);
     }
 
-    private async getOrCreateDb(instanceId: string): Promise<DocumentScope<unknown>> {
+    private getDb(instanceId: string): DocumentScope<unknown> {
         const dbName = getUserDbName(instanceId);
-        try {
-            await this.couch.db.get(dbName);
-        } catch (error: any) {
-            if (error.statusCode === 404) {
-                await this.couch.db.create(dbName);
-            } else {
-                console.error(`Error getting database '${dbName}':`, error);
-                throw new Error(`Could not get or create database for user.`);
-            }
-        }
         return this.couch.use(dbName);
     }
 
@@ -33,7 +23,7 @@ export class DataService {
         // TODO: Add authorization logic here to check if the user has write permissions for this collection.
         console.log(`Authorization TODO: Check if user ${user.sub} can write to ${collection}`);
 
-        const db = await this.getOrCreateDb(user.instanceId);
+        const db = this.getDb(user.instanceId);
         if (!doc._id) {
             // TODO: Consider a more robust ID generation strategy
             doc._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -48,7 +38,7 @@ export class DataService {
         // TODO: Add authorization logic here to check if the user has read permissions for this collection.
         console.log(`Authorization TODO: Check if user ${user.sub} can read from ${collection}`);
 
-        const db = await this.getOrCreateDb(user.instanceId);
+        const db = this.getDb(user.instanceId);
         const query = {
             selector: {
                 ...filter,
