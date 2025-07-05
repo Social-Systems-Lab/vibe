@@ -228,14 +228,64 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         return this.authManager.onStateChange(callback);
     }
 
-    // --- Vibe DB Methods (Not Implemented) ---
-    async read(collection: string, filter?: any): Promise<any> {
-        console.log("Standalone read called", collection, filter);
-        return [];
+    // --- Vibe DB Methods ---
+    async readOnce(collection: string, filter: any = {}): Promise<any> {
+        if (!this.authManager.isLoggedIn()) {
+            // TODO: queue request until logged in?
+            throw new Error("User is not authenticated.");
+        }
+
+        const { data, error } = await (this.api.data as any)[collection].query.post(filter, {
+            headers: {
+                Authorization: `Bearer ${this.authManager.getAccessToken()}`,
+            },
+        });
+
+        if (error) {
+            // TODO: Handle token refresh on 401
+            console.error("Error reading data:", error.value);
+            throw new Error("Failed to read data.");
+        }
+
+        return data;
     }
 
-    async write(collection: string, data: any): Promise<any> {
-        console.log("Standalone write called", collection, data);
-        return { ok: true };
+    async write(collection: string, doc: any): Promise<any> {
+        if (!this.authManager.isLoggedIn()) {
+            // TODO: queue request until logged in?
+            throw new Error("User is not authenticated.");
+        }
+
+        const { data, error } = await (this.api.data as any)[collection].post(doc, {
+            headers: {
+                Authorization: `Bearer ${this.authManager.getAccessToken()}`,
+            },
+        });
+
+        if (error) {
+            // TODO: Handle token refresh on 401
+            console.error("Error writing data:", error.value);
+            throw new Error("Failed to write data.");
+        }
+
+        return data;
+    }
+
+    async read(collection: string, filter: any = {}): Promise<any> {
+        console.log("Standalone read (subscription) called", collection, filter);
+        // TODO: Implement a more robust subscription object with event emitters
+        const VIBE_WS_URL = VIBE_API_URL.replace(/^http/, "ws");
+        const wsApi = edenTreaty<App>(VIBE_WS_URL);
+
+        const ws = (wsApi.data as any)[collection].subscribe();
+
+        ws.on("open", () => {
+            console.log("WebSocket connection opened");
+            // TODO: Implement auth and filter messages to the server
+            // ws.send(JSON.stringify({ type: 'auth', token: this.authManager.getAccessToken() }));
+            // ws.send(JSON.stringify({ type: 'filter', payload: filter }));
+        });
+
+        return ws; // Returning the raw WebSocket object for now
     }
 }

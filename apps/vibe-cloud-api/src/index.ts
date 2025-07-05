@@ -3,6 +3,7 @@ import { jwt } from "@elysiajs/jwt";
 import { cookie } from "@elysiajs/cookie";
 import { cors } from "@elysiajs/cors";
 import { IdentityService } from "./services/identity";
+import { DataService } from "./services/data";
 
 const startServer = async () => {
     const identityService = new IdentityService({
@@ -10,6 +11,12 @@ const startServer = async () => {
         user: process.env.COUCHDB_USER!,
         pass: process.env.COUCHDB_PASSWORD!,
         instanceIdSecret: process.env.INSTANCE_ID_SECRET!,
+    });
+
+    const dataService = new DataService({
+        url: process.env.COUCHDB_URL!,
+        user: process.env.COUCHDB_USER!,
+        pass: process.env.COUCHDB_PASSWORD!,
     });
 
     try {
@@ -170,6 +177,87 @@ const startServer = async () => {
                         did: userDoc.did,
                     };
                     return { user };
+                })
+        )
+        .group("/data", (app) =>
+            app
+                .derive(async ({ jwt, headers }) => {
+                    const auth = headers.authorization;
+                    const token = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
+                    const profile = await jwt.verify(token);
+                    return { profile };
+                })
+                .guard({
+                    beforeHandle: ({ profile, set }) => {
+                        if (!profile) {
+                            set.status = 401;
+                            return { error: "Unauthorized" };
+                        }
+                    },
+                })
+                .post(
+                    "/:collection",
+                    async ({ profile, params, body, set }) => {
+                        if (!profile) {
+                            set.status = 401;
+                            return { error: "Unauthorized" };
+                        }
+                        try {
+                            const result = await dataService.write(params.collection, body, profile);
+                            return { success: true, ...result };
+                        } catch (error: any) {
+                            set.status = 500;
+                            return { error: error.message };
+                        }
+                    },
+                    {
+                        params: t.Object({ collection: t.String() }),
+                    }
+                )
+                .post(
+                    "/:collection/query",
+                    async ({ profile, params, body, set }) => {
+                        if (!profile) {
+                            set.status = 401;
+                            return { error: "Unauthorized" };
+                        }
+                        try {
+                            const docs = await dataService.readOnce(params.collection, body, profile);
+                            return { docs };
+                        } catch (error: any) {
+                            set.status = 500;
+                            return { error: error.message };
+                        }
+                    },
+                    {
+                        params: t.Object({ collection: t.String() }),
+                    }
+                )
+                .ws("/:collection", {
+                    // TODO: Add authorization logic here
+                    open(ws) {
+                        const { collection } = ws.data.params;
+                        const { profile } = ws.data;
+                        if (!profile) {
+                            ws.close(4001, "Unauthorized");
+                            return;
+                        }
+                        console.log(`WebSocket opened for collection: ${collection} by user ${profile.sub}`);
+                        // TODO: Subscribe to database changes for this user and collection
+                    },
+                    message(ws, message) {
+                        console.log("WebSocket message received:", message);
+                        // TODO: Handle incoming messages, e.g., for filtering
+                    },
+                    close(ws) {
+                        const { collection } = ws.data.params;
+                        const { profile } = ws.data;
+                        if (profile) {
+                            console.log(`WebSocket closed for collection: ${collection} by user ${profile.sub}`);
+                        } else {
+                            console.log(`WebSocket closed for collection: ${collection} by unauthenticated user`);
+                        }
+                    },
                 })
         )
         .listen(5000);

@@ -2,6 +2,7 @@ import Nano from "nano";
 import { generateSalt, deriveEncryptionKey, encryptData } from "../lib/crypto";
 import { generateEd25519KeyPair, didFromEd25519, instanceIdFromDid } from "../lib/did";
 import { randomBytes, createHash } from "crypto";
+import { getUserDbName } from "../lib/db";
 
 export class IdentityService {
     private nano: Nano.ServerScope;
@@ -74,7 +75,7 @@ export class IdentityService {
         const instanceId = instanceIdFromDid(did, this.instanceIdSecret);
 
         // 2. Provision user database
-        const userDbName = `userdb-${instanceId}`;
+        const userDbName = getUserDbName(instanceId);
         await this.nano.db.create(userDbName);
 
         // 3. Create CouchDB user with access to the new database
