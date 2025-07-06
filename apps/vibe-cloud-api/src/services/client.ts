@@ -9,12 +9,13 @@ export class ClientService {
     private clientSecret: string;
 
     constructor(config: { url: string; user: string; pass: string; clientSecret: string }) {
-        this.nano = nano(config);
+        this.nano = nano(config.url);
         this.db = this.nano.use<Client>(DB_NAME);
         this.clientSecret = config.clientSecret;
     }
 
     async onApplicationBootstrap() {
+        await this.nano.auth(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
         try {
             await this.nano.db.get(DB_NAME);
         } catch (e) {

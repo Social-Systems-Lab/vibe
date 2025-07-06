@@ -55,7 +55,7 @@ export const configureOidcProvider = (issuer: string, identityService: IdentityS
             revocation: { enabled: true },
             introspection: { enabled: true },
             clientCredentials: { enabled: true },
-            dynamicRegistration: {
+            registration: {
                 enabled: true,
                 async post(ctx: KoaContextWithOIDC, client: Client) {
                     // Custom validation logic based on client_id type
