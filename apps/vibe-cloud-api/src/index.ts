@@ -6,6 +6,8 @@ import { IdentityService } from "./services/identity";
 import { DataService, JwtPayload } from "./services/data";
 import { getUserDbName } from "./lib/db";
 import nano from "nano";
+import { configureOidcProvider } from "./lib/oidc";
+import { connect } from "elysia-connect-middleware";
 
 const startServer = async () => {
     const identityService = new IdentityService({
@@ -23,6 +25,9 @@ const startServer = async () => {
         pass: process.env.COUCHDB_PASSWORD!,
     });
 
+    const issuer = process.env.ISSUER_URL || "http://localhost:5000";
+    const oidc = configureOidcProvider(issuer, identityService, process.env.VIBE_WEB_CLIENT_SECRET!);
+
     try {
         await identityService.onApplicationBootstrap(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
         await dataService.init();
@@ -33,9 +38,10 @@ const startServer = async () => {
     }
 
     const app = new Elysia()
+        .use(connect(oidc.callback()))
         .use(
             cors({
-                origin: ["http://localhost:3000", "http://localhost:3001"],
+                origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"],
                 credentials: true,
             })
         )

@@ -23,10 +23,14 @@
         "micro-ed25519-hdkey": "^0.1.2",
         "multibase": "^4.0.6",
         "nano": "^10.1.4",
-        "varint": "^6.0.0"
+        "varint": "^6.0.0",
+        "oidc-provider": "^8.4.5",
+        "uuid": "^9.0.1",
+        "elysia-connect-middleware": "^0.0.6"
     },
     "devDependencies": {
         "typescript": "^5.8.3",
-        "@types/bun": "latest"
+        "@types/bun": "latest",
+        "@types/uuid": "^9.0.8"
     }
 }
