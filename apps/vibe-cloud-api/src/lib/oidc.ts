@@ -117,7 +117,7 @@ export const configureOidcProvider = (issuer: string, identityService: IdentityS
         },
         interactions: {
             url(ctx: KoaContextWithOIDC, interaction: any) {
-                return `http://localhost:5000/interaction/${interaction.uid}`;
+                return `/interaction/${interaction.uid}`;
             },
             policy: (() => {
                 const policy = interactionPolicy.base();

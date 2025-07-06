@@ -2,7 +2,10 @@ import { IdentityService } from "./services/identity";
 import { StorageService } from "./services/storage";
 import { configureOidcProvider } from "./lib/oidc";
 import http from "http";
-import cors from "@koa/cors";
+import path from "path";
+import ejs from "ejs";
+import bodyParser from "koa-bodyparser";
+import { inspect } from "util";
 
 const startOidcServer = async () => {
     console.log("Starting OIDC server...");
@@ -32,35 +35,65 @@ const startOidcServer = async () => {
     const issuer = process.env.OIDC_ISSUER_URL || "http://localhost:5001";
     const oidc = configureOidcProvider(issuer, identityService, storageService, process.env.VIBE_WEB_CLIENT_SECRET!);
 
-    oidc.use(
-        cors({
-            origin: (ctx) => {
-                const allowedOrigins = ["http://localhost:3000", "http://localhost:3001", "http://localhost:5000"];
-                const origin = ctx.get("origin");
-                if (allowedOrigins.includes(origin)) {
-                    return origin;
-                }
-                // If the origin is not allowed, do not set the header.
-                return "";
-            },
-            credentials: true,
-        })
-    );
+    oidc.use(bodyParser());
 
-    // A simple middleware to expose interaction details
+    const render = async (ctx: any, template: string, data: object) => {
+        const layout = path.resolve(__dirname, "views/layout.ejs");
+        const body = await ejs.renderFile(path.resolve(__dirname, `views/${template}.ejs`), data);
+        ctx.body = await ejs.renderFile(layout, { body });
+    };
+
     oidc.use(async (ctx, next) => {
-        if (ctx.path.endsWith("/details")) {
-            try {
-                const details = await oidc.interactionDetails(ctx.req, ctx.res);
-                ctx.body = details;
-                ctx.status = 200;
-            } catch (err) {
-                console.error("Error getting interaction details:", err);
-                ctx.status = 500;
-                ctx.body = { error: "Internal Server Error" };
+        const pathParts = ctx.path.split("/");
+        if (pathParts[1] !== "interaction") {
+            return next();
+        }
+        const uid = pathParts[2];
+
+        try {
+            const details = await oidc.interactionDetails(ctx.req, ctx.res);
+            const { prompt, params, session } = details;
+
+            if (ctx.method === "GET") {
+                if (prompt.details.error) {
+                    return render(ctx, "login", { uid, error: prompt.details.error_description || prompt.details.error });
+                }
+
+                if (prompt.name === "login") {
+                    return render(ctx, "login", { uid, error: null });
+                }
+                if (prompt.name === "create") {
+                    return render(ctx, "signup", { uid, error: null });
+                }
+                // TODO: Add consent view
+                return render(ctx, "login", { uid, error: "Unhandled prompt" });
             }
-        } else {
-            await next();
+
+            if (ctx.method === "POST") {
+                let did;
+                const { email, password } = ctx.request.body as any;
+
+                if (pathParts[3] === "login") {
+                    const user = await identityService.login(email, password);
+                    did = user.did;
+                } else if (pathParts[3] === "signup") {
+                    const existingUser = await identityService.findByEmail(email);
+                    if (existingUser) throw new Error("User already exists");
+                    const password_hash = await Bun.password.hash(password);
+                    const user = await identityService.register(email, password_hash, password);
+                    did = user.did;
+                }
+
+                if (did) {
+                    const result = { login: { accountId: did } };
+                    await oidc.interactionFinished(ctx.req, ctx.res, result, { mergeWithLastSubmission: false });
+                } else {
+                    throw new Error("Authentication failed");
+                }
+            }
+        } catch (err: any) {
+            const template = ctx.path.includes("/login") ? "login" : "signup";
+            return render(ctx, template, { uid, error: err.message });
         }
     });
 
