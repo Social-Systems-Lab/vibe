@@ -26,7 +26,7 @@ export const signup = async (prevState: AuthState | null, formData: FormData): P
     const password = formData.get("password") as string;
 
     try {
-        const response = await fetch(`${getEnv("WAKU_PUBLIC_API_URL")}/auth/signup`, {
+        const response = await fetch(`http://localhost:5000/auth/signup`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -57,7 +57,7 @@ export const login = async (prevState: AuthState | null, formData: FormData): Pr
     const password = formData.get("password") as string;
 
     try {
-        const response = await fetch(`${getEnv("WAKU_PUBLIC_API_URL")}/auth/login`, {
+        const response = await fetch(`http://localhost:5000/auth/login`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
