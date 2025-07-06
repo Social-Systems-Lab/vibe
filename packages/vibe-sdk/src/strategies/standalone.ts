@@ -77,7 +77,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
     private async loadOIDCConfig() {
         try {
-            const response = await fetch(`${this.options.issuer}/.well-known/openid-configuration`);
+            const response = await fetch(`${this.options.issuer}/.well-known/openid-configuration.json`);
             if (!response.ok) {
                 throw new Error("Failed to fetch OIDC configuration");
             }
