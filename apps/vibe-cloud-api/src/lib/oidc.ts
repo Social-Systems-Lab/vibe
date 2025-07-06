@@ -1,19 +1,16 @@
-import Provider from "oidc-provider";
+import Provider, { KoaContextWithOIDC } from "oidc-provider";
 import { IdentityService } from "../services/identity";
+import { ClientService } from "../services/client";
+import { CustomOidcAdapter } from "./oidc-adapter";
+import { Client } from "../models/client";
 
-export const configureOidcProvider = (issuer: string, identityService: IdentityService, clientSecret: string) => {
-    const clients = [
-        {
-            client_id: "vibe-web",
-            client_secret: clientSecret,
-            grant_types: ["authorization_code", "refresh_token"],
-            redirect_uris: ["http://localhost:3000/auth/callback"],
-            response_types: ["code"],
-        },
-    ];
+export const configureOidcProvider = (issuer: string, identityService: IdentityService, clientService: ClientService, clientSecret: string) => {
+    const adapterFactory = () => {
+        return new CustomOidcAdapter(clientService);
+    };
 
     const configuration = {
-        clients,
+        adapter: adapterFactory,
         pkce: {
             required: () => true,
         },
@@ -58,6 +55,30 @@ export const configureOidcProvider = (issuer: string, identityService: IdentityS
             revocation: { enabled: true },
             introspection: { enabled: true },
             clientCredentials: { enabled: true },
+            dynamicRegistration: {
+                enabled: true,
+                async post(ctx: KoaContextWithOIDC, client: Client) {
+                    // Custom validation logic based on client_id type
+                    if (client.client_id.startsWith("did:")) {
+                        // TODO: Implement DID-based validation (JWS verification)
+                        console.log("DID-based client registration:", client);
+                    } else {
+                        // Origin-based validation
+                        try {
+                            const response = await fetch(`${client.client_id}/.well-known/vibe-client.json`);
+                            if (!response.ok) {
+                                throw new Error("Failed to fetch client metadata");
+                            }
+                            const metadata = await response.json();
+                            // TODO: Add more robust validation of the metadata
+                            console.log("Origin-based client metadata:", metadata);
+                        } catch (error) {
+                            console.error("Client metadata validation failed:", error);
+                            throw new Error("Invalid client metadata");
+                        }
+                    }
+                },
+            },
         },
 
         cookies: {

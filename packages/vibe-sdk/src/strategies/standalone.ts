@@ -19,6 +19,7 @@ interface OIDCConfig {
     userinfo_endpoint: string;
     jwks_uri: string;
     end_session_endpoint: string;
+    registration_endpoint?: string;
 }
 
 // --- Standalone Strategy ---
@@ -152,11 +153,45 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                     } catch (error) {
                         reject(error);
                     }
+                } else if (event.data.type === "vibe-registration-required") {
+                    try {
+                        await this.registerClient();
+                        // Retry the login after successful registration
+                        await this.login();
+                        resolve();
+                    } catch (error) {
+                        reject(error);
+                    }
                 }
             };
 
             window.addEventListener("message", handleMessage);
         });
+    }
+
+    private async registerClient(): Promise<void> {
+        if (!this.oidcConfig) {
+            await this.loadOIDCConfig();
+        }
+
+        const response = await fetch(this.oidcConfig!.registration_endpoint!, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                client_name: "My Vibe App",
+                redirect_uris: [this.options.redirectUri],
+                grant_types: ["authorization_code", "refresh_token"],
+                response_types: ["code"],
+                token_endpoint_auth_method: "none", // For public clients
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error("Failed to register client");
+        }
+
+        const client = await response.json();
+        this.options.clientId = client.client_id;
     }
 
     private async exchangeCodeForToken(code: string, state: string): Promise<void> {

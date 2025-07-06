@@ -8,6 +8,7 @@ import { getUserDbName } from "./lib/db";
 import nano from "nano";
 import { configureOidcProvider } from "./lib/oidc";
 import { connect } from "elysia-connect-middleware";
+import { ClientService } from "./services/client";
 
 const startServer = async () => {
     const identityService = new IdentityService({
@@ -15,6 +16,13 @@ const startServer = async () => {
         user: process.env.COUCHDB_USER!,
         pass: process.env.COUCHDB_PASSWORD!,
         instanceIdSecret: process.env.INSTANCE_ID_SECRET!,
+    });
+
+    const clientService = new ClientService({
+        url: process.env.COUCHDB_URL!,
+        user: process.env.COUCHDB_USER!,
+        pass: process.env.COUCHDB_PASSWORD!,
+        clientSecret: process.env.VIBE_WEB_CLIENT_SECRET!,
     });
 
     const couch = nano(process.env.COUCHDB_URL!);
@@ -26,10 +34,11 @@ const startServer = async () => {
     });
 
     const issuer = process.env.ISSUER_URL || "http://localhost:5000";
-    const oidc = configureOidcProvider(issuer, identityService, process.env.VIBE_WEB_CLIENT_SECRET!);
+    const oidc = configureOidcProvider(issuer, identityService, clientService, process.env.VIBE_WEB_CLIENT_SECRET!);
 
     try {
         await identityService.onApplicationBootstrap(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
+        await clientService.onApplicationBootstrap();
         await dataService.init();
         await couch.auth(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
     } catch (error) {
