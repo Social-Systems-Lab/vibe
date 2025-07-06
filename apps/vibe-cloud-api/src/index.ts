@@ -63,31 +63,37 @@ const startServer = async () => {
             status: identityService.isConnected ? "ok" : "error",
             details: identityService.isConnected ? "All systems operational" : "Database connection failed",
         }))
-        .get("/interaction/:uid", async ({ params, set, request }) => {
-            try {
-                const oidcBaseUrl = process.env.OIDC_ISSUER_URL || "http://localhost:5001";
-                const detailsUrl = `${oidcBaseUrl}/interaction/${params.uid}/details`;
-
-                // Forward the browser's cookies to the OIDC server
-                const headers = new Headers();
-                if (request.headers.has("cookie")) {
-                    headers.set("cookie", request.headers.get("cookie")!);
-                }
-
-                const response = await fetch(detailsUrl, { headers });
-
-                if (!response.ok) {
-                    console.error("OIDC details response error:", await response.text());
-                    throw new Error(`Failed to fetch interaction details: ${response.statusText}`);
-                }
-                const details = await response.json();
-                return details;
-            } catch (error: any) {
-                console.error("Failed to fetch interaction details:", error);
-                set.status = 500;
-                return { error: "Failed to fetch interaction details" };
-            }
+        .get("/interaction/:uid", ({ params, redirect }) => {
+            const interactionUrl = new URL("http://localhost:3000/oauth/interaction");
+            interactionUrl.searchParams.set("uid", params.uid);
+            return redirect(interactionUrl.toString());
         })
+        .group("/api", (app) =>
+            app.get("/interaction/:uid", async ({ params, set, request }) => {
+                try {
+                    const oidcBaseUrl = process.env.OIDC_ISSUER_URL || "http://localhost:5001";
+                    const detailsUrl = `${oidcBaseUrl}/interaction/${params.uid}/details`;
+
+                    const headers = new Headers();
+                    if (request.headers.has("cookie")) {
+                        headers.set("cookie", request.headers.get("cookie")!);
+                    }
+
+                    const response = await fetch(detailsUrl, { headers });
+
+                    if (!response.ok) {
+                        console.error("OIDC details response error:", await response.text());
+                        throw new Error(`Failed to fetch interaction details: ${response.statusText}`);
+                    }
+                    const details = await response.json();
+                    return details;
+                } catch (error: any) {
+                    console.error("Failed to fetch interaction details:", error);
+                    set.status = 500;
+                    return { error: "Failed to fetch interaction details" };
+                }
+            })
+        )
         .group("/auth", (app) =>
             app
                 .post(

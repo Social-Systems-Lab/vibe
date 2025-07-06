@@ -9,7 +9,8 @@ type Page =
 | { path: '/auth/login'; render: 'dynamic' }
 | { path: '/auth/signup'; render: 'dynamic' }
 | { path: '/'; render: 'dynamic' }
-| { path: '/oauth/authorize'; render: 'dynamic' };
+| { path: '/oauth/authorize'; render: 'dynamic' }
+| { path: '/oauth/interaction'; render: 'dynamic' };
 
 // prettier-ignore
 declare module 'waku/router' {
