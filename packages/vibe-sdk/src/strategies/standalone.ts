@@ -2,247 +2,274 @@ import { VibeTransportStrategy } from "../strategy";
 import { edenTreaty } from "@elysiajs/eden";
 import type { App } from "vibe-cloud-api";
 import { User, ReadCallback, Subscription } from "../types";
+import { jwtDecode } from "jwt-decode";
 
-const VIBE_WEB_URL = "http://localhost:3000";
 const VIBE_API_URL = "http://localhost:5000";
 
-// --- Internal Auth Manager ---
-class AuthManager {
+interface StandaloneStrategyOptions {
+    issuer: string;
+    clientId: string;
+    redirectUri: string;
+    scopes: string[];
+}
+
+interface OIDCConfig {
+    authorization_endpoint: string;
+    token_endpoint: string;
+    userinfo_endpoint: string;
+    jwks_uri: string;
+    end_session_endpoint: string;
+}
+
+// --- Standalone Strategy ---
+export class StandaloneStrategy implements VibeTransportStrategy {
     private accessToken: string | null = null;
-    private refreshToken: string | null = null;
     private user: User | null = null;
     private stateChangeListeners: ((isLoggedIn: boolean) => void)[] = [];
-    private storageKey = "vibe_refresh_token";
+    private api;
+    private options: StandaloneStrategyOptions;
+    private oidcConfig: OIDCConfig | null = null;
 
-    constructor() {
-        if (typeof window !== "undefined") {
-            this.refreshToken = window.localStorage.getItem(this.storageKey);
-        }
+    constructor(options: StandaloneStrategyOptions) {
+        this.options = options;
+        this.api = edenTreaty<App>(VIBE_API_URL);
     }
 
-    getAccessToken() {
-        return this.accessToken;
+    async init() {
+        await this.loadOIDCConfig();
+        // Attempt to silently refresh the token on initialization
+        await this.handleTokenRefresh();
     }
 
-    setAccessToken(token: string | null) {
-        this.accessToken = token;
-        this.notifyStateChange();
-    }
-
-    getRefreshToken() {
-        return this.refreshToken;
-    }
-
-    setRefreshToken(token: string | null) {
-        this.refreshToken = token;
-        if (typeof window !== "undefined") {
-            if (token) {
-                window.localStorage.setItem(this.storageKey, token);
-            } else {
-                window.localStorage.removeItem(this.storageKey);
+    private async loadOIDCConfig() {
+        try {
+            const response = await fetch(`${this.options.issuer}/.well-known/openid-configuration`);
+            if (!response.ok) {
+                throw new Error("Failed to fetch OIDC configuration");
             }
+            this.oidcConfig = await response.json();
+        } catch (error) {
+            console.error("Error loading OIDC configuration:", error);
+            throw error;
         }
     }
 
-    getUser() {
-        return this.user;
+    private async handleTokenRefresh() {
+        if (!this.oidcConfig) {
+            await this.loadOIDCConfig();
+        }
+        try {
+            const response = await fetch(this.oidcConfig!.token_endpoint, {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({
+                    grant_type: "refresh_token",
+                    client_id: this.options.clientId,
+                }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                this.setAccessToken(null);
+                this.setUser(null);
+                throw new Error(data.error_description || "Failed to refresh token");
+            }
+
+            this.setAccessToken(data.access_token);
+            await this.fetchUser();
+        } catch (e) {
+            console.error("Exception during token refresh:", e);
+            this.setAccessToken(null);
+            this.setUser(null);
+        }
     }
 
-    setUser(user: User | null) {
-        this.user = user;
+    private async generatePkce() {
+        const verifier = this.generateRandomString(128);
+        const challenge = await this.sha256(verifier);
+        const base64Challenge = this.base64UrlEncode(challenge);
+        return { verifier, challenge: base64Challenge };
     }
 
-    isLoggedIn() {
-        return !!this.getAccessToken();
+    private generateRandomString(length: number) {
+        const array = new Uint8Array(length);
+        window.crypto.getRandomValues(array);
+        return Array.from(array, (byte) => ("0" + byte.toString(16)).slice(-2)).join("");
     }
 
-    onStateChange(listener: (isLoggedIn: boolean) => void) {
-        this.stateChangeListeners.push(listener);
+    private async sha256(plain: string) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(plain);
+        return window.crypto.subtle.digest("SHA-256", data);
+    }
+
+    private base64UrlEncode(buffer: ArrayBuffer) {
+        return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+            .replace(/\+/g, "-")
+            .replace(/\//g, "_")
+            .replace(/=+$/, "");
+    }
+
+    async login(): Promise<void> {
+        if (!this.oidcConfig) {
+            await this.loadOIDCConfig();
+        }
+
+        const state = this.generateRandomString(32);
+        const nonce = this.generateRandomString(32);
+        const { verifier, challenge } = await this.generatePkce();
+
+        sessionStorage.setItem(`vibe_pkce_${state}`, verifier);
+        sessionStorage.setItem(`vibe_nonce_${state}`, nonce);
+
+        const authUrl = new URL(this.oidcConfig!.authorization_endpoint);
+        authUrl.search = new URLSearchParams({
+            client_id: this.options.clientId,
+            redirect_uri: this.options.redirectUri,
+            response_type: "code",
+            scope: this.options.scopes.join(" "),
+            state,
+            nonce,
+            code_challenge: challenge,
+            code_challenge_method: "S256",
+        }).toString();
+
+        window.location.assign(authUrl.toString());
+    }
+
+    async handleRedirect(): Promise<void> {
+        if (!this.oidcConfig) {
+            await this.loadOIDCConfig();
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get("code");
+        const state = params.get("state");
+
+        if (!code || !state) {
+            throw new Error("Invalid redirect: missing code or state");
+        }
+
+        const verifier = sessionStorage.getItem(`vibe_pkce_${state}`);
+        if (!verifier) {
+            throw new Error("Invalid state: PKCE verifier not found");
+        }
+
+        const response = await fetch(this.oidcConfig!.token_endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+                grant_type: "authorization_code",
+                client_id: this.options.clientId,
+                redirect_uri: this.options.redirectUri,
+                code,
+                code_verifier: verifier,
+            }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error_description || "Failed to exchange code for token");
+        }
+
+        this.setAccessToken(data.access_token);
+        await this.fetchUser();
+
+        // Clean up storage
+        sessionStorage.removeItem(`vibe_pkce_${state}`);
+        sessionStorage.removeItem(`vibe_nonce_${state}`);
+
+        // Remove query params from URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    async logout(): Promise<void> {
+        if (!this.oidcConfig) {
+            await this.loadOIDCConfig();
+        }
+        // TODO: Add post_logout_redirect_uri and id_token_hint
+        if (this.oidcConfig?.end_session_endpoint) {
+            window.location.assign(this.oidcConfig.end_session_endpoint);
+        }
+        this.setAccessToken(null);
+        this.setUser(null);
+    }
+
+    async signup(): Promise<void> {
+        // Redirect to the login page with a signup hint
+        const loginUrl = new URL(this.oidcConfig!.authorization_endpoint);
+        loginUrl.searchParams.set("prompt", "create");
+        await this.login();
+    }
+
+    private async fetchUser(): Promise<User | null> {
+        if (!this.accessToken) return null;
+        try {
+            const decoded = jwtDecode(this.accessToken) as any;
+            const user: User = {
+                id: decoded.sub,
+                did: decoded.sub, // Assuming sub is the DID
+                name: decoded.name,
+                email: decoded.email,
+                picture: decoded.picture,
+            };
+            this.setUser(user);
+            return user;
+        } catch (e) {
+            console.error("Failed to decode token or fetch user info", e);
+            this.setUser(null);
+            return null;
+        }
+    }
+
+    async getUser(): Promise<User | null> {
+        if (this.user) return this.user;
+        return this.fetchUser();
+    }
+
+    onStateChange(callback: (isLoggedIn: boolean) => void) {
+        this.stateChangeListeners.push(callback);
         return () => {
-            this.stateChangeListeners = this.stateChangeListeners.filter((l) => l !== listener);
+            this.stateChangeListeners = this.stateChangeListeners.filter((l) => l !== callback);
         };
     }
 
     private notifyStateChange() {
         this.stateChangeListeners.forEach((listener) => listener(this.isLoggedIn()));
     }
-}
 
-// --- Standalone Strategy ---
-export class StandaloneStrategy implements VibeTransportStrategy {
-    private authManager: AuthManager;
-    private api;
-    private isRefreshing = false;
-    private refreshPromise: Promise<any> | null = null;
-
-    constructor() {
-        this.authManager = new AuthManager();
-        this.api = edenTreaty<App>(VIBE_API_URL);
+    isLoggedIn() {
+        return !!this.accessToken;
     }
 
-    async init() {
-        if (this.authManager.getRefreshToken()) {
-            await this.handleTokenRefresh();
-        }
+    private setAccessToken(token: string | null) {
+        this.accessToken = token;
+        this.notifyStateChange();
     }
 
-    private async handleTokenRefresh() {
-        const refreshToken = this.authManager.getRefreshToken();
-        if (!refreshToken) {
-            this.authManager.setAccessToken(null);
-            this.authManager.setUser(null);
-            return;
-        }
-
-        try {
-            const { data, error } = await (this.api.auth.refresh as any).post({ refreshToken });
-
-            if (error) {
-                this.authManager.setAccessToken(null);
-                this.authManager.setRefreshToken(null);
-                this.authManager.setUser(null);
-                throw new Error("Failed to refresh token");
-            }
-
-            if (data && typeof data === "object" && "token" in data && "refreshToken" in data) {
-                this.authManager.setAccessToken(data.token as string);
-                this.authManager.setRefreshToken(data.refreshToken as string);
-                await this.getUser();
-            } else {
-                this.authManager.setAccessToken(null);
-                this.authManager.setRefreshToken(null);
-                this.authManager.setUser(null);
-                throw new Error("Invalid response from token refresh");
-            }
-        } catch (e) {
-            console.error("Exception during token refresh:", e);
-            this.authManager.setAccessToken(null);
-            this.authManager.setRefreshToken(null);
-            this.authManager.setUser(null);
-            throw e;
-        }
-    }
-
-    private openCenteredPopup(url: string, width: number, height: number): Window | null {
-        const left = (screen.width - width) / 2;
-        const top = (screen.height - height) / 2;
-        const features = `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`;
-        return window.open(url, "vibeLogin", features);
-    }
-
-    private async _auth(path: "login" | "signup"): Promise<void> {
-        const authUrl = `${VIBE_WEB_URL}/auth/${path}`;
-        const popup = this.openCenteredPopup(authUrl, 500, 600);
-
-        return new Promise((resolve, reject) => {
-            if (!popup) {
-                return reject(new Error("Popup failed to open."));
-            }
-
-            const messageListener = async (event: MessageEvent) => {
-                if (event.origin !== VIBE_WEB_URL) return;
-
-                if (event.data && event.data.type === "VIBE_AUTH_SUCCESS") {
-                    this.authManager.setAccessToken(event.data.token);
-                    this.authManager.setRefreshToken(event.data.refreshToken);
-                    await this.getUser();
-                    window.removeEventListener("message", messageListener);
-                    popup.close();
-                    resolve();
-                }
-
-                if (event.data && event.data.type === "VIBE_AUTH_FAIL") {
-                    window.removeEventListener("message", messageListener);
-                    popup.close();
-                    reject(new Error("Authentication failed."));
-                }
-            };
-
-            window.addEventListener("message", messageListener);
-
-            const timer = setInterval(() => {
-                if (popup.closed) {
-                    clearInterval(timer);
-                    window.removeEventListener("message", messageListener);
-                    reject(new Error("Login window was closed by the user."));
-                }
-            }, 500);
-        });
-    }
-
-    async login(): Promise<void> {
-        return this._auth("login");
-    }
-
-    async logout(): Promise<void> {
-        const refreshToken = this.authManager.getRefreshToken();
-        if (refreshToken) {
-            await (this.api.auth.logout as any).post({ refreshToken });
-        }
-        this.authManager.setAccessToken(null);
-        this.authManager.setRefreshToken(null);
-        this.authManager.setUser(null);
-    }
-
-    async signup(): Promise<void> {
-        return this._auth("signup");
-    }
-
-    async getUser(): Promise<User | null> {
-        if (!this.authManager.isLoggedIn()) {
-            return null;
-        }
-        try {
-            const { data, error } = await this.api.users.me.get({
-                $headers: {
-                    Authorization: `Bearer ${this.authManager.getAccessToken()}`,
-                },
-            });
-
-            if (error) {
-                if (error.status === 401) {
-                    if (!this.isRefreshing) {
-                        this.isRefreshing = true;
-                        this.refreshPromise = this.handleTokenRefresh();
-                    }
-                    await this.refreshPromise;
-                    this.isRefreshing = false;
-                    this.refreshPromise = null;
-                    // Retry the request
-                    return this.getUser();
-                }
-                console.error("Error fetching user:", error.value);
-                return null;
-            }
-
-            const user = data?.user as User | undefined;
-            this.authManager.setUser(user ?? null);
-            return user ?? null;
-        } catch (e) {
-            console.error("Exception fetching user:", e);
-            return null;
-        }
-    }
-
-    onStateChange(callback: (isLoggedIn: boolean) => void) {
-        return this.authManager.onStateChange(callback);
+    private setUser(user: User | null) {
+        this.user = user;
     }
 
     // --- Vibe DB Methods ---
     async readOnce(collection: string, filter: any = {}): Promise<any> {
-        if (!this.authManager.isLoggedIn()) {
-            // TODO: queue request until logged in?
+        if (!this.isLoggedIn()) {
             throw new Error("User is not authenticated.");
         }
 
         const { data, error } = await (this.api.data as any)[collection].query.post(filter, {
             headers: {
-                Authorization: `Bearer ${this.authManager.getAccessToken()}`,
+                Authorization: `Bearer ${this.accessToken}`,
             },
         });
 
         if (error) {
-            // TODO: Handle token refresh on 401
+            if (error.status === 401) {
+                await this.handleTokenRefresh();
+                return this.readOnce(collection, filter); // Retry
+            }
             console.error("Error reading data:", error.value);
             throw new Error("Failed to read data.");
         }
@@ -251,19 +278,21 @@ export class StandaloneStrategy implements VibeTransportStrategy {
     }
 
     async write(collection: string, doc: any): Promise<any> {
-        if (!this.authManager.isLoggedIn()) {
-            // TODO: queue request until logged in?
+        if (!this.isLoggedIn()) {
             throw new Error("User is not authenticated.");
         }
 
         const { data, error } = await (this.api.data as any)[collection].post(doc, {
             headers: {
-                Authorization: `Bearer ${this.authManager.getAccessToken()}`,
+                Authorization: `Bearer ${this.accessToken}`,
             },
         });
 
         if (error) {
-            // TODO: Handle token refresh on 401
+            if (error.status === 401) {
+                await this.handleTokenRefresh();
+                return this.write(collection, doc); // Retry
+            }
             console.error("Error writing data:", error.value);
             throw new Error("Failed to write data.");
         }
@@ -278,8 +307,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
     }
 
     async read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription> {
-        if (!this.authManager.isLoggedIn()) {
-            // TODO: queue request until logged in?
+        if (!this.isLoggedIn()) {
             throw new Error("User is not authenticated.");
         }
 
@@ -294,14 +322,13 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             ws.send(
                 JSON.stringify({
                     type: "auth",
-                    token: this.authManager.getAccessToken(),
+                    token: this.accessToken,
                 })
             );
         });
 
         ws.on("message", (message: any) => {
             try {
-                // eden-treaty ws client returns the data directly
                 callback({ ok: true, data: message.data });
             } catch (error: any) {
                 callback({ ok: false, error: "Failed to parse message" });

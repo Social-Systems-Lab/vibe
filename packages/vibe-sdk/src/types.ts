@@ -1,11 +1,16 @@
 export interface User {
+    id: string;
     did: string;
-    instanceId: string;
+    name?: string;
+    email?: string;
+    picture?: string;
 }
 
 export interface JwtPayload {
     sub: string; // This is the user's DID
-    instanceId: string;
+    name?: string;
+    email?: string;
+    picture?: string;
 }
 
 export type ReadResult<T = any> = {
