@@ -6,7 +6,7 @@ import { jwtDecode } from "jwt-decode";
 
 const VIBE_API_URL = "http://localhost:5000";
 
-interface StandaloneStrategyOptions {
+export interface StandaloneStrategyOptions {
     issuer: string;
     clientId: string;
     redirectUri: string;
@@ -135,22 +135,31 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             code_challenge_method: "S256",
         }).toString();
 
-        window.location.assign(authUrl.toString());
+        const popup = window.open(authUrl.toString(), "vibe-login", "width=600,height=700");
+
+        return new Promise((resolve, reject) => {
+            const handleMessage = async (event: MessageEvent) => {
+                if (event.origin !== window.location.origin) {
+                    return;
+                }
+
+                if (event.data.type === "vibe-auth-code") {
+                    window.removeEventListener("message", handleMessage);
+                    popup?.close();
+                    try {
+                        await this.exchangeCodeForToken(event.data.code, state);
+                        resolve();
+                    } catch (error) {
+                        reject(error);
+                    }
+                }
+            };
+
+            window.addEventListener("message", handleMessage);
+        });
     }
 
-    async handleRedirect(): Promise<void> {
-        if (!this.oidcConfig) {
-            await this.loadOIDCConfig();
-        }
-
-        const params = new URLSearchParams(window.location.search);
-        const code = params.get("code");
-        const state = params.get("state");
-
-        if (!code || !state) {
-            throw new Error("Invalid redirect: missing code or state");
-        }
-
+    private async exchangeCodeForToken(code: string, state: string): Promise<void> {
         const verifier = sessionStorage.getItem(`vibe_pkce_${state}`);
         if (!verifier) {
             throw new Error("Invalid state: PKCE verifier not found");
@@ -180,9 +189,6 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         // Clean up storage
         sessionStorage.removeItem(`vibe_pkce_${state}`);
         sessionStorage.removeItem(`vibe_nonce_${state}`);
-
-        // Remove query params from URL
-        window.history.replaceState({}, document.title, window.location.pathname);
     }
 
     async logout(): Promise<void> {

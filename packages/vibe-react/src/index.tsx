@@ -11,7 +11,6 @@ interface VibeContextType {
     login: () => Promise<void>;
     logout: () => Promise<void>;
     signup: () => Promise<void>;
-    handleRedirect: () => Promise<void>;
     read(collection: string, callback: ReadCallback): Promise<Subscription>;
     read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription>;
     readOnce: (collection: string, filter?: any) => Promise<any>;
@@ -59,7 +58,6 @@ export const VibeProvider = ({ children, issuer, clientId, redirectUri, scopes }
     const login = () => sdk.login();
     const logout = () => sdk.logout();
     const signup = () => sdk.signup();
-    const handleRedirect = () => sdk.handleRedirect();
     function read(collection: string, callback: ReadCallback): Promise<Subscription>;
     function read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription>;
     function read(collection: string, filterOrCb: ReadCallback | any, callback?: ReadCallback): Promise<Subscription> {
@@ -72,11 +70,7 @@ export const VibeProvider = ({ children, issuer, clientId, redirectUri, scopes }
     const write = (collection: string, data: any) => sdk.write(collection, data);
     const remove = (collection: string, data: any) => sdk.remove(collection, data);
 
-    return (
-        <VibeContext.Provider value={{ sdk, user, isLoggedIn, login, logout, signup, handleRedirect, read, readOnce, write, remove }}>
-            {children}
-        </VibeContext.Provider>
-    );
+    return <VibeContext.Provider value={{ sdk, user, isLoggedIn, login, logout, signup, read, readOnce, write, remove }}>{children}</VibeContext.Provider>;
 };
 
 export const useVibe = () => {

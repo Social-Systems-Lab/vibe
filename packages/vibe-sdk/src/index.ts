@@ -1,10 +1,10 @@
-import { StandaloneStrategy } from "./strategies/standalone";
+import { StandaloneStrategy, StandaloneStrategyOptions } from "./strategies/standalone";
 import { AgentStrategy } from "./strategies/agent";
 import { VibeTransportStrategy } from "./strategy";
 import { ReadCallback, Subscription } from "./types";
 
-export type VibeSDKConfig = {
-    apiUrl: string;
+export type VibeSDKConfig = StandaloneStrategyOptions & {
+    // We can add other config options here later
 };
 
 export class VibeSDK {
@@ -14,7 +14,7 @@ export class VibeSDK {
 
     constructor(config: VibeSDKConfig) {
         // For now, we default to Standalone. Later we'll add agent detection.
-        this.strategy = new StandaloneStrategy();
+        this.strategy = new StandaloneStrategy(config);
         console.log("Vibe SDK Initialized with Standalone Strategy");
     }
 

@@ -15,8 +15,10 @@ export default function AuthorizePage() {
     const codeChallengeMethod = searchParams.get("code_challenge_method");
 
     const handleLoginSuccess = (data: AuthState) => {
-        // TODO: Implement consent screen and redirect
-        console.log("Login successful, now show consent screen", data);
+        if (data.code) {
+            window.opener.postMessage({ type: "vibe-auth-code", code: data.code }, window.location.origin);
+            window.close();
+        }
     };
 
     // TODO: Add logic to check if user is already logged in

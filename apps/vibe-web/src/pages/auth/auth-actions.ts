@@ -18,6 +18,7 @@ export const checkApiHealth = async () => {
 export type AuthState = {
     success?: boolean;
     error?: string;
+    code?: string;
 };
 
 export const signup = async (prevState: AuthState | null, formData: FormData): Promise<AuthState> => {
@@ -75,7 +76,8 @@ export const login = async (prevState: AuthState | null, formData: FormData): Pr
             }
         }
 
-        return { success: true };
+        const data = await response.json();
+        return { success: true, code: data.code };
     } catch (error) {
         console.error("Login error:", error);
         return { error: "An unexpected error occurred" };
