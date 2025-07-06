@@ -69,6 +69,20 @@ const startServer = async () => {
             status: identityService.isConnected ? "ok" : "error",
             details: identityService.isConnected ? "All systems operational" : "Database connection failed",
         }))
+        .get("/interaction/:uid", async (context) => {
+            try {
+                // The oidc-provider library expects Node.js native req/res objects.
+                // We can access them through the Elysia context, but the types are not
+                // directly compatible. We need to cast them to `any` to make it work.
+                const req = (context as any).request.raw;
+                const res = (context as any).set.raw;
+                const details = await oidc.interactionDetails(req, res);
+                return details;
+            } catch (err: any) {
+                context.set.status = 500;
+                return { error: err.message };
+            }
+        })
         .group("/auth", (app) =>
             app
                 .post(
@@ -163,6 +177,25 @@ const startServer = async () => {
                     {
                         body: t.Object({
                             refreshToken: t.String(),
+                        }),
+                    }
+                )
+                .post(
+                    "/verify-password",
+                    async ({ body }) => {
+                        const { email, password } = body;
+                        try {
+                            // This method should only verify the password and not perform a full login
+                            const user = await identityService.verifyPassword(email, password);
+                            return { success: true, did: user.did };
+                        } catch (error: any) {
+                            return { success: false, error: error.message };
+                        }
+                    },
+                    {
+                        body: t.Object({
+                            email: t.String(),
+                            password: t.String(),
                         }),
                     }
                 )

@@ -188,6 +188,24 @@ export class IdentityService {
         return { ...user, refreshToken };
     }
 
+    async verifyPassword(email: string, password_raw: string) {
+        await this.reauthenticate();
+        if (!this.usersDb || !this.isConnected) {
+            throw new Error("Database not connected");
+        }
+        const user = await this.findByEmail(email);
+        if (!user) {
+            throw new Error("Invalid credentials");
+        }
+
+        const isMatch = await Bun.password.verify(password_raw, user.password_hash);
+        if (!isMatch) {
+            throw new Error("Invalid credentials");
+        }
+
+        return user;
+    }
+
     async findByDid(did: string) {
         await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {

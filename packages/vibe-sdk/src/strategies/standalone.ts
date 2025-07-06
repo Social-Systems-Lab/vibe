@@ -243,10 +243,64 @@ export class StandaloneStrategy implements VibeTransportStrategy {
     }
 
     async signup(): Promise<void> {
-        // Redirect to the login page with a signup hint
-        const loginUrl = new URL(this.oidcConfig!.authorization_endpoint);
-        loginUrl.searchParams.set("prompt", "create");
-        await this.login();
+        // This is a simplified version of the login method, but with the 'prompt=create' parameter.
+        if (!this.oidcConfig) {
+            await this.loadOIDCConfig();
+        }
+
+        const state = this.generateRandomString(32);
+        const nonce = this.generateRandomString(32);
+        const { verifier, challenge } = await this.generatePkce();
+
+        sessionStorage.setItem(`vibe_pkce_${state}`, verifier);
+        sessionStorage.setItem(`vibe_nonce_${state}`, nonce);
+
+        const authUrl = new URL(this.oidcConfig!.authorization_endpoint);
+        authUrl.search = new URLSearchParams({
+            client_id: this.options.clientId,
+            redirect_uri: this.options.redirectUri,
+            response_type: "code",
+            scope: this.options.scopes.join(" "),
+            state,
+            nonce,
+            code_challenge: challenge,
+            code_challenge_method: "S256",
+            prompt: "create", // Add the signup hint
+        }).toString();
+
+        const popup = window.open(authUrl.toString(), "vibe-login", "width=600,height=700");
+
+        return new Promise((resolve, reject) => {
+            const handleMessage = async (event: MessageEvent) => {
+                if (event.origin !== window.location.origin) {
+                    return;
+                }
+
+                if (event.data.type === "vibe-auth-code") {
+                    window.removeEventListener("message", handleMessage);
+                    popup?.close();
+                    try {
+                        await this.exchangeCodeForToken(event.data.code, state);
+                        resolve();
+                    } catch (error) {
+                        reject(error);
+                    }
+                } else if (event.data.type === "vibe-auth-error" && event.data.error === "invalid_client") {
+                    window.removeEventListener("message", handleMessage);
+                    popup?.close();
+                    try {
+                        await this.registerClient();
+                        // Retry the signup after successful registration
+                        await this.signup();
+                        resolve();
+                    } catch (error) {
+                        reject(error);
+                    }
+                }
+            };
+
+            window.addEventListener("message", handleMessage);
+        });
     }
 
     private async fetchUser(): Promise<User | null> {

@@ -19,6 +19,7 @@ export type AuthState = {
     success?: boolean;
     error?: string;
     code?: string;
+    did?: string;
 };
 
 export const signup = async (prevState: AuthState | null, formData: FormData): Promise<AuthState> => {
@@ -26,29 +27,25 @@ export const signup = async (prevState: AuthState | null, formData: FormData): P
     const password = formData.get("password") as string;
 
     try {
+        // This still calls the original signup endpoint which creates the user
         const response = await fetch(`http://localhost:5000/auth/signup`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email, password }),
         });
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error("Signup failed with status:", response.status, "and response:", errorText);
-            try {
-                const errorData = JSON.parse(errorText);
-                return { error: errorData.error || "Signup failed" };
-            } catch (e) {
-                return { error: "An unexpected error occurred and the response was not valid JSON." };
-            }
+            console.error(`Signup failed: ${response.status} ${errorText}`);
+            return { error: "Signup failed. Please try again." };
         }
 
+        // After a successful signup, we indicate success.
+        // The authorize page will then re-render the login form.
         return { success: true };
     } catch (error) {
         console.error("Signup error:", error);
-        return { error: "An unexpected error occurred" };
+        return { error: "An unexpected network error occurred." };
     }
 };
 
@@ -57,29 +54,25 @@ export const login = async (prevState: AuthState | null, formData: FormData): Pr
     const password = formData.get("password") as string;
 
     try {
-        const response = await fetch(`http://localhost:5000/auth/login`, {
+        // Step 1: Verify credentials with our new dedicated endpoint
+        const response = await fetch(`http://localhost:5000/auth/verify-password`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email, password }),
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error("Login failed with status:", response.status, "and response:", errorText);
-            try {
-                const errorData = JSON.parse(errorText);
-                return { error: errorData.error || "Login failed" };
-            } catch (e) {
-                return { error: "An unexpected error occurred and the response was not valid JSON." };
-            }
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            return { error: data.error || "Invalid email or password." };
         }
 
-        const data = await response.json();
-        return { success: true, code: data.code };
+        // Step 2: On successful verification, we need to complete the OIDC flow.
+        // For now, we'll just return a success state with the user's DID.
+        // The next step will be to use this to complete the interaction with the OIDC provider.
+        return { success: true, did: data.did };
     } catch (error) {
         console.error("Login error:", error);
-        return { error: "An unexpected error occurred" };
+        return { error: "An unexpected network error occurred." };
     }
 };

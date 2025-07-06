@@ -1,32 +1,41 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { LoginForm } from "../../components/LoginForm";
+import { SignupForm } from "../../components/SignupForm"; // We will create this next
 import { AuthState } from "../auth/auth-actions";
 
 export default function AuthorizePage() {
+    const [prompt, setPrompt] = useState<string | null>(null);
+
     useEffect(() => {
-        // This code now runs only on the client
         const searchParams = new URLSearchParams(window.location.search);
         const error = searchParams.get("error");
+        setPrompt(searchParams.get("prompt"));
 
         if (error) {
-            // Immediately notify the opener and close if there's an error
             window.opener?.postMessage({ type: "vibe-auth-error", error }, window.location.origin);
             window.close();
         }
     }, []);
 
-    const handleLoginSuccess = (data: AuthState) => {
-        if (data.code) {
-            // On success, notify the opener and close
-            window.opener?.postMessage({ type: "vibe-auth-code", code: data.code }, window.location.origin);
+    const handleAuthSuccess = (data: AuthState) => {
+        if (data.did) {
+            // TODO: Redirect to a new API route that will call provider.interactionFinished
+            console.log("Login successful, user DID:", data.did);
+            // For now, we'll just close the window to show the flow is working
             window.close();
+        } else if (data.success && prompt === "create") {
+            // After successful signup, show the login form
+            setPrompt(null);
         }
     };
 
     // TODO: Add logic to check if user is already logged in
 
-    // The LoginForm will now be rendered initially, and the logic will run on the client
-    return <LoginForm onLoginSuccess={handleLoginSuccess} />;
+    if (prompt === "create") {
+        return <SignupForm onSignupSuccess={handleAuthSuccess} />;
+    }
+
+    return <LoginForm onLoginSuccess={handleAuthSuccess} />;
 }

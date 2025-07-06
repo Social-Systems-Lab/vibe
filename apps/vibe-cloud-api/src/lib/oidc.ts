@@ -1,4 +1,4 @@
-import Provider, { KoaContextWithOIDC, ResponseType } from "oidc-provider";
+import Provider, { KoaContextWithOIDC, ResponseType, ClientAuthMethod, interactionPolicy } from "oidc-provider";
 import { IdentityService } from "../services/identity";
 import { ClientService } from "../services/client";
 import { CustomOidcAdapter } from "./oidc-adapter";
@@ -18,6 +18,13 @@ export const configureOidcProvider = (issuer: string, identityService: IdentityS
                 redirect_uris: ["http://localhost:3000/auth/callback"],
                 grant_types: ["authorization_code", "refresh_token"],
                 response_types: ["code"] as ResponseType[],
+            },
+            {
+                client_id: "http://localhost:3001",
+                redirect_uris: ["http://localhost:3001/auth/callback"],
+                grant_types: ["authorization_code", "refresh_token"],
+                response_types: ["code"] as ResponseType[],
+                token_endpoint_auth_method: "none" as ClientAuthMethod, // For public clients
             },
         ],
         pkce: {
@@ -97,6 +104,20 @@ export const configureOidcProvider = (issuer: string, identityService: IdentityS
         claims: {
             openid: ["sub"],
             email: ["email"],
+        },
+        interactions: {
+            url(ctx: KoaContextWithOIDC, interaction: any) {
+                return `/interaction/${interaction.uid}`;
+            },
+            policy: (() => {
+                const policy = interactionPolicy.base();
+                const createPrompt = new interactionPolicy.Prompt({
+                    name: "create",
+                    requestable: true,
+                });
+                policy.add(createPrompt, 1); // Add it after the login prompt
+                return policy;
+            })(),
         },
     };
 
