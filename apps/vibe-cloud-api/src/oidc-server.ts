@@ -2,6 +2,7 @@ import { IdentityService } from "./services/identity";
 import { StorageService } from "./services/storage";
 import { configureOidcProvider } from "./lib/oidc";
 import http from "http";
+import cors from "@koa/cors";
 
 const startOidcServer = async () => {
     console.log("Starting OIDC server...");
@@ -30,6 +31,21 @@ const startOidcServer = async () => {
 
     const issuer = process.env.OIDC_ISSUER_URL || "http://localhost:5001";
     const oidc = configureOidcProvider(issuer, identityService, storageService, process.env.VIBE_WEB_CLIENT_SECRET!);
+
+    oidc.use(
+        cors({
+            origin: (ctx) => {
+                const allowedOrigins = ["http://localhost:3000", "http://localhost:3001", "http://localhost:5000"];
+                const origin = ctx.get("origin");
+                if (allowedOrigins.includes(origin)) {
+                    return origin;
+                }
+                // If the origin is not allowed, do not set the header.
+                return "";
+            },
+            credentials: true,
+        })
+    );
 
     // A simple middleware to expose interaction details
     oidc.use(async (ctx, next) => {

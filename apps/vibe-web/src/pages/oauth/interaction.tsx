@@ -20,7 +20,7 @@ function InteractionContent({ uid }: { uid: string | null }) {
 
     useEffect(() => {
         if (uid) {
-            fetch(`http://localhost:5000/api/interaction/${uid}`)
+            fetch(`http://localhost:5000/api/interaction/${uid}`, { credentials: "include" })
                 .then((res) => {
                     if (!res.ok) {
                         throw new Error("Failed to fetch interaction details");
@@ -90,8 +90,9 @@ function InteractionContent({ uid }: { uid: string | null }) {
     return <div>Unknown prompt: {promptName}</div>;
 }
 
-export default function InteractionPage({ searchParams }: { searchParams: { uid: string } }) {
-    const uid = searchParams?.uid;
+export default function InteractionPage({ query }: { query: string }) {
+    const searchParams = new URLSearchParams(query);
+    const uid = searchParams.get("uid");
 
     return (
         <Suspense fallback={<Spinner />}>

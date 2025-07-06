@@ -99,6 +99,16 @@ export const configureOidcProvider = (issuer: string, identityService: IdentityS
 
         cookies: {
             keys: ["some-secret-key-that-is-at-least-32-characters-long", "and-another-one-for-rotation"],
+            short: {
+                httpOnly: true,
+                sameSite: "none" as const,
+                secure: false, // Set to true in production when using HTTPS
+            },
+            long: {
+                httpOnly: true,
+                sameSite: "none" as const,
+                secure: false, // Set to true in production when using HTTPS
+            },
         },
 
         claims: {
