@@ -1,55 +1,51 @@
 import type { Adapter, AdapterPayload } from "oidc-provider";
-import { ClientService } from "../services/client";
+import { StorageService } from "../services/storage";
 
 export class CustomOidcAdapter implements Adapter {
-    constructor(private readonly clientService: ClientService) {}
+    constructor(private readonly storageService: StorageService) {}
 
     async upsert(id: string, payload: AdapterPayload, expiresIn: number) {
-        // The 'id' is a composite key like 'client:client-id' or 'session:session-id'.
-        // We only care about storing clients.
-        const [type, key] = id.split(":");
-        if (type === "client") {
-            await this.clientService.upsert(key, payload as any);
-        }
+        await this.storageService.upsert(id, {
+            ...payload,
+            ...(expiresIn && { exp: Date.now() + expiresIn * 1000 }),
+        });
     }
 
     async find(id: string): Promise<AdapterPayload | undefined> {
-        const [type, key] = id.split(":");
-        if (type === "client") {
-            const client = await this.clientService.find(key);
-            if (client) {
-                return {
-                    ...client,
-                    // oidc-provider expects a `destroy` method on the returned object
-                    destroy: async () => this.destroy(id),
-                } as AdapterPayload;
+        const doc = await this.storageService.find(id);
+        if (doc) {
+            if (doc.exp && doc.exp < Date.now()) {
+                await this.destroy(id);
+                return undefined;
             }
+            return doc;
         }
         return undefined;
     }
 
     async findByUserCode(userCode: string) {
-        // Not implemented for this use case
+        // This is not something we need for our use case
         return undefined;
     }
 
     async findByUid(uid: string) {
-        // Not implemented for this use case
+        // This is not something we need for our use case
         return undefined;
     }
 
     async destroy(id: string) {
-        const [type, key] = id.split(":");
-        if (type === "client") {
-            await this.clientService.destroy(key);
-        }
+        await this.storageService.destroy(id);
     }
 
     async revokeByGrantId(grantId: string) {
-        // Not implemented for this use case
+        // This is not something we need for our use case
     }
 
     async consume(id: string) {
-        // Not implemented for this use case
+        const doc = await this.storageService.find(id);
+        if (doc) {
+            doc.consumed = Date.now();
+            await this.storageService.upsert(id, doc);
+        }
     }
 }

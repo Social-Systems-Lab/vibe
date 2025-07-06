@@ -6,8 +6,6 @@ import { IdentityService } from "./services/identity";
 import { DataService, JwtPayload } from "./services/data";
 import { getUserDbName } from "./lib/db";
 import nano from "nano";
-import { configureOidcProvider } from "./lib/oidc";
-import { connect } from "elysia-connect-middleware";
 import { ClientService } from "./services/client";
 
 const startServer = async () => {
@@ -33,9 +31,6 @@ const startServer = async () => {
         pass: process.env.COUCHDB_PASSWORD!,
     });
 
-    const issuer = process.env.ISSUER_URL || "http://localhost:5000";
-    const oidc = configureOidcProvider(issuer, identityService, clientService, process.env.VIBE_WEB_CLIENT_SECRET!);
-
     try {
         await identityService.onApplicationBootstrap(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
         await clientService.onApplicationBootstrap();
@@ -47,10 +42,9 @@ const startServer = async () => {
     }
 
     const app = new Elysia()
-        .use(connect(oidc.callback()))
         .use(
             cors({
-                origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"],
+                origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:5001"],
                 credentials: true,
             })
         )
@@ -69,18 +63,29 @@ const startServer = async () => {
             status: identityService.isConnected ? "ok" : "error",
             details: identityService.isConnected ? "All systems operational" : "Database connection failed",
         }))
-        .get("/interaction/:uid", async (context) => {
+        .get("/interaction/:uid", async ({ params, set, request }) => {
             try {
-                // The oidc-provider library expects Node.js native req/res objects.
-                // We can access them through the Elysia context, but the types are not
-                // directly compatible. We need to cast them to `any` to make it work.
-                const req = (context as any).request.raw;
-                const res = (context as any).set.raw;
-                const details = await oidc.interactionDetails(req, res);
+                const oidcBaseUrl = process.env.OIDC_ISSUER_URL || "http://localhost:5001";
+                const detailsUrl = `${oidcBaseUrl}/interaction/${params.uid}/details`;
+
+                // Forward the browser's cookies to the OIDC server
+                const headers = new Headers();
+                if (request.headers.has("cookie")) {
+                    headers.set("cookie", request.headers.get("cookie")!);
+                }
+
+                const response = await fetch(detailsUrl, { headers });
+
+                if (!response.ok) {
+                    console.error("OIDC details response error:", await response.text());
+                    throw new Error(`Failed to fetch interaction details: ${response.statusText}`);
+                }
+                const details = await response.json();
                 return details;
-            } catch (err: any) {
-                context.set.status = 500;
-                return { error: err.message };
+            } catch (error: any) {
+                console.error("Failed to fetch interaction details:", error);
+                set.status = 500;
+                return { error: "Failed to fetch interaction details" };
             }
         })
         .group("/auth", (app) =>

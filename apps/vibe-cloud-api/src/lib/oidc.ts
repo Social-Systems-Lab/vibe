@@ -1,12 +1,12 @@
 import Provider, { KoaContextWithOIDC, ResponseType, ClientAuthMethod, interactionPolicy } from "oidc-provider";
 import { IdentityService } from "../services/identity";
-import { ClientService } from "../services/client";
+import { StorageService } from "../services/storage";
 import { CustomOidcAdapter } from "./oidc-adapter";
 import { Client } from "../models/client";
 
-export const configureOidcProvider = (issuer: string, identityService: IdentityService, clientService: ClientService, clientSecret: string) => {
+export const configureOidcProvider = (issuer: string, identityService: IdentityService, storageService: StorageService, clientSecret: string) => {
     const adapterFactory = (name: string) => {
-        return new CustomOidcAdapter(clientService);
+        return new CustomOidcAdapter(storageService);
     };
 
     const configuration = {
@@ -107,7 +107,7 @@ export const configureOidcProvider = (issuer: string, identityService: IdentityS
         },
         interactions: {
             url(ctx: KoaContextWithOIDC, interaction: any) {
-                return `/interaction/${interaction.uid}`;
+                return `http://localhost:5000/interaction/${interaction.uid}`;
             },
             policy: (() => {
                 const policy = interactionPolicy.base();

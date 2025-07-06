@@ -3,7 +3,9 @@
     "version": "0.0.1",
     "private": true,
     "scripts": {
-        "dev": "bun run --watch src/index.ts",
+        "dev": "concurrently \"bun run dev:api\" \"bun run dev:oidc\"",
+        "dev:api": "bun run --watch src/index.ts",
+        "dev:oidc": "bun run --watch src/oidc-server.ts",
         "build:js": "bun build ./src/index.ts --outdir ./dist --target node",
         "build:types": "tsc --emitDeclarationOnly",
         "build": "bun run build:js && bun run build:types"
@@ -25,13 +27,13 @@
         "nano": "^10.1.4",
         "varint": "^6.0.0",
         "oidc-provider": "^9.2.0",
-        "uuid": "^9.0.1",
-        "elysia-connect-middleware": "^0.0.6"
+        "uuid": "^9.0.1"
     },
     "devDependencies": {
         "typescript": "^5.8.3",
         "@types/bun": "latest",
         "@types/uuid": "^9.0.8",
-        "@types/oidc-provider": "^9.1.1"
+        "@types/oidc-provider": "^9.1.1",
+        "concurrently": "^8.2.2"
     }
 }

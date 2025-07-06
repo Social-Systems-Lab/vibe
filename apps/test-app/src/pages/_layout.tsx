@@ -3,7 +3,7 @@ import { AuthWidget, VibeProvider } from "vibe-react";
 import "../styles.css";
 
 const vibeConfig = {
-    issuer: "http://localhost:5000",
+    issuer: "http://localhost:5001",
     clientId: "http://localhost:3001",
     redirectUri: "http://localhost:3001/auth/callback",
     scopes: ["openid", "profile", "email"],
