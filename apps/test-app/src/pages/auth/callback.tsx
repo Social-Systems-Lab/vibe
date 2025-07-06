@@ -3,21 +3,15 @@
 import { useEffect } from "react";
 import { useVibe } from "vibe-react";
 export default function AuthCallbackPage() {
-    const { handleRedirect } = useVibe();
-
     useEffect(() => {
-        const process = async () => {
-            try {
-                await handleRedirect();
-                window.location.href = "/";
-            } catch (error) {
-                console.error("Failed to handle redirect:", error);
-                // Optionally, redirect to an error page
-                window.location.href = "/auth/error";
-            }
-        };
-        process();
-    }, [handleRedirect]);
+        // The parent window will handle the redirect, so we just need to close this window.
+        // However, to be safe, we'll redirect to the home page if this page is opened directly.
+        if (window.opener) {
+            // The parent window will close us
+        } else {
+            window.location.href = "/";
+        }
+    }, []);
 
     return (
         <div className="flex items-center justify-center h-screen">

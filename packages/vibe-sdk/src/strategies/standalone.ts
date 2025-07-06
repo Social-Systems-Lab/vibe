@@ -42,19 +42,6 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         await this.handleTokenRefresh();
     }
 
-    private async loadOIDCConfig() {
-        try {
-            const response = await fetch(`${this.options.issuer}/.well-known/openid-configuration`);
-            if (!response.ok) {
-                throw new Error("Failed to fetch OIDC configuration");
-            }
-            this.oidcConfig = await response.json();
-        } catch (error) {
-            console.error("Error loading OIDC configuration:", error);
-            throw error;
-        }
-    }
-
     private async handleTokenRefresh() {
         if (!this.oidcConfig) {
             await this.loadOIDCConfig();
@@ -83,6 +70,19 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             console.error("Exception during token refresh:", e);
             this.setAccessToken(null);
             this.setUser(null);
+        }
+    }
+
+    private async loadOIDCConfig() {
+        try {
+            const response = await fetch(`${this.options.issuer}/.well-known/openid-configuration`);
+            if (!response.ok) {
+                throw new Error("Failed to fetch OIDC configuration");
+            }
+            this.oidcConfig = await response.json();
+        } catch (error) {
+            console.error("Error loading OIDC configuration:", error);
+            throw error;
         }
     }
 

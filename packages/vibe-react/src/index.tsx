@@ -32,6 +32,7 @@ export const VibeProvider = ({ children, issuer, clientId, redirectUri, scopes }
     const [sdk] = useState(() => new StandaloneStrategy({ issuer, clientId, redirectUri, scopes }));
     const [user, setUser] = useState<User | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [isInitialized, setIsInitialized] = useState(false);
 
     useEffect(() => {
         const init = async () => {
@@ -39,6 +40,7 @@ export const VibeProvider = ({ children, issuer, clientId, redirectUri, scopes }
             const currentUser = await sdk.getUser();
             setUser(currentUser);
             setIsLoggedIn(!!currentUser);
+            setIsInitialized(true);
         };
         init();
 
@@ -69,6 +71,10 @@ export const VibeProvider = ({ children, issuer, clientId, redirectUri, scopes }
     const readOnce = (collection: string, filter?: any) => sdk.readOnce(collection, filter);
     const write = (collection: string, data: any) => sdk.write(collection, data);
     const remove = (collection: string, data: any) => sdk.remove(collection, data);
+
+    if (!isInitialized) {
+        return null; // Or a loading spinner
+    }
 
     return <VibeContext.Provider value={{ sdk, user, isLoggedIn, login, logout, signup, read, readOnce, write, remove }}>{children}</VibeContext.Provider>;
 };
