@@ -1,16 +1,25 @@
-import Provider, { KoaContextWithOIDC } from "oidc-provider";
+import Provider, { KoaContextWithOIDC, ResponseType } from "oidc-provider";
 import { IdentityService } from "../services/identity";
 import { ClientService } from "../services/client";
 import { CustomOidcAdapter } from "./oidc-adapter";
 import { Client } from "../models/client";
 
 export const configureOidcProvider = (issuer: string, identityService: IdentityService, clientService: ClientService, clientSecret: string) => {
-    const adapterFactory = () => {
+    const adapterFactory = (name: string) => {
         return new CustomOidcAdapter(clientService);
     };
 
     const configuration = {
         adapter: adapterFactory,
+        clients: [
+            {
+                client_id: "vibe-web",
+                client_secret: clientSecret,
+                redirect_uris: ["http://localhost:3000/auth/callback"],
+                grant_types: ["authorization_code", "refresh_token"],
+                response_types: ["code"] as ResponseType[],
+            },
+        ],
         pkce: {
             required: () => true,
         },

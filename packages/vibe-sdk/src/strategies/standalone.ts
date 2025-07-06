@@ -38,8 +38,10 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
     async init() {
         await this.loadOIDCConfig();
-        // Attempt to silently refresh the token on initialization
-        await this.handleTokenRefresh();
+        if (this.accessToken) {
+            // Attempt to silently refresh the token on initialization
+            await this.handleTokenRefresh();
+        }
     }
 
     private async handleTokenRefresh() {
@@ -153,7 +155,9 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                     } catch (error) {
                         reject(error);
                     }
-                } else if (event.data.type === "vibe-registration-required") {
+                } else if (event.data.type === "vibe-auth-error" && event.data.error === "invalid_client") {
+                    window.removeEventListener("message", handleMessage);
+                    popup?.close();
                     try {
                         await this.registerClient();
                         // Retry the login after successful registration
