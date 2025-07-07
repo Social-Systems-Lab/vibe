@@ -51,8 +51,11 @@ const startOidcServer = async () => {
         const uid = pathParts[2];
 
         try {
-            const details = await oidc.interactionDetails(ctx.req, ctx.res);
-            const { prompt, params, session } = details;
+            const details = await storageService.find(uid);
+            if (!details) {
+                throw new Error("Interaction not found");
+            }
+            const { prompt, params, session } = details as any;
 
             if (ctx.method === "GET") {
                 if (prompt.details.error) {
@@ -86,14 +89,26 @@ const startOidcServer = async () => {
 
                 if (did) {
                     const result = { login: { accountId: did } };
+                    // The oidc-provider library requires the session cookie to be present on the raw request
+                    // to finish the interaction. We manually inject it into the headers here.
+                    if (details.session) {
+                        const sessionCookie = `_session=${details.session.uid}`;
+                        if (ctx.req.headers.cookie) {
+                            ctx.req.headers.cookie = `${ctx.req.headers.cookie}; ${sessionCookie}`;
+                        } else {
+                            ctx.req.headers.cookie = sessionCookie;
+                        }
+                    }
                     await oidc.interactionFinished(ctx.req, ctx.res, result, { mergeWithLastSubmission: false });
                 } else {
                     throw new Error("Authentication failed");
                 }
             }
         } catch (err: any) {
+            console.error("An error occurred in the interaction middleware:", err);
             const template = ctx.path.includes("/login") ? "login" : "signup";
-            return render(ctx, template, { uid, error: err.message });
+            const errorMessage = err.error_description || err.message || "An unexpected error occurred.";
+            return render(ctx, template, { uid, error: errorMessage });
         }
     });
 

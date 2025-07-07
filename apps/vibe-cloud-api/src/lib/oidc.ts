@@ -103,11 +103,13 @@ export const configureOidcProvider = (issuer: string, identityService: IdentityS
                 httpOnly: true,
                 sameSite: "none" as const,
                 secure: false, // Set to true in production when using HTTPS
+                path: "/",
             },
             long: {
                 httpOnly: true,
                 sameSite: "none" as const,
                 secure: false, // Set to true in production when using HTTPS
+                path: "/",
             },
         },
 
@@ -117,7 +119,7 @@ export const configureOidcProvider = (issuer: string, identityService: IdentityS
         },
         interactions: {
             url(ctx: KoaContextWithOIDC, interaction: any) {
-                return `/interaction/${interaction.uid}`;
+                return `http://localhost:5001/interaction/${interaction.uid}`;
             },
             policy: (() => {
                 const policy = interactionPolicy.base();
