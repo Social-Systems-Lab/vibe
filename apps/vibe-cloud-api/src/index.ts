@@ -70,6 +70,9 @@ const startServer = async () => {
         }))
         .group("/auth", (app) =>
             app
+                .derive(({ request }) => {
+                    return { url: new URL(request.url) };
+                })
                 .post(
                     "/signup",
                     async ({ body, sessionJwt, cookie, set, query }) => {
@@ -178,34 +181,48 @@ const startServer = async () => {
                 )
                 .get(
                     "/authorize",
-                    async ({ query, cookie, sessionJwt, set, html }) => {
-                        const { client_id, redirect_uri, response_type, scope, state, code_challenge, code_challenge_method } = query;
+                    async ({ query, cookie, sessionJwt, set, html, url }) => {
+                        const { client_id, response_type, scope, form_type = "login" } = query;
 
                         if (response_type !== "code") {
-                            return html("Invalid request"); // Or a more user-friendly error page
+                            return "Invalid request"; // Or a more user-friendly error page
                         }
 
                         const sessionToken = cookie.vibe_session.value;
                         if (!sessionToken) {
-                            // User is not logged in, show a login/signup page.
-                            // For simplicity, we'll start with a basic form.
-                            // A real implementation would be a separate route/component.
+                            const loginParams = new URLSearchParams(url.search);
+                            loginParams.set("form_type", "login");
+
+                            const signupParams = new URLSearchParams(url.search);
+                            signupParams.set("form_type", "signup");
+
+                            if (form_type === "signup") {
+                                // Show Sign Up form
+                                return html(`
+                                   <h1>Sign Up</h1>
+                                   <p>To authorize <strong>${client_id}</strong></p>
+                                   <form method="POST" action="/auth/signup?${signupParams.toString()}">
+                                       <input type="email" name="email" placeholder="Email" required />
+                                       <input type="password" name="password" placeholder="Password" required />
+                                       <button type="submit">Sign Up</button>
+                                   </form>
+                                   <hr/>
+                                   <p>Already have an account? <a href="/auth/authorize?${loginParams.toString()}">Log in</a></p>
+                               `);
+                            }
+
+                            // Show Login form by default
                             return html(`
-                                <h1>Login or Sign Up</h1>
-                                <p>To authorize ${client_id}</p>
-                                <form method="POST" action="/auth/login?${new URLSearchParams(query as any).toString()}">
-                                    <input type="email" name="email" placeholder="Email" required />
-                                    <input type="password" name="password" placeholder="Password" required />
-                                    <button type="submit">Login</button>
-                                </form>
-                                <hr/>
-                                <p>Or sign up if you don't have an account.</p>
-                                 <form method="POST" action="/auth/signup?${new URLSearchParams(query as any).toString()}">
-                                    <input type="email" name="email" placeholder="Email" required />
-                                    <input type="password" name="password" placeholder="Password" required />
-                                    <button type="submit">Sign Up</button>
-                                </form>
-                            `);
+                               <h1>Login</h1>
+                               <p>To authorize <strong>${client_id}</strong></p>
+                               <form method="POST" action="/auth/login?${loginParams.toString()}">
+                                   <input type="email" name="email" placeholder="Email" required />
+                                   <input type="password" name="password" placeholder="Password" required />
+                                   <button type="submit">Login</button>
+                               </form>
+                               <hr/>
+                               <p>Don't have an account? <a href="/auth/authorize?${signupParams.toString()}">Sign up here</a></p>
+                           `);
                         }
 
                         try {
@@ -213,23 +230,23 @@ const startServer = async () => {
                             if (!session || !session.sessionId) {
                                 cookie.vibe_session.remove();
                                 // Session is invalid, show login page again
-                                return html("Invalid session. Please log in again.");
+                                return "Invalid session. Please log in again.";
                             }
 
                             // User is logged in, show the consent screen.
                             const queryString = new URLSearchParams(query as any).toString();
                             return html(`
-                                <h1>Authorize Application</h1>
-                                <p>The application <strong>${client_id}</strong> wants to access your data.</p>
-                                <p>Scopes: ${scope}</p>
-                                <form method="POST" action="/auth/authorize/decision?${queryString}">
-                                    <button type="submit" name="decision" value="allow">Allow</button>
-                                    <button type="submit" name="decision" value="deny">Deny</button>
-                                </form>
-                            `);
+                               <h1>Authorize Application</h1>
+                               <p>The application <strong>${client_id}</strong> wants to access your data.</p>
+                               <p>Scopes: ${scope}</p>
+                               <form method="POST" action="/auth/authorize/decision?${queryString}">
+                                   <button type="submit" name="decision" value="allow">Allow</button>
+                                   <button type="submit" name="decision" value="deny">Deny</button>
+                               </form>
+                           `);
                         } catch (e) {
                             cookie.vibe_session.remove();
-                            return html("Your session has expired. Please log in again.");
+                            return "Your session has expired. Please log in again.";
                         }
                     },
                     {
@@ -241,6 +258,7 @@ const startServer = async () => {
                             state: t.Optional(t.String()),
                             code_challenge: t.String(),
                             code_challenge_method: t.Optional(t.String()),
+                            form_type: t.Optional(t.String()),
                         }),
                     }
                 )

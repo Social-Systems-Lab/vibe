@@ -80,36 +80,59 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         // No-op, session is handled by HttpOnly cookie
     }
 
-    private async redirectToAuthorize() {
-        const pkce = await generatePkce();
-        sessionStorage.setItem("vibe_pkce_verifier", pkce.verifier);
+    private redirectToAuthorize(formType: "login" | "signup"): Promise<void> {
+        return new Promise(async (resolve, reject) => {
+            const pkce = await generatePkce();
+            sessionStorage.setItem("vibe_pkce_verifier", pkce.verifier);
 
-        const state = window.crypto.getRandomValues(new Uint8Array(16)).reduce((s, byte) => s + byte.toString(16).padStart(2, "0"), "");
-        sessionStorage.setItem("vibe_oauth_state", state);
+            const state = window.crypto.getRandomValues(new Uint8Array(16)).reduce((s, byte) => s + byte.toString(16).padStart(2, "0"), "");
+            sessionStorage.setItem("vibe_oauth_state", state);
 
-        const params = new URLSearchParams({
-            response_type: "code",
-            client_id: this.config.clientId,
-            redirect_uri: this.config.redirectUri,
-            scope: "openid profile email",
-            state: state,
-            code_challenge: pkce.challenge,
-            code_challenge_method: "S256",
+            const params = new URLSearchParams({
+                response_type: "code",
+                client_id: this.config.clientId,
+                redirect_uri: this.config.redirectUri,
+                scope: "openid profile email",
+                state: state,
+                code_challenge: pkce.challenge,
+                code_challenge_method: "S256",
+                form_type: formType,
+            });
+
+            const url = `${VIBE_API_URL}/auth/authorize?${params.toString()}`;
+            const popup = window.open(url, "vibe-auth", "width=600,height=700,popup=true");
+
+            const messageListener = async (event: MessageEvent) => {
+                if (event.source !== popup) {
+                    return;
+                }
+
+                if (event.data.type === "vibe_auth_callback") {
+                    window.removeEventListener("message", messageListener);
+                    popup?.close();
+                    try {
+                        await this.handleRedirectCallback(event.data.url);
+                        resolve();
+                    } catch (e) {
+                        reject(e);
+                    }
+                }
+            };
+
+            window.addEventListener("message", messageListener);
         });
-
-        window.location.assign(`${VIBE_API_URL}/auth/authorize?${params.toString()}`);
     }
 
     async login(): Promise<void> {
-        await this.redirectToAuthorize();
+        await this.redirectToAuthorize("login");
     }
 
     async signup(): Promise<void> {
-        await this.redirectToAuthorize();
+        await this.redirectToAuthorize("signup");
     }
 
-    async handleRedirectCallback(): Promise<void> {
-        const params = new URLSearchParams(window.location.search);
+    async handleRedirectCallback(url: string): Promise<void> {
+        const params = new URLSearchParams(new URL(url).search);
         const code = params.get("code");
         const state = params.get("state");
 
@@ -142,8 +165,6 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         if (data && typeof data === "object" && "access_token" in data) {
             this.authManager.setAccessToken(data.access_token as string);
             await this.getUser();
-            // Clean up URL and redirect to app root
-            window.history.replaceState({}, document.title, window.location.pathname.split("?")[0]);
         } else {
             throw new Error("Invalid response from token endpoint.");
         }
