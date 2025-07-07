@@ -20,8 +20,8 @@ interface VibeContextType {
 
 const VibeContext = createContext<VibeContextType | undefined>(undefined);
 
-export const VibeProvider = ({ children, config }: { children: ReactNode; config: any }) => {
-    const [sdk] = useState(() => new StandaloneStrategy());
+export const VibeProvider = ({ children, config }: { children: ReactNode; config: { clientId: string; redirectUri: string } }) => {
+    const [sdk] = useState(() => new StandaloneStrategy(config));
     const [user, setUser] = useState<User | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
 

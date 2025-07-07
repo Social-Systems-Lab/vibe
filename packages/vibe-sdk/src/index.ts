@@ -5,6 +5,8 @@ import { ReadCallback, Subscription } from "./types";
 
 export type VibeSDKConfig = {
     apiUrl: string;
+    clientId: string;
+    redirectUri: string;
 };
 
 export class VibeSDK {
@@ -14,7 +16,10 @@ export class VibeSDK {
 
     constructor(config: VibeSDKConfig) {
         // For now, we default to Standalone. Later we'll add agent detection.
-        this.strategy = new StandaloneStrategy();
+        this.strategy = new StandaloneStrategy({
+            clientId: config.clientId,
+            redirectUri: config.redirectUri,
+        });
         console.log("Vibe SDK Initialized with Standalone Strategy");
     }
 

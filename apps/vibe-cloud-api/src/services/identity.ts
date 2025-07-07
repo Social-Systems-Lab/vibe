@@ -283,4 +283,74 @@ export class IdentityService {
 
         await this.usersDb.insert(user);
     }
+    async createAuthCode(data: {
+        userDid: string;
+        clientId: string;
+        redirectUri: string;
+        codeChallenge: string;
+        codeChallengeMethod: string;
+        scope: string;
+    }): Promise<string> {
+        await this.reauthenticate();
+        if (!this.usersDb || !this.isConnected) {
+            throw new Error("Database not connected");
+        }
+
+        const code = randomBytes(32).toString("hex");
+        const expires = new Date();
+        expires.setMinutes(expires.getMinutes() + 1); // 1 minute validity
+
+        const authCodeDoc = {
+            _id: `auth_code:${code}`,
+            type: "auth_code",
+            ...data,
+            expires: expires.toISOString(),
+        };
+
+        await this.usersDb.insert(authCodeDoc);
+        return code;
+    }
+
+    async validateAuthCode(code: string, codeVerifier: string): Promise<{ userDid: string; clientId: string; scope: string }> {
+        await this.reauthenticate();
+        if (!this.usersDb || !this.isConnected) {
+            throw new Error("Database not connected");
+        }
+
+        let doc;
+        try {
+            doc = await this.usersDb.get(`auth_code:${code}`);
+        } catch (error: any) {
+            if (error.statusCode === 404) {
+                throw new Error("Invalid or expired authorization code.");
+            }
+            throw error;
+        }
+
+        // Delete the code immediately to prevent reuse
+        await this.usersDb.destroy(doc._id, doc._rev);
+
+        if (new Date(doc.expires) < new Date()) {
+            throw new Error("Invalid or expired authorization code.");
+        }
+
+        // PKCE verification
+        if (doc.codeChallengeMethod === "S256") {
+            const hashedVerifier = createHash("sha256").update(codeVerifier).digest("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+            if (doc.codeChallenge !== hashedVerifier) {
+                throw new Error("Invalid code_verifier.");
+            }
+        } else {
+            // Plain method (not recommended for production)
+            if (doc.codeChallenge !== codeVerifier) {
+                throw new Error("Invalid code_verifier.");
+            }
+        }
+
+        return {
+            userDid: doc.userDid,
+            clientId: doc.clientId,
+            scope: doc.scope,
+        };
+    }
 }

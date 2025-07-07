@@ -17,8 +17,8 @@ export const AuthWidget = () => {
 
     return (
         <div>
-            <button onClick={login}>Log In</button>
-            <button onClick={signup}>Sign Up</button>
+            <button onClick={login}>Log in</button>
+            <button onClick={signup}>Sign up</button>
         </div>
     );
 };
