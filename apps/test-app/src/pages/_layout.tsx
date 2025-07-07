@@ -5,7 +5,7 @@ import "../styles.css";
 const config = {
     apiUrl: "http://localhost:3000/api", // This should be your Vibe Cloud API endpoint
     clientId: "test-app",
-    redirectUri: "http://localhost:5173/auth/callback",
+    redirectUri: "http://localhost:3001/auth/callback",
 };
 
 export default function Layout({ children }: { children: ReactNode }) {

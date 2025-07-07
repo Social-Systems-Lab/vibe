@@ -98,8 +98,13 @@ const startServer = async () => {
 
                         // Redirect back to the authorization flow
                         const authQuery = new URLSearchParams(query as any).toString();
-                        set.redirect = `/auth/authorize?${authQuery}`;
-                        return;
+                        const redirectUrl = `/auth/authorize?${authQuery}`;
+                        return new Response(null, {
+                            status: 302,
+                            headers: {
+                                Location: redirectUrl,
+                            },
+                        });
                     },
                     {
                         body: t.Object({
@@ -127,8 +132,13 @@ const startServer = async () => {
 
                             // Redirect back to the authorization flow
                             const authQuery = new URLSearchParams(query as any).toString();
-                            set.redirect = `/auth/authorize?${authQuery}`;
-                            return;
+                            const redirectUrl = `/auth/authorize?${authQuery}`;
+                            return new Response(null, {
+                                status: 302,
+                                headers: {
+                                    Location: redirectUrl,
+                                },
+                            });
                         } catch (error: any) {
                             set.status = 401;
                             return { error: error.message };
@@ -288,8 +298,12 @@ const startServer = async () => {
                             if (state) {
                                 redirectUrl.searchParams.set("state", state);
                             }
-                            set.redirect = redirectUrl.toString();
-                            return;
+                            return new Response(null, {
+                                status: 302,
+                                headers: {
+                                    Location: redirectUrl.toString(),
+                                },
+                            });
                         }
 
                         // Decision is "allow"
@@ -307,7 +321,12 @@ const startServer = async () => {
                         if (state) {
                             redirectUrl.searchParams.set("state", state);
                         }
-                        set.redirect = redirectUrl.toString();
+                        return new Response(null, {
+                            status: 302,
+                            headers: {
+                                Location: redirectUrl.toString(),
+                            },
+                        });
                     },
                     {
                         body: t.Object({
