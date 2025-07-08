@@ -20,12 +20,17 @@ export class DataService {
         await this.couch.auth(this.config.user, this.config.pass);
     }
 
+    private async reauthenticate() {
+        await this.couch.auth(this.config.user, this.config.pass);
+    }
+
     private getDb(instanceId: string): DocumentScope<unknown> {
         const dbName = getUserDbName(instanceId);
         return this.couch.use(dbName);
     }
 
     async write(collection: string, data: any, user: JwtPayload) {
+        await this.reauthenticate();
         // TODO: Add authorization logic here to check if the user has write permissions for this collection.
         console.log(`Authorization TODO: Check if user ${user.sub} can write to ${collection}`);
 
@@ -46,6 +51,7 @@ export class DataService {
     }
 
     async readOnce(collection: string, filter: any, user: JwtPayload) {
+        await this.reauthenticate();
         // TODO: Add authorization logic here to check if the user has read permissions for this collection.
         console.log(`Authorization TODO: Check if user ${user.sub} can read from ${collection}`);
 
