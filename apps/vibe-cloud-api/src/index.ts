@@ -6,16 +6,42 @@ import { cors } from "@elysiajs/cors";
 import { html } from "@elysiajs/html";
 import { IdentityService } from "./services/identity";
 import { DataService, JwtPayload } from "./services/data";
+import { StorageService, MinioStorageProvider, ScalewayStorageProvider, StorageProvider } from "./services/storage";
 import { getUserDbName } from "./lib/db";
 import nano from "nano";
 
 const startServer = async () => {
-    const identityService = new IdentityService({
-        url: process.env.COUCHDB_URL!,
-        user: process.env.COUCHDB_USER!,
-        pass: process.env.COUCHDB_PASSWORD!,
-        instanceIdSecret: process.env.INSTANCE_ID_SECRET!,
-    });
+    let storageProvider: StorageProvider;
+    if (process.env.STORAGE_PROVIDER === "minio") {
+        storageProvider = new MinioStorageProvider({
+            endPoint: process.env.MINIO_ENDPOINT!,
+            port: parseInt(process.env.MINIO_PORT!),
+            useSSL: process.env.MINIO_USE_SSL === "true",
+            accessKey: process.env.MINIO_ACCESS_KEY!,
+            secretKey: process.env.MINIO_SECRET_KEY!,
+        });
+    } else {
+        storageProvider = new ScalewayStorageProvider({
+            region: process.env.SCALEWAY_REGION!,
+            endpoint: process.env.SCALEWAY_ENDPOINT!,
+            credentials: {
+                accessKeyId: process.env.SCALEWAY_ACCESS_KEY!,
+                secretAccessKey: process.env.SCALEWAY_SECRET_KEY!,
+            },
+        });
+    }
+
+    const storageService = new StorageService(storageProvider);
+
+    const identityService = new IdentityService(
+        {
+            url: process.env.COUCHDB_URL!,
+            user: process.env.COUCHDB_USER!,
+            pass: process.env.COUCHDB_PASSWORD!,
+            instanceIdSecret: process.env.INSTANCE_ID_SECRET!,
+        },
+        storageService
+    );
 
     const couch = nano(process.env.COUCHDB_URL!);
 
@@ -69,6 +95,7 @@ const startServer = async () => {
             details: identityService.isConnected ? "All systems operational" : "Database connection failed",
         }))
         .decorate("identityService", identityService)
+        .decorate("storageService", storageService)
         .group("/auth", (app) =>
             app
                 .derive(({ request }) => {
@@ -612,6 +639,37 @@ const startServer = async () => {
                     };
                     return { user };
                 })
+                .post(
+                    "/me/profile-picture",
+                    async ({ profile, body, set, storageService, identityService }) => {
+                        if (!profile) {
+                            set.status = 401;
+                            return { error: "Unauthorized" };
+                        }
+
+                        const { file } = body as { file: File };
+
+                        if (!file || !(file instanceof Blob)) {
+                            set.status = 400;
+                            return { error: "Invalid file upload" };
+                        }
+
+                        try {
+                            const buffer = Buffer.from(await file.arrayBuffer());
+                            const url = await identityService.updateProfilePicture(profile.sub, buffer, file.type);
+                            return { url };
+                        } catch (error: any) {
+                            console.error("Error uploading profile picture:", error);
+                            set.status = 500;
+                            return { error: "Failed to upload profile picture" };
+                        }
+                    },
+                    {
+                        body: t.Object({
+                            file: t.Any(),
+                        }),
+                    }
+                )
         )
         .group("/data", (app) =>
             app
