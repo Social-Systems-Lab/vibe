@@ -171,19 +171,17 @@ export class StandaloneStrategy implements VibeTransportStrategy {
     }
 
     async logout(): Promise<void> {
-        try {
-            const { error } = await this.api.auth.logout.post({});
-            if (error) {
-                // Log the error but proceed with client-side logout
-                console.error("Server logout failed:", error.value);
-            }
-        } catch (e) {
-            console.error("Exception during server logout:", e);
-        } finally {
-            // Always clear client-side session
-            this.authManager.setAccessToken(null);
-            this.authManager.setUser(null);
-        }
+        // Clear client-side session first
+        this.authManager.setAccessToken(null);
+        this.authManager.setUser(null);
+
+        // Redirect to the central logout endpoint
+        const logoutUrl = new URL(`${VIBE_API_URL}/auth/logout`);
+        logoutUrl.searchParams.set("redirect_uri", window.location.href);
+        window.location.href = logoutUrl.toString();
+
+        // Return a promise that never resolves, as the page is navigating away
+        return new Promise(() => {});
     }
 
     async getUser(): Promise<User | null> {

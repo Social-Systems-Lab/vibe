@@ -94,6 +94,7 @@ const startServer = async () => {
                             httpOnly: true,
                             maxAge: 30 * 86400, // 30 days
                             path: "/",
+                            sameSite: "lax",
                         });
 
                         // Redirect back to the authorization flow
@@ -128,6 +129,7 @@ const startServer = async () => {
                                 httpOnly: true,
                                 maxAge: 30 * 86400, // 30 days
                                 path: "/",
+                                sameSite: "lax",
                             });
 
                             // Redirect back to the authorization flow
@@ -180,19 +182,30 @@ const startServer = async () => {
                         }),
                     }
                 )
-                .post(
+                .get(
                     "/logout",
-                    ({ cookie, set }) => {
+                    ({ cookie, set, query }) => {
                         cookie.vibe_session.set({
                             value: "",
                             maxAge: -1,
                             path: "/",
                             httpOnly: true,
+                            sameSite: "lax",
                         });
-                        set.status = 200;
-                        return { success: true };
+
+                        const redirectUri = query.redirect_uri || "/";
+                        return new Response(null, {
+                            status: 302,
+                            headers: {
+                                Location: redirectUri,
+                            },
+                        });
                     },
-                    {}
+                    {
+                        query: t.Object({
+                            redirect_uri: t.Optional(t.String()),
+                        }),
+                    }
                 )
                 .get(
                     "/authorize",
