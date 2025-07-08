@@ -3,12 +3,11 @@
 import { getEnv } from "waku";
 import { createSdk } from "vibe-sdk";
 
-// const sdk = createSdk(getEnv("API_URL") ?? "http://127.0.0.1:5000");
+const sdk = createSdk(getEnv("API_URL") ?? "http://127.0.0.1:5000");
 
 export const checkApiHealth = async () => {
     try {
-        // const { data } = await sdk.client.health.get({});
-        const data = { healht: "ok" };
+        const { data } = await sdk.client.health.get({});
         return JSON.stringify(data, null, 2);
     } catch (e: any) {
         return e.message;
@@ -24,6 +23,7 @@ export type AuthState = {
 export const signup = async (prevState: AuthState | null, formData: FormData): Promise<AuthState> => {
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
+    const displayName = formData.get("displayName") as string;
 
     try {
         const response = await fetch(`${getEnv("WAKU_PUBLIC_API_URL")}/auth/signup`, {
@@ -31,7 +31,7 @@ export const signup = async (prevState: AuthState | null, formData: FormData): P
             headers: {
                 "Content-Type": "application/json",
             },
-            body: JSON.stringify({ email, password }),
+            body: JSON.stringify({ email, password, displayName }),
         });
 
         if (!response.ok) {

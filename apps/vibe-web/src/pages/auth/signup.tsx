@@ -33,22 +33,26 @@ export default function SignupPage() {
     }, [state]);
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-white">
-            <div className="w-full max-w-xs">
+        <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4">
+            <div className="w-full max-w-md bg-white rounded-lg shadow-md p-8">
                 <div className="mb-8 text-center">
-                    <h1 className="text-2xl font-semibold">Create an account</h1>
-                    <p className="text-gray-500">to continue to Vibe</p>
+                    <h1 className="text-3xl font-bold text-gray-800">Create an Account</h1>
+                    <p className="text-gray-500 mt-2">to continue to Vibe</p>
                 </div>
                 <form action={formAction} className="space-y-6">
                     <div className="space-y-2">
+                        <Label htmlFor="displayName">Display Name</Label>
+                        <Input id="displayName" name="displayName" type="text" required placeholder="Enter your display name" />
+                    </div>
+                    <div className="space-y-2">
                         <Label htmlFor="email">Email</Label>
-                        <Input id="email" name="email" type="email" required />
+                        <Input id="email" name="email" type="email" required placeholder="Enter your email" />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="password">Password</Label>
-                        <Input id="password" name="password" type="password" required />
+                        <Input id="password" name="password" type="password" required placeholder="Enter your password" />
                     </div>
-                    {state?.error && <p className="text-red-500 text-sm">{state.error}</p>}
+                    {state?.error && <p className="text-red-500 text-sm text-center">{state.error}</p>}
                     <SubmitButton />
                 </form>
             </div>

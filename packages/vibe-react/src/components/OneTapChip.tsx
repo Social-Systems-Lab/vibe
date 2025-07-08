@@ -4,7 +4,7 @@ import React from "react";
 import { useVibe } from "../index";
 
 export const OneTapChip = () => {
-    const { user, login, appName } = useVibe();
+    const { user, login, appName, appImageUrl } = useVibe();
 
     if (!user) {
         return null;
@@ -29,7 +29,10 @@ export const OneTapChip = () => {
                 fontFamily: "sans-serif",
             }}
         >
-            <div style={{ fontWeight: "bold", fontSize: "16px" }}>Sign in to {appName || "your app"}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                {appImageUrl && <img src={appImageUrl} alt={appName} style={{ width: "24px", height: "24px", borderRadius: "4px" }} />}
+                <div style={{ fontWeight: "bold", fontSize: "16px" }}>Sign in to {appName || "your app"}</div>
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 {/* Placeholder for user avatar */}
                 <div
@@ -44,10 +47,10 @@ export const OneTapChip = () => {
                         fontWeight: "bold",
                     }}
                 >
-                    {user.did.slice(8, 10).toUpperCase()}
+                    {user.displayName ? user.displayName.charAt(0).toUpperCase() : user.did.slice(8, 10).toUpperCase()}
                 </div>
                 <div>
-                    <div style={{ fontWeight: "bold" }}>{user.did}</div>
+                    <div style={{ fontWeight: "bold" }}>{user.displayName || user.did}</div>
                     <div style={{ color: "#666", fontSize: "14px" }}>Vibe User</div>
                 </div>
             </div>
@@ -64,7 +67,7 @@ export const OneTapChip = () => {
                     cursor: "pointer",
                 }}
             >
-                Continue as {user.did.slice(8, 14)}
+                Continue as {user.displayName || user.did.slice(8, 14)}
             </button>
         </div>
     );

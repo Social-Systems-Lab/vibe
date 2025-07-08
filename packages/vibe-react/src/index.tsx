@@ -9,6 +9,7 @@ interface VibeContextType {
     user: User | null;
     isLoggedIn: boolean;
     appName?: string;
+    appImageUrl?: string;
     login: () => Promise<void>;
     logout: () => Promise<void>;
     signup: () => Promise<void>;
@@ -27,7 +28,7 @@ export const VibeProvider = ({
     config,
 }: {
     children: ReactNode;
-    config: { clientId: string; redirectUri: string; apiUrl?: string; appName?: string };
+    config: { clientId: string; redirectUri: string; apiUrl?: string; appName?: string; appImageUrl?: string };
 }) => {
     const [sdk] = useState(() => new StandaloneStrategy(config));
     const [user, setUser] = useState<User | null>(null);
@@ -64,7 +65,23 @@ export const VibeProvider = ({
     const remove = (collection: string, data: any) => sdk.remove(collection, data);
 
     return (
-        <VibeContext.Provider value={{ sdk, user, isLoggedIn, login, logout, signup, read, readOnce, write, remove, appName: config.appName, manageConsent }}>
+        <VibeContext.Provider
+            value={{
+                sdk,
+                user,
+                isLoggedIn,
+                login,
+                logout,
+                signup,
+                read,
+                readOnce,
+                write,
+                remove,
+                appName: config.appName,
+                appImageUrl: config.appImageUrl,
+                manageConsent,
+            }}
+        >
             {children}
         </VibeContext.Provider>
     );

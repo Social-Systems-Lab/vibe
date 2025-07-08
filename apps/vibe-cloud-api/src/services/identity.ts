@@ -63,7 +63,7 @@ export class IdentityService {
         throw new Error("Failed to connect to CouchDB after several retries.");
     }
 
-    async register(email: string, password_hash: string, password_raw: string) {
+    async register(email: string, password_hash: string, password_raw: string, displayName: string) {
         await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
@@ -116,6 +116,7 @@ export class IdentityService {
             _id: `user:${email}`,
             email,
             password_hash,
+            displayName,
             did,
             instanceId,
             publicKey: Buffer.from(keyPair.publicKey).toString("hex"),

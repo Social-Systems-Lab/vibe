@@ -5,7 +5,7 @@ export default function HomePage() {
     return (
         <div>
             <title>Vibe</title>
-            <HealthChecker />
+            <h1>Welcome to Vibe</h1>
         </div>
     );
 }

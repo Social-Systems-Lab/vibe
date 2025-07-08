@@ -4,9 +4,11 @@ import React from "react";
 import { useVibe } from "../index";
 import { OneTapChip } from "./OneTapChip";
 import { ProfileMenu } from "./ProfileMenu";
+import { LoginButton } from "./LoginButton";
+import { SignupButton } from "./SignupButton";
 
 export const AuthWidget = () => {
-    const { user, isLoggedIn, login, signup } = useVibe();
+    const { user, isLoggedIn } = useVibe();
 
     if (isLoggedIn) {
         return <ProfileMenu />;
@@ -17,9 +19,9 @@ export const AuthWidget = () => {
     }
 
     return (
-        <div>
-            <button onClick={login}>Log in</button>
-            <button onClick={signup}>Sign up</button>
+        <div style={{ display: "flex", gap: "10px" }}>
+            <LoginButton />
+            <SignupButton />
         </div>
     );
 };

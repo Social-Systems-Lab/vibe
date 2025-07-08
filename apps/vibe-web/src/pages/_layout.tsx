@@ -21,7 +21,9 @@ export default function RootLayout({ children }: RootLayoutProps) {
             <Provider>
                 <div className="font-['Nunito']">
                     <header>
-                        <AuthWidget />
+                        <div className="absolute top-4 right-6">
+                            <AuthWidget />
+                        </div>
                     </header>
                     <meta name="description" content="Vibe - your everything" />
                     <link rel="icon" type="image/png" href="/images/favicon.png" />

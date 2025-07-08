@@ -73,9 +73,10 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         clientId: string;
         redirectUri: string;
         apiUrl: string;
+        appImageUrl?: string;
     };
 
-    constructor(config: { clientId: string; redirectUri: string; apiUrl?: string }) {
+    constructor(config: { clientId: string; redirectUri: string; apiUrl?: string; appImageUrl?: string }) {
         this.authManager = new AuthManager();
         const apiUrl = config.apiUrl || VIBE_API_URL;
         this.api = edenTreaty<App>(apiUrl);
@@ -181,6 +182,10 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
             if (promptConsent) {
                 params.set("prompt", "consent");
+            }
+
+            if (this.config.appImageUrl) {
+                params.set("app_image_url", this.config.appImageUrl);
             }
 
             const url = `${this.config.apiUrl}/auth/authorize?${params.toString()}`;

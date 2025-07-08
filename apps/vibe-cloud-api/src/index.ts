@@ -77,14 +77,14 @@ const startServer = async () => {
                 .post(
                     "/signup",
                     async ({ body, sessionJwt, cookie, set, query }) => {
-                        const { email, password } = body;
+                        const { email, password, displayName } = body;
                         const existingUser = await identityService.findByEmail(email);
                         if (existingUser) {
                             set.status = 409;
                             return { error: "User already exists" };
                         }
                         const password_hash = await Bun.password.hash(password);
-                        const user = await identityService.register(email, password_hash, password);
+                        const user = await identityService.register(email, password_hash, password, displayName);
 
                         const sessionToken = await sessionJwt.sign({
                             sessionId: user.did,
@@ -112,6 +112,7 @@ const startServer = async () => {
                         body: t.Object({
                             email: t.String(),
                             password: t.String(),
+                            displayName: t.String(),
                         }),
                     }
                 )
@@ -211,7 +212,29 @@ const startServer = async () => {
                 .get(
                     "/authorize",
                     async ({ query, cookie, sessionJwt, set, html, url }) => {
-                        const { client_id, response_type, scope, form_type = "login", redirect_uri, prompt } = query;
+                        const { client_id, response_type, scope, form_type = "login", redirect_uri, prompt, app_image_url } = query;
+
+                        const style = `
+                            body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f2f5; }
+                            .container { background-color: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 100%; }
+                            h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+                            p { margin-bottom: 1.5rem; color: #666; }
+                            strong { color: #333; }
+                            form { display: flex; flex-direction: column; gap: 1rem; }
+                            input { padding: 0.75rem; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
+                            button { padding: 0.75rem; border: none; border-radius: 4px; background-color: #1a73e8; color: white; font-size: 1rem; cursor: pointer; }
+                            button[value="deny"] { background-color: #ccc; }
+                            hr { border: none; border-top: 1px solid #eee; margin: 1.5rem 0; }
+                            a { color: #1a73e8; text-decoration: none; }
+                        `;
+
+                        const page = (title: string, content: string) => `
+                            <style>${style}</style>
+                            <div class="container">
+                                <h1>${title}</h1>
+                                ${content}
+                            </div>
+                        `;
 
                         try {
                             const clientIdOrigin = new URL(client_id).origin;
@@ -239,22 +262,29 @@ const startServer = async () => {
 
                             if (form_type === "signup") {
                                 // Show Sign Up form
-                                return html(`
-                                   <h1>Sign Up</h1>
+                                return html(
+                                    page(
+                                        "Sign Up",
+                                        `
                                    <p>To authorize <strong>${client_id}</strong></p>
                                    <form method="POST" action="/auth/signup?${signupParams.toString()}">
+                                       <input type="text" name="displayName" placeholder="Display Name" required />
                                        <input type="email" name="email" placeholder="Email" required />
                                        <input type="password" name="password" placeholder="Password" required />
                                        <button type="submit">Sign Up</button>
                                    </form>
                                    <hr/>
                                    <p>Already have an account? <a href="/auth/authorize?${loginParams.toString()}">Log in</a></p>
-                               `);
+                                `
+                                    )
+                                );
                             }
 
                             // Show Login form by default
-                            return html(`
-                               <h1>Login</h1>
+                            return html(
+                                page(
+                                    "Login",
+                                    `
                                <p>To authorize <strong>${client_id}</strong></p>
                                <form method="POST" action="/auth/login?${loginParams.toString()}">
                                    <input type="email" name="email" placeholder="Email" required />
@@ -263,7 +293,9 @@ const startServer = async () => {
                                </form>
                                <hr/>
                                <p>Don't have an account? <a href="/auth/authorize?${signupParams.toString()}">Sign up here</a></p>
-                           `);
+                           `
+                                )
+                            );
                         }
 
                         try {
@@ -303,15 +335,24 @@ const startServer = async () => {
 
                             // User is logged in, but hasn't consented yet. Show the consent screen.
                             const queryString = new URLSearchParams(query as any).toString();
-                            return html(`
-                                <h1>Authorize Application</h1>
+                            return html(
+                                page(
+                                    "Authorize Application",
+                                    `
+                                ${
+                                    app_image_url
+                                        ? `<img src="${app_image_url}" alt="App Image" style="max-width: 100px; max-height: 100px; margin-bottom: 1rem; border-radius: 8px;" />`
+                                        : ""
+                                }
                                 <p>The application <strong>${client_id}</strong> wants to access your data.</p>
                                 <p>Scopes: ${scope}</p>
                                 <form method="POST" action="/auth/authorize/decision?${queryString}">
                                     <button type="submit" name="decision" value="allow">Allow</button>
                                     <button type="submit" name="decision" value="deny">Deny</button>
                                 </form>
-                            `);
+                            `
+                                )
+                            );
                         } catch (e) {
                             cookie.vibe_session.set({ value: "", maxAge: -1, path: "/", httpOnly: true });
                             return "Your session has expired. Please log in again.";
@@ -328,6 +369,7 @@ const startServer = async () => {
                             code_challenge_method: t.Optional(t.String()),
                             form_type: t.Optional(t.String()),
                             prompt: t.Optional(t.String()),
+                            app_image_url: t.Optional(t.String()),
                         }),
                     }
                 )
