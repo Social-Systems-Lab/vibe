@@ -42,6 +42,7 @@ export const ProfileMenu = () => {
                     fontSize: "18px",
                     fontWeight: "bold",
                     color: "#333",
+                    flexShrink: 0,
                 }}
             >
                 {user.displayName ? user.displayName.charAt(0).toUpperCase() : user.did.slice(8, 10).toUpperCase()}
