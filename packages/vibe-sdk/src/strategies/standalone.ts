@@ -77,7 +77,83 @@ export class StandaloneStrategy implements VibeTransportStrategy {
     }
 
     async init() {
-        // No-op, session is handled by HttpOnly cookie
+        return new Promise<void>(async (resolve) => {
+            const pkce = await generatePkce();
+            sessionStorage.setItem("vibe_pkce_verifier", pkce.verifier); // Store for later
+
+            const params = new URLSearchParams({
+                client_id: this.config.clientId,
+                redirect_uri: this.config.redirectUri,
+                code_challenge: pkce.challenge,
+                code_challenge_method: "S256",
+            });
+
+            const iframe = document.createElement("iframe");
+            iframe.style.display = "none";
+            iframe.src = `${VIBE_API_URL}/auth/session-check?${params.toString()}`;
+            document.body.appendChild(iframe);
+
+            const messageListener = async (event: MessageEvent) => {
+                if (event.source !== iframe.contentWindow) {
+                    return;
+                }
+
+                // Clean up
+                window.removeEventListener("message", messageListener);
+                document.body.removeChild(iframe);
+
+                const { status, code, user } = event.data;
+
+                if (status === "SILENT_LOGIN_SUCCESS" && code) {
+                    try {
+                        await this.exchangeCodeForToken(code);
+                        resolve();
+                    } catch (e) {
+                        console.error("Silent login failed:", e);
+                        resolve(); // Resolve anyway, don't block app load
+                    }
+                } else if (status === "ONE_TAP_REQUIRED") {
+                    // The app can now show a "Continue as" button
+                    // We'll store the user info for the UI to use
+                    this.authManager.setUser(user);
+                    // We need a way to signal this state to the UI
+                    // For now, we'll just resolve. The app will see the user object.
+                    resolve();
+                } else {
+                    // LOGGED_OUT or error
+                    resolve();
+                }
+            };
+
+            window.addEventListener("message", messageListener);
+        });
+    }
+
+    private async exchangeCodeForToken(code: string): Promise<void> {
+        const storedVerifier = sessionStorage.getItem("vibe_pkce_verifier");
+        if (!storedVerifier) {
+            throw new Error("Missing PKCE verifier for token exchange.");
+        }
+
+        const { data, error } = await this.api.auth.token.post({
+            grant_type: "authorization_code",
+            code,
+            code_verifier: storedVerifier,
+            client_id: this.config.clientId,
+            redirect_uri: this.config.redirectUri,
+        });
+
+        if (error) {
+            console.error("Error exchanging code for token:", error.value);
+            throw new Error("Failed to exchange authorization code for token.");
+        }
+
+        if (data && typeof data === "object" && "access_token" in data) {
+            this.authManager.setAccessToken(data.access_token as string);
+            await this.getUser();
+        } else {
+            throw new Error("Invalid response from token endpoint.");
+        }
     }
 
     private redirectToAuthorize(formType: "login" | "signup"): Promise<void> {

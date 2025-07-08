@@ -15,6 +15,15 @@ export const AuthWidget = () => {
         );
     }
 
+    // New: One-tap login UI
+    if (!isLoggedIn && user) {
+        return (
+            <div>
+                <button onClick={login}>Continue as {user.did}</button>
+            </div>
+        );
+    }
+
     return (
         <div>
             <button onClick={login}>Log in</button>

@@ -68,6 +68,7 @@ const startServer = async () => {
             status: identityService.isConnected ? "ok" : "error",
             details: identityService.isConnected ? "All systems operational" : "Database connection failed",
         }))
+        .decorate("identityService", identityService)
         .group("/auth", (app) =>
             app
                 .derive(({ request }) => {
@@ -210,7 +211,19 @@ const startServer = async () => {
                 .get(
                     "/authorize",
                     async ({ query, cookie, sessionJwt, set, html, url }) => {
-                        const { client_id, response_type, scope, form_type = "login" } = query;
+                        const { client_id, response_type, scope, form_type = "login", redirect_uri } = query;
+
+                        try {
+                            const clientIdOrigin = new URL(client_id).origin;
+                            const redirectUriOrigin = new URL(redirect_uri).origin;
+                            if (clientIdOrigin !== redirectUriOrigin) {
+                                set.status = 400;
+                                return "Invalid redirect_uri. Must be on the same domain as the client_id.";
+                            }
+                        } catch (e) {
+                            set.status = 400;
+                            return "Invalid client_id or redirect_uri.";
+                        }
 
                         if (response_type !== "code") {
                             return "Invalid request"; // Or a more user-friendly error page
@@ -395,6 +408,18 @@ const startServer = async () => {
                     async ({ body, jwt, set }) => {
                         const { grant_type, code, code_verifier, client_id, redirect_uri } = body;
 
+                        try {
+                            const clientIdOrigin = new URL(client_id).origin;
+                            const redirectUriOrigin = new URL(redirect_uri).origin;
+                            if (clientIdOrigin !== redirectUriOrigin) {
+                                set.status = 400;
+                                return { error: "invalid_grant", error_description: "Invalid redirect_uri." };
+                            }
+                        } catch (e) {
+                            set.status = 400;
+                            return { error: "invalid_grant", error_description: "Invalid client_id or redirect_uri." };
+                        }
+
                         if (grant_type !== "authorization_code") {
                             set.status = 400;
                             return { error: "invalid_grant", error_description: "grant_type must be authorization_code" };
@@ -437,6 +462,67 @@ const startServer = async () => {
                             code_verifier: t.String(),
                             client_id: t.String(),
                             redirect_uri: t.String(),
+                        }),
+                    }
+                )
+                .get(
+                    "/session-check",
+                    async ({ query, cookie, sessionJwt, html }) => {
+                        const { client_id, redirect_uri, code_challenge, code_challenge_method } = query;
+
+                        const renderScript = (data: any) => `
+                            <script>
+                                if (window.parent) {
+                                    window.parent.postMessage(${JSON.stringify(data)}, '${new URL(redirect_uri).origin}');
+                                }
+                            </script>
+                        `;
+
+                        const sessionToken = cookie.vibe_session.value;
+                        if (!sessionToken) {
+                            return html(renderScript({ status: "LOGGED_OUT" }));
+                        }
+
+                        try {
+                            const session = await sessionJwt.verify(sessionToken);
+                            if (!session || !session.sessionId) {
+                                return html(renderScript({ status: "LOGGED_OUT" }));
+                            }
+
+                            const userDid = session.sessionId;
+                            const user = await identityService.findByDid(userDid);
+                            if (!user) {
+                                return html(renderScript({ status: "LOGGED_OUT" }));
+                            }
+
+                            const hasConsented = await identityService.hasUserConsented(userDid, client_id);
+
+                            if (hasConsented) {
+                                // Silently log in
+                                const authCode = await identityService.createAuthCode({
+                                    userDid,
+                                    clientId: client_id,
+                                    scope: "openid profile email", // Assuming default scope
+                                    redirectUri: redirect_uri,
+                                    codeChallenge: code_challenge,
+                                    codeChallengeMethod: code_challenge_method || "S256",
+                                });
+                                return html(renderScript({ status: "SILENT_LOGIN_SUCCESS", code: authCode, user }));
+                            } else {
+                                // Prompt for one-tap
+                                return html(renderScript({ status: "ONE_TAP_REQUIRED", user }));
+                            }
+                        } catch (e) {
+                            // Invalid token or other error
+                            return html(renderScript({ status: "LOGGED_OUT" }));
+                        }
+                    },
+                    {
+                        query: t.Object({
+                            client_id: t.String(),
+                            redirect_uri: t.String(),
+                            code_challenge: t.String(),
+                            code_challenge_method: t.Optional(t.String()),
                         }),
                     }
                 )

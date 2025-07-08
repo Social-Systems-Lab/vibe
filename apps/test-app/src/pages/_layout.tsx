@@ -4,7 +4,7 @@ import "../styles.css";
 
 const config = {
     apiUrl: "http://localhost:3000/api", // This should be your Vibe Cloud API endpoint
-    clientId: "test-app",
+    clientId: "http://localhost:3001",
     redirectUri: "http://localhost:3001/auth/callback",
 };
 
