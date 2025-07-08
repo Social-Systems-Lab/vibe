@@ -9,8 +9,8 @@ import { AuthWidget, VibeProvider } from "vibe-react";
 const config = {
     appName: "Vibe Web",
     apiUrl: "http://localhost:5000",
-    clientId: "http://localhost:3002",
-    redirectUri: "http://localhost:3002/auth/callback",
+    clientId: "http://localhost:3000",
+    redirectUri: "http://localhost:3000/auth/callback",
 };
 
 type RootLayoutProps = { children: ReactNode };
