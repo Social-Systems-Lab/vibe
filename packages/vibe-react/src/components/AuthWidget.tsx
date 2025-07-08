@@ -2,26 +2,18 @@
 
 import React from "react";
 import { useVibe } from "../index";
+import { OneTapChip } from "./OneTapChip";
+import { ProfileMenu } from "./ProfileMenu";
 
 export const AuthWidget = () => {
-    const { user, isLoggedIn, login, logout, signup } = useVibe();
+    const { user, isLoggedIn, login, signup } = useVibe();
 
-    if (isLoggedIn && user) {
-        return (
-            <div>
-                <p>User: {JSON.stringify(user)}</p>
-                <button onClick={logout}>Log Out</button>
-            </div>
-        );
+    if (isLoggedIn) {
+        return <ProfileMenu />;
     }
 
-    // New: One-tap login UI
-    if (!isLoggedIn && user) {
-        return (
-            <div>
-                <button onClick={login}>Continue as {user.did}</button>
-            </div>
-        );
+    if (user) {
+        return <OneTapChip />;
     }
 
     return (

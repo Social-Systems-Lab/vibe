@@ -26,7 +26,7 @@ async function generatePkce() {
 class AuthManager {
     private accessToken: string | null = null;
     private user: User | null = null;
-    private stateChangeListeners: ((isLoggedIn: boolean) => void)[] = [];
+    private stateChangeListeners: ((state: { isLoggedIn: boolean; user: User | null }) => void)[] = [];
 
     getAccessToken() {
         return this.accessToken;
@@ -34,7 +34,6 @@ class AuthManager {
 
     setAccessToken(token: string | null) {
         this.accessToken = token;
-        this.notifyStateChange();
     }
 
     getUser() {
@@ -43,21 +42,26 @@ class AuthManager {
 
     setUser(user: User | null) {
         this.user = user;
+        this.notifyStateChange();
     }
 
     isLoggedIn() {
         return !!this.getAccessToken();
     }
 
-    onStateChange(listener: (isLoggedIn: boolean) => void) {
+    onStateChange(listener: (state: { isLoggedIn: boolean; user: User | null }) => void) {
         this.stateChangeListeners.push(listener);
         return () => {
             this.stateChangeListeners = this.stateChangeListeners.filter((l) => l !== listener);
         };
     }
 
-    private notifyStateChange() {
-        this.stateChangeListeners.forEach((listener) => listener(this.isLoggedIn()));
+    notifyStateChange() {
+        const state = {
+            isLoggedIn: this.isLoggedIn(),
+            user: this.user,
+        };
+        this.stateChangeListeners.forEach((listener) => listener(state));
     }
 }
 
@@ -68,12 +72,14 @@ export class StandaloneStrategy implements VibeTransportStrategy {
     private config: {
         clientId: string;
         redirectUri: string;
+        apiUrl: string;
     };
 
-    constructor(config: { clientId: string; redirectUri: string }) {
+    constructor(config: { clientId: string; redirectUri: string; apiUrl?: string }) {
         this.authManager = new AuthManager();
-        this.api = edenTreaty<App>(VIBE_API_URL);
-        this.config = config;
+        const apiUrl = config.apiUrl || VIBE_API_URL;
+        this.api = edenTreaty<App>(apiUrl);
+        this.config = { ...config, apiUrl };
     }
 
     async init() {
@@ -90,7 +96,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
             const iframe = document.createElement("iframe");
             iframe.style.display = "none";
-            iframe.src = `${VIBE_API_URL}/auth/session-check?${params.toString()}`;
+            iframe.src = `${this.config.apiUrl}/auth/session-check?${params.toString()}`;
             document.body.appendChild(iframe);
 
             const messageListener = async (event: MessageEvent) => {
@@ -116,8 +122,6 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                     // The app can now show a "Continue as" button
                     // We'll store the user info for the UI to use
                     this.authManager.setUser(user);
-                    // We need a way to signal this state to the UI
-                    // For now, we'll just resolve. The app will see the user object.
                     resolve();
                 } else {
                     // LOGGED_OUT or error
@@ -175,7 +179,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                 form_type: formType,
             });
 
-            const url = `${VIBE_API_URL}/auth/authorize?${params.toString()}`;
+            const url = `${this.config.apiUrl}/auth/authorize?${params.toString()}`;
             const popup = window.open(url, "vibe-auth", "width=600,height=700,popup=true");
 
             const messageListener = async (event: MessageEvent) => {
@@ -252,7 +256,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         this.authManager.setUser(null);
 
         // Redirect to the central logout endpoint
-        const logoutUrl = new URL(`${VIBE_API_URL}/auth/logout`);
+        const logoutUrl = new URL(`${this.config.apiUrl}/auth/logout`);
         logoutUrl.searchParams.set("redirect_uri", window.location.href);
         window.location.href = logoutUrl.toString();
 
@@ -289,8 +293,12 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         }
     }
 
-    onStateChange(callback: (isLoggedIn: boolean) => void) {
+    onStateChange(callback: (state: { isLoggedIn: boolean; user: User | null }) => void) {
         return this.authManager.onStateChange(callback);
+    }
+
+    notifyStateChange() {
+        this.authManager.notifyStateChange();
     }
 
     // --- Vibe DB Methods (unchanged) ---
@@ -332,7 +340,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         if (!this.authManager.isLoggedIn()) {
             throw new Error("User is not authenticated.");
         }
-        const VIBE_WS_URL = VIBE_API_URL.replace(/^http/, "ws");
+        const VIBE_WS_URL = this.config.apiUrl.replace(/^http/, "ws");
         const wsApi = edenTreaty<App>(VIBE_WS_URL);
         const ws = (wsApi.data as any)[collection].subscribe({ filter });
         ws.on("open", () => {

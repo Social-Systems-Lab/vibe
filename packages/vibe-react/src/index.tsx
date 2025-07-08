@@ -8,6 +8,7 @@ interface VibeContextType {
     sdk: StandaloneStrategy;
     user: User | null;
     isLoggedIn: boolean;
+    appName?: string;
     login: () => Promise<void>;
     logout: () => Promise<void>;
     signup: () => Promise<void>;
@@ -20,7 +21,13 @@ interface VibeContextType {
 
 const VibeContext = createContext<VibeContextType | undefined>(undefined);
 
-export const VibeProvider = ({ children, config }: { children: ReactNode; config: { clientId: string; redirectUri: string } }) => {
+export const VibeProvider = ({
+    children,
+    config,
+}: {
+    children: ReactNode;
+    config: { clientId: string; redirectUri: string; apiUrl?: string; appName?: string };
+}) => {
     const [sdk] = useState(() => new StandaloneStrategy(config));
     const [user, setUser] = useState<User | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -28,20 +35,12 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
     useEffect(() => {
         const init = async () => {
             await sdk.init();
-            const currentUser = await sdk.getUser();
-            setUser(currentUser);
-            setIsLoggedIn(!!currentUser);
         };
         init();
 
-        const unsubscribe = sdk.onStateChange(async (loggedIn: boolean) => {
-            setIsLoggedIn(loggedIn);
-            if (loggedIn) {
-                const currentUser = await sdk.getUser();
-                setUser(currentUser);
-            } else {
-                setUser(null);
-            }
+        const unsubscribe = sdk.onStateChange((state) => {
+            setIsLoggedIn(state.isLoggedIn);
+            setUser(state.user);
         });
 
         return () => unsubscribe();
@@ -62,7 +61,11 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
     const write = (collection: string, data: any) => sdk.write(collection, data);
     const remove = (collection: string, data: any) => sdk.remove(collection, data);
 
-    return <VibeContext.Provider value={{ sdk, user, isLoggedIn, login, logout, signup, read, readOnce, write, remove }}>{children}</VibeContext.Provider>;
+    return (
+        <VibeContext.Provider value={{ sdk, user, isLoggedIn, login, logout, signup, read, readOnce, write, remove, appName: config.appName }}>
+            {children}
+        </VibeContext.Provider>
+    );
 };
 
 export const useVibe = () => {

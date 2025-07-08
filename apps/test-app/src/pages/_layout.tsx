@@ -3,7 +3,8 @@ import { AuthWidget, VibeProvider } from "vibe-react";
 import "../styles.css";
 
 const config = {
-    apiUrl: "http://localhost:3000/api", // This should be your Vibe Cloud API endpoint
+    appName: "Test App",
+    apiUrl: "http://localhost:5000",
     clientId: "http://localhost:3001",
     redirectUri: "http://localhost:3001/auth/callback",
 };
