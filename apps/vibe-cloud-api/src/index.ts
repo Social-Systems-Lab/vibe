@@ -101,14 +101,14 @@ const startServer = async () => {
                 .post(
                     "/signup",
                     async ({ body, sessionJwt, cookie, set, query }) => {
-                        const { email, password, displayName } = body;
+                        const { email, password } = body;
                         const existingUser = await identityService.findByEmail(email);
                         if (existingUser) {
                             set.status = 409;
                             return { error: "User already exists" };
                         }
                         const password_hash = await Bun.password.hash(password);
-                        const user = await identityService.register(email, password_hash, password, displayName);
+                        const user = await identityService.register(email, password_hash, password, "");
 
                         const sessionToken = await sessionJwt.sign({
                             sessionId: user.did,
@@ -136,7 +136,7 @@ const startServer = async () => {
                         body: t.Object({
                             email: t.String(),
                             password: t.String(),
-                            displayName: t.String(),
+                            displayName: t.Optional(t.String()),
                         }),
                     }
                 )
@@ -233,6 +233,28 @@ const startServer = async () => {
                         }),
                     }
                 )
+                .get("/api-token", async ({ sessionJwt, cookie, jwt, set, identityService }) => {
+                    const sessionToken = cookie.vibe_session.value;
+                    if (!sessionToken) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    const session = await sessionJwt.verify(sessionToken);
+                    if (!session || !session.sessionId) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    const user = await identityService.findByDid(session.sessionId);
+                    if (!user) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    const accessToken = await jwt.sign({
+                        sub: user.did,
+                        instanceId: user.instanceId,
+                    });
+                    return { token: accessToken };
+                })
                 .get(
                     "/authorize",
                     async ({ query, cookie, sessionJwt, set, html, url }) => {
@@ -292,7 +314,6 @@ const startServer = async () => {
                                         `
                                    <p>To authorize <strong>${client_id}</strong></p>
                                    <form method="POST" action="/auth/signup?${signupParams.toString()}">
-                                       <input type="text" name="displayName" placeholder="Display Name" required />
                                        <input type="email" name="email" placeholder="Email" required />
                                        <input type="password" name="password" placeholder="Password" required />
                                        <button type="submit">Sign Up</button>
@@ -331,6 +352,25 @@ const startServer = async () => {
                             }
 
                             const userDid = session.sessionId;
+                            const user = await identityService.findByDid(userDid);
+                            if (!user) {
+                                cookie.vibe_session.set({ value: "", maxAge: -1, path: "/", httpOnly: true });
+                                return "Invalid session. Please log in again.";
+                            }
+
+                            if (!user.displayName) {
+                                const profileParams = new URLSearchParams({
+                                    ...query,
+                                    redirect_uri: url.href,
+                                });
+                                return new Response(null, {
+                                    status: 302,
+                                    headers: {
+                                        Location: `/user/profile?${profileParams.toString()}`,
+                                    },
+                                });
+                            }
+
                             const hasConsented = await identityService.hasUserConsented(userDid, client_id);
 
                             if (hasConsented && prompt !== "consent") {
@@ -601,6 +641,103 @@ const startServer = async () => {
                         }),
                     }
                 )
+        )
+        .group("/user", (app) =>
+            app
+                .derive(async ({ cookie, sessionJwt }) => {
+                    const sessionToken = cookie.vibe_session.value;
+                    if (!sessionToken) return { session: null };
+                    const session = await sessionJwt.verify(sessionToken);
+                    return { session };
+                })
+                .guard({
+                    beforeHandle: ({ session, set }) => {
+                        if (!session) {
+                            set.status = 401;
+                            return { error: "Unauthorized" };
+                        }
+                    },
+                })
+                .get("/profile", async ({ session, html, identityService, set }) => {
+                    if (!session) {
+                        set.status = 401;
+                        return "Unauthorized";
+                    }
+                    const user = await identityService.findByDid(session.sessionId);
+
+                    const style = `
+                        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f2f5; }
+                        .container { background-color: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 100%; }
+                        img { width: 100px; height: 100px; border-radius: 50%; object-fit: cover; margin-bottom: 1rem; }
+                        input[type="file"] { display: none; }
+                        label { cursor: pointer; }
+                        button { margin-top: 1rem; }
+                    `;
+
+                    return html(`
+                        <style>${style}</style>
+                        <div class="container">
+                            <h1>Profile Settings</h1>
+                            <img id="profile-pic" src="${user?.profilePictureUrl || "https://via.placeholder.com/100"}" alt="Profile Picture">
+                            <form id="profile-form">
+                                <label for="file-upload">Change Picture</label>
+                                <input id="file-upload" type="file" accept="image/*">
+                                <input type="text" id="display-name" value="${user?.displayName || ""}" placeholder="Display Name">
+                                <button type="submit">Save</button>
+                            </form>
+                        </div>
+                        <script>
+                            const form = document.getElementById('profile-form');
+                            const fileUpload = document.getElementById('file-upload');
+                            const profilePic = document.getElementById('profile-pic');
+                            let profilePictureUrl = "${user?.profilePictureUrl || ""}";
+
+                            fileUpload.addEventListener('change', async (event) => {
+                                const file = event.target.files[0];
+                                if (!file) return;
+
+                                const formData = new FormData();
+                                formData.append('file', file);
+
+                                const response = await fetch('/storage/upload', {
+                                    method: 'POST',
+                                    body: formData,
+                                    headers: {
+                                        'Authorization': 'Bearer ' + (await getAccessToken())
+                                    }
+                                });
+
+                                const data = await response.json();
+                                if (data.url) {
+                                    profilePictureUrl = data.url;
+                                    profilePic.src = data.url;
+                                }
+                            });
+
+                            form.addEventListener('submit', async (event) => {
+                                event.preventDefault();
+                                const displayName = document.getElementById('display-name').value;
+                                
+                                await fetch('/users/me', {
+                                    method: 'PATCH',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'Authorization': 'Bearer ' + (await getAccessToken())
+                                    },
+                                    body: JSON.stringify({ displayName, profilePictureUrl })
+                                });
+
+                                window.location.href = new URLSearchParams(window.location.search).get('redirect_uri');
+                            });
+
+                            async function getAccessToken() {
+                                // This is a placeholder. In a real app, you'd get this from your auth flow.
+                                // For now, we'll just return a dummy token.
+                                return "dummy-token";
+                            }
+                        </script>
+                    `);
+                })
         )
         .group("/users", (app) =>
             app
