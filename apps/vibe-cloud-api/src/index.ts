@@ -211,7 +211,7 @@ const startServer = async () => {
                 .get(
                     "/authorize",
                     async ({ query, cookie, sessionJwt, set, html, url }) => {
-                        const { client_id, response_type, scope, form_type = "login", redirect_uri } = query;
+                        const { client_id, response_type, scope, form_type = "login", redirect_uri, prompt } = query;
 
                         try {
                             const clientIdOrigin = new URL(client_id).origin;
@@ -277,7 +277,7 @@ const startServer = async () => {
                             const userDid = session.sessionId;
                             const hasConsented = await identityService.hasUserConsented(userDid, client_id);
 
-                            if (hasConsented) {
+                            if (hasConsented && prompt !== "consent") {
                                 // User has already consented, so we can skip the consent screen
                                 const authCode = await identityService.createAuthCode({
                                     userDid,
@@ -327,6 +327,7 @@ const startServer = async () => {
                             code_challenge: t.String(),
                             code_challenge_method: t.Optional(t.String()),
                             form_type: t.Optional(t.String()),
+                            prompt: t.Optional(t.String()),
                         }),
                     }
                 )
@@ -351,6 +352,7 @@ const startServer = async () => {
                         const userDid = session.sessionId;
 
                         if (decision === "deny") {
+                            await identityService.revokeConsent(userDid, client_id);
                             const redirectUrl = new URL(redirect_uri);
                             redirectUrl.searchParams.set("error", "access_denied");
                             if (state) {

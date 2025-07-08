@@ -12,6 +12,7 @@ interface VibeContextType {
     login: () => Promise<void>;
     logout: () => Promise<void>;
     signup: () => Promise<void>;
+    manageConsent: () => Promise<void>;
     read(collection: string, callback: ReadCallback): Promise<Subscription>;
     read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription>;
     readOnce: (collection: string, filter?: any) => Promise<any>;
@@ -49,6 +50,7 @@ export const VibeProvider = ({
     const login = () => sdk.login();
     const logout = () => sdk.logout();
     const signup = () => sdk.signup();
+    const manageConsent = () => sdk.manageConsent();
     function read(collection: string, callback: ReadCallback): Promise<Subscription>;
     function read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription>;
     function read(collection: string, filterOrCb: ReadCallback | any, callback?: ReadCallback): Promise<Subscription> {
@@ -62,7 +64,7 @@ export const VibeProvider = ({
     const remove = (collection: string, data: any) => sdk.remove(collection, data);
 
     return (
-        <VibeContext.Provider value={{ sdk, user, isLoggedIn, login, logout, signup, read, readOnce, write, remove, appName: config.appName }}>
+        <VibeContext.Provider value={{ sdk, user, isLoggedIn, login, logout, signup, read, readOnce, write, remove, appName: config.appName, manageConsent }}>
             {children}
         </VibeContext.Provider>
     );

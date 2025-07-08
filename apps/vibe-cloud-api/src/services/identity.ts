@@ -383,4 +383,21 @@ export class IdentityService {
         }
         return user.consents.includes(clientId);
     }
+    async revokeConsent(userDid: string, clientId: string) {
+        await this.reauthenticate();
+        if (!this.usersDb || !this.isConnected) {
+            throw new Error("Database not connected");
+        }
+        const user = await this.findByDid(userDid);
+        if (!user) {
+            throw new Error("User not found");
+        }
+        const consents = user.consents || [];
+        if (consents.includes(clientId)) {
+            await this.usersDb.insert({
+                ...user,
+                consents: consents.filter((c: string) => c !== clientId),
+            });
+        }
+    }
 }

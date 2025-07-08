@@ -160,7 +160,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         }
     }
 
-    private redirectToAuthorize(formType: "login" | "signup"): Promise<void> {
+    private redirectToAuthorize(formType: "login" | "signup", promptConsent = false): Promise<void> {
         return new Promise(async (resolve, reject) => {
             const pkce = await generatePkce();
             sessionStorage.setItem("vibe_pkce_verifier", pkce.verifier);
@@ -179,6 +179,10 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                 form_type: formType,
             });
 
+            if (promptConsent) {
+                params.set("prompt", "consent");
+            }
+
             const url = `${this.config.apiUrl}/auth/authorize?${params.toString()}`;
             const popup = window.open(url, "vibe-auth", "width=600,height=700,popup=true");
 
@@ -188,13 +192,22 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                 }
 
                 if (event.data.type === "vibe_auth_callback") {
-                    window.removeEventListener("message", messageListener);
-                    popup?.close();
-                    try {
-                        await this.handleRedirectCallback(event.data.url);
+                    if (promptConsent) {
+                        // For consent management, we don't close the window automatically.
+                        // The user will close it manually after making their choice.
+                        window.removeEventListener("message", messageListener);
+                        popup?.close();
+                        this.authManager.notifyStateChange(); // Re-fetch user state
                         resolve();
-                    } catch (e) {
-                        reject(e);
+                    } else {
+                        window.removeEventListener("message", messageListener);
+                        popup?.close();
+                        try {
+                            await this.handleRedirectCallback(event.data.url);
+                            resolve();
+                        } catch (e) {
+                            reject(e);
+                        }
                     }
                 }
             };
@@ -209,6 +222,10 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
     async signup(): Promise<void> {
         await this.redirectToAuthorize("signup");
+    }
+
+    async manageConsent(): Promise<void> {
+        await this.redirectToAuthorize("login", true);
     }
 
     async handleRedirectCallback(url: string): Promise<void> {
