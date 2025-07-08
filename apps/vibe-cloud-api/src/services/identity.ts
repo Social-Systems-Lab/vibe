@@ -3,21 +3,18 @@ import { generateSalt, deriveEncryptionKey, encryptData } from "../lib/crypto";
 import { generateEd25519KeyPair, didFromEd25519, instanceIdFromDid } from "../lib/did";
 import { randomBytes, createHash } from "crypto";
 import { getUserDbName } from "../lib/db";
-import { StorageService } from "./storage";
 
 export class IdentityService {
-    private storageService: StorageService;
     private nano: Nano.ServerScope;
     private usersDb: Nano.DocumentScope<any> | undefined;
     private instanceIdSecret: string;
     public isConnected = false;
     private config: { url: string; user: string; pass: string; instanceIdSecret: string };
 
-    constructor(config: { url: string; user: string; pass: string; instanceIdSecret: string }, storageService: StorageService) {
+    constructor(config: { url: string; user: string; pass: string; instanceIdSecret: string }) {
         this.config = config;
         this.nano = Nano(config.url);
         this.instanceIdSecret = config.instanceIdSecret;
-        this.storageService = storageService;
     }
 
     private async reauthenticate() {
@@ -404,7 +401,7 @@ export class IdentityService {
             });
         }
     }
-    async updateProfilePicture(did: string, fileBuffer: Buffer, contentType: string): Promise<string> {
+    async updateUser(did: string, data: { displayName?: string; profilePictureUrl?: string }) {
         await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
@@ -415,19 +412,9 @@ export class IdentityService {
             throw new Error("User not found");
         }
 
-        const bucketName = "profile-pictures";
-        const fileExtension = contentType.split("/")[1];
-        const fileName = `${user.instanceId}.${fileExtension}`;
+        const updatedUser = { ...user, ...data };
+        await this.usersDb.insert(updatedUser);
 
-        await this.storageService.upload(bucketName, fileName, fileBuffer, contentType);
-
-        const publicUrl = await this.storageService.getPublicURL(bucketName, fileName);
-
-        await this.usersDb.insert({
-            ...user,
-            profilePictureUrl: publicUrl,
-        });
-
-        return publicUrl;
+        return updatedUser;
     }
 }

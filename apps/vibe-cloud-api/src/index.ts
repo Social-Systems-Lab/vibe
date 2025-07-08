@@ -33,15 +33,12 @@ const startServer = async () => {
 
     const storageService = new StorageService(storageProvider);
 
-    const identityService = new IdentityService(
-        {
-            url: process.env.COUCHDB_URL!,
-            user: process.env.COUCHDB_USER!,
-            pass: process.env.COUCHDB_PASSWORD!,
-            instanceIdSecret: process.env.INSTANCE_ID_SECRET!,
-        },
-        storageService
-    );
+    const identityService = new IdentityService({
+        url: process.env.COUCHDB_URL!,
+        user: process.env.COUCHDB_USER!,
+        pass: process.env.COUCHDB_PASSWORD!,
+        instanceIdSecret: process.env.INSTANCE_ID_SECRET!,
+    });
 
     const couch = nano(process.env.COUCHDB_URL!);
 
@@ -636,12 +633,47 @@ const startServer = async () => {
                         did: userDoc.did,
                         instanceId: userDoc.instanceId,
                         displayName: userDoc.displayName,
+                        profilePictureUrl: userDoc.profilePictureUrl,
                     };
                     return { user };
                 })
+                .patch(
+                    "/me",
+                    async ({ profile, body, set }) => {
+                        if (!profile) {
+                            set.status = 401;
+                            return { error: "Unauthorized" };
+                        }
+                        const user = await identityService.updateUser(profile.sub, body);
+                        return { user };
+                    },
+                    {
+                        body: t.Object({
+                            displayName: t.Optional(t.String()),
+                            profilePictureUrl: t.Optional(t.String()),
+                        }),
+                    }
+                )
+        )
+        .group("/storage", (app) =>
+            app
+                .derive(async ({ jwt, headers }) => {
+                    const auth = headers.authorization;
+                    const token = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
+                    const profile = await jwt.verify(token);
+                    return { profile };
+                })
+                .guard({
+                    beforeHandle: ({ profile, set }) => {
+                        if (!profile) {
+                            set.status = 401;
+                            return { error: "Unauthorized" };
+                        }
+                    },
+                })
                 .post(
-                    "/me/profile-picture",
-                    async ({ profile, body, set, storageService, identityService }) => {
+                    "/upload",
+                    async ({ profile, body, set, storageService }) => {
                         if (!profile) {
                             set.status = 401;
                             return { error: "Unauthorized" };
@@ -656,12 +688,15 @@ const startServer = async () => {
 
                         try {
                             const buffer = Buffer.from(await file.arrayBuffer());
-                            const url = await identityService.updateProfilePicture(profile.sub, buffer, file.type);
+                            const bucketName = `user-${profile.instanceId}`;
+                            const fileName = `${Date.now()}-${file.name}`;
+                            await storageService.upload(bucketName, fileName, buffer, file.type);
+                            const url = await storageService.getPublicURL(bucketName, fileName);
                             return { url };
                         } catch (error: any) {
-                            console.error("Error uploading profile picture:", error);
+                            console.error("Error uploading file:", error);
                             set.status = 500;
-                            return { error: "Failed to upload profile picture" };
+                            return { error: "Failed to upload file" };
                         }
                     },
                     {
