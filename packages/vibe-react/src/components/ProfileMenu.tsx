@@ -13,7 +13,7 @@ export const ProfileMenu = () => {
     return (
         <div>
             <span>Hello, {user?.did}</span>
-            <button onClick={manageConsent}>Manage Consent</button>
+            <button onClick={manageConsent}>App Settings</button>
             <button onClick={logout}>Log out</button>
         </div>
     );

@@ -193,8 +193,12 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
                 if (event.data.type === "vibe_auth_callback") {
                     if (promptConsent) {
-                        // For consent management, we don't close the window automatically.
-                        // The user will close it manually after making their choice.
+                        const url = new URL(event.data.url);
+                        const error = url.searchParams.get("error");
+                        if (error === "access_denied") {
+                            this.authManager.setAccessToken(null);
+                            this.authManager.setUser(null);
+                        }
                         window.removeEventListener("message", messageListener);
                         popup?.close();
                         this.authManager.notifyStateChange(); // Re-fetch user state
