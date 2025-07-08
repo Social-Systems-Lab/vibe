@@ -183,7 +183,12 @@ const startServer = async () => {
                 .post(
                     "/logout",
                     ({ cookie, set }) => {
-                        cookie.vibe_session.remove();
+                        cookie.vibe_session.set({
+                            value: "",
+                            maxAge: -1,
+                            path: "/",
+                            httpOnly: true,
+                        });
                         set.status = 200;
                         return { success: true };
                     },
@@ -238,24 +243,51 @@ const startServer = async () => {
                         try {
                             const session = await sessionJwt.verify(sessionToken);
                             if (!session || !session.sessionId) {
-                                cookie.vibe_session.remove();
+                                cookie.vibe_session.set({ value: "", maxAge: -1, path: "/", httpOnly: true });
                                 // Session is invalid, show login page again
                                 return "Invalid session. Please log in again.";
                             }
 
-                            // User is logged in, show the consent screen.
+                            const userDid = session.sessionId;
+                            const hasConsented = await identityService.hasUserConsented(userDid, client_id);
+
+                            if (hasConsented) {
+                                // User has already consented, so we can skip the consent screen
+                                const authCode = await identityService.createAuthCode({
+                                    userDid,
+                                    clientId: client_id,
+                                    scope,
+                                    redirectUri: query.redirect_uri,
+                                    codeChallenge: query.code_challenge,
+                                    codeChallengeMethod: query.code_challenge_method || "S256",
+                                });
+
+                                const redirectUrl = new URL(query.redirect_uri);
+                                redirectUrl.searchParams.set("code", authCode);
+                                if (query.state) {
+                                    redirectUrl.searchParams.set("state", query.state);
+                                }
+                                return new Response(null, {
+                                    status: 302,
+                                    headers: {
+                                        Location: redirectUrl.toString(),
+                                    },
+                                });
+                            }
+
+                            // User is logged in, but hasn't consented yet. Show the consent screen.
                             const queryString = new URLSearchParams(query as any).toString();
                             return html(`
-                               <h1>Authorize Application</h1>
-                               <p>The application <strong>${client_id}</strong> wants to access your data.</p>
-                               <p>Scopes: ${scope}</p>
-                               <form method="POST" action="/auth/authorize/decision?${queryString}">
-                                   <button type="submit" name="decision" value="allow">Allow</button>
-                                   <button type="submit" name="decision" value="deny">Deny</button>
-                               </form>
-                           `);
+                                <h1>Authorize Application</h1>
+                                <p>The application <strong>${client_id}</strong> wants to access your data.</p>
+                                <p>Scopes: ${scope}</p>
+                                <form method="POST" action="/auth/authorize/decision?${queryString}">
+                                    <button type="submit" name="decision" value="allow">Allow</button>
+                                    <button type="submit" name="decision" value="deny">Deny</button>
+                                </form>
+                            `);
                         } catch (e) {
-                            cookie.vibe_session.remove();
+                            cookie.vibe_session.set({ value: "", maxAge: -1, path: "/", httpOnly: true });
                             return "Your session has expired. Please log in again.";
                         }
                     },
@@ -307,6 +339,8 @@ const startServer = async () => {
                         }
 
                         // Decision is "allow"
+                        await identityService.storeUserConsent(userDid, client_id);
+
                         const authCode = await identityService.createAuthCode({
                             userDid,
                             clientId: client_id,

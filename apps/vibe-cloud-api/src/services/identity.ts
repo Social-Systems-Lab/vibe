@@ -134,6 +134,7 @@ export class IdentityService {
                     expires: refreshTokenExpiry.toISOString(),
                 },
             ],
+            consents: [],
         };
         await this.usersDb.insert(userDocument);
         return { ...userDocument, refreshToken };
@@ -352,5 +353,34 @@ export class IdentityService {
             clientId: doc.clientId,
             scope: doc.scope,
         };
+    }
+    async storeUserConsent(userDid: string, clientId: string) {
+        await this.reauthenticate();
+        if (!this.usersDb || !this.isConnected) {
+            throw new Error("Database not connected");
+        }
+        const user = await this.findByDid(userDid);
+        if (!user) {
+            throw new Error("User not found");
+        }
+        const consents = user.consents || [];
+        if (!consents.includes(clientId)) {
+            await this.usersDb.insert({
+                ...user,
+                consents: [...consents, clientId],
+            });
+        }
+    }
+
+    async hasUserConsented(userDid: string, clientId: string): Promise<boolean> {
+        await this.reauthenticate();
+        if (!this.usersDb || !this.isConnected) {
+            throw new Error("Database not connected");
+        }
+        const user = await this.findByDid(userDid);
+        if (!user || !user.consents) {
+            return false;
+        }
+        return user.consents.includes(clientId);
     }
 }
