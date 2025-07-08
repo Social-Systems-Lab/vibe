@@ -541,6 +541,13 @@ const startServer = async () => {
 
                             const hasConsented = await identityService.hasUserConsented(userDid, client_id);
 
+                            // Sanitize user object before sending to client
+                            const sanitizedUser = {
+                                did: user.did,
+                                instanceId: user.instanceId,
+                                displayName: user.displayName,
+                            };
+
                             if (hasConsented) {
                                 // Silently log in
                                 const authCode = await identityService.createAuthCode({
@@ -551,10 +558,10 @@ const startServer = async () => {
                                     codeChallenge: code_challenge,
                                     codeChallengeMethod: code_challenge_method || "S256",
                                 });
-                                return html(renderScript({ status: "SILENT_LOGIN_SUCCESS", code: authCode, user }));
+                                return html(renderScript({ status: "SILENT_LOGIN_SUCCESS", code: authCode, user: sanitizedUser }));
                             } else {
                                 // Prompt for one-tap
-                                return html(renderScript({ status: "ONE_TAP_REQUIRED", user }));
+                                return html(renderScript({ status: "ONE_TAP_REQUIRED", user: sanitizedUser }));
                             }
                         } catch (e) {
                             // Invalid token or other error
@@ -600,6 +607,8 @@ const startServer = async () => {
                     }
                     const user = {
                         did: userDoc.did,
+                        instanceId: userDoc.instanceId,
+                        displayName: userDoc.displayName,
                     };
                     return { user };
                 })
