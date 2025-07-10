@@ -19,4 +19,38 @@ This repository is structured as a monorepo and contains the following key proje
 
 ## Getting Started
 
+To get started with local development, follow these steps:
+
+1.  **Start the required services:**
+
+    We use Docker to run CouchDB and Minio. To start them, run the following command from the `infra/selfhost` directory:
+
+    ```bash
+    docker-compose up -d minio couchdb couchdb-setup
+    ```
+
+2.  **Install dependencies:**
+
+    This project uses `bun` for package management. To install all dependencies, run the following command from the root of the repository:
+
+    ```bash
+    bun install
+    ```
+
+3.  **Build the project:**
+
+    To build all the packages and applications, run the following command from the root of the repository:
+
+    ```bash
+    bun run build
+    ```
+
+4.  **Run the development servers:**
+
+    To start the development servers for all applications, run the following command from the root of the repository:
+
+    ```bash
+    bun run dev
+    ```
+
 For more detailed information about a specific project, please refer to the `README.md` file within its directory.
