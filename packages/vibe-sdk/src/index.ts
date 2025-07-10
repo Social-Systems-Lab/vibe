@@ -10,6 +10,8 @@ export type VibeSDKConfig = {
     redirectUri: string;
     useHub?: boolean;
     hubUrl?: string;
+    appName?: string;
+    appImageUrl?: string;
 };
 
 export class VibeSDK {
@@ -66,6 +68,18 @@ export class VibeSDK {
             filter = undefined;
         }
         return this.strategy.read(collection, filter, callback as ReadCallback);
+    }
+
+    async readOnce(collection: string, filter?: any): Promise<any> {
+        return this.strategy.readOnce(collection, filter);
+    }
+
+    async write(collection: string, data: any): Promise<any> {
+        return this.strategy.write(collection, data);
+    }
+
+    async remove(collection: string, data: any): Promise<any> {
+        return this.strategy.remove(collection, data);
     }
 }
 

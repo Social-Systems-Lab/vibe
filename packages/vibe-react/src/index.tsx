@@ -1,11 +1,11 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { StandaloneStrategy } from "vibe-sdk/src/strategies/standalone";
+import { VibeSDK, VibeSDKConfig } from "vibe-sdk";
 import { User, ReadCallback, Subscription } from "vibe-sdk/src/types";
 
 interface VibeContextType {
-    sdk: StandaloneStrategy;
+    sdk: VibeSDK;
     user: User | null;
     isLoggedIn: boolean;
     appName?: string;
@@ -24,30 +24,46 @@ interface VibeContextType {
 
 const VibeContext = createContext<VibeContextType | undefined>(undefined);
 
-export const VibeProvider = ({ children, config }: { children: ReactNode; config: { clientId: string; redirectUri: string; apiUrl?: string; appName?: string; appImageUrl?: string } }) => {
-    const [sdk] = useState(() => new StandaloneStrategy(config));
+export const VibeProvider = ({ children, config }: { children: ReactNode; config: VibeSDKConfig }) => {
+    const [sdk] = useState(() => new VibeSDK(config));
     const [user, setUser] = useState<User | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
 
     useEffect(() => {
-        const init = async () => {
-            await sdk.init();
+        // The SDK now handles its own initialization internally
+        const handleStateChange = () => {
+            setIsLoggedIn(sdk.isAuthenticated);
+            setUser(sdk.user);
         };
-        init();
 
-        const unsubscribe = sdk.onStateChange((state) => {
-            setIsLoggedIn(state.isLoggedIn);
-            setUser(state.user);
-        });
+        // Initial state
+        handleStateChange();
 
-        return () => unsubscribe();
+        // This is a simplified way to listen for changes.
+        // A more robust solution would use a dedicated event emitter in the SDK.
+        const interval = setInterval(handleStateChange, 200);
+
+        return () => clearInterval(interval);
     }, [sdk]);
 
     const login = () => sdk.login();
     const logout = () => sdk.logout();
     const signup = () => sdk.signup();
-    const manageConsent = () => sdk.manageConsent();
-    const manageProfile = () => sdk.manageProfile();
+    const manageConsent = async () => {
+        // This function is specific to StandaloneStrategy, so we need to check the type.
+        if ("manageConsent" in sdk) {
+            await (sdk as any).manageConsent();
+        } else {
+            console.warn("manageConsent is not available in the current SDK strategy.");
+        }
+    };
+    const manageProfile = async () => {
+        if ("manageProfile" in sdk) {
+            await (sdk as any).manageProfile();
+        } else {
+            console.warn("manageProfile is not available in the current SDK strategy.");
+        }
+    };
     function read(collection: string, callback: ReadCallback): Promise<Subscription>;
     function read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription>;
     function read(collection: string, filterOrCb: ReadCallback | any, callback?: ReadCallback): Promise<Subscription> {
