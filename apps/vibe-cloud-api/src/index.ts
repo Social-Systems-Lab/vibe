@@ -4,6 +4,7 @@ import { jwt } from "@elysiajs/jwt";
 import { cookie } from "@elysiajs/cookie";
 import { cors } from "@elysiajs/cors";
 import { html } from "@elysiajs/html";
+import { staticPlugin } from "@elysiajs/static";
 import { IdentityService } from "./services/identity";
 import { DataService, JwtPayload } from "./services/data";
 import { StorageService, MinioStorageProvider, ScalewayStorageProvider, StorageProvider } from "./services/storage";
@@ -66,6 +67,12 @@ const startServer = async () => {
         )
         .use(cookie())
         .use(html())
+        .use(
+            staticPlugin({
+                assets: "public",
+                prefix: "",
+            })
+        )
         .use(
             jwt({
                 name: "jwt",

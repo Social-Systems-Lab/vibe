@@ -1,5 +1,6 @@
 import { StandaloneStrategy } from "./strategies/standalone";
 import { AgentStrategy } from "./strategies/agent";
+import { HubStrategy } from "./strategies/hub";
 import { VibeTransportStrategy } from "./strategy";
 import { ReadCallback, Subscription } from "./types";
 
@@ -7,6 +8,8 @@ export type VibeSDKConfig = {
     apiUrl: string;
     clientId: string;
     redirectUri: string;
+    useHub?: boolean;
+    hubUrl?: string;
 };
 
 export class VibeSDK {
@@ -15,12 +18,26 @@ export class VibeSDK {
     public user: any = null;
 
     constructor(config: VibeSDKConfig) {
-        // For now, we default to Standalone. Later we'll add agent detection.
-        this.strategy = new StandaloneStrategy({
-            clientId: config.clientId,
-            redirectUri: config.redirectUri,
-        });
-        console.log("Vibe SDK Initialized with Standalone Strategy");
+        if (config.useHub) {
+            this.strategy = new HubStrategy({
+                hubUrl: config.hubUrl || `${config.apiUrl}/hub.html`,
+            });
+            console.log("Vibe SDK Initialized with Hub Strategy");
+            // The hub strategy requires explicit initialization
+            (this.strategy as HubStrategy).init().then(() => {
+                this.strategy.getUser().then((user) => {
+                    this.user = user;
+                    this.isAuthenticated = !!user;
+                });
+            });
+        } else {
+            // For now, we default to Standalone. Later we'll add agent detection.
+            this.strategy = new StandaloneStrategy({
+                clientId: config.clientId,
+                redirectUri: config.redirectUri,
+            });
+            console.log("Vibe SDK Initialized with Standalone Strategy");
+        }
     }
 
     async login() {

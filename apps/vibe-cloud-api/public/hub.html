@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Vibe Hub</title>
+        <script src="https://cdn.jsdelivr.net/npm/pouchdb@9.0.0/dist/pouchdb.min.js"></script>
+    </head>
+    <body>
+        <h1>Vibe Data Hub</h1>
+        <script>
+            // --- 1. Initialization and State ---
+            console.log("Hub script loaded.");
+
+            const permissionsCache = new Map();
+            const connectedApps = new Map();
+            const db = new PouchDB("vibe-local");
+
+            // --- 2. Main Message Handler ---
+            window.addEventListener("message", (event) => {
+                // In a real implementation, we would strictly validate event.origin against a list of known apps.
+                // For the PoC, we trust the origin that the SDK provides.
+                const { type, payload, nonce, origin } = event.data;
+
+                if (type === "INIT") {
+                    handleInit(event);
+                } else if (type && type.startsWith("DB_")) {
+                    handleDataOperation(event);
+                }
+            });
+
+            // --- 3. Handlers ---
+            async function handleInit(event) {
+                const { origin } = event.data;
+                const sourcePort = event.ports[0];
+
+                if (!sourcePort) {
+                    console.error("Initialization received without a MessagePort. Aborting.");
+                    return;
+                }
+
+                if (event.origin !== origin) {
+                    console.error(`Origin mismatch! Event came from ${event.origin} but claimed to be ${origin}. Denying connection.`);
+                    return;
+                }
+
+                try {
+                    // For the PoC, we'll use a hardcoded permission set.
+                    // In a real implementation, this would be a fetch call to the API.
+                    console.log(`Fetching permissions for origin: ${origin}`);
+                    const permissions = getMockPermissions(origin);
+                    console.log(`Permissions for ${origin}:`, permissions);
+
+                    permissionsCache.set(origin, permissions);
+                    connectedApps.set(origin, sourcePort);
+
+                    // Listen for messages on the dedicated port
+                    sourcePort.onmessage = handleDataOperation;
+
+                    sourcePort.postMessage({ type: "INIT_ACK" });
+                    console.log(`Successfully initialized connection for origin: ${origin}`);
+                } catch (error) {
+                    console.error(`Failed to initialize connection for origin: ${origin}`, error);
+                    sourcePort.postMessage({ type: "INIT_FAIL", error: "Initialization failed." });
+                }
+            }
+
+            function handleDataOperation(event) {
+                const { type, collection, payload, nonce } = event.data;
+                const origin = event.target.origin || findOriginForPort(event.target);
+
+                if (!origin) {
+                    console.error("Could not determine origin for incoming message.");
+                    return;
+                }
+
+                const sourcePort = connectedApps.get(origin);
+                if (!sourcePort) {
+                    console.error(`No active port found for origin: ${origin}. Ignoring message.`);
+                    return;
+                }
+
+                const requiredScope = getScopeForOperation(type);
+                const appPermissions = permissionsCache.get(origin);
+
+                if (appPermissions && appPermissions.scopes && appPermissions.scopes.includes(requiredScope)) {
+                    performPouchDbOperation(type, collection, payload)
+                        .then((result) => {
+                            sourcePort.postMessage({ type: `${type}_ACK`, success: true, data: result, nonce });
+                        })
+                        .catch((dbError) => {
+                            sourcePort.postMessage({ type: `${type}_ACK`, success: false, error: dbError.message, nonce });
+                        });
+                } else {
+                    console.warn(`Permission denied for origin ${origin} trying to perform ${type}.`);
+                    sourcePort.postMessage({ type: `${type}_ACK`, success: false, error: "Permission Denied.", nonce });
+                }
+            }
+
+            // --- 4. Helper Functions ---
+            function findOriginForPort(port) {
+                for (const [origin, p] of connectedApps.entries()) {
+                    if (p === port) {
+                        return origin;
+                    }
+                }
+                return null;
+            }
+
+            function getScopeForOperation(type) {
+                if (type === "DB_WRITE" || type === "DB_REMOVE") return "write";
+                if (type === "DB_READ" || type === "DB_QUERY") return "read";
+                return null;
+            }
+
+            async function performPouchDbOperation(type, collection, payload) {
+                console.log(`Performing ${type} on collection '${collection}' with payload:`, payload);
+                switch (type) {
+                    case "DB_WRITE":
+                        if (!payload._id) {
+                            payload._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                        }
+                        return await db.put({ ...payload, collection });
+                    case "DB_READ":
+                        return await db.get(payload.id);
+                    case "DB_QUERY":
+                        const result = await db.find({
+                            selector: { ...payload, collection: collection },
+                        });
+                        return result.docs;
+                    default:
+                        throw new Error(`Unsupported DB operation: ${type}`);
+                }
+            }
+
+            function getMockPermissions(origin) {
+                // In the real world, this comes from the API. For the PoC, we hardcode it.
+                // We'll give the test-app permission to read and write, but only to the 'posts' collection.
+                // This simulates a more granular permission model for testing.
+                if (origin === "http://localhost:3000") {
+                    // Assuming test-app runs on port 3000
+                    return { scopes: ["read", "write"] }; // For now, broad permissions for the test app
+                }
+                return { scopes: [] }; // Default to no permissions
+            }
+
+            // Add the find plugin
+            PouchDB.plugin(pouchdbfind);
+
+            console.log("Hub is ready and listening.");
+        </script>
+    </body>
+</html>
