@@ -1,6 +1,7 @@
 import { ReadCallback, Subscription } from "./types";
 
 export interface VibeTransportStrategy {
+    init?(): Promise<void>;
     login(): Promise<void>;
     logout(): Promise<void>;
     signup(): Promise<void>;

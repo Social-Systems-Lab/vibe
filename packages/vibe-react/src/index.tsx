@@ -29,20 +29,12 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
     const [isLoggedIn, setIsLoggedIn] = useState(false);
 
     useEffect(() => {
-        // The SDK now handles its own initialization internally
-        const handleStateChange = () => {
+        const initSdk = async () => {
+            await sdk.init();
             setIsLoggedIn(sdk.isAuthenticated);
             setUser(sdk.user);
         };
-
-        // Initial state
-        handleStateChange();
-
-        // This is a simplified way to listen for changes.
-        // A more robust solution would use a dedicated event emitter in the SDK.
-        const interval = setInterval(handleStateChange, 200);
-
-        return () => clearInterval(interval);
+        initSdk();
     }, [sdk]);
 
     const login = () => sdk.login();

@@ -83,7 +83,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         this.config = { ...config, apiUrl };
     }
 
-    async init() {
+    async init(): Promise<void> {
         return new Promise<void>(async (resolve) => {
             const pkce = await generatePkce();
             sessionStorage.setItem("vibe_pkce_verifier", pkce.verifier); // Store for later
