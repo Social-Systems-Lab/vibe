@@ -25,7 +25,10 @@ export class HubStrategy implements VibeTransportStrategy {
         return new Promise((resolve, reject) => {
             this.hubFrame = document.createElement("iframe");
             this.hubFrame.style.display = "none";
-            this.hubFrame.src = this.hubUrl;
+            // Add a cache-busting query parameter
+            const cacheBustedUrl = new URL(this.hubUrl);
+            cacheBustedUrl.searchParams.set("t", Date.now().toString());
+            this.hubFrame.src = cacheBustedUrl.toString();
             document.body.appendChild(this.hubFrame);
 
             const channel = new MessageChannel();

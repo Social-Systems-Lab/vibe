@@ -3,6 +3,7 @@
     <head>
         <title>Vibe Hub</title>
         <script src="https://cdn.jsdelivr.net/npm/pouchdb@9.0.0/dist/pouchdb.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/pouchdb@9.0.0/dist/pouchdb.find.min.js"></script>
     </head>
     <body>
         <h1>Vibe Data Hub</h1>
@@ -43,13 +44,14 @@
                 }
 
                 try {
+                    console.log(`[HUB] Received INIT from claimed origin: ${origin}`);
+                    console.log(`[HUB] Verifying against actual event origin: ${event.origin}`);
                     // For the PoC, we'll use a hardcoded permission set.
                     // In a real implementation, this would be a fetch call to the API.
-                    console.log(`Fetching permissions for origin: ${origin}`);
-                    const permissions = getMockPermissions(origin);
-                    console.log(`Permissions for ${origin}:`, permissions);
+                    const permissions = getMockPermissions(event.origin);
+                    console.log(`[HUB] Permissions for ${event.origin}:`, permissions);
 
-                    permissionsCache.set(origin, permissions);
+                    permissionsCache.set(event.origin, permissions);
                     connectedApps.set(origin, sourcePort);
 
                     // Listen for messages on the dedicated port
@@ -132,18 +134,18 @@
             }
 
             function getMockPermissions(origin) {
+                console.log(`[HUB] Getting mock permissions for origin: "${origin}"`);
                 // In the real world, this comes from the API. For the PoC, we hardcode it.
-                // We'll give the test-app permission to read and write, but only to the 'posts' collection.
-                // This simulates a more granular permission model for testing.
-                if (origin === "http://localhost:3000") {
-                    // Assuming test-app runs on port 3000
-                    return { scopes: ["read", "write"] }; // For now, broad permissions for the test app
+                // We'll give the test-app permission to read and write.
+                if (origin === "http://localhost:3001") {
+                    console.log("[HUB] Origin matches. Granting read/write scopes.");
+                    return { scopes: ["read", "write"] };
                 }
+                console.warn("[HUB] Origin does NOT match. Granting empty scopes.");
                 return { scopes: [] }; // Default to no permissions
             }
 
-            // Add the find plugin
-            PouchDB.plugin(pouchdbfind);
+            // The find plugin is automatically registered by its script.
 
             console.log("Hub is ready and listening.");
         </script>
