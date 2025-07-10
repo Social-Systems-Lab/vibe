@@ -196,8 +196,12 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                     return;
                 }
 
-                if (event.data.type === "vibe_auth_callback") {
-                    if (promptConsent || formType === "profile") {
+                if (event.data.type === "vibe_auth_profile_updated") {
+                    popup?.close();
+                    this.getUser();
+                    resolve();
+                } else if (event.data.type === "vibe_auth_callback") {
+                    if (promptConsent) {
                         const url = new URL(event.data.url);
                         const error = url.searchParams.get("error");
                         if (error === "access_denied") {
@@ -206,7 +210,8 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                         }
                         window.removeEventListener("message", messageListener);
                         popup?.close();
-                        this.authManager.notifyStateChange(); // Re-fetch user state
+                        this.getUser();
+                        this.authManager.notifyStateChange();
                         resolve();
                     } else {
                         window.removeEventListener("message", messageListener);

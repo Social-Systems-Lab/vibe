@@ -359,9 +359,12 @@ const startServer = async () => {
                             }
 
                             if (!user.displayName || form_type === "profile") {
+                                const returnUrl = new URL(url.href);
+                                returnUrl.searchParams.set("form_type", "login"); // Avoid profile loop
+
                                 const profileParams = new URLSearchParams({
                                     ...query,
-                                    redirect_uri: url.href,
+                                    redirect_uri: returnUrl.toString(),
                                     is_signup: (!user.displayName).toString(),
                                 });
                                 return new Response(null, {
@@ -751,6 +754,11 @@ const startServer = async () => {
 
                                 if (redirectUri) {
                                     window.location.href = redirectUri;
+                                } else {
+                                    if (window.opener) {
+                                        window.opener.postMessage({ type: "vibe_auth_profile_updated" }, "*");
+                                    }
+                                    window.close();
                                 }
                             });
 
