@@ -197,7 +197,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                 }
 
                 if (event.data.type === "vibe_auth_callback") {
-                    if (promptConsent) {
+                    if (promptConsent || formType === "profile") {
                         const url = new URL(event.data.url);
                         const error = url.searchParams.get("error");
                         if (error === "access_denied") {

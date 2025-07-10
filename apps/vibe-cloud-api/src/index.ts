@@ -358,11 +358,11 @@ const startServer = async () => {
                                 return "Invalid session. Please log in again.";
                             }
 
-                            if (!user.displayName) {
+                            if (!user.displayName || form_type === "profile") {
                                 const profileParams = new URLSearchParams({
                                     ...query,
                                     redirect_uri: url.href,
-                                    is_signup: "true",
+                                    is_signup: (!user.displayName).toString(),
                                 });
                                 return new Response(null, {
                                     status: 302,
