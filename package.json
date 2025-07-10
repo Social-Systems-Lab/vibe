@@ -12,8 +12,7 @@
         "dev:test-app": "cd apps/test-app && bun run dev",
         "dev:sdk": "cd packages/vibe-sdk && bun run dev",
         "dev:react": "cd packages/vibe-react && bun run dev",
-        "dev": "concurrently \"bun run dev:api\" \"bun run dev:web\" \"bun run dev:test-app\" \"bun run dev:sdk\" \"bun run dev:react\"",
-        "build": "bun run ./build.ts"
+        "dev": "concurrently \"bun run dev:api\" \"bun run dev:web\" \"bun run dev:test-app\" \"bun run dev:sdk\" \"bun run dev:react\""
     },
     "trustedDependencies": [
         "waku",

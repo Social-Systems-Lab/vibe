@@ -1,8 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { VibeSDK, VibeSDKConfig } from "vibe-sdk";
-import { User, ReadCallback, Subscription } from "vibe-sdk/src/types";
+import { VibeSDK, VibeSDKConfig, User, ReadCallback, Subscription } from "vibe-sdk";
 
 interface VibeContextType {
     sdk: VibeSDK;

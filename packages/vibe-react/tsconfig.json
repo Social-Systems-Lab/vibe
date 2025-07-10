@@ -5,7 +5,8 @@
         "rootDir": "src",
         "declaration": true,
         "emitDeclarationOnly": true,
-        "jsx": "react-jsx"
+        "jsx": "react-jsx",
+        "typeRoots": ["./node_modules/@types", "./types"]
     },
     "include": ["src"],
     "exclude": ["node_modules", "dist"]
