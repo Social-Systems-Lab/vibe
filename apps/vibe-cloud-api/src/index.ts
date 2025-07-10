@@ -362,6 +362,7 @@ const startServer = async () => {
                                 const profileParams = new URLSearchParams({
                                     ...query,
                                     redirect_uri: url.href,
+                                    is_signup: "true",
                                 });
                                 return new Response(null, {
                                     status: 302,
@@ -403,11 +404,7 @@ const startServer = async () => {
                                 page(
                                     "Authorize Application",
                                     `
-                                ${
-                                    app_image_url
-                                        ? `<img src="${app_image_url}" alt="App Image" style="max-width: 100px; max-height: 100px; margin-bottom: 1rem; border-radius: 8px;" />`
-                                        : ""
-                                }
+                                ${app_image_url ? `<img src="${app_image_url}" alt="App Image" style="max-width: 100px; max-height: 100px; margin-bottom: 1rem; border-radius: 8px;" />` : ""}
                                 <p>The application <strong>${client_id}</strong> wants to access your data.</p>
                                 <p>Scopes: ${scope}</p>
                                 <form method="POST" action="/auth/authorize/decision?${queryString}">
@@ -658,39 +655,46 @@ const startServer = async () => {
                         }
                     },
                 })
-                .get("/profile", async ({ session, html, identityService, set }) => {
-                    if (!session) {
-                        set.status = 401;
-                        return "Unauthorized";
-                    }
-                    const user = await identityService.findByDid(session.sessionId);
+                .get(
+                    "/profile",
+                    async ({ session, html, identityService, set, query }) => {
+                        if (!session) {
+                            set.status = 401;
+                            return "Unauthorized";
+                        }
+                        const user = await identityService.findByDid(session.sessionId);
+                        const isSignup = query.is_signup === "true";
 
-                    const style = `
+                        const style = `
                         body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f2f5; }
                         .container { background-color: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 100%; }
                         img { width: 100px; height: 100px; border-radius: 50%; object-fit: cover; margin-bottom: 1rem; }
                         input[type="file"] { display: none; }
                         label { cursor: pointer; }
                         button { margin-top: 1rem; }
+                        .skip { font-size: 0.8rem; margin-top: 1rem; }
                     `;
 
-                    return html(`
+                        return html(`
                         <style>${style}</style>
                         <div class="container">
-                            <h1>Profile Settings</h1>
-                            <img id="profile-pic" src="${user?.profilePictureUrl || "https://via.placeholder.com/100"}" alt="Profile Picture">
+                            <h1>${isSignup ? "Complete Your Profile" : "Profile Settings"}</h1>
+                            <img id="profile-pic" src="${user?.profilePictureUrl || "https://placehold.co/100x100"}" alt="Profile Picture">
                             <form id="profile-form">
-                                <label for="file-upload">Change Picture</label>
+                                ${isSignup ? "" : `<label for="file-upload">Change Picture</label>`}
                                 <input id="file-upload" type="file" accept="image/*">
-                                <input type="text" id="display-name" value="${user?.displayName || ""}" placeholder="Display Name">
-                                <button type="submit">Save</button>
+                                <input type="text" id="display-name" value="${user?.displayName || ""}" placeholder="Display Name" required>
+                                <button type="submit">${isSignup ? "Continue" : "Save"}</button>
                             </form>
+                            ${isSignup ? `<a href="#" id="skip-link" class="skip">Skip for now</a>` : ""}
                         </div>
                         <script>
                             const form = document.getElementById('profile-form');
                             const fileUpload = document.getElementById('file-upload');
                             const profilePic = document.getElementById('profile-pic');
+                            const skipLink = document.getElementById('skip-link');
                             let profilePictureUrl = "${user?.profilePictureUrl || ""}";
+                            const redirectUri = new URLSearchParams(window.location.search).get('redirect_uri');
 
                             fileUpload.addEventListener('change', async (event) => {
                                 const file = event.target.files[0];
@@ -699,12 +703,13 @@ const startServer = async () => {
                                 const formData = new FormData();
                                 formData.append('file', file);
 
+                                const token = await getAccessToken();
+                                if (!token) return; // Handle error
+
                                 const response = await fetch('/storage/upload', {
                                     method: 'POST',
                                     body: formData,
-                                    headers: {
-                                        'Authorization': 'Bearer ' + (await getAccessToken())
-                                    }
+                                    headers: { 'Authorization': 'Bearer ' + token }
                                 });
 
                                 const data = await response.json();
@@ -717,27 +722,60 @@ const startServer = async () => {
                             form.addEventListener('submit', async (event) => {
                                 event.preventDefault();
                                 const displayName = document.getElementById('display-name').value;
+                                if (!displayName) {
+                                    alert("Display name is required.");
+                                    return;
+                                }
                                 
+                                const token = await getAccessToken();
+                                if (!token) return; // Handle error
+
                                 await fetch('/users/me', {
                                     method: 'PATCH',
                                     headers: {
                                         'Content-Type': 'application/json',
-                                        'Authorization': 'Bearer ' + (await getAccessToken())
+                                        'Authorization': 'Bearer ' + token
                                     },
                                     body: JSON.stringify({ displayName, profilePictureUrl })
                                 });
 
-                                window.location.href = new URLSearchParams(window.location.search).get('redirect_uri');
+                                if (redirectUri) {
+                                    window.location.href = redirectUri;
+                                }
                             });
 
+                            if (skipLink) {
+                                skipLink.addEventListener('click', (e) => {
+                                    e.preventDefault();
+                                    if (redirectUri) {
+                                        window.location.href = redirectUri;
+                                    }
+                                });
+                            }
+
                             async function getAccessToken() {
-                                // This is a placeholder. In a real app, you'd get this from your auth flow.
-                                // For now, we'll just return a dummy token.
-                                return "dummy-token";
+                                try {
+                                    const response = await fetch('/auth/api-token');
+                                    if (!response.ok) {
+                                        console.error('Failed to get API token');
+                                        return null;
+                                    }
+                                    const data = await response.json();
+                                    return data.token;
+                                } catch (error) {
+                                    console.error('Error fetching API token:', error);
+                                    return null;
+                                }
                             }
                         </script>
                     `);
-                })
+                    },
+                    {
+                        query: t.Object({
+                            is_signup: t.Optional(t.String()),
+                        }),
+                    }
+                )
         )
         .group("/users", (app) =>
             app
