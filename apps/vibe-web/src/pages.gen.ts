@@ -7,8 +7,6 @@ import type { PathsForPages, GetConfigResponse } from 'waku/router';
 // prettier-ignore
 type Page =
 | { path: '/auth/callback'; render: 'dynamic' }
-| { path: '/auth/login'; render: 'dynamic' }
-| { path: '/auth/signup'; render: 'dynamic' }
 | { path: '/'; render: 'dynamic' };
 
 // prettier-ignore

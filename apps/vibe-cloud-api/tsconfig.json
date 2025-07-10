@@ -1,16 +1,13 @@
 {
+    "extends": "../../tsconfig/base.json",
     "compilerOptions": {
-        "target": "ESNext",
         "module": "ESNext",
+        "target": "esnext",
         "moduleResolution": "bundler",
-        "strict": true,
-        "skipLibCheck": true,
-        "esModuleInterop": true,
-        "allowSyntheticDefaultImports": true,
-        "outDir": "dist",
-        "composite": true,
-        "declaration": true,
-        "emitDeclarationOnly": true
+        "allowImportingTsExtensions": true,
+        "noEmit": true,
+        "lib": ["DOM"],
+        "types": ["bun-types"]
     },
     "include": ["src", "../../types"],
     "exclude": ["node_modules", "dist"]

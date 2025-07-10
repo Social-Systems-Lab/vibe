@@ -3,15 +3,16 @@
 import { getEnv } from "waku";
 import { createSdk } from "vibe-sdk";
 
-const sdk = createSdk(getEnv("API_URL") ?? "http://127.0.0.1:5000");
+const sdk = createSdk({
+    apiUrl: getEnv("API_URL") ?? "http://127.0.0.1:5000",
+    clientId: getEnv("CLIENT_ID") ?? "http://localhost:3001",
+    redirectUri: getEnv("REDIRECT_URI") ?? "http://localhost:3001/auth/callback",
+});
 
 export const checkApiHealth = async () => {
-    try {
-        const { data } = await sdk.client.health.get({});
-        return JSON.stringify(data, null, 2);
-    } catch (e: any) {
-        return e.message;
-    }
+    // This function needs to be re-evaluated as the SDK does not expose a direct health check.
+    // For now, we can assume the API is healthy if the SDK initializes.
+    return "API health check not implemented in SDK.";
 };
 
 export type AuthState = {

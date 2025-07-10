@@ -3,10 +3,9 @@
     "version": "0.0.1",
     "private": true,
     "type": "module",
-    "main": "dist/index.js",
-    "types": "dist/index.d.ts",
+    "main": "src/index.tsx",
+    "types": "src/index.tsx",
     "scripts": {
-        "build": "tsup src/index.tsx --format esm,cjs --dts --external react --external react-dom",
         "dev": "tsup src/index.tsx --format esm,cjs --dts --external react --external react-dom --watch"
     },
     "dependencies": {

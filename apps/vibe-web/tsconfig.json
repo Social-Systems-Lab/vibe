@@ -1,24 +1,11 @@
 {
+    "extends": "../../tsconfig/react-library.json",
     "compilerOptions": {
-        "strict": true,
-        "target": "esnext",
-        "noEmit": true,
-        "isolatedModules": true,
-        "moduleDetection": "force",
-        "downlevelIteration": true,
-        "esModuleInterop": true,
-        "module": "esnext",
-        "moduleResolution": "bundler",
-        "skipLibCheck": true,
-        "noUncheckedIndexedAccess": true,
-        "exactOptionalPropertyTypes": true,
-        "jsx": "react-jsx",
         "baseUrl": ".",
         "paths": {
             "@/*": ["./src/*"]
-        },
-        "composite": true,
-        "outDir": "dist"
+        }
     },
-    "references": [{ "path": "../../packages/vibe-react" }, { "path": "../../packages/vibe-sdk" }]
+    "include": ["src", "../../types"],
+    "exclude": ["node_modules", "dist"]
 }
