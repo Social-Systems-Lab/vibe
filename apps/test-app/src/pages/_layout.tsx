@@ -19,7 +19,7 @@ const HubTester = () => {
 
     const handleWriteAllowed = async () => {
         try {
-            const response = await sdk.write("posts", { text: "This should work" });
+            const response = await sdk.write("posts", { content: "This should work" });
             setResult(`Write to 'posts' successful: ${JSON.stringify(response)}`);
         } catch (e: any) {
             setResult(`Write to 'posts' failed: ${e.message}`);
@@ -28,7 +28,7 @@ const HubTester = () => {
 
     const handleWriteDenied = async () => {
         try {
-            await sdk.write("private_notes", { text: "This should be denied" });
+            await sdk.write("private_notes", { content: "This should be denied" });
             setResult("Write to 'private_notes' was allowed, but should have failed!");
         } catch (e: any) {
             setResult(`Write to 'private_notes' correctly failed: ${e.message}`);
