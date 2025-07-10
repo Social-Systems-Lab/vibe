@@ -14,6 +14,7 @@ interface VibeContextType {
     logout: () => Promise<void>;
     signup: () => Promise<void>;
     manageConsent: () => Promise<void>;
+    manageProfile: () => Promise<void>;
     read(collection: string, callback: ReadCallback): Promise<Subscription>;
     read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription>;
     readOnce: (collection: string, filter?: any) => Promise<any>;
@@ -23,13 +24,7 @@ interface VibeContextType {
 
 const VibeContext = createContext<VibeContextType | undefined>(undefined);
 
-export const VibeProvider = ({
-    children,
-    config,
-}: {
-    children: ReactNode;
-    config: { clientId: string; redirectUri: string; apiUrl?: string; appName?: string; appImageUrl?: string };
-}) => {
+export const VibeProvider = ({ children, config }: { children: ReactNode; config: { clientId: string; redirectUri: string; apiUrl?: string; appName?: string; appImageUrl?: string } }) => {
     const [sdk] = useState(() => new StandaloneStrategy(config));
     const [user, setUser] = useState<User | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -52,6 +47,7 @@ export const VibeProvider = ({
     const logout = () => sdk.logout();
     const signup = () => sdk.signup();
     const manageConsent = () => sdk.manageConsent();
+    const manageProfile = () => sdk.manageProfile();
     function read(collection: string, callback: ReadCallback): Promise<Subscription>;
     function read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription>;
     function read(collection: string, filterOrCb: ReadCallback | any, callback?: ReadCallback): Promise<Subscription> {
@@ -80,6 +76,7 @@ export const VibeProvider = ({
                 appName: config.appName,
                 appImageUrl: config.appImageUrl,
                 manageConsent,
+                manageProfile,
             }}
         >
             {children}

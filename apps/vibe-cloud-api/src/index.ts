@@ -671,7 +671,17 @@ const startServer = async () => {
                         img { width: 100px; height: 100px; border-radius: 50%; object-fit: cover; margin-bottom: 1rem; }
                         input[type="file"] { display: none; }
                         label { cursor: pointer; }
-                        button { margin-top: 1rem; }
+                        button {
+                            margin-top: 1rem;
+                            padding: 0.75rem;
+                            border: none;
+                            border-radius: 4px;
+                            background-color: #1a73e8;
+                            color: white;
+                            font-size: 1rem;
+                            cursor: pointer;
+                            width: 100%;
+                        }
                         .skip { font-size: 0.8rem; margin-top: 1rem; }
                     `;
 

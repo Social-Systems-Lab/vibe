@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useVibe } from "../index";
 
 export const ProfileMenu = () => {
-    const { isLoggedIn, user, logout, manageConsent } = useVibe();
+    const { isLoggedIn, user, logout, manageConsent, manageProfile } = useVibe();
     const [isOpen, setIsOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -98,6 +98,23 @@ export const ProfileMenu = () => {
                         }}
                     >
                         App Settings
+                    </button>
+                    <button
+                        onClick={() => {
+                            manageProfile();
+                            setIsOpen(false);
+                        }}
+                        style={{
+                            width: "100%",
+                            padding: "10px 12px",
+                            border: "none",
+                            backgroundColor: "transparent",
+                            cursor: "pointer",
+                            textAlign: "left",
+                            fontSize: "16px",
+                        }}
+                    >
+                        Profile Settings
                     </button>
                     <button
                         onClick={() => {
