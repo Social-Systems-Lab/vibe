@@ -16,6 +16,9 @@
         "baseUrl": ".",
         "paths": {
             "@/*": ["./src/*"]
-        }
-    }
+        },
+        "composite": true,
+        "outDir": "dist"
+    },
+    "references": [{ "path": "../../packages/vibe-react" }, { "path": "../../packages/vibe-sdk" }]
 }

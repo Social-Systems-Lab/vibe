@@ -1,0 +1,4 @@
+{
+    "files": [],
+    "references": [{ "path": "apps/vibe-cloud-api" }, { "path": "packages/vibe-sdk" }, { "path": "packages/vibe-react" }, { "path": "apps/test-app" }, { "path": "apps/vibe-web" }]
+}

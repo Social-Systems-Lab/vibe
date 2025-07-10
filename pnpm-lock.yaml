@@ -130,9 +130,6 @@ importers:
         specifier: ^6.0.0
         version: 6.0.0
     devDependencies:
-      '@types/bun':
-        specifier: latest
-        version: 1.2.18(@types/react@19.1.6)
       '@types/nano':
         specifier: ^7.0.0
         version: 7.0.0
@@ -1577,9 +1574,6 @@ packages:
   '@types/babel__traverse@7.20.7':
     resolution: {integrity: sha512-dkO5fhS7+/oos4ciWxyEyjWe48zmG6wbCheo/G2ZnHx4fs3EU6YC6UM8rk56gAjNJ9P3MTH2jo5jb92/K6wbng==}
 
-  '@types/bun@1.2.18':
-    resolution: {integrity: sha512-Xf6RaWVheyemaThV0kUfaAUvCNokFr+bH8Jxp+tTZfx7dAPA8z9ePnP9S9+Vspzuxxx9JRAXhnyccRj3GyCMdQ==}
-
   '@types/cookie-signature@1.1.2':
     resolution: {integrity: sha512-2OhrZV2LVnUAXklUFwuYUTokalh/dUb8rqt70OW6ByMSxYpauPZ+kfNLknX3aJyjY5iu8i3cUyoLZP9Fn37tTg==}
 
@@ -1808,11 +1802,6 @@ packages:
 
   buffer@6.0.3:
     resolution: {integrity: sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA==}
-
-  bun-types@1.2.18:
-    resolution: {integrity: sha512-04+Eha5NP7Z0A9YgDAzMk5PHR16ZuLVa83b26kH5+cp1qZW4F6FmAURngE7INf4tKOvCE69vYvDEwoNl1tGiWw==}
-    peerDependencies:
-      '@types/react': ^19
 
   bundle-require@5.1.0:
     resolution: {integrity: sha512-3WrrOuZiyaaZPWiEt4G3+IffISVC9HYlWueJEBWED4ZH4aIAC2PnkdnuRrR94M+w6yGWn4AglWtJtBI8YqvgoA==}
@@ -4725,12 +4714,6 @@ snapshots:
     dependencies:
       '@babel/types': 7.28.0
 
-  '@types/bun@1.2.18(@types/react@19.1.6)':
-    dependencies:
-      bun-types: 1.2.18(@types/react@19.1.6)
-    transitivePeerDependencies:
-      - '@types/react'
-
   '@types/cookie-signature@1.1.2':
     dependencies:
       '@types/node': 24.0.12
@@ -4990,11 +4973,6 @@ snapshots:
     dependencies:
       base64-js: 1.5.1
       ieee754: 1.2.1
-
-  bun-types@1.2.18(@types/react@19.1.6):
-    dependencies:
-      '@types/node': 24.0.12
-      '@types/react': 19.1.6
 
   bundle-require@5.1.0(esbuild@0.25.6):
     dependencies:
