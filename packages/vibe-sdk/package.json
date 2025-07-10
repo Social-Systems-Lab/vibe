@@ -6,10 +6,8 @@
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "scripts": {
-        "build:js": "bun build ./src/index.ts --outdir ./dist",
-        "build:types": "tsc --emitDeclarationOnly",
-        "build": "bun run build:js && bun run build:types",
-        "dev": "concurrently \"bun run build:js --watch\" \"bun run build:types --watch\""
+        "build": "tsup src/index.ts --format esm,cjs --dts",
+        "dev": "tsup src/index.ts --format esm,cjs --dts --watch"
     },
     "files": [
         "dist"
@@ -21,6 +19,7 @@
     "devDependencies": {
         "elysia": "^1.3.5",
         "typescript": "5.8.3",
-        "concurrently": "^8.2.2"
+        "concurrently": "^8.2.2",
+        "tsup": "^8.2.3"
     }
 }

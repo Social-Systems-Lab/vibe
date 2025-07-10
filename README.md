@@ -31,10 +31,10 @@ To get started with local development, follow these steps:
 
 2.  **Install dependencies:**
 
-    This project uses `bun` for package management. To install all dependencies, run the following command from the root of the repository:
+    This project uses `pnpm` for package management. To install all dependencies, run the following command from the root of the repository:
 
     ```bash
-    bun install
+    pnpm install
     ```
 
 3.  **Build the project:**
@@ -42,7 +42,7 @@ To get started with local development, follow these steps:
     To build all the packages and applications, run the following command from the root of the repository:
 
     ```bash
-    bun run build
+    pnpm run build
     ```
 
 4.  **Run the development servers:**
@@ -50,7 +50,7 @@ To get started with local development, follow these steps:
     To start the development servers for all applications, run the following command from the root of the repository:
 
     ```bash
-    bun run dev
+    pnpm run dev
     ```
 
 For more detailed information about a specific project, please refer to the `README.md` file within its directory.

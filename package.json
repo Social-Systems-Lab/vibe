@@ -7,19 +7,13 @@
         "infra"
     ],
     "scripts": {
-        "dev:api": "cd apps/vibe-cloud-api && bun run dev",
-        "dev:web": "cd apps/vibe-web && bun run dev",
-        "dev:test-app": "cd apps/test-app && bun run dev",
-        "dev:sdk": "cd packages/vibe-sdk && bun run dev",
-        "dev:react": "cd packages/vibe-react && bun run dev",
-        "dev": "concurrently \"bun run dev:api\" \"bun run dev:web\" \"bun run dev:test-app\" \"bun run dev:sdk\" \"bun run dev:react\""
+        "dev:api": "pnpm --filter vibe-cloud-api dev",
+        "dev:web": "pnpm --filter vibe-web dev",
+        "dev:test-app": "pnpm --filter test-app dev",
+        "dev:sdk": "pnpm --filter vibe-sdk dev",
+        "dev:react": "pnpm --filter vibe-react dev",
+        "dev": "pnpm -r --parallel dev"
     },
-    "trustedDependencies": [
-        "waku",
-        "@swc/core",
-        "@tailwindcss/oxide",
-        "esbuild"
-    ],
     "dependencies": {
         "undici": "^7.10.0"
     },

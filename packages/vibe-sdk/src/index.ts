@@ -86,3 +86,5 @@ export class VibeSDK {
 export const createSdk = (config: VibeSDKConfig) => {
     return new VibeSDK(config);
 };
+
+export * from "./types";

@@ -4,9 +4,7 @@
     "private": true,
     "scripts": {
         "dev": "bun run --watch src/index.ts",
-        "build:js": "bun build ./src/index.ts --outdir ./dist",
-        "build:types": "tsc --emitDeclarationOnly",
-        "build": "bun run build:js && bun run build:types"
+        "build": "bun build ./src/index.ts --outdir ./dist"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.842.0",
@@ -31,7 +29,8 @@
     },
     "devDependencies": {
         "typescript": "^5.8.3",
-        "@types/bun": "latest",
-        "@types/nano": "^7.0.0"
+        "@types/nano": "^7.0.0",
+        "tsup": "^8.2.3",
+        "@types/bun": "latest"
     }
 }

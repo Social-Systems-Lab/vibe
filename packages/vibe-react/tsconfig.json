@@ -1,12 +1,14 @@
 {
-    "extends": "../../tsconfig.base.json",
     "compilerOptions": {
+        "target": "ESNext",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "strict": true,
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
         "outDir": "dist",
-        "rootDir": "src",
-        "declaration": true,
-        "emitDeclarationOnly": true,
-        "jsx": "react-jsx",
-        "typeRoots": ["./node_modules/@types", "./types"]
+        "jsx": "react-jsx"
     },
     "include": ["src"],
     "exclude": ["node_modules", "dist"]
