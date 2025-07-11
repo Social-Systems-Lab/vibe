@@ -133,8 +133,10 @@ export class VibeSDK {
     }
 }
 
+import { getSdk } from "./sdk-manager";
+
 export const createSdk = (config: VibeSDKConfig) => {
-    return new VibeSDK(config);
+    return getSdk(config);
 };
 
 export * from "./types";
