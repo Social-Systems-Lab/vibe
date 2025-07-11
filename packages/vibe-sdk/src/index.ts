@@ -93,6 +93,14 @@ export class VibeSDK {
         this.isAuthenticated = !!this.user;
     }
 
+    async manageConsent() {
+        await this.authStrategy.manageConsent();
+    }
+
+    async manageProfile() {
+        await this.authStrategy.manageProfile();
+    }
+
     async read(collection: string, callback: ReadCallback): Promise<Subscription>;
     async read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription>;
     async read(collection: string, filter: any, callback?: ReadCallback): Promise<Subscription> {

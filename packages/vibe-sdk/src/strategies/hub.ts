@@ -142,6 +142,14 @@ export class HubStrategy implements VibeTransportStrategy {
         throw new Error("Signup is not supported in HubStrategy. Use the authStrategy.");
     }
 
+    async manageConsent(): Promise<void> {
+        return this.postToHub({ type: "MANAGE_CONSENT" });
+    }
+
+    async manageProfile(): Promise<void> {
+        return this.postToHub({ type: "MANAGE_PROFILE" });
+    }
+
     async getUser(): Promise<User | null> {
         return this.postToHub({ type: "GET_USER" });
     }

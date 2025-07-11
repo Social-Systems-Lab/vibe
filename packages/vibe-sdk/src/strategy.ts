@@ -5,6 +5,8 @@ export interface VibeTransportStrategy {
     login(): Promise<void>;
     logout(): Promise<void>;
     signup(): Promise<void>;
+    manageConsent(): Promise<void>;
+    manageProfile(): Promise<void>;
     getUser(): Promise<any>;
     isLoggedIn?(): boolean;
     read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription>;

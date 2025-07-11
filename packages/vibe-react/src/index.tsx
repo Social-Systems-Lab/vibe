@@ -47,21 +47,8 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
     const login = () => sdk.login();
     const logout = () => sdk.logout();
     const signup = () => sdk.signup();
-    const manageConsent = async () => {
-        // This function is specific to StandaloneStrategy, so we need to check the type.
-        if ("manageConsent" in sdk) {
-            await (sdk as any).manageConsent();
-        } else {
-            console.warn("manageConsent is not available in the current SDK strategy.");
-        }
-    };
-    const manageProfile = async () => {
-        if ("manageProfile" in sdk) {
-            await (sdk as any).manageProfile();
-        } else {
-            console.warn("manageProfile is not available in the current SDK strategy.");
-        }
-    };
+    const manageConsent = () => sdk.manageConsent();
+    const manageProfile = () => sdk.manageProfile();
     function read(collection: string, callback: ReadCallback): Promise<Subscription>;
     function read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription>;
     function read(collection: string, filterOrCb: ReadCallback | any, callback?: ReadCallback): Promise<Subscription> {
