@@ -10,7 +10,7 @@ The client sends this message to initiate a connection with the hub.
 
 -   **`type`**: `"INIT"`
 -   **`payload`**:
-    -   `origin`: The origin of the client application (e.g., `https://my-app.com`).
+    -   `origin`: The origin of the client application (e.g. `https://my-app.com`).
     -   `user`: The current user object, if available.
 -   **`port`**: A `MessagePort` for dedicated, secure communication.
 
