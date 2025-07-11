@@ -16,6 +16,7 @@ export class HubStrategy implements VibeTransportStrategy {
     private pendingRequests = new Map<string, PendingRequest>();
     private stateChangeListeners: ((state: { isLoggedIn: boolean; user: User | null }) => void)[] = [];
     private subscriptions = new Map<string, ReadCallback>();
+    private currentUser: User | null = null;
 
     constructor(config: { hubUrl: string; clientId: string; redirectUri: string; apiUrl: string }) {
         this.hubUrl = config.hubUrl;
@@ -87,6 +88,11 @@ export class HubStrategy implements VibeTransportStrategy {
                     return;
                 }
 
+                if (type === "AUTH_STATE_CHANGE") {
+                    this.notifyStateChange(data.isLoggedIn, data.user);
+                    return;
+                }
+
                 const pending = this.pendingRequests.get(nonce);
                 if (pending) {
                     if (success) {
@@ -146,11 +152,16 @@ export class HubStrategy implements VibeTransportStrategy {
 
     onStateChange(listener: (state: { isLoggedIn: boolean; user: User | null }) => void) {
         this.stateChangeListeners.push(listener);
-        // For simplicity, we don't return an unsubscribe function in this PoC
-        return () => {};
+        // Immediately notify the new listener with the current state
+        listener({ isLoggedIn: !!this.currentUser, user: this.currentUser });
+
+        return () => {
+            this.stateChangeListeners = this.stateChangeListeners.filter((l) => l !== listener);
+        };
     }
 
     private notifyStateChange(isLoggedIn: boolean, user: User | null) {
+        this.currentUser = user;
         const state = { isLoggedIn, user };
         this.stateChangeListeners.forEach((listener) => listener(state));
     }

@@ -76,6 +76,7 @@
                     if (user) {
                         currentUser = user;
                         startSync(user);
+                        broadcastAuthStateChange();
                     }
                 } catch (error) {
                     console.error(`Failed to initialize connection for origin: ${origin}`, error);
@@ -164,6 +165,17 @@
                             window.location.href
                         )}&response_type=code&scope=openid&form_type=signup`;
                         break;
+                }
+            }
+
+            function broadcastAuthStateChange() {
+                const state = {
+                    isLoggedIn: !!currentUser,
+                    user: currentUser,
+                };
+                console.log("[HUB] Broadcasting auth state change:", state);
+                for (const port of connectedApps.values()) {
+                    port.postMessage({ type: "AUTH_STATE_CHANGE", data: state });
                 }
             }
 
