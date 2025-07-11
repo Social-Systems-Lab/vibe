@@ -45,11 +45,14 @@ export class VibeSDK {
 
     async login() {
         return new Promise<void>(async (resolve) => {
-            const unsubscribe = (this.strategy as any).onStateChange((state: any) => {
-                if (state.isLoggedIn) {
+            let unsubscribe: () => void;
+            unsubscribe = this.onStateChange((state: any) => {
+                if (state.isAuthenticated) {
                     this.user = state.user;
                     this.isAuthenticated = true;
-                    unsubscribe();
+                    if (unsubscribe) {
+                        unsubscribe();
+                    }
                     resolve();
                 }
             });
@@ -89,6 +92,15 @@ export class VibeSDK {
 
     async remove(collection: string, data: any): Promise<any> {
         return this.strategy.remove(collection, data);
+    }
+
+    onStateChange(callback: (state: { isAuthenticated: boolean; user: any }) => void) {
+        return this.strategy.onStateChange((state) => {
+            callback({
+                isAuthenticated: state.isLoggedIn,
+                user: state.user,
+            });
+        });
     }
 }
 

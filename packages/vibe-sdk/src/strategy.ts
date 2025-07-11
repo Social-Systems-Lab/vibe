@@ -1,4 +1,4 @@
-import { ReadCallback, Subscription } from "./types";
+import { ReadCallback, Subscription, User } from "./types";
 
 export interface VibeTransportStrategy {
     init?(): Promise<void>;
@@ -10,4 +10,5 @@ export interface VibeTransportStrategy {
     readOnce(collection: string, filter?: any): Promise<any>;
     write(collection: string, data: any): Promise<any>;
     remove(collection: string, data: any): Promise<any>;
+    onStateChange(callback: (state: { isLoggedIn: boolean; user: User | null }) => void): () => void;
 }

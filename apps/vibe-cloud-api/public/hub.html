@@ -31,14 +31,13 @@
                     handleGetUser(event);
                 } else if (type && type.startsWith("DB_")) {
                     handleDataOperation(event);
-                } else if (type && type.startsWith("AUTH_")) {
-                    handleAuthOperation(event);
                 }
             });
 
             // --- 3. Handlers ---
             async function handleInit(event) {
-                const { origin, user } = event.data;
+                const { payload } = event.data;
+                const { origin, user, redirectUri } = payload;
                 const sourcePort = event.ports[0];
 
                 if (!sourcePort) {
@@ -58,7 +57,7 @@
                     console.log(`[HUB] Permissions for ${event.origin}:`, permissions);
 
                     permissionsCache.set(event.origin, permissions);
-                    connectedApps.set(origin, sourcePort);
+                    connectedApps.set(origin, { port: sourcePort, redirectUri });
 
                     // Listen for messages on the dedicated port
                     sourcePort.onmessage = (event) => {
@@ -67,6 +66,8 @@
                             handleGetUser(event);
                         } else if (type && type.startsWith("DB_")) {
                             handleDataOperation(event);
+                        } else if (type && type.startsWith("AUTH_")) {
+                            handleAuthOperation(event);
                         }
                     };
 
@@ -145,25 +146,35 @@
             function handleAuthOperation(event) {
                 const { type } = event.data;
                 const origin = event.target.origin || findOriginForPort(event.target);
-                const sourcePort = connectedApps.get(origin);
+                const app = connectedApps.get(origin);
 
-                if (!sourcePort) {
+                if (!app) {
                     console.error(`No active port found for origin: ${origin}. Ignoring message.`);
                     return;
                 }
 
+                console.log(`[HUB] Received auth operation: ${type} from origin: ${origin}`);
                 switch (type) {
                     case "AUTH_LOGIN":
-                        // Redirect to the login page, passing the client_id and redirect_uri
-                        window.location.href = `/auth/authorize?client_id=${encodeURIComponent(origin)}&redirect_uri=${encodeURIComponent(window.location.href)}&response_type=code&scope=openid`;
+                        const loginUrl = `/auth/authorize?client_id=${encodeURIComponent(origin)}&redirect_uri=${encodeURIComponent(app.redirectUri)}&response_type=code&scope=openid`;
+                        console.log(`[HUB] Opening login popup: ${loginUrl}`);
+                        window.open(loginUrl, "vibe-login", "width=500,height=600");
                         break;
                     case "AUTH_LOGOUT":
+                        currentUser = null;
+                        broadcastAuthStateChange();
+                        console.log("[HUB] Logging out, redirecting to /auth/logout");
                         window.location.href = "/auth/logout";
                         break;
                     case "AUTH_SIGNUP":
-                        window.location.href = `/auth/authorize?client_id=${encodeURIComponent(origin)}&redirect_uri=${encodeURIComponent(
-                            window.location.href
+                        const signupUrl = `/auth/authorize?client_id=${encodeURIComponent(origin)}&redirect_uri=${encodeURIComponent(
+                            app.redirectUri
                         )}&response_type=code&scope=openid&form_type=signup`;
+                        console.log(`[HUB] Opening signup popup: ${signupUrl}`);
+                        window.open(signupUrl, "vibe-signup", "width=500,height=600");
+                        break;
+                    case "AUTH_EXCHANGE_CODE":
+                        exchangeCodeForToken(payload.code, app.redirectUri, origin);
                         break;
                 }
             }
@@ -174,15 +185,15 @@
                     user: currentUser,
                 };
                 console.log("[HUB] Broadcasting auth state change:", state);
-                for (const port of connectedApps.values()) {
-                    port.postMessage({ type: "AUTH_STATE_CHANGE", data: state });
+                for (const app of connectedApps.values()) {
+                    app.port.postMessage({ type: "AUTH_STATE_CHANGE", data: state });
                 }
             }
 
             // --- 4. Helper Functions ---
             function findOriginForPort(port) {
                 for (const [origin, p] of connectedApps.entries()) {
-                    if (p === port) {
+                    if (p.port === port) {
                         return origin;
                     }
                 }
@@ -301,6 +312,44 @@
                     }
                 });
             });
+
+            async function exchangeCodeForToken(code, redirectUri, origin) {
+                try {
+                    const response = await fetch("/auth/token", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            grant_type: "authorization_code",
+                            code,
+                            redirect_uri: redirectUri,
+                            client_id: origin,
+                            code_verifier: "dummy", // PKCE is not fully implemented in the hub strategy
+                        }),
+                    });
+
+                    if (!response.ok) {
+                        throw new Error("Failed to exchange code for token");
+                    }
+
+                    const tokenData = await response.json();
+                    // At this point, the user is authenticated with the API.
+                    // We can now fetch the user's profile and update the hub's state.
+                    const userResponse = await fetch("/users/me", {
+                        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+                    });
+
+                    if (!userResponse.ok) {
+                        throw new Error("Failed to fetch user profile");
+                    }
+
+                    const { user } = await userResponse.json();
+                    currentUser = user;
+                    startSync(user);
+                    broadcastAuthStateChange();
+                } catch (error) {
+                    console.error("Error exchanging code for token:", error);
+                }
+            }
         </script>
     </body>
 </html>

@@ -18,12 +18,13 @@ export class HubStrategy implements VibeTransportStrategy {
     private subscriptions = new Map<string, ReadCallback>();
     private currentUser: User | null = null;
 
-    constructor(config: { hubUrl: string; clientId: string; redirectUri: string; apiUrl: string }) {
+    constructor(private config: { hubUrl: string; clientId: string; redirectUri: string; apiUrl: string }) {
         this.hubUrl = config.hubUrl;
         this.sessionManager = new SessionManager(config);
     }
 
     async init(): Promise<void> {
+        window.addEventListener("message", this.handleMessage.bind(this));
         const sessionState = await this.sessionManager.checkSession();
 
         if (sessionState.status === "SILENT_LOGIN_SUCCESS" && sessionState.user) {
@@ -57,8 +58,11 @@ export class HubStrategy implements VibeTransportStrategy {
                 this.hubFrame.contentWindow.postMessage(
                     {
                         type: "INIT",
-                        origin: window.location.origin,
-                        user: sessionState.user,
+                        payload: {
+                            origin: window.location.origin,
+                            user: sessionState.user,
+                            redirectUri: this.config.redirectUri,
+                        },
                     },
                     this.hubUrl,
                     [channel.port2]
@@ -135,15 +139,24 @@ export class HubStrategy implements VibeTransportStrategy {
     // --- Interface Methods ---
 
     async login(): Promise<void> {
-        await this.postToHub({ type: "AUTH_LOGIN" });
+        const loginUrl = `${this.config.apiUrl}/auth/authorize?client_id=${encodeURIComponent(this.config.clientId)}&redirect_uri=${encodeURIComponent(
+            this.config.redirectUri
+        )}&response_type=code&scope=openid`;
+        console.log(`[HubStrategy] Opening login popup: ${loginUrl}`);
+        window.open(loginUrl, "vibe-login", "width=500,height=600");
     }
 
     async logout(): Promise<void> {
         await this.postToHub({ type: "AUTH_LOGOUT" });
+        this.notifyStateChange(false, null);
     }
 
     async signup(): Promise<void> {
-        await this.postToHub({ type: "AUTH_SIGNUP" });
+        const signupUrl = `${this.config.apiUrl}/auth/authorize?client_id=${encodeURIComponent(this.config.clientId)}&redirect_uri=${encodeURIComponent(
+            this.config.redirectUri
+        )}&response_type=code&scope=openid&form_type=signup`;
+        console.log(`[HubStrategy] Opening signup popup: ${signupUrl}`);
+        window.open(signupUrl, "vibe-signup", "width=500,height=600");
     }
 
     async getUser(): Promise<User | null> {
@@ -202,5 +215,15 @@ export class HubStrategy implements VibeTransportStrategy {
                 });
             },
         };
+    }
+
+    private async handleMessage(event: MessageEvent) {
+        if (event.data.type === "vibe_auth_callback") {
+            const url = new URL(event.data.url);
+            const code = url.searchParams.get("code");
+            if (code) {
+                await this.postToHub({ type: "AUTH_EXCHANGE_CODE", payload: { code } });
+            }
+        }
     }
 }
