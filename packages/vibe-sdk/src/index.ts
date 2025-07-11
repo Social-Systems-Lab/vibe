@@ -63,8 +63,11 @@ export class VibeSDK {
                 if (state.isAuthenticated) {
                     this.user = state.user;
                     this.isAuthenticated = true;
-                    if ((this.dataStrategy as any).waitForInit) {
-                        await (this.dataStrategy as any).waitForInit();
+                    // The data strategy might need to perform some async operations to prepare for the new user.
+                    // For example, the HubStrategy needs to tell the hub to re-fetch permissions and start sync.
+                    // We must wait for this to complete before resolving the login promise.
+                    if ((this.dataStrategy as any).setUser) {
+                        await (this.dataStrategy as any).setUser(state.user);
                     }
                     if (unsubscribe) {
                         unsubscribe();
@@ -80,6 +83,9 @@ export class VibeSDK {
         await this.authStrategy.logout();
         this.isAuthenticated = false;
         this.user = null;
+        if ((this.dataStrategy as any).setUser) {
+            await (this.dataStrategy as any).setUser(null);
+        }
     }
 
     async signup() {

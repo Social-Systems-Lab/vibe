@@ -96,14 +96,16 @@ export class HubStrategy implements VibeTransportStrategy {
                     return;
                 }
 
-                const pending = this.pendingRequests.get(nonce);
-                if (pending) {
-                    if (success) {
-                        pending.resolve(data);
-                    } else {
-                        pending.reject(new Error(error));
+                if (type.endsWith("_ACK")) {
+                    const pending = this.pendingRequests.get(nonce);
+                    if (pending) {
+                        if (success) {
+                            pending.resolve(data);
+                        } else {
+                            pending.reject(new Error(error));
+                        }
+                        this.pendingRequests.delete(nonce);
                     }
-                    this.pendingRequests.delete(nonce);
                 }
             };
         });
@@ -136,6 +138,11 @@ export class HubStrategy implements VibeTransportStrategy {
     }
 
     // --- Interface Methods ---
+
+    public async setUser(user: User | null): Promise<void> {
+        await this.ensureInitialized();
+        await this.postToHub({ type: "SET_USER", payload: user });
+    }
 
     async login(): Promise<void> {
         throw new Error("Login is not supported in HubStrategy. Use the authStrategy.");

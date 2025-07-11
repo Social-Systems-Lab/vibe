@@ -18,6 +18,8 @@
             let currentUser = null;
             let syncHandler = null;
             const subscriptions = new Map();
+            let isUpdatingState = false;
+            let messageQueue = [];
 
             // --- 2. Main Message Handler ---
             window.addEventListener("message", (event) => {
@@ -61,12 +63,12 @@
 
                     // Listen for messages on the dedicated port
                     sourcePort.onmessage = (event) => {
-                        const { type } = event.data;
-                        if (type === "GET_USER") {
-                            handleGetUser(event);
-                        } else if (type && type.startsWith("DB_")) {
-                            handleDataOperation(event);
+                        if (isUpdatingState) {
+                            console.log("[HUB] State is updating, queueing message:", event.data.type);
+                            messageQueue.push(event);
+                            return;
                         }
+                        processMessage(event);
                     };
 
                     if (user) {
@@ -87,6 +89,80 @@
                 const app = connectedApps.get(event.origin);
                 if (app) {
                     app.port.postMessage({ type: "GET_USER_ACK", success: true, data: currentUser });
+                }
+            }
+
+            function processMessage(event) {
+                const { type } = event.data;
+                if (type === "GET_USER") {
+                    handleGetUser(event);
+                } else if (type === "SET_USER") {
+                    handleSetUser(event);
+                } else if (type && type.startsWith("DB_")) {
+                    handleDataOperation(event);
+                }
+            }
+
+            function processQueue() {
+                console.log(`[HUB] Processing ${messageQueue.length} queued messages.`);
+                while (messageQueue.length > 0) {
+                    const event = messageQueue.shift();
+                    processMessage(event);
+                }
+            }
+
+            async function handleSetUser(event) {
+                isUpdatingState = true;
+                const { payload, nonce } = event.data;
+                const user = payload;
+                const origin = findOriginForPort(event.target);
+
+                if (!origin) {
+                    console.error("Could not determine origin for SET_USER message.");
+                    isUpdatingState = false;
+                    return;
+                }
+
+                const app = connectedApps.get(origin);
+                if (!app) {
+                    console.error(`No active port found for origin: ${origin}. Ignoring message.`);
+                    isUpdatingState = false;
+                    return;
+                }
+                const sourcePort = app.port;
+
+                try {
+                    if (user) {
+                        currentUser = user;
+                        console.log(`[HUB] User set. Re-fetching permissions for ${origin}`);
+                        const permissions = await getPermissions(origin);
+                        console.log(`[HUB] New permissions for ${origin}:`, permissions);
+                        permissionsCache.set(origin, permissions);
+
+                        await startSync(user);
+                        broadcastAuthStateChange();
+                    } else {
+                        console.log(`[HUB] User logged out. Clearing session for ${origin}`);
+                        currentUser = null;
+                        if (db) {
+                            await db.close();
+                            db = null;
+                        }
+                        if (syncHandler) {
+                            syncHandler.cancel();
+                            syncHandler = null;
+                        }
+                        const permissions = await getPermissions(origin);
+                        permissionsCache.set(origin, permissions);
+                        broadcastAuthStateChange();
+                    }
+                    sourcePort.postMessage({ type: "SET_USER_ACK", success: true, nonce });
+                } catch (error) {
+                    console.error(`[HUB] Error during SET_USER for ${origin}:`, error);
+                    sourcePort.postMessage({ type: "SET_USER_ACK", success: false, error: error.message, nonce });
+                } finally {
+                    isUpdatingState = false;
+                    processQueue();
                 }
             }
 
