@@ -31,18 +31,19 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
     useEffect(() => {
         const initSdk = async () => {
             await sdk.init();
-            setIsLoggedIn(sdk.isAuthenticated);
-            setUser(sdk.user);
         };
         initSdk();
 
-        if ("onStateChange" in sdk) {
-            const unsubscribe = (sdk as any).onStateChange((state: any) => {
-                setIsLoggedIn(state.isLoggedIn);
-                setUser(state.user);
-            });
-            return () => unsubscribe();
-        }
+        const handleStateChange = () => {
+            setIsLoggedIn(sdk.isAuthenticated);
+            setUser(sdk.user);
+        };
+
+        const interval = setInterval(handleStateChange, 200);
+
+        return () => {
+            clearInterval(interval);
+        };
     }, [sdk]);
 
     const login = () => sdk.login();
