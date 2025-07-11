@@ -23,17 +23,7 @@ export class HubStrategy implements VibeTransportStrategy {
         this.sessionManager = new SessionManager(config);
     }
 
-    async init(): Promise<void> {
-        const sessionState = await this.sessionManager.checkSession();
-
-        if (sessionState.status === "SILENT_LOGIN_SUCCESS" && sessionState.user) {
-            this.notifyStateChange(true, sessionState.user);
-        } else if (sessionState.status === "ONE_TAP_REQUIRED" && sessionState.user) {
-            this.notifyStateChange(false, sessionState.user);
-        } else {
-            this.notifyStateChange(false, null);
-        }
-
+    async init(user: User | null = null): Promise<void> {
         if (this.isInitialized) {
             return;
         }
@@ -59,7 +49,7 @@ export class HubStrategy implements VibeTransportStrategy {
                         type: "INIT",
                         payload: {
                             origin: window.location.origin,
-                            user: sessionState.user,
+                            user: user,
                             redirectUri: this.config.redirectUri,
                         },
                     },
@@ -88,11 +78,6 @@ export class HubStrategy implements VibeTransportStrategy {
                     if (callback) {
                         callback({ ok: true, data });
                     }
-                    return;
-                }
-
-                if (type === "AUTH_STATE_CHANGE") {
-                    this.notifyStateChange(data.isLoggedIn, data.user);
                     return;
                 }
 
@@ -160,20 +145,14 @@ export class HubStrategy implements VibeTransportStrategy {
         return this.postToHub({ type: "GET_USER" });
     }
 
-    onStateChange(listener: (state: { isLoggedIn: boolean; user: User | null }) => void) {
-        this.stateChangeListeners.push(listener);
-        // Immediately notify the new listener with the current state
-        listener({ isLoggedIn: !!this.currentUser, user: this.currentUser });
-
-        return () => {
-            this.stateChangeListeners = this.stateChangeListeners.filter((l) => l !== listener);
-        };
+    isLoggedIn(): boolean {
+        // The HubStrategy does not manage auth state directly.
+        return false;
     }
 
-    private notifyStateChange(isLoggedIn: boolean, user: User | null) {
-        this.currentUser = user;
-        const state = { isLoggedIn, user };
-        this.stateChangeListeners.forEach((listener) => listener(state));
+    onStateChange(listener: (state: { isLoggedIn: boolean; user: User | null }) => void) {
+        // This strategy does not produce auth state changes. It consumes them from the authStrategy.
+        return () => {};
     }
 
     async readOnce(collection: string, filter: any = {}): Promise<any> {

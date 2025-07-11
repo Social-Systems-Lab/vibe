@@ -43,16 +43,16 @@ export class VibeSDK {
     }
 
     async init() {
+        this.authStrategy.onStateChange((state) => {
+            this.isAuthenticated = state.isLoggedIn;
+            this.user = state.user;
+        });
+
         if (this.authStrategy.init) {
             await this.authStrategy.init();
         }
         if (this.dataStrategy.init) {
-            await this.dataStrategy.init();
-        }
-        this.user = await this.authStrategy.getUser();
-        this.isAuthenticated = !!this.user;
-        if (this.isAuthenticated && this.dataStrategy.init) {
-            await this.dataStrategy.init();
+            await (this.dataStrategy as any).init(this.user);
         }
     }
 
@@ -117,12 +117,22 @@ export class VibeSDK {
     }
 
     onStateChange(callback: (state: { isAuthenticated: boolean; user: any }) => void) {
-        return this.authStrategy.onStateChange((state) => {
+        const authUnsubscribe = this.authStrategy.onStateChange((state) => {
+            this.isAuthenticated = state.isLoggedIn;
+            this.user = state.user;
             callback({
-                isAuthenticated: state.isLoggedIn,
-                user: state.user,
+                isAuthenticated: this.isAuthenticated,
+                user: this.user,
             });
         });
+
+        // Immediately call the callback with the current state
+        callback({
+            isAuthenticated: this.isAuthenticated,
+            user: this.user,
+        });
+
+        return authUnsubscribe;
     }
 }
 
