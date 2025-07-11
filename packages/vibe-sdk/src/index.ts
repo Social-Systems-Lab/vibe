@@ -19,6 +19,7 @@ export class VibeSDK {
     private authStrategy: VibeTransportStrategy;
     public isAuthenticated = false;
     public user: any = null;
+    private isInitialized = false;
 
     constructor(config: VibeSDKConfig) {
         if (config.useHub) {
@@ -43,10 +44,14 @@ export class VibeSDK {
     }
 
     async init() {
-        this.authStrategy.onStateChange((state) => {
-            this.isAuthenticated = state.isLoggedIn;
-            this.user = state.user;
-        });
+        if (this.isInitialized) {
+            return;
+        }
+        this.isInitialized = true;
+
+        // The onStateChange listener is now the single source of truth for handling auth changes.
+        // It will be responsible for updating the VibeSDK's state and configuring the dataStrategy.
+        this.onStateChange(() => {});
 
         if (this.authStrategy.init) {
             await this.authStrategy.init();
@@ -59,16 +64,8 @@ export class VibeSDK {
     async login() {
         return new Promise<void>(async (resolve) => {
             let unsubscribe: () => void;
-            unsubscribe = this.onStateChange(async (state: any) => {
+            unsubscribe = this.onStateChange((state: any) => {
                 if (state.isAuthenticated) {
-                    this.user = state.user;
-                    this.isAuthenticated = true;
-                    // The data strategy might need to perform some async operations to prepare for the new user.
-                    // For example, the HubStrategy needs to tell the hub to re-fetch permissions and start sync.
-                    // We must wait for this to complete before resolving the login promise.
-                    if ((this.dataStrategy as any).setUser) {
-                        await (this.dataStrategy as any).setUser(state.user);
-                    }
                     if (unsubscribe) {
                         unsubscribe();
                     }
@@ -117,20 +114,20 @@ export class VibeSDK {
     }
 
     onStateChange(callback: (state: { isAuthenticated: boolean; user: any }) => void) {
-        const authUnsubscribe = this.authStrategy.onStateChange((state) => {
+        const authUnsubscribe = this.authStrategy.onStateChange(async (state) => {
             this.isAuthenticated = state.isLoggedIn;
             this.user = state.user;
-            callback({
-                isAuthenticated: this.isAuthenticated,
-                user: this.user,
-            });
+
+            // This is the key: whenever the auth state changes, we inform the data strategy.
+            if ((this.dataStrategy as any).setUser) {
+                await (this.dataStrategy as any).setUser(this.user);
+            }
+
+            callback({ isAuthenticated: this.isAuthenticated, user: this.user });
         });
 
-        // Immediately call the callback with the current state
-        callback({
-            isAuthenticated: this.isAuthenticated,
-            user: this.user,
-        });
+        // Immediately notify the new listener with the current state.
+        callback({ isAuthenticated: this.isAuthenticated, user: this.user });
 
         return authUnsubscribe;
     }
