@@ -24,7 +24,6 @@ export class HubStrategy implements VibeTransportStrategy {
     }
 
     async init(): Promise<void> {
-        window.addEventListener("message", this.handleMessage.bind(this));
         const sessionState = await this.sessionManager.checkSession();
 
         if (sessionState.status === "SILENT_LOGIN_SUCCESS" && sessionState.user) {
@@ -139,24 +138,15 @@ export class HubStrategy implements VibeTransportStrategy {
     // --- Interface Methods ---
 
     async login(): Promise<void> {
-        const loginUrl = `${this.config.apiUrl}/auth/authorize?client_id=${encodeURIComponent(this.config.clientId)}&redirect_uri=${encodeURIComponent(
-            this.config.redirectUri
-        )}&response_type=code&scope=openid`;
-        console.log(`[HubStrategy] Opening login popup: ${loginUrl}`);
-        window.open(loginUrl, "vibe-login", "width=500,height=600");
+        throw new Error("Login is not supported in HubStrategy. Use the authStrategy.");
     }
 
     async logout(): Promise<void> {
-        await this.postToHub({ type: "AUTH_LOGOUT" });
-        this.notifyStateChange(false, null);
+        throw new Error("Logout is not supported in HubStrategy. Use the authStrategy.");
     }
 
     async signup(): Promise<void> {
-        const signupUrl = `${this.config.apiUrl}/auth/authorize?client_id=${encodeURIComponent(this.config.clientId)}&redirect_uri=${encodeURIComponent(
-            this.config.redirectUri
-        )}&response_type=code&scope=openid&form_type=signup`;
-        console.log(`[HubStrategy] Opening signup popup: ${signupUrl}`);
-        window.open(signupUrl, "vibe-signup", "width=500,height=600");
+        throw new Error("Signup is not supported in HubStrategy. Use the authStrategy.");
     }
 
     async getUser(): Promise<User | null> {
@@ -215,15 +205,5 @@ export class HubStrategy implements VibeTransportStrategy {
                 });
             },
         };
-    }
-
-    private async handleMessage(event: MessageEvent) {
-        if (event.data.type === "vibe_auth_callback") {
-            const url = new URL(event.data.url);
-            const code = url.searchParams.get("code");
-            if (code) {
-                await this.postToHub({ type: "AUTH_EXCHANGE_CODE", payload: { code } });
-            }
-        }
     }
 }

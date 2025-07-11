@@ -66,8 +66,6 @@
                             handleGetUser(event);
                         } else if (type && type.startsWith("DB_")) {
                             handleDataOperation(event);
-                        } else if (type && type.startsWith("AUTH_")) {
-                            handleAuthOperation(event);
                         }
                     };
 
@@ -86,9 +84,9 @@
             }
 
             function handleGetUser(event) {
-                const sourcePort = connectedApps.get(event.origin);
-                if (sourcePort) {
-                    sourcePort.postMessage({ type: "GET_USER_ACK", success: true, data: currentUser });
+                const app = connectedApps.get(event.origin);
+                if (app) {
+                    app.port.postMessage({ type: "GET_USER_ACK", success: true, data: currentUser });
                 }
             }
 
@@ -101,18 +99,19 @@
                     return;
                 }
 
-                const sourcePort = connectedApps.get(origin);
-                if (!sourcePort) {
+                const app = connectedApps.get(origin);
+                if (!app) {
                     console.error(`No active port found for origin: ${origin}. Ignoring message.`);
                     return;
                 }
+                const sourcePort = app.port;
 
                 if (type === "DB_SUBSCRIBE") {
                     console.log(`[HUB] Subscription request for ${subscriptionId} from ${origin}`);
                     subscriptions.set(subscriptionId, {
                         collection: payload.collection,
                         filter: payload.filter,
-                        port: sourcePort,
+                        port: app.port,
                     });
                     return; // No ACK needed for subscriptions
                 }
@@ -140,42 +139,6 @@
                 } else {
                     console.warn(`Permission denied for origin ${origin} trying to perform ${type}.`);
                     sourcePort.postMessage({ type: `${type}_ACK`, success: false, error: "Permission Denied.", nonce });
-                }
-            }
-
-            function handleAuthOperation(event) {
-                const { type } = event.data;
-                const origin = event.target.origin || findOriginForPort(event.target);
-                const app = connectedApps.get(origin);
-
-                if (!app) {
-                    console.error(`No active port found for origin: ${origin}. Ignoring message.`);
-                    return;
-                }
-
-                console.log(`[HUB] Received auth operation: ${type} from origin: ${origin}`);
-                switch (type) {
-                    case "AUTH_LOGIN":
-                        const loginUrl = `/auth/authorize?client_id=${encodeURIComponent(origin)}&redirect_uri=${encodeURIComponent(app.redirectUri)}&response_type=code&scope=openid`;
-                        console.log(`[HUB] Opening login popup: ${loginUrl}`);
-                        window.open(loginUrl, "vibe-login", "width=500,height=600");
-                        break;
-                    case "AUTH_LOGOUT":
-                        currentUser = null;
-                        broadcastAuthStateChange();
-                        console.log("[HUB] Logging out, redirecting to /auth/logout");
-                        window.location.href = "/auth/logout";
-                        break;
-                    case "AUTH_SIGNUP":
-                        const signupUrl = `/auth/authorize?client_id=${encodeURIComponent(origin)}&redirect_uri=${encodeURIComponent(
-                            app.redirectUri
-                        )}&response_type=code&scope=openid&form_type=signup`;
-                        console.log(`[HUB] Opening signup popup: ${signupUrl}`);
-                        window.open(signupUrl, "vibe-signup", "width=500,height=600");
-                        break;
-                    case "AUTH_EXCHANGE_CODE":
-                        exchangeCodeForToken(payload.code, app.redirectUri, origin);
-                        break;
                 }
             }
 
@@ -221,6 +184,8 @@
                             selector: { ...payload, collection: collection },
                         });
                         return result.docs;
+                    case "DB_REMOVE":
+                        return await db.remove(payload);
                     default:
                         throw new Error(`Unsupported DB operation: ${type}`);
                 }
@@ -312,44 +277,6 @@
                     }
                 });
             });
-
-            async function exchangeCodeForToken(code, redirectUri, origin) {
-                try {
-                    const response = await fetch("/auth/token", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            grant_type: "authorization_code",
-                            code,
-                            redirect_uri: redirectUri,
-                            client_id: origin,
-                            code_verifier: "dummy", // PKCE is not fully implemented in the hub strategy
-                        }),
-                    });
-
-                    if (!response.ok) {
-                        throw new Error("Failed to exchange code for token");
-                    }
-
-                    const tokenData = await response.json();
-                    // At this point, the user is authenticated with the API.
-                    // We can now fetch the user's profile and update the hub's state.
-                    const userResponse = await fetch("/users/me", {
-                        headers: { Authorization: `Bearer ${tokenData.access_token}` },
-                    });
-
-                    if (!userResponse.ok) {
-                        throw new Error("Failed to fetch user profile");
-                    }
-
-                    const { user } = await userResponse.json();
-                    currentUser = user;
-                    startSync(user);
-                    broadcastAuthStateChange();
-                } catch (error) {
-                    console.error("Error exchanging code for token:", error);
-                }
-            }
         </script>
     </body>
 </html>

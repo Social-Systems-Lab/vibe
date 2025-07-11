@@ -15,32 +15,45 @@ export type VibeSDKConfig = {
 };
 
 export class VibeSDK {
-    private strategy: VibeTransportStrategy;
+    private dataStrategy: VibeTransportStrategy;
+    private authStrategy: VibeTransportStrategy;
     public isAuthenticated = false;
     public user: any = null;
 
     constructor(config: VibeSDKConfig) {
         if (config.useHub) {
-            this.strategy = new HubStrategy({
+            this.authStrategy = new StandaloneStrategy({
+                clientId: config.clientId,
+                redirectUri: config.redirectUri,
+            });
+            this.dataStrategy = new HubStrategy({
                 ...config,
                 hubUrl: config.hubUrl || `${config.apiUrl}/hub.html`,
             });
             console.log("Vibe SDK created with Hub Strategy");
         } else {
-            this.strategy = new StandaloneStrategy({
+            const standalone = new StandaloneStrategy({
                 clientId: config.clientId,
                 redirectUri: config.redirectUri,
             });
+            this.authStrategy = standalone;
+            this.dataStrategy = standalone;
             console.log("Vibe SDK created with Standalone Strategy");
         }
     }
 
     async init() {
-        if (this.strategy.init) {
-            await this.strategy.init();
+        if (this.authStrategy.init) {
+            await this.authStrategy.init();
         }
-        this.user = await this.strategy.getUser();
+        if (this.dataStrategy.init) {
+            await this.dataStrategy.init();
+        }
+        this.user = await this.authStrategy.getUser();
         this.isAuthenticated = !!this.user;
+        if (this.isAuthenticated && this.dataStrategy.init) {
+            await this.dataStrategy.init();
+        }
     }
 
     async login() {
@@ -56,19 +69,19 @@ export class VibeSDK {
                     resolve();
                 }
             });
-            await this.strategy.login();
+            await this.authStrategy.login();
         });
     }
 
     async logout() {
-        await this.strategy.logout();
+        await this.authStrategy.logout();
         this.isAuthenticated = false;
         this.user = null;
     }
 
     async signup() {
-        await this.strategy.signup();
-        this.user = await this.strategy.getUser();
+        await this.authStrategy.signup();
+        this.user = await this.authStrategy.getUser();
         this.isAuthenticated = !!this.user;
     }
 
@@ -79,23 +92,23 @@ export class VibeSDK {
             callback = filter;
             filter = undefined;
         }
-        return this.strategy.read(collection, filter, callback as ReadCallback);
+        return this.dataStrategy.read(collection, filter, callback as ReadCallback);
     }
 
     async readOnce(collection: string, filter?: any): Promise<any> {
-        return this.strategy.readOnce(collection, filter);
+        return this.dataStrategy.readOnce(collection, filter);
     }
 
     async write(collection: string, data: any): Promise<any> {
-        return this.strategy.write(collection, data);
+        return this.dataStrategy.write(collection, data);
     }
 
     async remove(collection: string, data: any): Promise<any> {
-        return this.strategy.remove(collection, data);
+        return this.dataStrategy.remove(collection, data);
     }
 
     onStateChange(callback: (state: { isAuthenticated: boolean; user: any }) => void) {
-        return this.strategy.onStateChange((state) => {
+        return this.authStrategy.onStateChange((state) => {
             callback({
                 isAuthenticated: state.isLoggedIn,
                 user: state.user,
