@@ -13,7 +13,7 @@
 
             const permissionsCache = new Map();
             const connectedApps = new Map();
-            const db = new PouchDB("vibe-local");
+            let db = null;
             let remoteDb = null;
             let currentUser = null;
             let syncHandler = null;
@@ -217,6 +217,7 @@
                         throw new Error("Failed to fetch DB session");
                     }
                     const sessionInfo = await response.json();
+                    db = new PouchDB(sessionInfo.dbName);
                     const remoteDbUrl = new URL(`http://localhost:5984/${sessionInfo.dbName}`);
                     remoteDbUrl.username = sessionInfo.username;
                     remoteDbUrl.password = sessionInfo.password;
@@ -260,11 +261,12 @@
                 live: true,
                 include_docs: true,
             }).on("change", (change) => {
-                console.log("[HUB] Local DB change detected:", change.doc);
-                // This is a simplified notification system. A real implementation would
-                // use a more efficient way to match documents against subscription filters.
+                console.log("[HUB] Local DB change detected:", change);
+                const changedCollection = change.id.split("/")[0];
+                if (!changedCollection) return;
+
                 subscriptions.forEach(async (sub, id) => {
-                    if (change.doc.collection === sub.collection) {
+                    if (sub.collection === changedCollection) {
                         // Re-query to respect the subscription's filter
                         const result = await db.find({
                             selector: { ...sub.filter, collection: sub.collection },

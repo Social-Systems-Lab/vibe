@@ -206,4 +206,18 @@ export class HubStrategy implements VibeTransportStrategy {
             },
         };
     }
+
+    async waitForInit() {
+        if (this.isInitialized) {
+            return;
+        }
+        return new Promise<void>((resolve) => {
+            const interval = setInterval(() => {
+                if (this.isInitialized) {
+                    clearInterval(interval);
+                    resolve();
+                }
+            }, 100);
+        });
+    }
 }

@@ -59,10 +59,13 @@ export class VibeSDK {
     async login() {
         return new Promise<void>(async (resolve) => {
             let unsubscribe: () => void;
-            unsubscribe = this.onStateChange((state: any) => {
+            unsubscribe = this.onStateChange(async (state: any) => {
                 if (state.isAuthenticated) {
                     this.user = state.user;
                     this.isAuthenticated = true;
+                    if ((this.dataStrategy as any).waitForInit) {
+                        await (this.dataStrategy as any).waitForInit();
+                    }
                     if (unsubscribe) {
                         unsubscribe();
                     }
