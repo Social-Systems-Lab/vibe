@@ -123,6 +123,14 @@ export class HubStrategy implements VibeTransportStrategy {
         });
     }
 
+    private async postToHubSimple(message: any): Promise<void> {
+        await this.ensureInitialized();
+        if (!this.hubPort) {
+            throw new Error("Hub port not available.");
+        }
+        this.hubPort.postMessage(message);
+    }
+
     // --- Interface Methods ---
 
     public async setUser(user: User | null): Promise<void> {

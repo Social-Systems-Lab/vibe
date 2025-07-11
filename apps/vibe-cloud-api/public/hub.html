@@ -98,6 +98,8 @@
                     handleGetUser(event);
                 } else if (type === "SET_USER") {
                     handleSetUser(event);
+                } else if (type === "CONSENT_CHANGED") {
+                    handleConsentChanged(event);
                 } else if (type && type.startsWith("DB_")) {
                     handleDataOperation(event);
                 }
@@ -111,12 +113,10 @@
                 }
             }
 
-            async function updateUserSession(user, origin) {
-                // If the user is the same, do nothing.
-                if (user && currentUser && user.id === currentUser.id) {
-                    console.log("[HUB] User is the same, skipping session update.");
-                    return;
-                }
+            async function updateUserSession(user, origin, forceUpdate = false) {
+                // This check was causing a bug where permissions were not updated after
+                // a user granted consent for an existing session. Removing it ensures
+                // that permissions are always re-fetched when setUser is called.
 
                 // 1. Stop any existing sync and clear local DB instance
                 if (syncHandler) {
@@ -173,6 +173,19 @@
                 } finally {
                     isUpdatingState = false;
                     processQueue();
+                }
+            }
+
+            async function handleConsentChanged(event) {
+                const origin = findOriginForPort(event.target);
+                if (origin) {
+                    console.log(`[HUB] Consent changed for origin: ${origin}. Re-fetching user session.`);
+                    // We pass the current user to force a refresh of permissions and session.
+                    await updateUserSession(currentUser, origin, true);
+                    // After updating, broadcast to all clients that consent has been updated.
+                    for (const app of connectedApps.values()) {
+                        app.port.postMessage({ type: "CONSENT_UPDATED" });
+                    }
                 }
             }
 

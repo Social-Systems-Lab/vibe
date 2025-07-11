@@ -64,18 +64,7 @@ export class VibeSDK {
     }
 
     async login() {
-        return new Promise<void>(async (resolve) => {
-            let unsubscribe: () => void;
-            unsubscribe = this.onStateChange((state: any) => {
-                if (state.isAuthenticated) {
-                    if (unsubscribe) {
-                        unsubscribe();
-                    }
-                    resolve();
-                }
-            });
-            await this.authStrategy.login();
-        });
+        return this.authStrategy.login();
     }
 
     async logout() {
@@ -125,14 +114,18 @@ export class VibeSDK {
 
     onStateChange(callback: (state: { isAuthenticated: boolean; user: any }) => void) {
         const authUnsubscribe = this.authStrategy.onStateChange(async (state) => {
-            this.isAuthenticated = state.isLoggedIn;
             this.user = state.user;
 
             // This is the key: whenever the auth state changes, we inform the data strategy.
+            // The data strategy (e.g., HubStrategy) is responsible for fetching permissions
+            // and setting up the user session. We await this to ensure it's complete
+            // before we update the application's authentication state.
             if ((this.dataStrategy as any).setUser) {
                 await (this.dataStrategy as any).setUser(this.user);
             }
 
+            // Now that the data strategy is ready, we update the auth state.
+            this.isAuthenticated = state.isLoggedIn;
             callback({ isAuthenticated: this.isAuthenticated, user: this.user });
         });
 
