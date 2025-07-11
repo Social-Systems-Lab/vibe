@@ -170,6 +170,9 @@
             }
 
             async function performPouchDbOperation(type, collection, payload) {
+                if (!db) {
+                    throw new Error("Database not initialized");
+                }
                 console.log(`Performing ${type} on collection '${collection}' with payload:`, payload);
                 switch (type) {
                     case "DB_WRITE":
@@ -217,6 +220,9 @@
                         throw new Error("Failed to fetch DB session");
                     }
                     const sessionInfo = await response.json();
+                    if (db) {
+                        await db.close();
+                    }
                     db = new PouchDB(sessionInfo.dbName);
                     const remoteDbUrl = new URL(`http://localhost:5984/${sessionInfo.dbName}`);
                     remoteDbUrl.username = sessionInfo.username;
@@ -249,6 +255,7 @@
                         .on("error", function (err) {
                             console.error("[HUB] Sync error:", err);
                         });
+                    setupDbChangesListener();
                 } catch (error) {
                     console.error("Failed to start sync:", error);
                 }
@@ -256,29 +263,32 @@
 
             console.log("Hub is ready and listening.");
 
-            db.changes({
-                since: "now",
-                live: true,
-                include_docs: true,
-            }).on("change", (change) => {
-                console.log("[HUB] Local DB change detected:", change);
-                const changedCollection = change.id.split("/")[0];
-                if (!changedCollection) return;
+            function setupDbChangesListener() {
+                if (!db) return;
+                db.changes({
+                    since: "now",
+                    live: true,
+                    include_docs: true,
+                }).on("change", (change) => {
+                    console.log("[HUB] Local DB change detected:", change);
+                    const changedCollection = change.id.split("/")[0];
+                    if (!changedCollection) return;
 
-                subscriptions.forEach(async (sub, id) => {
-                    if (sub.collection === changedCollection) {
-                        // Re-query to respect the subscription's filter
-                        const result = await db.find({
-                            selector: { ...sub.filter, collection: sub.collection },
-                        });
-                        sub.port.postMessage({
-                            type: "DB_UPDATE",
-                            subscriptionId: id,
-                            data: result.docs,
-                        });
-                    }
+                    subscriptions.forEach(async (sub, id) => {
+                        if (sub.collection === changedCollection) {
+                            // Re-query to respect the subscription's filter
+                            const result = await db.find({
+                                selector: { ...sub.filter, collection: sub.collection },
+                            });
+                            sub.port.postMessage({
+                                type: "DB_UPDATE",
+                                subscriptionId: id,
+                                data: result.docs,
+                            });
+                        }
+                    });
                 });
-            });
+            }
         </script>
     </body>
 </html>
