@@ -22,6 +22,7 @@ export class VibeSDK {
     constructor(config: VibeSDKConfig) {
         if (config.useHub) {
             this.strategy = new HubStrategy({
+                ...config,
                 hubUrl: config.hubUrl || `${config.apiUrl}/hub.html`,
             });
             console.log("Vibe SDK created with Hub Strategy");

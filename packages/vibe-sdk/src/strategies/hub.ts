@@ -1,5 +1,6 @@
 import { VibeTransportStrategy } from "../strategy";
 import { ReadCallback, Subscription, User } from "../types";
+import { AuthProxy } from "./auth-proxy";
 
 type PendingRequest = {
     resolve: (value: any) => void;
@@ -10,11 +11,13 @@ export class HubStrategy implements VibeTransportStrategy {
     private hubUrl: string;
     private hubFrame: HTMLIFrameElement | null = null;
     private hubPort: MessagePort | null = null;
+    private authProxy: AuthProxy;
     private isInitialized = false;
     private pendingRequests = new Map<string, PendingRequest>();
 
-    constructor(config: { hubUrl: string }) {
+    constructor(config: { hubUrl: string; clientId: string; redirectUri: string; apiUrl: string }) {
         this.hubUrl = config.hubUrl;
+        this.authProxy = new AuthProxy(config);
     }
 
     async init(): Promise<void> {
@@ -101,22 +104,19 @@ export class HubStrategy implements VibeTransportStrategy {
     // --- Interface Methods ---
 
     async login(): Promise<void> {
-        throw new Error("Login is not handled by the HubStrategy. It assumes an existing session.");
+        return this.authProxy.login();
     }
 
     async logout(): Promise<void> {
-        // In a real implementation, this might need to clear the hub's session.
-        console.log("Logging out.");
+        return this.authProxy.logout();
     }
 
     async signup(): Promise<void> {
-        throw new Error("Signup is not handled by the HubStrategy.");
+        return this.authProxy.signup();
     }
 
     async getUser(): Promise<User | null> {
-        // This could be implemented to ask the hub for user info.
-        // For the PoC, we'll return a mock user.
-        return { did: "did:vibe:hub-user", instanceId: "hub-instance", displayName: "Hub User" };
+        return this.postToHub({ type: "GET_USER" });
     }
 
     async readOnce(collection: string, filter: any = {}): Promise<any> {

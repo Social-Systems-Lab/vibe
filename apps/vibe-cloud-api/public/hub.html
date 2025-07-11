@@ -14,6 +14,9 @@
             const permissionsCache = new Map();
             const connectedApps = new Map();
             const db = new PouchDB("vibe-local");
+            let remoteDb = null;
+            let currentUser = null;
+            let syncHandler = null;
 
             // --- 2. Main Message Handler ---
             window.addEventListener("message", (event) => {
@@ -23,6 +26,8 @@
 
                 if (type === "INIT") {
                     handleInit(event);
+                } else if (type === "GET_USER") {
+                    handleGetUser(event);
                 } else if (type && type.startsWith("DB_")) {
                     handleDataOperation(event);
                 }
@@ -65,6 +70,13 @@
                 }
             }
 
+            function handleGetUser(event) {
+                const sourcePort = connectedApps.get(event.origin);
+                if (sourcePort) {
+                    sourcePort.postMessage({ type: "GET_USER_ACK", success: true, data: currentUser });
+                }
+            }
+
             function handleDataOperation(event) {
                 const { type, collection, payload, nonce } = event.data;
                 const origin = event.target.origin || findOriginForPort(event.target);
@@ -80,10 +92,13 @@
                     return;
                 }
 
-                const requiredScope = getScopeForOperation(type);
+                const requiredPermission = `${getScopeForOperation(type)}:${collection}`;
                 const appPermissions = permissionsCache.get(origin);
 
-                if (appPermissions && appPermissions.scopes && appPermissions.scopes.includes(requiredScope)) {
+                console.log(`[HUB] Required permission: ${requiredPermission}`);
+
+                // Check for both the specific permission (e.g., "write:posts") and a wildcard (e.g., "write")
+                if (appPermissions && appPermissions.scopes && (appPermissions.scopes.includes(requiredPermission) || appPermissions.scopes.includes(getScopeForOperation(type)))) {
                     performPouchDbOperation(type, collection, payload)
                         .then((result) => {
                             sourcePort.postMessage({ type: `${type}_ACK`, success: true, data: result, nonce });
@@ -136,16 +151,61 @@
             function getMockPermissions(origin) {
                 console.log(`[HUB] Getting mock permissions for origin: "${origin}"`);
                 // In the real world, this comes from the API. For the PoC, we hardcode it.
-                // We'll give the test-app permission to read and write.
                 if (origin === "http://localhost:3001") {
-                    console.log("[HUB] Origin matches. Granting read/write scopes.");
-                    return { scopes: ["read", "write"] };
+                    console.log("[HUB] Origin matches. Granting specific scopes for 'posts'.");
+                    // Only allow read/write access to the 'posts' collection
+                    return { scopes: ["read:posts", "write:posts"] };
                 }
                 console.warn("[HUB] Origin does NOT match. Granting empty scopes.");
                 return { scopes: [] }; // Default to no permissions
             }
 
             // The find plugin is automatically registered by its script.
+
+            function startSync(user) {
+                if (syncHandler) {
+                    syncHandler.cancel();
+                }
+
+                // This is a simplified example. In a real implementation, you would
+                // securely get the remote DB URL and credentials from the vibe-cloud-api.
+                const remoteDbUrl = `http://localhost:5984/userdb-${user.instanceId}`;
+                remoteDb = new PouchDB(remoteDbUrl);
+
+                console.log(`[HUB] Starting sync with ${remoteDbUrl}`);
+
+                syncHandler = db
+                    .sync(remoteDb, {
+                        live: true,
+                        retry: true,
+                    })
+                    .on("change", function (info) {
+                        console.log("[HUB] Sync change:", info);
+                    })
+                    .on("paused", function (err) {
+                        console.log("[HUB] Sync paused:", err);
+                    })
+                    .on("active", function () {
+                        console.log("[HUB] Sync active");
+                    })
+                    .on("denied", function (err) {
+                        console.error("[HUB] Sync denied:", err);
+                    })
+                    .on("complete", function (info) {
+                        console.log("[HUB] Sync complete:", info);
+                    })
+                    .on("error", function (err) {
+                        console.error("[HUB] Sync error:", err);
+                    });
+            }
+
+            // Mock user for sync testing
+            currentUser = {
+                did: "did:vibe:hub-user",
+                instanceId: "hub-instance",
+                displayName: "Hub User",
+            };
+            startSync(currentUser);
 
             console.log("Hub is ready and listening.");
         </script>
