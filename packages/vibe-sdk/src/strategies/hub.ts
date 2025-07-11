@@ -14,6 +14,7 @@ export class HubStrategy implements VibeTransportStrategy {
     private authProxy: AuthProxy;
     private isInitialized = false;
     private pendingRequests = new Map<string, PendingRequest>();
+    private stateChangeListeners: ((state: { isLoggedIn: boolean; user: User | null }) => void)[] = [];
 
     constructor(config: { hubUrl: string; clientId: string; redirectUri: string; apiUrl: string }) {
         this.hubUrl = config.hubUrl;
@@ -117,6 +118,17 @@ export class HubStrategy implements VibeTransportStrategy {
 
     async getUser(): Promise<User | null> {
         return this.postToHub({ type: "GET_USER" });
+    }
+
+    onStateChange(listener: (state: { isLoggedIn: boolean; user: User | null }) => void) {
+        this.stateChangeListeners.push(listener);
+        // For simplicity, we don't return an unsubscribe function in this PoC
+        return () => {};
+    }
+
+    private notifyStateChange(isLoggedIn: boolean, user: User | null) {
+        const state = { isLoggedIn, user };
+        this.stateChangeListeners.forEach((listener) => listener(state));
     }
 
     async readOnce(collection: string, filter: any = {}): Promise<any> {

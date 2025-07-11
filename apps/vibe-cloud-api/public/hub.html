@@ -60,7 +60,14 @@
                     connectedApps.set(origin, sourcePort);
 
                     // Listen for messages on the dedicated port
-                    sourcePort.onmessage = handleDataOperation;
+                    sourcePort.onmessage = (event) => {
+                        const { type } = event.data;
+                        if (type === "GET_USER") {
+                            handleGetUser(event);
+                        } else if (type && type.startsWith("DB_")) {
+                            handleDataOperation(event);
+                        }
+                    };
 
                     sourcePort.postMessage({ type: "INIT_ACK" });
                     console.log(`Successfully initialized connection for origin: ${origin}`);
@@ -205,7 +212,7 @@
                 instanceId: "hub-instance",
                 displayName: "Hub User",
             };
-            startSync(currentUser);
+            //startSync(currentUser);
 
             console.log("Hub is ready and listening.");
         </script>

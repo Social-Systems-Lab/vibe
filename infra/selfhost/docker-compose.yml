@@ -22,6 +22,12 @@ services:
               curl -X PUT $${COUCHDB_ENDPOINT}/_users || true;
               curl -X PUT $${COUCHDB_ENDPOINT}/_replicator || true;
               curl -X PUT $${COUCHDB_ENDPOINT}/_global_changes || true;
+              echo 'Configuring CouchDB CORS...';
+              curl -X PUT $${COUCHDB_ENDPOINT}/_config/httpd/enable_cors -d '\"true\"';
+              curl -X PUT $${COUCHDB_ENDPOINT}/_config/cors/origins -d '\"http://localhost:5000\"';
+              curl -X PUT $${COUCHDB_ENDPOINT}/_config/cors/credentials -d '\"true\"';
+              curl -X PUT $${COUCHDB_ENDPOINT}/_config/cors/methods -d '\"GET, PUT, POST, HEAD, DELETE\"';
+              curl -X PUT $${COUCHDB_ENDPOINT}/_config/cors/headers -d '\"accept, authorization, content-type, origin, referer, x-csrf-token\"';
               echo 'CouchDB setup complete.';
             "
     minio:
@@ -52,5 +58,3 @@ services:
             dockerfile: apps/vibe-web/Dockerfile
         ports:
             - "3001:3001"
-        depends_on:
-            - vibe-cloud-api

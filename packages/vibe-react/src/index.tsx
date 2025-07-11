@@ -35,6 +35,14 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
             setUser(sdk.user);
         };
         initSdk();
+
+        if ("onStateChange" in sdk) {
+            const unsubscribe = (sdk as any).onStateChange((state: any) => {
+                setIsLoggedIn(state.isLoggedIn);
+                setUser(state.user);
+            });
+            return () => unsubscribe();
+        }
     }, [sdk]);
 
     const login = () => sdk.login();

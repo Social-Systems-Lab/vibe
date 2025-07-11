@@ -8,7 +8,13 @@ export class AuthProxy {
     }
 
     async login() {
-        return this.standalone.login();
+        await this.standalone.login();
+        const user = await this.standalone.getUser();
+        // This is a bit of a hack, but it allows us to notify the HubStrategy
+        // without a direct dependency.
+        if ((this.standalone as any).notifyStateChange) {
+            (this.standalone as any).notifyStateChange(!!user, user);
+        }
     }
 
     async logout() {
