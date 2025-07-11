@@ -44,9 +44,17 @@ export class VibeSDK {
     }
 
     async login() {
-        await this.strategy.login();
-        this.user = await this.strategy.getUser();
-        this.isAuthenticated = !!this.user;
+        return new Promise<void>(async (resolve) => {
+            const unsubscribe = (this.strategy as any).onStateChange((state: any) => {
+                if (state.isLoggedIn) {
+                    this.user = state.user;
+                    this.isAuthenticated = true;
+                    unsubscribe();
+                    resolve();
+                }
+            });
+            await this.strategy.login();
+        });
     }
 
     async logout() {

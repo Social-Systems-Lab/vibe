@@ -2,11 +2,12 @@ import { VibeTransportStrategy } from "../strategy";
 import { edenTreaty } from "@elysiajs/eden";
 import type { App } from "vibe-cloud-api";
 import { User, ReadCallback, Subscription } from "../types";
+import { SessionManager } from "../session-manager";
 
 const VIBE_API_URL = "http://localhost:5000";
 
 // --- PKCE Helper ---
-async function generatePkce() {
+export async function generatePkce() {
     const verifier = window.crypto.getRandomValues(new Uint8Array(32)).reduce((s, byte) => s + String.fromCharCode(byte), "");
     const base64Verifier = btoa(verifier).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 
@@ -68,6 +69,7 @@ class AuthManager {
 // --- Standalone Strategy (Redirect Flow) ---
 export class StandaloneStrategy implements VibeTransportStrategy {
     private authManager: AuthManager;
+    private sessionManager: SessionManager;
     private api;
     private config: {
         clientId: string;
@@ -81,57 +83,21 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         const apiUrl = config.apiUrl || VIBE_API_URL;
         this.api = edenTreaty<App>(apiUrl);
         this.config = { ...config, apiUrl };
+        this.sessionManager = new SessionManager(this.config);
     }
 
     async init(): Promise<void> {
-        return new Promise<void>(async (resolve) => {
-            const pkce = await generatePkce();
-            sessionStorage.setItem("vibe_pkce_verifier", pkce.verifier); // Store for later
+        const sessionState = await this.sessionManager.checkSession();
 
-            const params = new URLSearchParams({
-                client_id: this.config.clientId,
-                redirect_uri: this.config.redirectUri,
-                code_challenge: pkce.challenge,
-                code_challenge_method: "S256",
-            });
-
-            const iframe = document.createElement("iframe");
-            iframe.style.display = "none";
-            iframe.src = `${this.config.apiUrl}/auth/session-check?${params.toString()}`;
-            document.body.appendChild(iframe);
-
-            const messageListener = async (event: MessageEvent) => {
-                if (event.source !== iframe.contentWindow) {
-                    return;
-                }
-
-                // Clean up
-                window.removeEventListener("message", messageListener);
-                document.body.removeChild(iframe);
-
-                const { status, code, user } = event.data;
-
-                if (status === "SILENT_LOGIN_SUCCESS" && code) {
-                    try {
-                        await this.exchangeCodeForToken(code);
-                        resolve();
-                    } catch (e) {
-                        console.error("Silent login failed:", e);
-                        resolve(); // Resolve anyway, don't block app load
-                    }
-                } else if (status === "ONE_TAP_REQUIRED") {
-                    // The app can now show a "Continue as" button
-                    // We'll store the user info for the UI to use
-                    this.authManager.setUser(user);
-                    resolve();
-                } else {
-                    // LOGGED_OUT or error
-                    resolve();
-                }
-            };
-
-            window.addEventListener("message", messageListener);
-        });
+        if (sessionState.status === "SILENT_LOGIN_SUCCESS" && sessionState.code) {
+            try {
+                await this.exchangeCodeForToken(sessionState.code);
+            } catch (e) {
+                console.error("Silent login failed:", e);
+            }
+        } else if (sessionState.status === "ONE_TAP_REQUIRED") {
+            this.authManager.setUser(sessionState.user || null);
+        }
     }
 
     private async exchangeCodeForToken(code: string): Promise<void> {
@@ -231,7 +197,15 @@ export class StandaloneStrategy implements VibeTransportStrategy {
     }
 
     async login(): Promise<void> {
-        await this.redirectToAuthorize("login");
+        return new Promise(async (resolve) => {
+            const unsubscribe = this.onStateChange((state) => {
+                if (state.isLoggedIn) {
+                    unsubscribe();
+                    resolve();
+                }
+            });
+            await this.redirectToAuthorize("login");
+        });
     }
 
     async signup(): Promise<void> {

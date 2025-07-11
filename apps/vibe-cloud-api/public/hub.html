@@ -35,7 +35,7 @@
 
             // --- 3. Handlers ---
             async function handleInit(event) {
-                const { origin } = event.data;
+                const { origin, user } = event.data;
                 const sourcePort = event.ports[0];
 
                 if (!sourcePort) {
@@ -71,6 +71,11 @@
 
                     sourcePort.postMessage({ type: "INIT_ACK" });
                     console.log(`Successfully initialized connection for origin: ${origin}`);
+
+                    if (user) {
+                        currentUser = user;
+                        startSync(user);
+                    }
                 } catch (error) {
                     console.error(`Failed to initialize connection for origin: ${origin}`, error);
                     sourcePort.postMessage({ type: "INIT_FAIL", error: "Initialization failed." });
@@ -205,14 +210,6 @@
                         console.error("[HUB] Sync error:", err);
                     });
             }
-
-            // Mock user for sync testing
-            currentUser = {
-                did: "did:vibe:hub-user",
-                instanceId: "hub-instance",
-                displayName: "Hub User",
-            };
-            //startSync(currentUser);
 
             console.log("Hub is ready and listening.");
         </script>

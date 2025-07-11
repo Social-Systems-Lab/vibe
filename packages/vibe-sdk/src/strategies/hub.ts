@@ -1,6 +1,6 @@
 import { VibeTransportStrategy } from "../strategy";
 import { ReadCallback, Subscription, User } from "../types";
-import { AuthProxy } from "./auth-proxy";
+import { SessionManager } from "../session-manager";
 
 type PendingRequest = {
     resolve: (value: any) => void;
@@ -11,17 +11,27 @@ export class HubStrategy implements VibeTransportStrategy {
     private hubUrl: string;
     private hubFrame: HTMLIFrameElement | null = null;
     private hubPort: MessagePort | null = null;
-    private authProxy: AuthProxy;
+    private sessionManager: SessionManager;
     private isInitialized = false;
     private pendingRequests = new Map<string, PendingRequest>();
     private stateChangeListeners: ((state: { isLoggedIn: boolean; user: User | null }) => void)[] = [];
 
     constructor(config: { hubUrl: string; clientId: string; redirectUri: string; apiUrl: string }) {
         this.hubUrl = config.hubUrl;
-        this.authProxy = new AuthProxy(config);
+        this.sessionManager = new SessionManager(config);
     }
 
     async init(): Promise<void> {
+        const sessionState = await this.sessionManager.checkSession();
+
+        if (sessionState.status === "SILENT_LOGIN_SUCCESS" && sessionState.user) {
+            this.notifyStateChange(true, sessionState.user);
+        } else if (sessionState.status === "ONE_TAP_REQUIRED" && sessionState.user) {
+            this.notifyStateChange(false, sessionState.user);
+        } else {
+            this.notifyStateChange(false, null);
+        }
+
         if (this.isInitialized) {
             return;
         }
@@ -46,6 +56,7 @@ export class HubStrategy implements VibeTransportStrategy {
                     {
                         type: "INIT",
                         origin: window.location.origin,
+                        user: sessionState.user,
                     },
                     this.hubUrl,
                     [channel.port2]
@@ -105,15 +116,17 @@ export class HubStrategy implements VibeTransportStrategy {
     // --- Interface Methods ---
 
     async login(): Promise<void> {
-        return this.authProxy.login();
+        // The login flow is now handled by the session manager on init.
+        // This method could be used to trigger a login prompt if the user is logged out.
+        console.warn("HubStrategy.login() is not fully implemented in this PoC.");
     }
 
     async logout(): Promise<void> {
-        return this.authProxy.logout();
+        console.warn("HubStrategy.logout() is not fully implemented in this PoC.");
     }
 
     async signup(): Promise<void> {
-        return this.authProxy.signup();
+        console.warn("HubStrategy.signup() is not fully implemented in this PoC.");
     }
 
     async getUser(): Promise<User | null> {
