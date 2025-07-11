@@ -111,55 +111,65 @@
                 }
             }
 
+            async function updateUserSession(user, origin) {
+                // If the user is the same, do nothing.
+                if (user && currentUser && user.id === currentUser.id) {
+                    console.log("[HUB] User is the same, skipping session update.");
+                    return;
+                }
+
+                // 1. Stop any existing sync and clear local DB instance
+                if (syncHandler) {
+                    syncHandler.cancel();
+                    syncHandler = null;
+                }
+                if (db) {
+                    await db.close();
+                    db = null;
+                }
+                currentUser = user;
+
+                // 2. If no user, just update permissions and broadcast.
+                if (!user) {
+                    console.log(`[HUB] User logged out. Clearing session for ${origin}`);
+                    const permissions = await getPermissions(origin);
+                    permissionsCache.set(origin, permissions);
+                    broadcastAuthStateChange();
+                    return;
+                }
+
+                // 3. Fetch new permissions and session info in parallel
+                console.log(`[HUB] User set. Re-fetching permissions and session for ${origin}`);
+                const [permissions, sessionInfo] = await Promise.all([getPermissions(origin), getDbSession()]);
+
+                console.log(`[HUB] New permissions for ${origin}:`, permissions);
+                permissionsCache.set(origin, permissions);
+
+                // 4. Start the new sync with the fetched session info
+                await startSync(sessionInfo);
+                broadcastAuthStateChange();
+            }
+
             async function handleSetUser(event) {
                 isUpdatingState = true;
                 const { payload, nonce } = event.data;
                 const user = payload;
                 const origin = findOriginForPort(event.target);
+                const app = origin ? connectedApps.get(origin) : null;
 
-                if (!origin) {
-                    console.error("Could not determine origin for SET_USER message.");
-                    isUpdatingState = false;
-                    return;
-                }
-
-                const app = connectedApps.get(origin);
                 if (!app) {
-                    console.error(`No active port found for origin: ${origin}. Ignoring message.`);
+                    console.error("Could not determine origin or app for SET_USER message.");
                     isUpdatingState = false;
+                    processQueue(); // Process queue even on failure
                     return;
                 }
-                const sourcePort = app.port;
 
                 try {
-                    if (user) {
-                        currentUser = user;
-                        console.log(`[HUB] User set. Re-fetching permissions for ${origin}`);
-                        const permissions = await getPermissions(origin);
-                        console.log(`[HUB] New permissions for ${origin}:`, permissions);
-                        permissionsCache.set(origin, permissions);
-
-                        await startSync(user);
-                        broadcastAuthStateChange();
-                    } else {
-                        console.log(`[HUB] User logged out. Clearing session for ${origin}`);
-                        currentUser = null;
-                        if (db) {
-                            await db.close();
-                            db = null;
-                        }
-                        if (syncHandler) {
-                            syncHandler.cancel();
-                            syncHandler = null;
-                        }
-                        const permissions = await getPermissions(origin);
-                        permissionsCache.set(origin, permissions);
-                        broadcastAuthStateChange();
-                    }
-                    sourcePort.postMessage({ type: "SET_USER_ACK", success: true, nonce });
+                    await updateUserSession(user, origin);
+                    app.port.postMessage({ type: "SET_USER_ACK", success: true, nonce });
                 } catch (error) {
                     console.error(`[HUB] Error during SET_USER for ${origin}:`, error);
-                    sourcePort.postMessage({ type: "SET_USER_ACK", success: false, error: error.message, nonce });
+                    app.port.postMessage({ type: "SET_USER_ACK", success: false, error: error.message, nonce });
                 } finally {
                     isUpdatingState = false;
                     processQueue();
@@ -283,22 +293,20 @@
 
             // The find plugin is automatically registered by its script.
 
-            async function startSync(user) {
-                if (syncHandler) {
-                    syncHandler.cancel();
+            async function getDbSession() {
+                const response = await fetch("/auth/session", { credentials: "include" });
+                if (!response.ok) {
+                    throw new Error("Failed to fetch DB session");
                 }
+                return await response.json();
+            }
 
-                // This is a simplified example. In a real implementation, you would
-                // securely get the remote DB URL and credentials from the vibe-cloud-api.
+            async function startSync(sessionInfo) {
+                if (!sessionInfo || !sessionInfo.dbName) {
+                    console.log("[HUB] No session info provided, skipping sync.");
+                    return;
+                }
                 try {
-                    const response = await fetch("/auth/session", { credentials: "include" });
-                    if (!response.ok) {
-                        throw new Error("Failed to fetch DB session");
-                    }
-                    const sessionInfo = await response.json();
-                    if (db) {
-                        await db.close();
-                    }
                     db = new PouchDB(sessionInfo.dbName);
                     const remoteDbUrl = new URL(`http://localhost:5984/${sessionInfo.dbName}`);
                     remoteDbUrl.username = sessionInfo.username;
@@ -314,13 +322,13 @@
                             retry: true,
                         })
                         .on("change", function (info) {
-                            console.log("[HUB] Sync change:", info);
+                            // console.log("[HUB] Sync change:", info);
                         })
                         .on("paused", function (err) {
                             console.log("[HUB] Sync paused:", err);
                         })
                         .on("active", function () {
-                            console.log("[HUB] Sync active");
+                            // console.log("[HUB] Sync active");
                         })
                         .on("denied", function (err) {
                             console.error("[HUB] Sync denied:", err);
