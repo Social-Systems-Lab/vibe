@@ -69,14 +69,14 @@
                         }
                     };
 
-                    sourcePort.postMessage({ type: "INIT_ACK" });
-                    console.log(`Successfully initialized connection for origin: ${origin}`);
-
                     if (user) {
                         currentUser = user;
-                        startSync(user);
+                        await startSync(user);
                         broadcastAuthStateChange();
                     }
+
+                    sourcePort.postMessage({ type: "INIT_ACK" });
+                    console.log(`Successfully initialized connection for origin: ${origin}`);
                 } catch (error) {
                     console.error(`Failed to initialize connection for origin: ${origin}`, error);
                     sourcePort.postMessage({ type: "INIT_FAIL", error: "Initialization failed." });
