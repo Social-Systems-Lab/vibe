@@ -20,6 +20,7 @@ export class VibeSDK {
     public isAuthenticated = false;
     public user: any = null;
     private isInitialized = false;
+    private isInitializing = false;
 
     constructor(config: VibeSDKConfig) {
         if (config.useHub) {
@@ -31,7 +32,6 @@ export class VibeSDK {
                 ...config,
                 hubUrl: config.hubUrl || `${config.apiUrl}/hub.html`,
             });
-            console.log("Vibe SDK created with Hub Strategy");
         } else {
             const standalone = new StandaloneStrategy({
                 clientId: config.clientId,
@@ -39,15 +39,14 @@ export class VibeSDK {
             });
             this.authStrategy = standalone;
             this.dataStrategy = standalone;
-            console.log("Vibe SDK created with Standalone Strategy");
         }
     }
 
     async init() {
-        if (this.isInitialized) {
+        if (this.isInitialized || this.isInitializing) {
             return;
         }
-        this.isInitialized = true;
+        this.isInitializing = true;
 
         // The onStateChange listener is now the single source of truth for handling auth changes.
         // It will be responsible for updating the VibeSDK's state and configuring the dataStrategy.
@@ -59,6 +58,9 @@ export class VibeSDK {
         if (this.dataStrategy.init) {
             await (this.dataStrategy as any).init(this.user);
         }
+
+        this.isInitialized = true;
+        this.isInitializing = false;
     }
 
     async login() {

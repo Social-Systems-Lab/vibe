@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { VibeSDK, VibeSDKConfig, User, ReadCallback, Subscription } from "vibe-sdk";
+import { VibeSDK, VibeSDKConfig, User, ReadCallback, Subscription, createSdk } from "vibe-sdk";
 
 interface VibeContextType {
     sdk: VibeSDK;
@@ -24,7 +24,7 @@ interface VibeContextType {
 const VibeContext = createContext<VibeContextType | undefined>(undefined);
 
 export const VibeProvider = ({ children, config }: { children: ReactNode; config: VibeSDKConfig }) => {
-    const [sdk] = useState(() => new VibeSDK(config));
+    const [sdk] = useState(() => createSdk(config));
     const [user, setUser] = useState<User | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
 
@@ -34,15 +34,13 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
         };
         initSdk();
 
-        const handleStateChange = () => {
-            setIsLoggedIn(sdk.isAuthenticated);
-            setUser(sdk.user);
-        };
-
-        const interval = setInterval(handleStateChange, 200);
+        const unsubscribe = sdk.onStateChange((state) => {
+            setIsLoggedIn(state.isAuthenticated);
+            setUser(state.user);
+        });
 
         return () => {
-            clearInterval(interval);
+            unsubscribe();
         };
     }, [sdk]);
 

@@ -10,6 +10,12 @@ declare global {
 }
 
 export const getSdk = (config: VibeSDKConfig): VibeSDK => {
+    if (typeof window === "undefined") {
+        // We are on the server, so we can't use the window singleton.
+        // We'll create a new instance for each server-side render.
+        return new VibeSDK(config);
+    }
+
     if (!window.__vibe_sdk_instance__) {
         window.__vibe_sdk_instance__ = new VibeSDK(config);
     }

@@ -11,12 +11,11 @@ export class HubStrategy implements VibeTransportStrategy {
     private hubUrl: string;
     private hubFrame: HTMLIFrameElement | null = null;
     private hubPort: MessagePort | null = null;
-    private sessionManager: SessionManager;
     private isInitialized = false;
+    private isInitializing = false;
     private pendingRequests = new Map<string, PendingRequest>();
-    private stateChangeListeners: ((state: { isLoggedIn: boolean; user: User | null }) => void)[] = [];
     private subscriptions = new Map<string, ReadCallback>();
-    private currentUser: User | null = null;
+    private sessionManager: SessionManager;
 
     constructor(private config: { hubUrl: string; clientId: string; redirectUri: string; apiUrl: string }) {
         this.hubUrl = config.hubUrl;
@@ -24,9 +23,10 @@ export class HubStrategy implements VibeTransportStrategy {
     }
 
     async init(user: User | null = null): Promise<void> {
-        if (this.isInitialized) {
+        if (this.isInitialized || this.isInitializing) {
             return;
         }
+        this.isInitializing = true;
 
         return new Promise((resolve, reject) => {
             this.hubFrame = document.createElement("iframe");
@@ -63,6 +63,7 @@ export class HubStrategy implements VibeTransportStrategy {
 
                 if (type === "INIT_ACK") {
                     this.isInitialized = true;
+                    this.isInitializing = false;
                     console.log("Hub connection initialized successfully.");
                     resolve();
                     return;
