@@ -98,8 +98,8 @@
                     handleGetUser(event);
                 } else if (type === "SET_USER") {
                     handleSetUser(event);
-                } else if (type === "CONSENT_CHANGED") {
-                    handleConsentChanged(event);
+                } else if (type === "FORCE_REFRESH_PERMISSIONS") {
+                    handleForceRefreshPermissions(event);
                 } else if (type && type.startsWith("DB_")) {
                     handleDataOperation(event);
                 }
@@ -114,9 +114,11 @@
             }
 
             async function updateUserSession(user, origin, forceUpdate = false) {
-                // This check was causing a bug where permissions were not updated after
-                // a user granted consent for an existing session. Removing it ensures
-                // that permissions are always re-fetched when setUser is called.
+                // If the user is the same and we're not forcing an update, do nothing.
+                if (user && currentUser && user.id === currentUser.id && !forceUpdate) {
+                    console.log("[HUB] User is the same, skipping session update.");
+                    return;
+                }
 
                 // 1. Stop any existing sync and clear local DB instance
                 if (syncHandler) {
@@ -176,16 +178,12 @@
                 }
             }
 
-            async function handleConsentChanged(event) {
+            async function handleForceRefreshPermissions(event) {
                 const origin = findOriginForPort(event.target);
                 if (origin) {
-                    console.log(`[HUB] Consent changed for origin: ${origin}. Re-fetching user session.`);
+                    console.log(`[HUB] Force-refreshing permissions for origin: ${origin}.`);
                     // We pass the current user to force a refresh of permissions and session.
                     await updateUserSession(currentUser, origin, true);
-                    // After updating, broadcast to all clients that consent has been updated.
-                    for (const app of connectedApps.values()) {
-                        app.port.postMessage({ type: "CONSENT_UPDATED" });
-                    }
                 }
             }
 

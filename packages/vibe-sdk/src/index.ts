@@ -77,9 +77,9 @@ export class VibeSDK {
     }
 
     async signup() {
+        // The authStrategy's signup method will trigger the onStateChange listener,
+        // which is the single source of truth for updating the user state.
         await this.authStrategy.signup();
-        this.user = await this.authStrategy.getUser();
-        this.isAuthenticated = !!this.user;
     }
 
     async manageConsent() {
@@ -88,6 +88,12 @@ export class VibeSDK {
 
     async manageProfile() {
         await this.authStrategy.manageProfile();
+    }
+
+    async forceRefreshPermissions() {
+        if ("forceRefreshPermissions" in this.dataStrategy) {
+            await (this.dataStrategy as any).forceRefreshPermissions();
+        }
     }
 
     async read(collection: string, callback: ReadCallback): Promise<Subscription>;

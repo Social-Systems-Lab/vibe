@@ -158,6 +158,10 @@ export class HubStrategy implements VibeTransportStrategy {
         return this.postToHub({ type: "MANAGE_PROFILE" });
     }
 
+    async forceRefreshPermissions(): Promise<void> {
+        return this.postToHubSimple({ type: "FORCE_REFRESH_PERMISSIONS" });
+    }
+
     async getUser(): Promise<User | null> {
         return this.postToHub({ type: "GET_USER" });
     }

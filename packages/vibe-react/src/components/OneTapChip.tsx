@@ -55,6 +55,12 @@ export const OneTapChip = () => {
                 </div>
             </div>
             <button
+                // onClick={async () => {
+                //     await login();
+                //     if (sdk && "forceRefreshPermissions" in sdk) {
+                //         await (sdk as any).forceRefreshPermissions();
+                //     }
+                // }}
                 onClick={login}
                 style={{
                     width: "100%",
