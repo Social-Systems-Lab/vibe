@@ -115,10 +115,12 @@
 
             async function updateUserSession(user, origin, forceUpdate = false) {
                 // If the user is the same and we're not forcing an update, do nothing.
-                if (user && currentUser && user.id === currentUser.id && !forceUpdate) {
-                    console.log("[HUB] User is the same, skipping session update.");
-                    return;
-                }
+                console.log(`[HUB] Updating user session for origin: ${origin}`);
+                // Below code breaks the OneTapChip->Consent->Allow flow, so it's commented out.
+                // if (user && currentUser && user.id === currentUser.id && !forceUpdate) {
+                //     console.log("[HUB] User is the same, skipping session update.");
+                //     return;
+                // }
 
                 // 1. Stop any existing sync and clear local DB instance
                 if (syncHandler) {
