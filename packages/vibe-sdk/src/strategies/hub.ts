@@ -15,6 +15,7 @@ export class HubStrategy implements VibeTransportStrategy {
     private isInitialized = false;
     private pendingRequests = new Map<string, PendingRequest>();
     private stateChangeListeners: ((state: { isLoggedIn: boolean; user: User | null }) => void)[] = [];
+    private subscriptions = new Map<string, ReadCallback>();
 
     constructor(config: { hubUrl: string; clientId: string; redirectUri: string; apiUrl: string }) {
         this.hubUrl = config.hubUrl;
@@ -64,7 +65,7 @@ export class HubStrategy implements VibeTransportStrategy {
             };
 
             this.hubPort.onmessage = (event) => {
-                const { type, nonce, success, data, error } = event.data;
+                const { type, nonce, success, data, error, subscriptionId } = event.data;
 
                 if (type === "INIT_ACK") {
                     this.isInitialized = true;
@@ -75,6 +76,14 @@ export class HubStrategy implements VibeTransportStrategy {
 
                 if (type === "INIT_FAIL") {
                     reject(new Error(`Hub initialization failed: ${error}`));
+                    return;
+                }
+
+                if (type === "DB_UPDATE") {
+                    const callback = this.subscriptions.get(subscriptionId);
+                    if (callback) {
+                        callback({ ok: true, data });
+                    }
                     return;
                 }
 
@@ -101,6 +110,10 @@ export class HubStrategy implements VibeTransportStrategy {
         return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     }
 
+    private generateSubscriptionId(): string {
+        return `sub-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    }
+
     private postToHub(message: any): Promise<any> {
         return new Promise(async (resolve, reject) => {
             await this.ensureInitialized();
@@ -116,17 +129,15 @@ export class HubStrategy implements VibeTransportStrategy {
     // --- Interface Methods ---
 
     async login(): Promise<void> {
-        // The login flow is now handled by the session manager on init.
-        // This method could be used to trigger a login prompt if the user is logged out.
-        console.warn("HubStrategy.login() is not fully implemented in this PoC.");
+        await this.postToHub({ type: "AUTH_LOGIN" });
     }
 
     async logout(): Promise<void> {
-        console.warn("HubStrategy.logout() is not fully implemented in this PoC.");
+        await this.postToHub({ type: "AUTH_LOGOUT" });
     }
 
     async signup(): Promise<void> {
-        console.warn("HubStrategy.signup() is not fully implemented in this PoC.");
+        await this.postToHub({ type: "AUTH_SIGNUP" });
     }
 
     async getUser(): Promise<User | null> {
@@ -157,13 +168,27 @@ export class HubStrategy implements VibeTransportStrategy {
     }
 
     async read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription> {
-        // Real-time subscriptions are more complex and out of scope for this PoC.
-        console.warn("Real-time 'read' with callback is not implemented in the HubStrategy PoC.");
-        const data = await this.readOnce(collection, filter);
-        callback({ ok: true, data });
+        await this.ensureInitialized();
+        const subscriptionId = this.generateSubscriptionId();
+        this.subscriptions.set(subscriptionId, callback);
+
+        this.hubPort?.postMessage({
+            type: "DB_SUBSCRIBE",
+            payload: { collection, filter },
+            subscriptionId,
+        });
+
+        // Also perform an initial read
+        const initialData = await this.readOnce(collection, filter);
+        callback({ ok: true, data: initialData });
+
         return {
             unsubscribe: () => {
-                console.log("Unsubscribed from PoC read.");
+                this.subscriptions.delete(subscriptionId);
+                this.hubPort?.postMessage({
+                    type: "DB_UNSUBSCRIBE",
+                    payload: { subscriptionId },
+                });
             },
         };
     }

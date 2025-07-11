@@ -17,6 +17,7 @@
             let remoteDb = null;
             let currentUser = null;
             let syncHandler = null;
+            const subscriptions = new Map();
 
             // --- 2. Main Message Handler ---
             window.addEventListener("message", (event) => {
@@ -30,6 +31,8 @@
                     handleGetUser(event);
                 } else if (type && type.startsWith("DB_")) {
                     handleDataOperation(event);
+                } else if (type && type.startsWith("AUTH_")) {
+                    handleAuthOperation(event);
                 }
             });
 
@@ -51,9 +54,7 @@
                 try {
                     console.log(`[HUB] Received INIT from claimed origin: ${origin}`);
                     console.log(`[HUB] Verifying against actual event origin: ${event.origin}`);
-                    // For the PoC, we'll use a hardcoded permission set.
-                    // In a real implementation, this would be a fetch call to the API.
-                    const permissions = getMockPermissions(event.origin);
+                    const permissions = await getPermissions(event.origin);
                     console.log(`[HUB] Permissions for ${event.origin}:`, permissions);
 
                     permissionsCache.set(event.origin, permissions);
@@ -90,7 +91,7 @@
             }
 
             function handleDataOperation(event) {
-                const { type, collection, payload, nonce } = event.data;
+                const { type, collection, payload, nonce, subscriptionId } = event.data;
                 const origin = event.target.origin || findOriginForPort(event.target);
 
                 if (!origin) {
@@ -101,6 +102,22 @@
                 const sourcePort = connectedApps.get(origin);
                 if (!sourcePort) {
                     console.error(`No active port found for origin: ${origin}. Ignoring message.`);
+                    return;
+                }
+
+                if (type === "DB_SUBSCRIBE") {
+                    console.log(`[HUB] Subscription request for ${subscriptionId} from ${origin}`);
+                    subscriptions.set(subscriptionId, {
+                        collection: payload.collection,
+                        filter: payload.filter,
+                        port: sourcePort,
+                    });
+                    return; // No ACK needed for subscriptions
+                }
+
+                if (type === "DB_UNSUBSCRIBE") {
+                    console.log(`[HUB] Unsubscribe request for ${subscriptionId} from ${origin}`);
+                    subscriptions.delete(payload.subscriptionId);
                     return;
                 }
 
@@ -121,6 +138,32 @@
                 } else {
                     console.warn(`Permission denied for origin ${origin} trying to perform ${type}.`);
                     sourcePort.postMessage({ type: `${type}_ACK`, success: false, error: "Permission Denied.", nonce });
+                }
+            }
+
+            function handleAuthOperation(event) {
+                const { type } = event.data;
+                const origin = event.target.origin || findOriginForPort(event.target);
+                const sourcePort = connectedApps.get(origin);
+
+                if (!sourcePort) {
+                    console.error(`No active port found for origin: ${origin}. Ignoring message.`);
+                    return;
+                }
+
+                switch (type) {
+                    case "AUTH_LOGIN":
+                        // Redirect to the login page, passing the client_id and redirect_uri
+                        window.location.href = `/auth/authorize?client_id=${encodeURIComponent(origin)}&redirect_uri=${encodeURIComponent(window.location.href)}&response_type=code&scope=openid`;
+                        break;
+                    case "AUTH_LOGOUT":
+                        window.location.href = "/auth/logout";
+                        break;
+                    case "AUTH_SIGNUP":
+                        window.location.href = `/auth/authorize?client_id=${encodeURIComponent(origin)}&redirect_uri=${encodeURIComponent(
+                            window.location.href
+                        )}&response_type=code&scope=openid&form_type=signup`;
+                        break;
                 }
             }
 
@@ -160,58 +203,92 @@
                 }
             }
 
-            function getMockPermissions(origin) {
-                console.log(`[HUB] Getting mock permissions for origin: "${origin}"`);
-                // In the real world, this comes from the API. For the PoC, we hardcode it.
-                if (origin === "http://localhost:3001") {
-                    console.log("[HUB] Origin matches. Granting specific scopes for 'posts'.");
-                    // Only allow read/write access to the 'posts' collection
-                    return { scopes: ["read:posts", "write:posts"] };
+            async function getPermissions(origin) {
+                const response = await fetch(`/auth/permissions?origin=${encodeURIComponent(origin)}`, {
+                    credentials: "include",
+                });
+                if (!response.ok) {
+                    console.error(`Failed to fetch permissions for origin: ${origin}`);
+                    return { scopes: [] };
                 }
-                console.warn("[HUB] Origin does NOT match. Granting empty scopes.");
-                return { scopes: [] }; // Default to no permissions
+                return await response.json();
             }
 
             // The find plugin is automatically registered by its script.
 
-            function startSync(user) {
+            async function startSync(user) {
                 if (syncHandler) {
                     syncHandler.cancel();
                 }
 
                 // This is a simplified example. In a real implementation, you would
                 // securely get the remote DB URL and credentials from the vibe-cloud-api.
-                const remoteDbUrl = `http://localhost:5984/userdb-${user.instanceId}`;
-                remoteDb = new PouchDB(remoteDbUrl);
+                try {
+                    const response = await fetch("/auth/session", { credentials: "include" });
+                    if (!response.ok) {
+                        throw new Error("Failed to fetch DB session");
+                    }
+                    const sessionInfo = await response.json();
+                    const remoteDbUrl = new URL(`http://localhost:5984/${sessionInfo.dbName}`);
+                    remoteDbUrl.username = sessionInfo.username;
+                    remoteDbUrl.password = sessionInfo.password;
 
-                console.log(`[HUB] Starting sync with ${remoteDbUrl}`);
+                    remoteDb = new PouchDB(remoteDbUrl.toString());
 
-                syncHandler = db
-                    .sync(remoteDb, {
-                        live: true,
-                        retry: true,
-                    })
-                    .on("change", function (info) {
-                        console.log("[HUB] Sync change:", info);
-                    })
-                    .on("paused", function (err) {
-                        console.log("[HUB] Sync paused:", err);
-                    })
-                    .on("active", function () {
-                        console.log("[HUB] Sync active");
-                    })
-                    .on("denied", function (err) {
-                        console.error("[HUB] Sync denied:", err);
-                    })
-                    .on("complete", function (info) {
-                        console.log("[HUB] Sync complete:", info);
-                    })
-                    .on("error", function (err) {
-                        console.error("[HUB] Sync error:", err);
-                    });
+                    console.log(`[HUB] Starting sync with ${remoteDbUrl.origin}/${sessionInfo.dbName}`);
+
+                    syncHandler = db
+                        .sync(remoteDb, {
+                            live: true,
+                            retry: true,
+                        })
+                        .on("change", function (info) {
+                            console.log("[HUB] Sync change:", info);
+                        })
+                        .on("paused", function (err) {
+                            console.log("[HUB] Sync paused:", err);
+                        })
+                        .on("active", function () {
+                            console.log("[HUB] Sync active");
+                        })
+                        .on("denied", function (err) {
+                            console.error("[HUB] Sync denied:", err);
+                        })
+                        .on("complete", function (info) {
+                            console.log("[HUB] Sync complete:", info);
+                        })
+                        .on("error", function (err) {
+                            console.error("[HUB] Sync error:", err);
+                        });
+                } catch (error) {
+                    console.error("Failed to start sync:", error);
+                }
             }
 
             console.log("Hub is ready and listening.");
+
+            db.changes({
+                since: "now",
+                live: true,
+                include_docs: true,
+            }).on("change", (change) => {
+                console.log("[HUB] Local DB change detected:", change.doc);
+                // This is a simplified notification system. A real implementation would
+                // use a more efficient way to match documents against subscription filters.
+                subscriptions.forEach(async (sub, id) => {
+                    if (change.doc.collection === sub.collection) {
+                        // Re-query to respect the subscription's filter
+                        const result = await db.find({
+                            selector: { ...sub.filter, collection: sub.collection },
+                        });
+                        sub.port.postMessage({
+                            type: "DB_UPDATE",
+                            subscriptionId: id,
+                            data: result.docs,
+                        });
+                    }
+                });
+            });
         </script>
     </body>
 </html>

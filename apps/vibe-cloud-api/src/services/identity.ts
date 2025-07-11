@@ -285,14 +285,7 @@ export class IdentityService {
 
         await this.usersDb.insert(user);
     }
-    async createAuthCode(data: {
-        userDid: string;
-        clientId: string;
-        redirectUri: string;
-        codeChallenge: string;
-        codeChallengeMethod: string;
-        scope: string;
-    }): Promise<string> {
+    async createAuthCode(data: { userDid: string; clientId: string; redirectUri: string; codeChallenge: string; codeChallengeMethod: string; scope: string }): Promise<string> {
         await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
@@ -416,5 +409,27 @@ export class IdentityService {
         await this.usersDb.insert(updatedUser);
 
         return updatedUser;
+    }
+
+    async createDbSession(user: any) {
+        await this.reauthenticate();
+        if (!this.usersDb || !this.isConnected) {
+            throw new Error("Database not connected");
+        }
+
+        const dbUser = `user-${user.instanceId}`;
+        const dbPass = randomBytes(16).toString("hex");
+
+        const couchUserDoc = await this.nano.db.use("_users").get(`org.couchdb.user:${dbUser}`);
+
+        await this.nano.db.use("_users").insert({
+            ...couchUserDoc,
+            password: dbPass,
+        });
+
+        return {
+            username: dbUser,
+            password: dbPass,
+        };
     }
 }

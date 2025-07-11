@@ -262,6 +262,62 @@ const startServer = async () => {
                     });
                     return { token: accessToken };
                 })
+                .get("/session", async ({ sessionJwt, cookie, set, identityService }) => {
+                    const sessionToken = cookie.vibe_session.value;
+                    if (!sessionToken) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    const session = await sessionJwt.verify(sessionToken);
+                    if (!session || !session.sessionId) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    const user = await identityService.findByDid(session.sessionId);
+                    if (!user) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+
+                    const dbCreds = await identityService.createDbSession(user);
+
+                    return {
+                        ...dbCreds,
+                        dbName: getUserDbName(user.instanceId),
+                    };
+                })
+                .get(
+                    "/permissions",
+                    async ({ query, cookie, sessionJwt, set, identityService }) => {
+                        const { origin } = query;
+                        const sessionToken = cookie.vibe_session.value;
+                        if (!sessionToken) {
+                            return { scopes: [] }; // No session, no permissions
+                        }
+                        const session = await sessionJwt.verify(sessionToken);
+                        if (!session || !session.sessionId) {
+                            return { scopes: [] };
+                        }
+                        const user = await identityService.findByDid(session.sessionId);
+                        if (!user) {
+                            return { scopes: [] };
+                        }
+
+                        const hasConsented = await identityService.hasUserConsented(user.did, origin);
+                        if (hasConsented) {
+                            // For now, grant full read/write access if consented.
+                            // This will be replaced with a more granular permission system.
+                            return { scopes: ["read", "write"] };
+                        }
+
+                        return { scopes: [] };
+                    },
+                    {
+                        query: t.Object({
+                            origin: t.String(),
+                        }),
+                    }
+                )
                 .get(
                     "/authorize",
                     async ({ query, cookie, sessionJwt, set, html, url }) => {
