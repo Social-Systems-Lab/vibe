@@ -282,13 +282,13 @@
                     case "DB_READ":
                         return await db.get(payload.id);
                     case "DB_QUERY":
-                        const { expand, ...selector } = payload;
+                        const { expand, maxCacheAge, ...selector } = payload;
                         const findResult = await db.find({
                             selector: { ...selector, collection: collection },
                         });
 
                         if (expand && expand.length > 0) {
-                            return await _expand(findResult.docs, expand);
+                            return await _expand(findResult.docs, expand, maxCacheAge);
                         }
 
                         return findResult.docs;
@@ -380,14 +380,14 @@
                     subscriptions.forEach(async (sub, id) => {
                         if (sub.collection === changedCollection) {
                             // Re-query to respect the subscription's filter
-                            const { expand, ...selector } = sub.query;
+                            const { expand, maxCacheAge, ...selector } = sub.query;
                             const findResult = await db.find({
                                 selector: { ...selector, collection: sub.collection },
                             });
 
                             let docs = findResult.docs;
                             if (expand && expand.length > 0) {
-                                docs = await _expand(docs, expand);
+                                docs = await _expand(docs, expand, maxCacheAge);
                             }
 
                             sub.port.postMessage({
@@ -400,33 +400,62 @@
                 });
             }
 
-            async function _expand(docs, expand) {
+            async function _expand(docs, expand, maxCacheAge) {
                 const promises = docs.map(async (doc) => {
                     const expandedDoc = { ...doc };
                     for (const field of expand) {
                         const ref = doc[field];
-                        if (ref && ref.did && ref.ref) {
-                            // Check if the document reference is for the current user.
-                            if (currentUser && ref.did === currentUser.did) {
-                                // It's a local document, fetch from PouchDB.
-                                try {
-                                    const localDoc = await db.get(ref.ref);
-                                    expandedDoc[field] = localDoc;
-                                } catch (error) {
-                                    console.error(`Error fetching local document from PouchDB: ${ref.ref}`, error);
+                        if (!ref || !ref.did || !ref.ref) continue;
+
+                        if (currentUser && ref.did === currentUser.did) {
+                            try {
+                                expandedDoc[field] = await db.get(ref.ref);
+                            } catch (error) {
+                                console.error(`Error fetching local document from PouchDB: ${ref.ref}`, error);
+                            }
+                            continue;
+                        }
+
+                        // Handle remote refs with caching
+                        const cacheId = `cache/${ref.did}/${ref.ref}`;
+                        let existingCacheItem = null;
+                        try {
+                            existingCacheItem = await db.get(cacheId);
+                        } catch (error) {
+                            // Ignore not_found errors
+                        }
+
+                        const isCacheFresh = () => {
+                            if (!existingCacheItem) return false;
+                            if (maxCacheAge === 0) return false; // Force refresh
+                            if (maxCacheAge === undefined) return true; // Always fresh if no age specified
+                            const age = (Date.now() - existingCacheItem.cachedAt) / 1000;
+                            return age <= maxCacheAge;
+                        };
+
+                        if (isCacheFresh()) {
+                            expandedDoc[field] = existingCacheItem.data;
+                        } else {
+                            try {
+                                const response = await fetch(`/data/expand?did=${ref.did}&ref=${ref.ref}`);
+                                if (response.ok) {
+                                    const remoteDoc = await response.json();
+                                    expandedDoc[field] = remoteDoc;
+
+                                    // Update cache
+                                    const newCacheItem = {
+                                        _id: cacheId,
+                                        _rev: existingCacheItem?._rev,
+                                        type: "cache",
+                                        data: remoteDoc,
+                                        cachedAt: Date.now(),
+                                        originalDid: ref.did,
+                                        originalRef: ref.ref,
+                                    };
+                                    await db.put(newCacheItem);
                                 }
-                            } else {
-                                // It's a remote document, fetch from the API.
-                                try {
-                                    const response = await fetch(`/data/expand?did=${ref.did}&ref=${ref.ref}`);
-                                    if (response.ok) {
-                                        const remoteDoc = await response.json();
-                                        expandedDoc[field] = remoteDoc;
-                                        // Caching will be handled in a later step.
-                                    }
-                                } catch (apiError) {
-                                    console.error(`Failed to fetch expanded document for ${ref.ref}`, apiError);
-                                }
+                            } catch (apiError) {
+                                console.error(`Failed to fetch expanded document for ${ref.ref}`, apiError);
                             }
                         }
                     }

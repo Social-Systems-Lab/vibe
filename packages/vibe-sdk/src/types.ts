@@ -41,3 +41,21 @@ export interface Post extends Document {
     content: string;
     author: DocRef | Profile;
 }
+
+export interface VibeQuery {
+    sort?: any;
+    limit?: number;
+    expand?: string | string[];
+    maxCacheAge?: number; // in seconds
+    [key: string]: any;
+}
+
+export interface CachedDoc<T> {
+    _id: string; // "cache:<did>/<ref>"
+    _rev?: string;
+    type: "cache";
+    data: T;
+    cachedAt: number; // Unix timestamp (ms)
+    originalDid: string;
+    originalRef: string;
+}

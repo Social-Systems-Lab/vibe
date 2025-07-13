@@ -1,7 +1,7 @@
 import nano, { DocumentScope } from "nano";
 import { getUserDbName } from "../lib/db";
 import { IdentityService } from "./identity";
-import { DocRef } from "vibe-sdk";
+import { CachedDoc, DocRef } from "vibe-sdk";
 
 // TODO: Move this to a shared types package
 export interface JwtPayload {
@@ -61,7 +61,7 @@ export class DataService {
         console.log(`Authorization TODO: Check if user ${user.sub} can read from ${collection}`);
 
         console.log("Reading once from collection:", collection, "with query:", query);
-        const { expand, ...selector } = query;
+        const { expand, maxCacheAge, ...selector } = query;
         const db = this.getDb(user.instanceId);
         const dbQuery = {
             selector: {
@@ -72,26 +72,76 @@ export class DataService {
         const result = await db.find(dbQuery);
 
         if (expand && expand.length > 0) {
-            const docs = await this._expand(result.docs, expand);
+            const docs = await this._expand(result.docs, expand, user, maxCacheAge);
             return { docs };
         }
 
         return { docs: result.docs };
     }
 
-    private async _expand(docs: any[], expand: string[]) {
+    private async _expand(docs: any[], expand: string[], currentUser: JwtPayload, maxCacheAge?: number) {
+        const currentUserDb = this.getDb(currentUser.instanceId);
+
         const promises = docs.map(async (doc) => {
             const expandedDoc = { ...doc };
             for (const field of expand) {
                 const ref = doc[field] as DocRef;
-                if (ref && ref.did && ref.ref) {
-                    const user = await this.identityService.findByDid(ref.did);
-                    if (user) {
-                        const db = this.getDb(user.instanceId);
+                if (!ref || !ref.did || !ref.ref) continue;
+
+                if (ref.did === currentUser.sub) {
+                    // This is a ref to the current user's own data.
+                    // We can assume it's already on the client in the Hub strategy,
+                    // and for Standalone, it's a lookup in the same DB, which is fast.
+                    // For now, we will fetch it directly.
+                    try {
+                        expandedDoc[field] = await currentUserDb.get(ref.ref);
+                    } catch (error) {
+                        console.error(`Failed to expand local ref ${field} for doc ${doc._id}`, error);
+                    }
+                    continue;
+                }
+
+                // Logic for remote refs (with caching)
+                const cacheId = `cache/${ref.did}/${ref.ref}`;
+                let existingCacheItem: CachedDoc<any> | null = null;
+                try {
+                    existingCacheItem = (await currentUserDb.get(cacheId)) as CachedDoc<any>;
+                } catch (error: any) {
+                    if (error.statusCode !== 404) console.error("Error reading from cache:", error);
+                }
+
+                const isCacheFresh = () => {
+                    if (!existingCacheItem) return false;
+                    if (maxCacheAge === 0) return false; // Force refresh
+                    if (maxCacheAge === undefined) return true; // Cache is always fresh if no age is specified
+                    const age = (Date.now() - existingCacheItem.cachedAt) / 1000;
+                    return age <= maxCacheAge;
+                };
+
+                if (isCacheFresh()) {
+                    expandedDoc[field] = existingCacheItem!.data;
+                } else {
+                    // Fetch from remote source because cache is missing or stale
+                    const remoteUser = await this.identityService.findByDid(ref.did);
+                    if (remoteUser) {
+                        const remoteDb = this.getDb(remoteUser.instanceId);
                         try {
-                            expandedDoc[field] = await db.get(ref.ref);
+                            const freshDoc = await remoteDb.get(ref.ref);
+                            expandedDoc[field] = freshDoc;
+
+                            // Update cache
+                            const newCacheItem: CachedDoc<any> = {
+                                _id: cacheId,
+                                _rev: existingCacheItem?._rev, // Use existing rev to update
+                                type: "cache",
+                                data: freshDoc,
+                                cachedAt: Date.now(),
+                                originalDid: ref.did,
+                                originalRef: ref.ref,
+                            };
+                            await currentUserDb.insert(newCacheItem as any);
                         } catch (error) {
-                            console.error(`Failed to expand ${field} for doc ${doc._id}`, error);
+                            console.error(`Failed to expand remote ref ${field} for doc ${doc._id}`, error);
                         }
                     }
                 }
