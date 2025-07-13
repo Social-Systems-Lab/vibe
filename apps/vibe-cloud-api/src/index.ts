@@ -901,8 +901,8 @@ const startServer = async () => {
                         }
                         const user = await identityService.updateUser(profile.sub, body);
 
-                        // Also write to the user's own database
-                        await dataService.write(
+                        // Also update the user's own database
+                        await dataService.update(
                             "profiles",
                             {
                                 _id: "profiles/me",

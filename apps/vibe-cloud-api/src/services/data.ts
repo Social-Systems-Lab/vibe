@@ -38,6 +38,7 @@ export class DataService {
         // TODO: Add authorization logic here to check if the user has write permissions for this collection.
         console.log(`Authorization TODO: Check if user ${user.sub} can write to ${collection}`);
 
+        console.log("Writing to collection:", collection, "with data:", data);
         const db = this.getDb(user.instanceId);
         const itemsToProcess = Array.isArray(data) ? data : [data];
 
@@ -98,5 +99,36 @@ export class DataService {
             return expandedDoc;
         });
         return Promise.all(promises);
+    }
+
+    async update(collection: string, data: any, user: JwtPayload) {
+        await this.reauthenticate();
+        // TODO: Add authorization logic here
+        console.log(`Authorization TODO: Check if user ${user.sub} can write to ${collection}`);
+
+        const db = this.getDb(user.instanceId);
+        const itemsToProcess = Array.isArray(data) ? data : [data];
+
+        const docs = await Promise.all(
+            itemsToProcess.map(async (doc) => {
+                if (!doc._id) {
+                    throw new Error("Document must have an _id to be updated.");
+                }
+                try {
+                    const existing = await db.get(doc._id);
+                    doc._rev = existing._rev;
+                } catch (error: any) {
+                    if (error.statusCode !== 404) {
+                        throw error;
+                    }
+                    // If the document doesn't exist, we'll create it.
+                }
+                doc.collection = collection;
+                return doc;
+            })
+        );
+
+        const response = await db.bulk({ docs });
+        return response;
     }
 }
