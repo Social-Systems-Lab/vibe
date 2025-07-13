@@ -209,7 +209,7 @@
                     console.log(`[HUB] Subscription request for ${subscriptionId} from ${origin}`);
                     subscriptions.set(subscriptionId, {
                         collection: payload.collection,
-                        filter: payload.filter,
+                        query: payload.query || {},
                         port: app.port,
                     });
                     return; // No ACK needed for subscriptions
@@ -380,13 +380,20 @@
                     subscriptions.forEach(async (sub, id) => {
                         if (sub.collection === changedCollection) {
                             // Re-query to respect the subscription's filter
-                            const result = await db.find({
-                                selector: { ...sub.filter, collection: sub.collection },
+                            const { expand, ...selector } = sub.query;
+                            const findResult = await db.find({
+                                selector: { ...selector, collection: sub.collection },
                             });
+
+                            let docs = findResult.docs;
+                            if (expand && expand.length > 0) {
+                                docs = await _expand(docs, expand);
+                            }
+
                             sub.port.postMessage({
                                 type: "DB_UPDATE",
                                 subscriptionId: id,
-                                data: result.docs,
+                                data: docs,
                             });
                         }
                     });

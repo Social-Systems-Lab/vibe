@@ -188,19 +188,19 @@ export class HubStrategy implements VibeTransportStrategy {
         return this.postToHub({ type: "DB_REMOVE", collection, payload: data });
     }
 
-    async read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription> {
+    async read(collection: string, query: any, callback: ReadCallback): Promise<Subscription> {
         await this.ensureInitialized();
         const subscriptionId = this.generateSubscriptionId();
         this.subscriptions.set(subscriptionId, callback);
 
         this.hubPort?.postMessage({
             type: "DB_SUBSCRIBE",
-            payload: { collection, filter },
+            payload: { collection, query },
             subscriptionId,
         });
 
         // Also perform an initial read
-        const initialData = await this.readOnce(collection, filter);
+        const initialData = await this.readOnce(collection, query);
         callback({ ok: true, data: initialData });
 
         return {
