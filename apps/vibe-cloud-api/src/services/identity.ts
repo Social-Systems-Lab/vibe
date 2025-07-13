@@ -10,6 +10,7 @@ export class IdentityService {
     private instanceIdSecret: string;
     public isConnected = false;
     private config: { url: string; user: string; pass: string; instanceIdSecret: string };
+    private sessionCache = new Map<string, { password_hash: string; expires: number }>();
 
     constructor(config: { url: string; user: string; pass: string; instanceIdSecret: string }) {
         this.config = config;
@@ -418,13 +419,26 @@ export class IdentityService {
         }
 
         const dbUser = `user-${user.instanceId}`;
-        const dbPass = randomBytes(16).toString("hex");
+        const cached = this.sessionCache.get(dbUser);
 
+        if (cached && cached.expires > Date.now()) {
+            return {
+                username: dbUser,
+                password: cached.password_hash,
+            };
+        }
+
+        const dbPass = randomBytes(16).toString("hex");
         const couchUserDoc = await this.nano.db.use("_users").get(`org.couchdb.user:${dbUser}`);
 
         await this.nano.db.use("_users").insert({
             ...couchUserDoc,
             password: dbPass,
+        });
+
+        this.sessionCache.set(dbUser, {
+            password_hash: dbPass,
+            expires: Date.now() + 15 * 60 * 1000, // 15 minutes
         });
 
         return {
