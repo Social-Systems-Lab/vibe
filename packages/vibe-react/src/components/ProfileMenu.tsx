@@ -27,25 +27,17 @@ export const ProfileMenu = () => {
 
     return (
         <div style={{ position: "relative", display: "inline-block" }} ref={menuRef}>
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                style={{
-                    backgroundColor: "#f0f0f0",
-                    border: "1px solid #ccc",
-                    borderRadius: "50%",
-                    width: "40px",
-                    height: "40px",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "18px",
-                    fontWeight: "bold",
-                    color: "#333",
-                    flexShrink: 0,
-                }}
-            >
-                {user.displayName ? user.displayName.charAt(0).toUpperCase() : user.did.slice(8, 10).toUpperCase()}
+            <button onClick={() => setIsOpen(!isOpen)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+                <img
+                    src={(user as any).profilePictureUrl || `https://avatar.iran.liara.run/username?username=${user.displayName}`}
+                    alt="Profile"
+                    style={{
+                        width: "40px",
+                        height: "40px",
+                        borderRadius: "50%",
+                        objectFit: "cover",
+                    }}
+                />
             </button>
             {isOpen && (
                 <div
@@ -63,22 +55,17 @@ export const ProfileMenu = () => {
                     }}
                 >
                     <div style={{ padding: "8px 12px", display: "flex", alignItems: "center" }}>
-                        <div
+                        <img
+                            src={(user as any).profilePictureUrl || `https://source.boringavatars.com/beam/32/${user.did}?colors=264653,2a9d8f,e9c46a,f4a261,e76f51`}
+                            alt="Profile"
                             style={{
                                 width: "32px",
                                 height: "32px",
                                 borderRadius: "50%",
-                                backgroundColor: "#f0f0f0",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontWeight: "bold",
                                 marginRight: "12px",
-                                flexShrink: 0,
+                                objectFit: "cover",
                             }}
-                        >
-                            {user.displayName ? user.displayName.charAt(0).toUpperCase() : "U"}
-                        </div>
+                        />
                         <span style={{ fontWeight: "bold" }}>{user.displayName || ""}</span>
                     </div>
                     <hr style={{ margin: "8px 0", border: "none", borderTop: "1px solid #e0e0e0" }} />

@@ -30,10 +30,6 @@ export function PostCard({ post }: PostCardProps) {
                     </Avatar>
                     <div>
                         <p className="text-sm font-medium leading-none">{(post.author as Profile)?.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                            {/* TODO: Get user handle */}
-                            @handle
-                        </p>
                     </div>
                 </div>
             </CardHeader>
