@@ -406,26 +406,26 @@
                     for (const field of expand) {
                         const ref = doc[field];
                         if (ref && ref.did && ref.ref) {
-                            try {
-                                // First, try to get the document from the local PouchDB instance.
-                                const localDoc = await db.get(ref.ref);
-                                expandedDoc[field] = localDoc;
-                            } catch (error) {
-                                if (error.name === "not_found") {
-                                    // If not found locally, fetch from the remote API.
-                                    try {
-                                        const response = await fetch(`/data/expand?did=${ref.did}&ref=${ref.ref}`);
-                                        if (response.ok) {
-                                            const remoteDoc = await response.json();
-                                            expandedDoc[field] = remoteDoc;
-                                            // Cache the fetched document locally.
-                                            await db.put(remoteDoc);
-                                        }
-                                    } catch (apiError) {
-                                        console.error(`Failed to fetch expanded document for ${ref.ref}`, apiError);
+                            // Check if the document reference is for the current user.
+                            if (currentUser && ref.did === currentUser.did) {
+                                // It's a local document, fetch from PouchDB.
+                                try {
+                                    const localDoc = await db.get(ref.ref);
+                                    expandedDoc[field] = localDoc;
+                                } catch (error) {
+                                    console.error(`Error fetching local document from PouchDB: ${ref.ref}`, error);
+                                }
+                            } else {
+                                // It's a remote document, fetch from the API.
+                                try {
+                                    const response = await fetch(`/data/expand?did=${ref.did}&ref=${ref.ref}`);
+                                    if (response.ok) {
+                                        const remoteDoc = await response.json();
+                                        expandedDoc[field] = remoteDoc;
+                                        // Caching will be handled in a later step.
                                     }
-                                } else {
-                                    console.error(`Error fetching document from local DB: ${ref.ref}`, error);
+                                } catch (apiError) {
+                                    console.error(`Failed to fetch expanded document for ${ref.ref}`, apiError);
                                 }
                             }
                         }
