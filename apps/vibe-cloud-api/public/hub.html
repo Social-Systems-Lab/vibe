@@ -282,10 +282,16 @@
                     case "DB_READ":
                         return await db.get(payload.id);
                     case "DB_QUERY":
-                        const result = await db.find({
-                            selector: { ...payload, collection: collection },
+                        const { expand, ...selector } = payload;
+                        const findResult = await db.find({
+                            selector: { ...selector, collection: collection },
                         });
-                        return result.docs;
+
+                        if (expand && expand.length > 0) {
+                            return await _expand(findResult.docs, expand);
+                        }
+
+                        return findResult.docs;
                     case "DB_REMOVE":
                         return await db.remove(payload);
                     default:
@@ -385,6 +391,41 @@
                         }
                     });
                 });
+            }
+
+            async function _expand(docs, expand) {
+                const promises = docs.map(async (doc) => {
+                    const expandedDoc = { ...doc };
+                    for (const field of expand) {
+                        const ref = doc[field];
+                        if (ref && ref.did && ref.ref) {
+                            try {
+                                // First, try to get the document from the local PouchDB instance.
+                                const localDoc = await db.get(ref.ref);
+                                expandedDoc[field] = localDoc;
+                            } catch (error) {
+                                if (error.name === "not_found") {
+                                    // If not found locally, fetch from the remote API.
+                                    try {
+                                        const response = await fetch(`/data/expand?did=${ref.did}&ref=${ref.ref}`);
+                                        if (response.ok) {
+                                            const remoteDoc = await response.json();
+                                            expandedDoc[field] = remoteDoc;
+                                            // Cache the fetched document locally.
+                                            await db.put(remoteDoc);
+                                        }
+                                    } catch (apiError) {
+                                        console.error(`Failed to fetch expanded document for ${ref.ref}`, apiError);
+                                    }
+                                } else {
+                                    console.error(`Error fetching document from local DB: ${ref.ref}`, error);
+                                }
+                            }
+                        }
+                    }
+                    return expandedDoc;
+                });
+                return Promise.all(promises);
             }
         </script>
     </body>

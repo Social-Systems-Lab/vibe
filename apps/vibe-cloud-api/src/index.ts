@@ -1083,6 +1083,36 @@ const startServer = async () => {
                         }
                     },
                 })
+                .get(
+                    "/expand",
+                    async ({ query, set }) => {
+                        const { did, ref } = query;
+                        if (!did || !ref) {
+                            set.status = 400;
+                            return { error: "Missing did or ref" };
+                        }
+                        try {
+                            const user = await identityService.findByDid(did);
+                            if (!user) {
+                                set.status = 404;
+                                return { error: "User not found" };
+                            }
+                            const db = couch.use(getUserDbName(user.instanceId));
+                            const doc = await db.get(ref);
+                            return doc;
+                        } catch (error) {
+                            console.error("Error expanding document:", error);
+                            set.status = 500;
+                            return { error: "Failed to expand document" };
+                        }
+                    },
+                    {
+                        query: t.Object({
+                            did: t.String(),
+                            ref: t.String(),
+                        }),
+                    }
+                )
         )
         .listen(5000);
 
