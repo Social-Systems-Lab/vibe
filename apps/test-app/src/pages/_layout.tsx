@@ -17,9 +17,6 @@ export default function Layout({ children }: { children: ReactNode }) {
         <VibeProvider config={config}>
             <header>
                 <div className="absolute top-4 right-6 flex items-center space-x-4">
-                    <a href="/profile" className="text-sm font-medium text-gray-700 hover:text-gray-900">
-                        Profile
-                    </a>
                     <AuthWidget />
                 </div>
             </header>

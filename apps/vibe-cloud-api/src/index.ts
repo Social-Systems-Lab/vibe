@@ -1011,9 +1011,10 @@ const startServer = async () => {
                 )
                 .post(
                     "/:collection/query",
-                    async ({ profile, params, body, set }) => {
+                    async ({ profile, params, body, set, query }) => {
                         try {
-                            const result = await dataService.readOnce(params.collection, body, profile as JwtPayload);
+                            const fullQuery = { ...(body as any), expand: query.expand ? query.expand.split(",") : undefined };
+                            const result = await dataService.readOnce(params.collection, fullQuery, profile as JwtPayload);
                             return result;
                         } catch (error: any) {
                             set.status = 500;
@@ -1022,6 +1023,7 @@ const startServer = async () => {
                     },
                     {
                         params: t.Object({ collection: t.String() }),
+                        query: t.Object({ expand: t.Optional(t.String()) }),
                         beforeHandle: ({ profile, set }) => {
                             if (!profile) {
                                 set.status = 401;
@@ -1049,17 +1051,19 @@ const startServer = async () => {
                             const dbName = getUserDbName(profile.instanceId);
                             const db = couch.use(dbName);
 
-                            const initialDocs = await dataService.readOnce(collection, message.query || {}, profile as JwtPayload);
-                            ws.send(initialDocs.docs);
+                            const processAndSend = async () => {
+                                const result = await dataService.readOnce(collection, message.query || {}, profile as JwtPayload);
+                                ws.send(result.docs);
+                            };
+
+                            await processAndSend();
 
                             const changes = db.changesReader.start({ since: "now", includeDocs: true });
                             (ws.data as any).changes = changes;
 
                             changes.on("change", async (change) => {
                                 if (change.doc?.collection === collection) {
-                                    // Re-fetch the full list to ensure consistency
-                                    const result = await dataService.readOnce(collection, message.query || {}, profile as JwtPayload);
-                                    ws.send(result.docs);
+                                    await processAndSend();
                                 }
                             });
                         }
