@@ -11,7 +11,7 @@ const config = {
     apiUrl: "http://localhost:5000",
     clientId: "http://localhost:3000",
     redirectUri: "http://localhost:3000/auth/callback",
-    useHub: true,
+    useHub: false,
 };
 
 type RootLayoutProps = { children: ReactNode };

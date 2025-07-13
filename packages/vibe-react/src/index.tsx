@@ -15,8 +15,8 @@ interface VibeContextType {
     manageConsent: () => Promise<void>;
     manageProfile: () => Promise<void>;
     read(collection: string, callback: ReadCallback): Promise<Subscription>;
-    read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription>;
-    readOnce: (collection: string, filter?: any) => Promise<any>;
+    read(collection: string, query: any, callback: ReadCallback): Promise<Subscription>;
+    readOnce: (collection: string, query?: any) => Promise<any>;
     write: (collection: string, data: any) => Promise<any>;
     remove: (collection: string, data: any) => Promise<any>;
 }
@@ -50,14 +50,14 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
     const manageConsent = () => sdk.manageConsent();
     const manageProfile = () => sdk.manageProfile();
     function read(collection: string, callback: ReadCallback): Promise<Subscription>;
-    function read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription>;
-    function read(collection: string, filterOrCb: ReadCallback | any, callback?: ReadCallback): Promise<Subscription> {
-        if (typeof filterOrCb === "function") {
-            return sdk.read(collection, undefined, filterOrCb);
+    function read(collection: string, query: any, callback: ReadCallback): Promise<Subscription>;
+    function read(collection: string, queryOrCallback: any, callback?: ReadCallback): Promise<Subscription> {
+        if (typeof queryOrCallback === "function") {
+            return sdk.read(collection, {}, queryOrCallback);
         }
-        return sdk.read(collection, filterOrCb, callback as ReadCallback);
+        return sdk.read(collection, queryOrCallback, callback as ReadCallback);
     }
-    const readOnce = (collection: string, filter?: any) => sdk.readOnce(collection, filter);
+    const readOnce = (collection: string, query?: any) => sdk.readOnce(collection, query);
     const write = (collection: string, data: any) => sdk.write(collection, data);
     const remove = (collection: string, data: any) => sdk.remove(collection, data);
 

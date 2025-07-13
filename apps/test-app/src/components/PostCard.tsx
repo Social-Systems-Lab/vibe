@@ -3,9 +3,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useVibe } from "vibe-react";
 import { Button } from "./ui/button";
 
-// TODO: Define a proper type for the post object
+import { Post, Profile } from "vibe-sdk";
+
 interface PostCardProps {
-    post: any;
+    post: Post;
 }
 
 export function PostCard({ post }: PostCardProps) {
@@ -24,21 +25,14 @@ export function PostCard({ post }: PostCardProps) {
             <CardHeader>
                 <div className="flex items-center space-x-4">
                     <Avatar>
-                        {/* TODO: Add a real avatar image */}
-                        <AvatarImage src={`https://github.com/shadcn.png`} alt="@shadcn" />
-                        <AvatarFallback>
-                            {/* TODO: Get user initials */}
-                            CN
-                        </AvatarFallback>
+                        <AvatarImage src={(post.author as Profile)?.pictureUrl} alt={(post.author as Profile)?.name} />
+                        <AvatarFallback>{(post.author as Profile)?.name?.substring(0, 2).toUpperCase()}</AvatarFallback>
                     </Avatar>
                     <div>
-                        <p className="text-sm font-medium leading-none">
-                            {/* TODO: Get user name */}
-                            Chad Next
-                        </p>
+                        <p className="text-sm font-medium leading-none">{(post.author as Profile)?.name}</p>
                         <p className="text-sm text-muted-foreground">
                             {/* TODO: Get user handle */}
-                            @chadnext
+                            @handle
                         </p>
                     </div>
                 </div>
@@ -49,7 +43,7 @@ export function PostCard({ post }: PostCardProps) {
             <CardFooter className="flex justify-between">
                 <p className="text-sm text-muted-foreground">
                     {/* TODO: Format date */}
-                    {new Date(post._id.split("/")[1].split("-")[0] * 1).toLocaleString()}
+                    {new Date(parseInt(post._id.split("/")[1].split("-")[0]) * 1).toLocaleString()}
                 </p>
                 <Button variant="destructive" size="sm" onClick={handleRemove}>
                     Delete

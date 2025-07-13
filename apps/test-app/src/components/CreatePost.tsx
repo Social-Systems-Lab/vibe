@@ -13,7 +13,7 @@ export function CreatePost() {
     const handlePost = async () => {
         if (!content.trim()) return;
         try {
-            await write("posts", { content, author: user?.did });
+            await write("posts", { content, author: { did: user?.did, ref: "profiles/me" } });
             setContent("");
             setOpen(false);
         } catch (error) {
@@ -32,12 +32,7 @@ export function CreatePost() {
                     <DialogDescription>Share your thoughts with the world.</DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
-                    <Textarea
-                        placeholder="What's on your mind?"
-                        value={content}
-                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setContent(e.target.value)}
-                        className="col-span-3"
-                    />
+                    <Textarea placeholder="What's on your mind?" value={content} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setContent(e.target.value)} className="col-span-3" />
                 </div>
                 <DialogFooter>
                     <Button onClick={handlePost}>Post</Button>

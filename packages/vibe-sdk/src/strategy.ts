@@ -9,8 +9,8 @@ export interface VibeTransportStrategy {
     manageProfile(): Promise<void>;
     getUser(): Promise<any>;
     isLoggedIn?(): boolean;
-    read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription>;
-    readOnce(collection: string, filter?: any): Promise<any>;
+    read(collection: string, query: any, callback: ReadCallback): Promise<Subscription>;
+    readOnce(collection: string, query?: any): Promise<any>;
     write(collection: string, data: any): Promise<any>;
     remove(collection: string, data: any): Promise<any>;
     onStateChange(callback: (state: { isLoggedIn: boolean; user: User | null }) => void): () => void;

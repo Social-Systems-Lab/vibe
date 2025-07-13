@@ -311,13 +311,24 @@ export class StandaloneStrategy implements VibeTransportStrategy {
     }
 
     // --- Vibe DB Methods (unchanged) ---
-    async readOnce(collection: string, filter: any = {}): Promise<any> {
+    async readOnce(collection: string, query: any = {}): Promise<any> {
         if (!this.authManager.isLoggedIn()) {
             throw new Error("User is not authenticated.");
         }
-        const { data, error } = await (this.api.data as any)[collection].query.post(filter, {
+
+        console.log("Reading once from collection:", collection, "with query:", query);
+
+        const { expand, ...selector } = query;
+        const apiQuery: { [key: string]: any } = {};
+        if (expand) {
+            apiQuery.expand = expand.join(",");
+        }
+
+        const { data, error } = await (this.api.data as any)[collection].query.post(selector, {
             headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
+            query: apiQuery,
         });
+
         if (error) {
             console.error("Error reading data:", error.value);
             throw new Error("Failed to read data.");
@@ -345,13 +356,22 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         return this.write(collection, docsToDelete);
     }
 
-    async read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription> {
+    async read(collection: string, query: any, callback: ReadCallback): Promise<Subscription> {
         if (!this.authManager.isLoggedIn()) {
             throw new Error("User is not authenticated.");
         }
+
+        const { expand, ...selector } = query;
+
+        if (expand) {
+            this.readOnce(collection, query)
+                .then((data) => callback({ ok: true, data: data.docs }))
+                .catch((error) => callback({ ok: false, error: error.message }));
+        }
+
         const VIBE_WS_URL = this.config.apiUrl.replace(/^http/, "ws");
         const wsApi = edenTreaty<App>(VIBE_WS_URL);
-        const ws = (wsApi.data as any)[collection].subscribe({ filter });
+        const ws = (wsApi.data as any)[collection].subscribe({ filter: selector });
         ws.on("open", () => {
             ws.send(JSON.stringify({ type: "auth", token: this.authManager.getAccessToken() }));
         });

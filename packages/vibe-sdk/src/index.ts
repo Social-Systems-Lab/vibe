@@ -97,17 +97,20 @@ export class VibeSDK {
     }
 
     async read(collection: string, callback: ReadCallback): Promise<Subscription>;
-    async read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription>;
-    async read(collection: string, filter: any, callback?: ReadCallback): Promise<Subscription> {
-        if (typeof filter === "function") {
-            callback = filter;
-            filter = undefined;
+    async read(collection: string, query: any, callback: ReadCallback): Promise<Subscription>;
+    async read(collection: string, queryOrCallback: any, callback?: ReadCallback): Promise<Subscription> {
+        let query: any;
+        if (typeof queryOrCallback === "function") {
+            callback = queryOrCallback;
+            query = {};
+        } else {
+            query = queryOrCallback;
         }
-        return this.dataStrategy.read(collection, filter, callback as ReadCallback);
+        return this.dataStrategy.read(collection, query, callback as ReadCallback);
     }
 
-    async readOnce(collection: string, filter?: any): Promise<any> {
-        return this.dataStrategy.readOnce(collection, filter);
+    async readOnce(collection: string, query?: any): Promise<any> {
+        return this.dataStrategy.readOnce(collection, query);
     }
 
     async write(collection: string, data: any): Promise<any> {

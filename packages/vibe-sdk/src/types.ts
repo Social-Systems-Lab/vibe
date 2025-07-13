@@ -21,3 +21,23 @@ export type ReadCallback<T = any> = (result: ReadResult<T>) => void;
 export type Subscription = {
     unsubscribe: () => void;
 };
+
+export type DocRef = {
+    did: string;
+    ref: string;
+};
+
+export interface Document {
+    _id: string;
+    [key: string]: any;
+}
+
+export interface Profile extends Document {
+    name: string;
+    pictureUrl?: string;
+}
+
+export interface Post extends Document {
+    content: string;
+    author: DocRef | Profile;
+}

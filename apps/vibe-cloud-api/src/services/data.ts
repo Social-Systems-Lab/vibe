@@ -1,5 +1,7 @@
 import nano, { DocumentScope } from "nano";
 import { getUserDbName } from "../lib/db";
+import { IdentityService } from "./identity";
+import { DocRef } from "vibe-sdk";
 
 // TODO: Move this to a shared types package
 export interface JwtPayload {
@@ -10,10 +12,12 @@ export interface JwtPayload {
 export class DataService {
     private couch: nano.ServerScope;
     private config: { url: string; user: string; pass: string };
+    private identityService: IdentityService;
 
-    constructor(config: { url: string; user: string; pass: string }) {
+    constructor(config: { url: string; user: string; pass: string }, identityService: IdentityService) {
         this.config = config;
         this.couch = nano(config.url);
+        this.identityService = identityService;
     }
 
     async init() {
@@ -50,19 +54,49 @@ export class DataService {
         return response;
     }
 
-    async readOnce(collection: string, filter: any, user: JwtPayload) {
+    async readOnce(collection: string, query: any, user: JwtPayload) {
         await this.reauthenticate();
         // TODO: Add authorization logic here to check if the user has read permissions for this collection.
         console.log(`Authorization TODO: Check if user ${user.sub} can read from ${collection}`);
 
+        console.log("Reading once from collection:", collection, "with query:", query);
+        const { expand, ...selector } = query;
         const db = this.getDb(user.instanceId);
-        const query = {
+        const dbQuery = {
             selector: {
-                ...filter,
+                ...selector,
                 collection: collection,
             },
         };
-        const result = await db.find(query);
-        return result.docs;
+        const result = await db.find(dbQuery);
+
+        if (expand && expand.length > 0) {
+            const docs = await this._expand(result.docs, expand);
+            return { docs };
+        }
+
+        return { docs: result.docs };
+    }
+
+    private async _expand(docs: any[], expand: string[]) {
+        const promises = docs.map(async (doc) => {
+            const expandedDoc = { ...doc };
+            for (const field of expand) {
+                const ref = doc[field] as DocRef;
+                if (ref && ref.did && ref.ref) {
+                    const user = await this.identityService.findByDid(ref.did);
+                    if (user) {
+                        const db = this.getDb(user.instanceId);
+                        try {
+                            expandedDoc[field] = await db.get(ref.ref);
+                        } catch (error) {
+                            console.error(`Failed to expand ${field} for doc ${doc._id}`, error);
+                        }
+                    }
+                }
+            }
+            return expandedDoc;
+        });
+        return Promise.all(promises);
     }
 }

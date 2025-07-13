@@ -43,11 +43,14 @@ const startServer = async () => {
 
     const couch = nano(process.env.COUCHDB_URL!);
 
-    const dataService = new DataService({
-        url: process.env.COUCHDB_URL!,
-        user: process.env.COUCHDB_USER!,
-        pass: process.env.COUCHDB_PASSWORD!,
-    });
+    const dataService = new DataService(
+        {
+            url: process.env.COUCHDB_URL!,
+            user: process.env.COUCHDB_USER!,
+            pass: process.env.COUCHDB_PASSWORD!,
+        },
+        identityService
+    );
 
     try {
         await identityService.onApplicationBootstrap(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
@@ -759,7 +762,7 @@ const startServer = async () => {
                             <form id="profile-form">
                                 ${isSignup ? "" : `<label for="file-upload">Change Picture</label>`}
                                 <input id="file-upload" type="file" accept="image/*">
-                                <input type="text" id="display-name" value="${user?.displayName || ""}" placeholder="Display Name" required>
+                                <input type="text" id="display-name" value="${user?.displayName || ""}" placeholder="Display Name">
                                 <button type="submit">${isSignup ? "Continue" : "Save"}</button>
                             </form>
                             ${isSignup ? `<a href="#" id="skip-link" class="skip">Skip for now</a>` : ""}
@@ -798,10 +801,6 @@ const startServer = async () => {
                             form.addEventListener('submit', async (event) => {
                                 event.preventDefault();
                                 const displayName = document.getElementById('display-name').value;
-                                if (!displayName) {
-                                    alert("Display name is required.");
-                                    return;
-                                }
                                 
                                 const token = await getAccessToken();
                                 if (!token) return; // Handle error
@@ -901,6 +900,18 @@ const startServer = async () => {
                             return { error: "Unauthorized" };
                         }
                         const user = await identityService.updateUser(profile.sub, body);
+
+                        // Also write to the user's own database
+                        await dataService.write(
+                            "profiles",
+                            {
+                                _id: "profiles/me",
+                                name: body.displayName,
+                                pictureUrl: body.profilePictureUrl,
+                            },
+                            profile as JwtPayload
+                        );
+
                         return { user };
                     },
                     {
@@ -1002,8 +1013,8 @@ const startServer = async () => {
                     "/:collection/query",
                     async ({ profile, params, body, set }) => {
                         try {
-                            const docs = await dataService.readOnce(params.collection, body, profile as JwtPayload);
-                            return { docs };
+                            const result = await dataService.readOnce(params.collection, body, profile as JwtPayload);
+                            return result;
                         } catch (error: any) {
                             set.status = 500;
                             return { error: error.message };
@@ -1023,7 +1034,7 @@ const startServer = async () => {
                     async open(ws) {
                         console.log("WebSocket connection opened");
                     },
-                    async message(ws, message: { type: string; token?: string; filter?: any }) {
+                    async message(ws, message: { type: string; token?: string; query?: any }) {
                         const { collection } = ws.data.params;
 
                         if (message.type === "auth") {
@@ -1038,8 +1049,8 @@ const startServer = async () => {
                             const dbName = getUserDbName(profile.instanceId);
                             const db = couch.use(dbName);
 
-                            const initialDocs = await dataService.readOnce(collection, {}, profile as JwtPayload);
-                            ws.send(initialDocs);
+                            const initialDocs = await dataService.readOnce(collection, message.query || {}, profile as JwtPayload);
+                            ws.send(initialDocs.docs);
 
                             const changes = db.changesReader.start({ since: "now", includeDocs: true });
                             (ws.data as any).changes = changes;
@@ -1047,8 +1058,8 @@ const startServer = async () => {
                             changes.on("change", async (change) => {
                                 if (change.doc?.collection === collection) {
                                     // Re-fetch the full list to ensure consistency
-                                    const docs = await dataService.readOnce(collection, {}, profile as JwtPayload);
-                                    ws.send(docs);
+                                    const result = await dataService.readOnce(collection, message.query || {}, profile as JwtPayload);
+                                    ws.send(result.docs);
                                 }
                             });
                         }
