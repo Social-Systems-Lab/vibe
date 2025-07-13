@@ -361,20 +361,14 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             throw new Error("User is not authenticated.");
         }
 
-        const { expand, ...selector } = query;
-
-        if (expand) {
-            this.readOnce(collection, query)
-                .then((data) => callback({ ok: true, data: data.docs }))
-                .catch((error) => callback({ ok: false, error: error.message }));
-        }
-
         const VIBE_WS_URL = this.config.apiUrl.replace(/^http/, "ws");
         const wsApi = edenTreaty<App>(VIBE_WS_URL);
-        const ws = (wsApi.data as any)[collection].subscribe({ filter: selector });
+        const ws = (wsApi.data as any)[collection].subscribe();
+
         ws.on("open", () => {
-            ws.send(JSON.stringify({ type: "auth", token: this.authManager.getAccessToken() }));
+            ws.send(JSON.stringify({ type: "auth", token: this.authManager.getAccessToken(), query }));
         });
+
         ws.on("message", (message: any) => {
             callback({ ok: true, data: message.data });
         });
