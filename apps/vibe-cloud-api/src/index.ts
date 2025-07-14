@@ -1013,7 +1013,11 @@ const startServer = async () => {
                     "/:collection/query",
                     async ({ profile, params, body, set, query }) => {
                         try {
-                            const fullQuery = { ...(body as any), expand: query.expand ? query.expand.split(",") : undefined };
+                            const fullQuery = {
+                                ...(body as any),
+                                expand: query.expand ? query.expand.split(",") : undefined,
+                                global: query.global === "true",
+                            };
                             const result = await dataService.readOnce(params.collection, fullQuery, profile as JwtPayload);
                             return result;
                         } catch (error: any) {
@@ -1023,7 +1027,10 @@ const startServer = async () => {
                     },
                     {
                         params: t.Object({ collection: t.String() }),
-                        query: t.Object({ expand: t.Optional(t.String()) }),
+                        query: t.Object({
+                            expand: t.Optional(t.String()),
+                            global: t.Optional(t.String()),
+                        }),
                         beforeHandle: ({ profile, set }) => {
                             if (!profile) {
                                 set.status = 401;
@@ -1080,6 +1087,59 @@ const startServer = async () => {
                             console.log(`WebSocket closed for collection: ${collection} by user ${profile.sub}`);
                         } else {
                             console.log(`WebSocket closed for collection: ${collection}`);
+                        }
+                    },
+                })
+                .ws("/global", {
+                    async open(ws) {
+                        console.log("Global WebSocket connection opened");
+                    },
+                    async message(ws, message: { type: string; token?: string; query?: any }) {
+                        if (message.type === "auth") {
+                            const profile = await ws.data.jwt.verify(message.token);
+                            if (!profile) {
+                                ws.close(4001, "Unauthorized");
+                                return;
+                            }
+                            (ws.data as any).profile = profile;
+                            const { collection, ...query } = message.query;
+                            (ws.data as any).query = query;
+                            (ws.data as any).collection = collection;
+
+                            console.log(`Global WebSocket authenticated for collection: ${collection} by user ${profile.sub}`);
+
+                            const dbNames = await dataService.getAllUserDbNames();
+                            const changesFeeds: any[] = [];
+
+                            const processAndSend = async () => {
+                                const result = await dataService.readOnce(collection, { ...query, global: true }, profile as JwtPayload);
+                                ws.send(result.docs);
+                            };
+
+                            await processAndSend();
+
+                            for (const dbName of dbNames) {
+                                const db = couch.use(dbName);
+                                const changes = db.changesReader.start({ since: "now", includeDocs: true });
+                                changes.on("change", async (change) => {
+                                    if (change.doc?.collection === collection) {
+                                        await processAndSend();
+                                    }
+                                });
+                                changesFeeds.push(changes);
+                            }
+                            (ws.data as any).changes = changesFeeds;
+                        }
+                    },
+                    close(ws) {
+                        const { profile, changes, collection } = ws.data as any;
+                        if (changes) {
+                            changes.forEach((feed: any) => feed.stop());
+                        }
+                        if (profile) {
+                            console.log(`Global WebSocket closed for collection: ${collection} by user ${profile.sub}`);
+                        } else {
+                            console.log(`Global WebSocket closed for collection: ${collection}`);
                         }
                     },
                 })

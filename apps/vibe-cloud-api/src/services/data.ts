@@ -55,28 +55,64 @@ export class DataService {
         return response;
     }
 
+    async getAllUserDbNames(): Promise<string[]> {
+        const allDbs = await this.couch.db.list();
+        return allDbs.filter((db) => db.startsWith("userdb-"));
+    }
+
     async readOnce(collection: string, query: any, user: JwtPayload) {
         await this.reauthenticate();
-        // TODO: Add authorization logic here to check if the user has read permissions for this collection.
+        // TODO: Add authorization logic here
         console.log(`Authorization TODO: Check if user ${user.sub} can read from ${collection}`);
 
         console.log("Reading once from collection:", collection, "with query:", query);
-        const { expand, maxCacheAge, ...selector } = query;
-        const db = this.getDb(user.instanceId);
-        const dbQuery = {
-            selector: {
-                ...selector,
-                collection: collection,
-            },
-        };
-        const result = await db.find(dbQuery);
+        const { expand, maxCacheAge, global, ...selector } = query;
 
-        if (expand && expand.length > 0) {
-            const docs = await this._expand(result.docs, expand, user, maxCacheAge);
-            return { docs };
+        if (global) {
+            // Global query: iterate through all user databases
+            const dbNames = await this.getAllUserDbNames();
+            const allDocs: any[] = [];
+
+            for (const dbName of dbNames) {
+                try {
+                    const db = this.couch.use(dbName);
+                    const dbQuery = {
+                        selector: {
+                            ...selector,
+                            collection: collection,
+                        },
+                    };
+                    const result = await db.find(dbQuery);
+                    allDocs.push(...result.docs);
+                } catch (error) {
+                    console.error(`Error querying database ${dbName}:`, error);
+                }
+            }
+
+            if (expand && expand.length > 0) {
+                const docs = await this._expand(allDocs, expand, user, maxCacheAge);
+                return { docs };
+            }
+
+            return { docs: allDocs };
+        } else {
+            // Standard query on the user's own database
+            const db = this.getDb(user.instanceId);
+            const dbQuery = {
+                selector: {
+                    ...selector,
+                    collection: collection,
+                },
+            };
+            const result = await db.find(dbQuery);
+
+            if (expand && expand.length > 0) {
+                const docs = await this._expand(result.docs, expand, user, maxCacheAge);
+                return { docs };
+            }
+
+            return { docs: result.docs };
         }
-
-        return { docs: result.docs };
     }
 
     private async _expand(docs: any[], expand: string[], currentUser: JwtPayload, maxCacheAge?: number) {

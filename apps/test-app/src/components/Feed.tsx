@@ -20,7 +20,7 @@ export function Feed() {
             }
         };
 
-        const subscriptionPromise = read("posts", { expand: ["author"] }, processPosts);
+        const subscriptionPromise = read("posts", { global: true, expand: ["author"] }, processPosts);
 
         let subscription: { unsubscribe: () => void };
         subscriptionPromise.then((sub) => {

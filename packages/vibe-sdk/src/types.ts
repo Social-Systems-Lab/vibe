@@ -47,6 +47,7 @@ export interface VibeQuery {
     limit?: number;
     expand?: string | string[];
     maxCacheAge?: number; // in seconds
+    global?: boolean;
     [key: string]: any;
 }
 

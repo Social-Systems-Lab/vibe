@@ -318,10 +318,13 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
         console.log("Reading once from collection:", collection, "with query:", query);
 
-        const { expand, ...selector } = query;
+        const { expand, global, ...selector } = query;
         const apiQuery: { [key: string]: any } = {};
         if (expand) {
-            apiQuery.expand = expand.join(",");
+            apiQuery.expand = Array.isArray(expand) ? expand.join(",") : expand;
+        }
+        if (global) {
+            apiQuery.global = "true";
         }
 
         const { data, error } = await (this.api.data as any)[collection].query.post(selector, {
@@ -361,20 +364,30 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             throw new Error("User is not authenticated.");
         }
 
+        const { global, ...restQuery } = query;
         const VIBE_WS_URL = this.config.apiUrl.replace(/^http/, "ws");
         const wsApi = edenTreaty<App>(VIBE_WS_URL);
-        const ws = (wsApi.data as any)[collection].subscribe();
+
+        const endpoint = global ? "global" : collection;
+        const ws = (wsApi.data as any)[endpoint].subscribe();
 
         ws.on("open", () => {
-            ws.send(JSON.stringify({ type: "auth", token: this.authManager.getAccessToken(), query }));
+            const authMessage = {
+                type: "auth",
+                token: this.authManager.getAccessToken(),
+                query: { ...restQuery, collection: global ? collection : undefined },
+            };
+            ws.send(JSON.stringify(authMessage));
         });
 
         ws.on("message", (message: any) => {
             callback({ ok: true, data: message.data });
         });
+
         ws.on("error", (error: any) => {
             callback({ ok: false, error: error.message || "WebSocket error" });
         });
+
         const subscription: Subscription = {
             unsubscribe: () => {
                 ws.close();
