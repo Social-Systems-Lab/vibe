@@ -59,9 +59,9 @@ The hub sends this message whenever the user's authentication state changes.
 
 ## 3. Data Operations
 
-### Client -> Hub: `DB_READ_ONCE`
+### Client -> Hub: `DB_QUERY`
 
--   **`type`**: `"DB_READ_ONCE"`
+-   **`type`**: `"DB_QUERY"`
 -   **`payload`**:
     -   `collection`: The name of the collection to query.
     -   `filter`: The PouchDB `find` selector.
@@ -83,11 +83,30 @@ The hub sends this message whenever the user's authentication state changes.
     -   `data`: The document to remove.
 -   **`nonce`**: A unique identifier for the request.
 
-### Hub -> Client: `DB_ACK`
+### Client -> Hub: `DB_GLOBAL_QUERY`
 
-The hub sends this in response to `DB_READ_ONCE`, `DB_WRITE`, and `DB_REMOVE`.
+-   **`type`**: `"DB_GLOBAL_QUERY"`
+-   **`payload`**:
+    -   `collection`: The name of the collection to query.
+    -   `filter`: The PouchDB `find` selector.
+-   **`nonce`**: A unique identifier for the request.
 
--   **`type`**: `"DB_ACK"`
+### Hub -> Client: `DB_QUERY_ACK`
+
+The hub sends this in response to `DB_QUERY`.
+
+-   **`type`**: `"DB_QUERY_ACK"`
+-   **`payload`**:
+    -   `success`: A boolean indicating if the operation was successful.
+    -   `data`: The result of the operation (e.g., the documents from a read).
+    -   `error`: A string describing the reason for failure.
+-   **`nonce`**: The nonce from the original request.
+
+### Hub -> Client: `DB_GLOBAL_QUERY_ACK`
+
+The hub sends this in response to `DB_GLOBAL_QUERY`.
+
+-   **`type`**: `"DB_GLOBAL_QUERY_ACK"`
 -   **`payload`**:
     -   `success`: A boolean indicating if the operation was successful.
     -   `data`: The result of the operation (e.g., the documents from a read).
@@ -101,12 +120,26 @@ The hub sends this in response to `DB_READ_ONCE`, `DB_WRITE`, and `DB_REMOVE`.
 -   **`type`**: `"DB_SUBSCRIBE"`
 -   **`payload`**:
     -   `collection`: The name of the collection to subscribe to.
-    -   `filter`: The PouchDB `find` selector.
+    -   `query`: The PouchDB `find` selector.
 -   **`subscriptionId`**: A unique identifier for the subscription.
 
 ### Client -> Hub: `DB_UNSUBSCRIBE`
 
 -   **`type`**: `"DB_UNSUBSCRIBE"`
+-   **`payload`**:
+    -   `subscriptionId`: The ID of the subscription to cancel.
+
+### Client -> Hub: `DB_GLOBAL_SUBSCRIBE`
+
+-   **`type`**: `"DB_GLOBAL_SUBSCRIBE"`
+-   **`payload`**:
+    -   `collection`: The name of the collection to subscribe to.
+    -   `query`: The PouchDB `find` selector.
+-   **`subscriptionId`**: A unique identifier for the subscription.
+
+### Client -> Hub: `DB_GLOBAL_UNSUBSCRIBE`
+
+-   **`type`**: `"DB_GLOBAL_UNSUBSCRIBE"`
 -   **`payload`**:
     -   `subscriptionId`: The ID of the subscription to cancel.
 

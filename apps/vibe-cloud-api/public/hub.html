@@ -18,6 +18,7 @@
             let currentUser = null;
             let syncHandler = null;
             const subscriptions = new Map();
+            const sharedListeners = new Map();
             let isUpdatingState = false;
             let messageQueue = [];
 
@@ -206,21 +207,101 @@
                 const sourcePort = app.port;
 
                 if (type === "DB_SUBSCRIBE") {
-                    console.log(`[HUB] Subscription request for ${subscriptionId} from ${origin}`);
+                    const { collection, query } = payload;
+                    const canonicalKey = `${collection}|${JSON.stringify(query || {})}`;
+                    console.log(`[HUB] Subscription request for ${subscriptionId} from ${origin} with key ${canonicalKey}`);
+
                     subscriptions.set(subscriptionId, {
-                        collection: payload.collection,
-                        query: payload.query || {},
+                        canonicalKey,
                         port: app.port,
                     });
-                    return; // No ACK needed for subscriptions
-                }
 
-                if (type === "DB_UNSUBSCRIBE") {
-                    console.log(`[HUB] Unsubscribe request for ${subscriptionId} from ${origin}`);
-                    subscriptions.delete(payload.subscriptionId);
+                    if (!sharedListeners.has(canonicalKey)) {
+                        console.log(`[HUB] Creating new shared listener for ${canonicalKey}`);
+                        const listener = createSharedListener(collection, query || {});
+                        sharedListeners.set(canonicalKey, {
+                            listener,
+                            subscribers: new Set([subscriptionId]),
+                        });
+                    } else {
+                        console.log(`[HUB] Attaching to existing shared listener for ${canonicalKey}`);
+                        sharedListeners.get(canonicalKey).subscribers.add(subscriptionId);
+                    }
                     return;
                 }
 
+                if (type === "DB_UNSUBSCRIBE") {
+                    const { subscriptionId } = payload;
+                    console.log(`[HUB] Unsubscribe request for ${subscriptionId} from ${origin}`);
+                    const sub = subscriptions.get(subscriptionId);
+                    if (sub) {
+                        subscriptions.delete(subscriptionId);
+                        const sharedListener = sharedListeners.get(sub.canonicalKey);
+                        if (sharedListener) {
+                            sharedListener.subscribers.delete(subscriptionId);
+                            if (sharedListener.subscribers.size === 0) {
+                                console.log(`[HUB] Stopping shared listener for ${sub.canonicalKey}`);
+                                sharedListener.listener.cancel();
+                                sharedListeners.delete(sub.canonicalKey);
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                if (type === "DB_GLOBAL_QUERY") {
+                    performGlobalQuery(type, collection, payload)
+                        .then((result) => {
+                            sourcePort.postMessage({ type: "DB_GLOBAL_QUERY_ACK", success: true, data: result, nonce });
+                        })
+                        .catch((dbError) => {
+                            sourcePort.postMessage({ type: "DB_GLOBAL_QUERY_ACK", success: false, error: dbError.message, nonce });
+                        });
+                    return;
+                }
+
+                if (type === "DB_GLOBAL_SUBSCRIBE") {
+                    const { collection, query } = payload;
+                    const canonicalKey = `global:${collection}|${JSON.stringify(query || {})}`;
+                    console.log(`[HUB] Global subscription request for ${subscriptionId} from ${origin} with key ${canonicalKey}`);
+
+                    subscriptions.set(subscriptionId, {
+                        canonicalKey,
+                        port: app.port,
+                    });
+
+                    if (!sharedListeners.has(canonicalKey)) {
+                        console.log(`[HUB] Creating new shared global listener for ${canonicalKey}`);
+                        const listener = createSharedGlobalListener(collection, query || {});
+                        sharedListeners.set(canonicalKey, {
+                            listener,
+                            subscribers: new Set([subscriptionId]),
+                        });
+                    } else {
+                        console.log(`[HUB] Attaching to existing shared global listener for ${canonicalKey}`);
+                        sharedListeners.get(canonicalKey).subscribers.add(subscriptionId);
+                    }
+                    return;
+                }
+
+                if (type === "DB_GLOBAL_UNSUBSCRIBE") {
+                    const { subscriptionId } = payload;
+                    console.log(`[HUB] Global unsubscribe request for ${subscriptionId} from ${origin}`);
+                    const sub = subscriptions.get(subscriptionId);
+                    if (sub) {
+                        subscriptions.delete(subscriptionId);
+                        const sharedListener = sharedListeners.get(sub.canonicalKey);
+                        if (sharedListener) {
+                            sharedListener.subscribers.delete(subscriptionId);
+                            if (sharedListener.subscribers.size === 0) {
+                                console.log(`[HUB] Stopping shared global listener for ${sub.canonicalKey}`);
+                                sharedListener.listener.close();
+                                sharedListeners.delete(sub.canonicalKey);
+                            }
+                        }
+                    }
+                    return;
+                }
                 const requiredPermission = `${getScopeForOperation(type)}:${collection}`;
                 const appPermissions = permissionsCache.get(origin);
 
@@ -264,7 +345,7 @@
 
             function getScopeForOperation(type) {
                 if (type === "DB_WRITE" || type === "DB_REMOVE") return "write";
-                if (type === "DB_READ" || type === "DB_QUERY") return "read";
+                if (type === "DB_READ" || type === "DB_QUERY" || type === "DB_GLOBAL_QUERY" || type === "DB_GLOBAL_SUBSCRIBE") return "read";
                 return null;
             }
 
@@ -367,22 +448,29 @@
             console.log("Hub is ready and listening.");
 
             function setupDbChangesListener() {
-                if (!db) return;
-                db.changes({
-                    since: "now",
-                    live: true,
-                    include_docs: true,
-                }).on("change", (change) => {
-                    console.log("[HUB] Local DB change detected:", change);
-                    const changedCollection = change.id.split("/")[0];
-                    if (!changedCollection) return;
+                // This function is now replaced by the dynamic creation of shared listeners.
+                // We can remove it or leave it empty. For now, I'll leave it empty.
+            }
 
-                    subscriptions.forEach(async (sub, id) => {
-                        if (sub.collection === changedCollection) {
-                            // Re-query to respect the subscription's filter
-                            const { expand, maxCacheAge, ...selector } = sub.query;
+            function createSharedListener(collection, query) {
+                if (!db) return null;
+
+                const changes = db
+                    .changes({
+                        since: "now",
+                        live: true,
+                        include_docs: true,
+                        filter: (doc) => doc.collection === collection,
+                    })
+                    .on("change", async (change) => {
+                        console.log(`[HUB] Change detected for shared listener on collection ${collection}:`, change);
+                        const canonicalKey = `${collection}|${JSON.stringify(query)}`;
+                        const sharedListener = sharedListeners.get(canonicalKey);
+
+                        if (sharedListener) {
+                            const { expand, maxCacheAge, ...selector } = query;
                             const findResult = await db.find({
-                                selector: { ...selector, collection: sub.collection },
+                                selector: { ...selector, collection: collection },
                             });
 
                             let docs = findResult.docs;
@@ -390,14 +478,88 @@
                                 docs = await _expand(docs, expand, maxCacheAge);
                             }
 
-                            sub.port.postMessage({
-                                type: "DB_UPDATE",
-                                subscriptionId: id,
-                                data: docs,
+                            sharedListener.subscribers.forEach((subId) => {
+                                const sub = subscriptions.get(subId);
+                                if (sub) {
+                                    sub.port.postMessage({
+                                        type: "DB_UPDATE",
+                                        subscriptionId: subId,
+                                        data: docs,
+                                    });
+                                }
                             });
                         }
                     });
+                return changes;
+            }
+
+            async function performGlobalQuery(type, collection, payload) {
+                const { expand, ...selector } = payload;
+                const query = new URLSearchParams({
+                    global: "true",
                 });
+                if (expand) {
+                    query.set("expand", expand.join(","));
+                }
+                const token = await getAccessToken();
+                const response = await fetch(`/data/${collection}/query?${query.toString()}`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify(selector),
+                });
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || "Failed to perform global query");
+                }
+                const result = await response.json();
+                return result.docs;
+            }
+
+            function createSharedGlobalListener(collection, query) {
+                const VIBE_WS_URL = window.location.origin.replace(/^http/, "ws");
+                const ws = new WebSocket(`${VIBE_WS_URL}/data/global`);
+
+                ws.onopen = async () => {
+                    const token = await getAccessToken();
+                    const authMessage = {
+                        type: "auth",
+                        token: token,
+                        query: { ...query, collection },
+                    };
+                    ws.send(JSON.stringify(authMessage));
+                };
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    const canonicalKey = `global:${collection}|${JSON.stringify(query)}`;
+                    const sharedListener = sharedListeners.get(canonicalKey);
+                    if (sharedListener) {
+                        sharedListener.subscribers.forEach((subId) => {
+                            const sub = subscriptions.get(subId);
+                            if (sub) {
+                                sub.port.postMessage({
+                                    type: "DB_UPDATE",
+                                    subscriptionId: subId,
+                                    data: data,
+                                });
+                            }
+                        });
+                    }
+                };
+
+                return ws;
+            }
+
+            async function getAccessToken() {
+                const response = await fetch("/auth/api-token", { credentials: "include" });
+                if (!response.ok) {
+                    throw new Error("Failed to fetch API token");
+                }
+                const { token } = await response.json();
+                return token;
             }
 
             async function _expand(docs, expand, maxCacheAge) {

@@ -176,8 +176,10 @@ export class HubStrategy implements VibeTransportStrategy {
         return () => {};
     }
 
-    async readOnce(collection: string, filter: any = {}): Promise<any> {
-        return this.postToHub({ type: "DB_QUERY", collection, payload: filter });
+    async readOnce(collection: string, query: any = {}): Promise<any> {
+        const { global, ...filter } = query;
+        const type = global ? "DB_GLOBAL_QUERY" : "DB_QUERY";
+        return this.postToHub({ type, collection, payload: filter });
     }
 
     async write(collection: string, data: any): Promise<any> {
@@ -193,9 +195,12 @@ export class HubStrategy implements VibeTransportStrategy {
         const subscriptionId = this.generateSubscriptionId();
         this.subscriptions.set(subscriptionId, callback);
 
+        const { global, ...filter } = query;
+        const type = global ? "DB_GLOBAL_SUBSCRIBE" : "DB_SUBSCRIBE";
+
         this.hubPort?.postMessage({
-            type: "DB_SUBSCRIBE",
-            payload: { collection, query },
+            type,
+            payload: { collection, query: filter },
             subscriptionId,
         });
 
@@ -206,8 +211,9 @@ export class HubStrategy implements VibeTransportStrategy {
         return {
             unsubscribe: () => {
                 this.subscriptions.delete(subscriptionId);
+                const unsubscribeType = global ? "DB_GLOBAL_UNSUBSCRIBE" : "DB_UNSUBSCRIBE";
                 this.hubPort?.postMessage({
-                    type: "DB_UNSUBSCRIBE",
+                    type: unsubscribeType,
                     payload: { subscriptionId },
                 });
             },
