@@ -7,6 +7,7 @@ import { html } from "@elysiajs/html";
 import { staticPlugin } from "@elysiajs/static";
 import { IdentityService } from "./services/identity";
 import { DataService, JwtPayload } from "./services/data";
+import { CertsService } from "./services/certs";
 import { StorageService, MinioStorageProvider, ScalewayStorageProvider, StorageProvider } from "./services/storage";
 import { getUserDbName } from "./lib/db";
 import nano from "nano";
@@ -60,6 +61,8 @@ const startServer = async () => {
         console.error("Failed to start server:", error);
         process.exit(1); // Exit if cannot connect to DB
     }
+
+    const certsService = new CertsService(identityService, dataService);
 
     const app = new Elysia()
         .use(
@@ -1170,6 +1173,64 @@ const startServer = async () => {
                         query: t.Object({
                             did: t.String(),
                             ref: t.String(),
+                        }),
+                    }
+                )
+        )
+        .group("/certs", (app) =>
+            app
+                .derive(async ({ jwt, headers }) => {
+                    const auth = headers.authorization;
+                    const token = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
+                    if (!token) return { profile: null };
+                    try {
+                        const profile = await jwt.verify(token);
+                        return { profile };
+                    } catch {
+                        return { profile: null };
+                    }
+                })
+                .guard({
+                    beforeHandle: ({ profile, set }) => {
+                        if (!profile) {
+                            set.status = 401;
+                            return { error: "Unauthorized" };
+                        }
+                    },
+                })
+                .post(
+                    "/issue",
+                    async ({ profile, body, set }) => {
+                        try {
+                            const certificate = await certsService.issue(body, profile as JwtPayload);
+                            return { success: true, certificate };
+                        } catch (error: any) {
+                            set.status = 500;
+                            return { error: error.message };
+                        }
+                    },
+                    {
+                        body: t.Object({
+                            type: t.String(),
+                            subject: t.String(),
+                            expires: t.Optional(t.String()),
+                        }),
+                    }
+                )
+                .post(
+                    "/revoke/:certId",
+                    async ({ profile, params, set }) => {
+                        try {
+                            await certsService.revoke(params.certId, profile as JwtPayload);
+                            return { success: true };
+                        } catch (error: any) {
+                            set.status = 500;
+                            return { error: error.message };
+                        }
+                    },
+                    {
+                        params: t.Object({
+                            certId: t.String(),
                         }),
                     }
                 )

@@ -60,3 +60,24 @@ export interface CachedDoc<T> {
     originalDid: string;
     originalRef: string;
 }
+
+export interface Certificate extends Document {
+    type: string;
+    issuer: string; // did
+    subject: string; // did
+    expires?: string; // ISO timestamp
+    signature: string; // JWS
+}
+
+export type AclRule = { issuer: string; type: string } | string; // did
+
+export interface AclPermission {
+    allow?: (AclRule | AclRule[])[]; // OR logic for top-level, AND for inner arrays
+    deny?: (AclRule | AclRule[])[];
+}
+
+export interface Acl {
+    read?: AclPermission;
+    write?: AclPermission;
+    create?: AclPermission;
+}

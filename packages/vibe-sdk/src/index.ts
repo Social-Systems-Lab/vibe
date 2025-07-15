@@ -121,6 +121,20 @@ export class VibeSDK {
         return this.dataStrategy.remove(collection, data);
     }
 
+    async issueCert(targetDid: string, type: string, expires?: string): Promise<any> {
+        if (!("issueCert" in this.dataStrategy)) {
+            throw new Error("The current strategy does not support issuing certificates.");
+        }
+        return (this.dataStrategy as any).issueCert(targetDid, type, expires);
+    }
+
+    async revokeCert(certId: string): Promise<any> {
+        if (!("revokeCert" in this.dataStrategy)) {
+            throw new Error("The current strategy does not support revoking certificates.");
+        }
+        return (this.dataStrategy as any).revokeCert(certId);
+    }
+
     onStateChange(callback: (state: { isAuthenticated: boolean; user: any }) => void) {
         const authUnsubscribe = this.authStrategy.onStateChange(async (state) => {
             this.user = state.user;

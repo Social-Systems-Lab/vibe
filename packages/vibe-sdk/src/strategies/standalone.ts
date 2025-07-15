@@ -316,8 +316,6 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             throw new Error("User is not authenticated.");
         }
 
-        console.log("Reading once from collection:", collection, "with query:", query);
-
         const { expand, global, ...selector } = query;
         const apiQuery: { [key: string]: any } = {};
         if (expand) {
@@ -394,5 +392,43 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             },
         };
         return Promise.resolve(subscription);
+    }
+
+    async issueCert(targetDid: string, type: string, expires?: string): Promise<any> {
+        if (!this.authManager.isLoggedIn()) {
+            throw new Error("User is not authenticated.");
+        }
+        const { data, error } = await this.api.certs.issue.post(
+            {
+                subject: targetDid,
+                type,
+                expires,
+            },
+            {
+                headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
+            }
+        );
+        if (error) {
+            console.error("Error issuing certificate:", error.value);
+            throw new Error("Failed to issue certificate.");
+        }
+        return data;
+    }
+
+    async revokeCert(certId: string): Promise<any> {
+        if (!this.authManager.isLoggedIn()) {
+            throw new Error("User is not authenticated.");
+        }
+        const { data, error } = await (this.api.certs as any).revoke[certId].post(
+            {},
+            {
+                headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
+            }
+        );
+        if (error) {
+            console.error("Error revoking certificate:", error.value);
+            throw new Error("Failed to revoke certificate.");
+        }
+        return data;
     }
 }

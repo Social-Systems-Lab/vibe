@@ -19,6 +19,8 @@ interface VibeContextType {
     readOnce: (collection: string, query?: any) => Promise<any>;
     write: (collection: string, data: any) => Promise<any>;
     remove: (collection: string, data: any) => Promise<any>;
+    issueCert: (targetDid: string, type: string, expires?: string) => Promise<any>;
+    revokeCert: (certId: string) => Promise<any>;
 }
 
 const VibeContext = createContext<VibeContextType | undefined>(undefined);
@@ -60,6 +62,8 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
     const readOnce = (collection: string, query?: any) => sdk.readOnce(collection, query);
     const write = (collection: string, data: any) => sdk.write(collection, data);
     const remove = (collection: string, data: any) => sdk.remove(collection, data);
+    const issueCert = (targetDid: string, type: string, expires?: string) => sdk.issueCert(targetDid, type, expires);
+    const revokeCert = (certId: string) => sdk.revokeCert(certId);
 
     return (
         <VibeContext.Provider
@@ -74,6 +78,8 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
                 readOnce,
                 write,
                 remove,
+                issueCert,
+                revokeCert,
                 appName: config.appName,
                 appImageUrl: config.appImageUrl,
                 manageConsent,

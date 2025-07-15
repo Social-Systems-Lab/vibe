@@ -9,7 +9,7 @@ const config = {
     apiUrl: "http://localhost:5000",
     clientId: "http://localhost:3001",
     redirectUri: "http://localhost:3001/auth/callback",
-    useHub: true, // Enable the Hub Strategy for our PoC
+    useHub: false, // Enable the Hub Strategy for our PoC
 };
 
 export default function Layout({ children }: { children: ReactNode }) {

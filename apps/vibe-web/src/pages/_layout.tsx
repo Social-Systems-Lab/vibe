@@ -11,7 +11,7 @@ const config = {
     apiUrl: "http://localhost:5000",
     clientId: "http://localhost:3000",
     redirectUri: "http://localhost:3000/auth/callback",
-    useHub: true,
+    useHub: false,
 };
 
 type RootLayoutProps = { children: ReactNode };
@@ -22,7 +22,10 @@ export default function RootLayout({ children }: RootLayoutProps) {
             <Provider>
                 <div className="font-['Nunito']">
                     <header>
-                        <div className="absolute top-4 right-6">
+                        <div className="absolute top-4 right-6 flex items-center space-x-4">
+                            <a href="/certs" className="text-sm font-medium text-gray-700 hover:text-gray-900">
+                                Manage Certs
+                            </a>
                             <AuthWidget />
                         </div>
                     </header>

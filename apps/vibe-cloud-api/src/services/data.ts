@@ -1,12 +1,24 @@
 import nano, { DocumentScope } from "nano";
 import { getUserDbName } from "../lib/db";
 import { IdentityService } from "./identity";
-import { CachedDoc, DocRef } from "vibe-sdk";
+import { CachedDoc, DocRef, Certificate, Acl, AclPermission, AclRule } from "vibe-sdk";
+import * as jose from "jose";
 
-// TODO: Move this to a shared types package
 export interface JwtPayload {
     sub: string; // This is the user's DID
     instanceId: string;
+}
+
+interface VerifiedCert {
+    payload: CertJwtPayload;
+    raw: string;
+}
+
+interface CertJwtPayload extends jose.JWTPayload {
+    jti: string;
+    type: string;
+    sub: string;
+    iss: string;
 }
 
 export class DataService {
@@ -28,28 +40,38 @@ export class DataService {
         await this.couch.auth(this.config.user, this.config.pass);
     }
 
-    private getDb(instanceId: string): DocumentScope<unknown> {
+    private getDb(instanceId: string): DocumentScope<any> {
         const dbName = getUserDbName(instanceId);
         return this.couch.use(dbName);
     }
 
     async write(collection: string, data: any, user: JwtPayload) {
         await this.reauthenticate();
-        // TODO: Add authorization logic here to check if the user has write permissions for this collection.
-        console.log(`Authorization TODO: Check if user ${user.sub} can write to ${collection}`);
-
-        console.log("Writing to collection:", collection, "with data:", data);
         const db = this.getDb(user.instanceId);
+        const dbName = getUserDbName(user.instanceId);
         const itemsToProcess = Array.isArray(data) ? data : [data];
 
-        const docs = itemsToProcess.map((doc) => {
-            if (!doc._id) {
-                // TODO: Consider a more robust ID generation strategy
-                doc._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
-            }
-            doc.collection = collection;
-            return doc;
-        });
+        const docs = await Promise.all(
+            itemsToProcess.map(async (doc) => {
+                if (!doc._id) {
+                    doc._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                } else {
+                    try {
+                        const existingDoc = await db.get(doc._id);
+                        if (!(await this.verifyAccess(existingDoc, user, "write", dbName))) {
+                            throw new Error(`User ${user.sub} does not have write access to ${doc._id}`);
+                        }
+                        doc._rev = existingDoc._rev;
+                    } catch (error: any) {
+                        if (error.statusCode !== 404) {
+                            throw error;
+                        }
+                    }
+                }
+                doc.collection = collection;
+                return doc;
+            })
+        );
 
         const response = await db.bulk({ docs });
         return response;
@@ -62,14 +84,9 @@ export class DataService {
 
     async readOnce(collection: string, query: any, user: JwtPayload) {
         await this.reauthenticate();
-        // TODO: Add authorization logic here
-        console.log(`Authorization TODO: Check if user ${user.sub} can read from ${collection}`);
-
-        console.log("Reading once from collection:", collection, "with query:", query);
         const { expand, maxCacheAge, global, ...selector } = query;
 
         if (global) {
-            // Global query: iterate through all user databases
             const dbNames = await this.getAllUserDbNames();
             const allDocs: any[] = [];
 
@@ -83,7 +100,13 @@ export class DataService {
                         },
                     };
                     const result = await db.find(dbQuery);
-                    allDocs.push(...result.docs);
+                    const accessibleDocs = [];
+                    for (const doc of result.docs) {
+                        if (await this.verifyAccess(doc, user, "read", dbName)) {
+                            accessibleDocs.push(doc);
+                        }
+                    }
+                    allDocs.push(...accessibleDocs);
                 } catch (error) {
                     console.error(`Error querying database ${dbName}:`, error);
                 }
@@ -96,8 +119,8 @@ export class DataService {
 
             return { docs: allDocs };
         } else {
-            // Standard query on the user's own database
             const db = this.getDb(user.instanceId);
+            const dbName = getUserDbName(user.instanceId);
             const dbQuery = {
                 selector: {
                     ...selector,
@@ -106,12 +129,19 @@ export class DataService {
             };
             const result = await db.find(dbQuery);
 
+            const accessibleDocs = [];
+            for (const doc of result.docs) {
+                if (await this.verifyAccess(doc, user, "read", dbName)) {
+                    accessibleDocs.push(doc);
+                }
+            }
+
             if (expand && expand.length > 0) {
-                const docs = await this._expand(result.docs, expand, user, maxCacheAge);
+                const docs = await this._expand(accessibleDocs, expand, user, maxCacheAge);
                 return { docs };
             }
 
-            return { docs: result.docs };
+            return { docs: accessibleDocs };
         }
     }
 
@@ -125,10 +155,6 @@ export class DataService {
                 if (!ref || !ref.did || !ref.ref) continue;
 
                 if (ref.did === currentUser.sub) {
-                    // This is a ref to the current user's own data.
-                    // We can assume it's already on the client in the Hub strategy,
-                    // and for Standalone, it's a lookup in the same DB, which is fast.
-                    // For now, we will fetch it directly.
                     try {
                         expandedDoc[field] = await currentUserDb.get(ref.ref);
                     } catch (error) {
@@ -137,7 +163,6 @@ export class DataService {
                     continue;
                 }
 
-                // Logic for remote refs (with caching)
                 const cacheId = `cache/${ref.did}/${ref.ref}`;
                 let existingCacheItem: CachedDoc<any> | null = null;
                 try {
@@ -148,8 +173,8 @@ export class DataService {
 
                 const isCacheFresh = () => {
                     if (!existingCacheItem) return false;
-                    if (maxCacheAge === 0) return false; // Force refresh
-                    if (maxCacheAge === undefined) return true; // Cache is always fresh if no age is specified
+                    if (maxCacheAge === 0) return false;
+                    if (maxCacheAge === undefined) return true;
                     const age = (Date.now() - existingCacheItem.cachedAt) / 1000;
                     return age <= maxCacheAge;
                 };
@@ -157,7 +182,6 @@ export class DataService {
                 if (isCacheFresh()) {
                     expandedDoc[field] = existingCacheItem!.data;
                 } else {
-                    // Fetch from remote source because cache is missing or stale
                     const remoteUser = await this.identityService.findByDid(ref.did);
                     if (remoteUser) {
                         const remoteDb = this.getDb(remoteUser.instanceId);
@@ -165,10 +189,9 @@ export class DataService {
                             const freshDoc = await remoteDb.get(ref.ref);
                             expandedDoc[field] = freshDoc;
 
-                            // Update cache
                             const newCacheItem: CachedDoc<any> = {
                                 _id: cacheId,
-                                _rev: existingCacheItem?._rev, // Use existing rev to update
+                                _rev: existingCacheItem?._rev,
                                 type: "cache",
                                 data: freshDoc,
                                 cachedAt: Date.now(),
@@ -189,10 +212,8 @@ export class DataService {
 
     async update(collection: string, data: any, user: JwtPayload) {
         await this.reauthenticate();
-        // TODO: Add authorization logic here
-        console.log(`Authorization TODO: Check if user ${user.sub} can write to ${collection}`);
-
         const db = this.getDb(user.instanceId);
+        const dbName = getUserDbName(user.instanceId);
         const itemsToProcess = Array.isArray(data) ? data : [data];
 
         const docs = await Promise.all(
@@ -200,15 +221,11 @@ export class DataService {
                 if (!doc._id) {
                     throw new Error("Document must have an _id to be updated.");
                 }
-                try {
-                    const existing = await db.get(doc._id);
-                    doc._rev = existing._rev;
-                } catch (error: any) {
-                    if (error.statusCode !== 404) {
-                        throw error;
-                    }
-                    // If the document doesn't exist, we'll create it.
+                const existing = await db.get(doc._id);
+                if (!(await this.verifyAccess(existing, user, "write", dbName))) {
+                    throw new Error(`User ${user.sub} does not have write access to ${doc._id}`);
                 }
+                doc._rev = existing._rev;
                 doc.collection = collection;
                 return doc;
             })
@@ -216,5 +233,98 @@ export class DataService {
 
         const response = await db.bulk({ docs });
         return response;
+    }
+
+    private async verifyAccess(doc: any, user: JwtPayload, permission: "read" | "write" | "create", dbName: string): Promise<boolean> {
+        const acl = doc.acl as Acl;
+
+        if (!acl) {
+            const docInstanceId = dbName.replace("userdb-", "");
+            return docInstanceId === user.instanceId;
+        }
+
+        const aclPermission = acl[permission];
+        if (!aclPermission) {
+            return false;
+        }
+
+        const userCerts = await this.getUserCertificates(user.instanceId);
+        const verifiedCerts = await this._verifyAndDecodeCerts(userCerts.map((c) => c.signature));
+
+        if (aclPermission.deny && this._checkAcl(aclPermission.deny, user.sub, verifiedCerts)) {
+            return false;
+        }
+
+        if (aclPermission.allow && this._checkAcl(aclPermission.allow, user.sub, verifiedCerts)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private async getUserCertificates(instanceId: string): Promise<Certificate[]> {
+        try {
+            const db = this.getDb(instanceId);
+            const result = await db.find({ selector: { collection: "certs" } });
+            return result.docs as any[];
+        } catch (e) {
+            console.error("Could not fetch user certificates", e);
+            return [];
+        }
+    }
+
+    private async _verifyAndDecodeCerts(certs: string[]): Promise<VerifiedCert[]> {
+        const verifiedCerts: VerifiedCert[] = [];
+        for (const cert of certs) {
+            try {
+                const payload = jose.decodeJwt(cert) as CertJwtPayload;
+                if (!payload.iss) continue;
+
+                const issuer = await this.identityService.findByDid(payload.iss);
+                if (!issuer) continue;
+
+                const publicKey = await jose.importSPKI(issuer.publicKey, "ES256");
+                await jose.compactVerify(cert, publicKey);
+
+                if (payload.exp && payload.exp < Date.now() / 1000) {
+                    continue;
+                }
+
+                const issuerDb = this.getDb(issuer.instanceId);
+                try {
+                    const certId = payload.jti;
+                    if (certId) {
+                        await issuerDb.get(`revocations/${certId}`);
+                        continue;
+                    }
+                } catch (error: any) {
+                    if (error.statusCode !== 404) {
+                        console.error("Error checking revocation", error);
+                    }
+                }
+
+                verifiedCerts.push({ payload, raw: cert });
+            } catch (e) {
+                console.warn("Presented certificate failed verification:", e);
+            }
+        }
+        return verifiedCerts;
+    }
+
+    private _checkAcl(rules: (AclRule | AclRule[])[], userDid: string, verifiedCerts: VerifiedCert[]): boolean {
+        return rules.some((rule) => {
+            if (Array.isArray(rule)) {
+                return rule.every((subRule) => this._matchRule(subRule, userDid, verifiedCerts));
+            }
+            return this._matchRule(rule, userDid, verifiedCerts);
+        });
+    }
+
+    private _matchRule(rule: AclRule, userDid: string, verifiedCerts: VerifiedCert[]): boolean {
+        if (typeof rule === "string") {
+            if (rule === "*") return true;
+            return rule === userDid;
+        }
+        return verifiedCerts.some((cert) => cert.payload.iss === rule.issuer && cert.payload.type === rule.type);
     }
 }
