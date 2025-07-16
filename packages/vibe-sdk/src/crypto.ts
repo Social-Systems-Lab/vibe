@@ -94,10 +94,10 @@ export function deriveChildKeyPair(masterHDKey: HDKey, index: number): { publicK
         );
     } else if (Buffer.from(publicKeyFromMicroHDKey).toString("hex") !== Buffer.from(publicKeyFromNoble).toString("hex")) {
         // If lengths are same but content differs, this is a more serious issue.
-        console.error(
-            "Public key content mismatch (same length): micro-ed25519-hdkey and @noble/ed25519 derived different public keys from the same private seed.",
-            { microHDKey: publicKeyFromMicroHDKey, noble: publicKeyFromNoble }
-        );
+        console.error("Public key content mismatch (same length): micro-ed25519-hdkey and @noble/ed25519 derived different public keys from the same private seed.", {
+            microHDKey: publicKeyFromMicroHDKey,
+            noble: publicKeyFromNoble,
+        });
         // This case should ideally throw an error, as it indicates a fundamental disagreement between the libraries.
     }
 
@@ -247,4 +247,19 @@ export async function signMessage(privateKeySeed: Uint8Array, message: string): 
     const messageBytes = new TextEncoder().encode(message);
     const signatureBytes = await ed.sign(messageBytes, privateKeySeed);
     return Buffer.from(signatureBytes).toString("base64");
+}
+
+export function privateKeyHexToPkcs8Pem(hexKey: string): string {
+    // Ed25519 private keys are 32 bytes. The hex string is 64 characters.
+    // The full key pair is 64 bytes, with the private key being the first 32 bytes.
+    const privateKeyBytes = Buffer.from(hexKey.slice(0, 64), "hex");
+
+    // The PKCS#8 header for an Ed25519 private key
+    const pkcs8Header = Buffer.from("302e020100300506032b657004220420", "hex");
+
+    const pkcs8Key = Buffer.concat([pkcs8Header, privateKeyBytes]);
+
+    const base64Key = pkcs8Key.toString("base64");
+
+    return `-----BEGIN PRIVATE KEY-----\n${base64Key}\n-----END PRIVATE KEY-----`;
 }

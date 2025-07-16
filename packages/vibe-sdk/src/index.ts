@@ -166,3 +166,5 @@ export const createSdk = (config: VibeSDKConfig) => {
 };
 
 export * from "./types";
+export * from "./crypto";
+export * from "./did";

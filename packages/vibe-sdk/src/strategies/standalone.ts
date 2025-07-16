@@ -1,8 +1,10 @@
 import { VibeTransportStrategy } from "../strategy";
 import { edenTreaty } from "@elysiajs/eden";
 import type { App } from "vibe-cloud-api";
-import { User, ReadCallback, Subscription } from "../types";
+import { User, ReadCallback, Subscription, Certificate } from "../types";
 import { SessionManager } from "../session-manager";
+import { deriveEncryptionKey, decryptData, privateKeyHexToPkcs8Pem } from "../crypto";
+import * as jose from "jose";
 
 const VIBE_API_URL = "http://localhost:5000";
 
@@ -398,21 +400,79 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         if (!this.authManager.isLoggedIn()) {
             throw new Error("User is not authenticated.");
         }
-        const { data, error } = await this.api.certs.issue.post(
-            {
-                subject: targetDid,
-                type,
-                expires,
-            },
-            {
-                headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
-            }
-        );
+
+        const user = this.authManager.getUser();
+        if (!user) {
+            throw new Error("User not found.");
+        }
+
+        // 1. Fetch the encrypted private key
+        const { data: keyData, error: keyError } = await this.api.users.me["encrypted-key"].get({
+            $headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
+        });
+
+        if (keyError) {
+            throw new Error("Failed to fetch encrypted key.");
+        }
+        const { encryptedPrivateKey } = keyData as any;
+
+        // 2. Prompt for password and decrypt key
+        const password = await this.promptForPassword();
+        const encryptionKey = await deriveEncryptionKey(password, Buffer.from(encryptedPrivateKey.salt, "hex"));
+        const privateKeyHex = await decryptData(encryptedPrivateKey, encryptionKey);
+        const pkcs8Pem = privateKeyHexToPkcs8Pem(privateKeyHex);
+
+        // 3. Create and sign the certificate
+        const certId = `issued-certs/${type}-${targetDid}-${Date.now()}`;
+        const certPayload = {
+            jti: certId,
+            type,
+            sub: targetDid,
+            iss: user.did,
+            exp: expires ? Math.floor(new Date(expires).getTime() / 1000) : undefined,
+        };
+
+        const privateKey = await jose.importPKCS8(pkcs8Pem, "ES256");
+        const signature = await new jose.CompactSign(new TextEncoder().encode(JSON.stringify(certPayload))).setProtectedHeader({ alg: "ES256" }).sign(privateKey);
+
+        const certificate: Certificate = {
+            _id: certId,
+            type,
+            issuer: user.did,
+            subject: targetDid,
+            expires,
+            signature,
+        };
+
+        // 4. Send the signed certificate to the server
+        const { data, error } = await this.api.certs.issue.post(certificate, {
+            headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
+        });
+
         if (error) {
             console.error("Error issuing certificate:", error.value);
             throw new Error("Failed to issue certificate.");
         }
         return data;
+    }
+
+    private promptForPassword(): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const url = `${this.config.apiUrl}/password-prompt.html`;
+            const popup = window.open(url, "vibe-password-prompt", "width=400,height=300,popup=true");
+
+            const messageListener = (event: MessageEvent) => {
+                if (event.source !== popup) {
+                    return;
+                }
+                if (event.data.type === "vibe_password_submission") {
+                    window.removeEventListener("message", messageListener);
+                    resolve(event.data.password);
+                }
+            };
+
+            window.addEventListener("message", messageListener);
+        });
     }
 
     async revokeCert(certId: string): Promise<any> {

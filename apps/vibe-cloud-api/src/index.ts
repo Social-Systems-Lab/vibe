@@ -924,6 +924,18 @@ const startServer = async () => {
                         }),
                     }
                 )
+                .get("/me/encrypted-key", async ({ profile, set }) => {
+                    if (!profile) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    const userDoc = await identityService.findByDid(profile.sub);
+                    if (!userDoc) {
+                        set.status = 404;
+                        return { error: "User not found" };
+                    }
+                    return { encryptedPrivateKey: userDoc.encryptedPrivateKey };
+                })
         )
         .group("/storage", (app) =>
             app
@@ -1211,9 +1223,12 @@ const startServer = async () => {
                     },
                     {
                         body: t.Object({
+                            _id: t.String(),
                             type: t.String(),
+                            issuer: t.String(),
                             subject: t.String(),
                             expires: t.Optional(t.String()),
+                            signature: t.String(),
                         }),
                     }
                 )

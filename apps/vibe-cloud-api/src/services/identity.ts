@@ -1,6 +1,6 @@
 import Nano from "nano";
-import { generateSalt, deriveEncryptionKey, encryptData } from "../lib/crypto";
-import { generateEd25519KeyPair, didFromEd25519, instanceIdFromDid } from "../lib/did";
+import { generateEd25519KeyPair, didFromEd25519, generateSalt, deriveEncryptionKey, encryptData } from "vibe-sdk";
+import { instanceIdFromDid } from "../lib/did";
 import { randomBytes, createHash } from "crypto";
 import { getUserDbName } from "../lib/db";
 
@@ -432,7 +432,7 @@ export class IdentityService {
         const couchUserDoc = await this.nano.db.use("_users").get(`org.couchdb.user:${dbUser}`);
 
         await this.nano.db.use("_users").insert({
-            ...couchUserDoc,
+            ...(couchUserDoc as any),
             password: dbPass,
         });
 
