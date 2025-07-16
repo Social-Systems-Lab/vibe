@@ -2,6 +2,7 @@ import { IdentityService } from "./identity";
 import { DataService, JwtPayload } from "./data";
 import { Certificate } from "vibe-sdk";
 import * as jose from "jose";
+import { publicKeyHexToSpkiPem } from "../lib/did";
 
 export class CertsService {
     constructor(private identityService: IdentityService, private dataService: DataService) {}
@@ -15,10 +16,17 @@ export class CertsService {
             throw new Error("Issuer identity not found");
         }
 
-        const publicKey = await jose.importSPKI(issuerIdentity.publicKey, "ES256");
+        const publicKeyPem = publicKeyHexToSpkiPem(issuerIdentity.publicKey);
+        const publicKey = await jose.importSPKI(publicKeyPem, "EdDSA");
         try {
-            await jose.compactVerify(certificate.signature, publicKey);
+            const { payload } = await jose.jwtVerify(certificate.signature, publicKey, {
+                issuer: certificate.issuer,
+                subject: certificate.subject,
+                algorithms: ["EdDSA"],
+            });
+            console.log("Certificate payload verified:", payload);
         } catch (e) {
+            console.error("Invalid certificate signature", e);
             throw new Error("Invalid certificate signature");
         }
 

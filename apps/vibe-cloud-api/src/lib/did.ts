@@ -39,3 +39,21 @@ export function instanceIdFromDid(did: string, secret: string): string {
 
     return `${prefix}-${suffix}`;
 }
+
+export function publicKeyHexToSpkiPem(hexKey: string): string {
+    // 1. Decode the hex string into a Buffer
+    const publicKeyBytes = Buffer.from(hexKey, "hex");
+
+    // 2. The ASN.1 header for an Ed25519 public key in SPKI format
+    // This is a fixed sequence: `SEQUENCE { OID(Ed25519), BIT STRING { publicKey } }`
+    const spkiHeader = Buffer.from("302a300506032b6570032100", "hex");
+
+    // 3. Concatenate the header and the public key bytes
+    const spkiKey = Buffer.concat([spkiHeader, publicKeyBytes]);
+
+    // 4. Base64 encode the result
+    const base64Key = spkiKey.toString("base64");
+
+    // 5. Wrap in PEM headers
+    return `-----BEGIN PUBLIC KEY-----\n${base64Key}\n-----END PUBLIC KEY-----`;
+}
