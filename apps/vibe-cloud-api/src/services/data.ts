@@ -236,11 +236,15 @@ export class DataService {
     }
 
     private async verifyAccess(doc: any, user: JwtPayload, permission: "read" | "write" | "create", dbName: string): Promise<boolean> {
+        const docInstanceId = dbName.replace("userdb-", "");
+        if (docInstanceId === user.instanceId) {
+            return true;
+        }
+
         const acl = doc.acl as Acl;
 
         if (!acl) {
-            const docInstanceId = dbName.replace("userdb-", "");
-            return docInstanceId === user.instanceId;
+            return false;
         }
 
         const aclPermission = acl[permission];
