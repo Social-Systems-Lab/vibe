@@ -10,6 +10,7 @@ import { DataService, JwtPayload } from "./services/data";
 import { CertsService } from "./services/certs";
 import { StorageService, MinioStorageProvider, ScalewayStorageProvider, StorageProvider } from "./services/storage";
 import { getUserDbName } from "./lib/db";
+import { User } from "vibe-sdk";
 import nano from "nano";
 
 const startServer = async () => {
@@ -761,7 +762,7 @@ const startServer = async () => {
                         <style>${style}</style>
                         <div class="container">
                             <h1>${isSignup ? "Complete Your Profile" : "Profile Settings"}</h1>
-                            <img id="profile-pic" src="${user?.profilePictureUrl || "https://placehold.co/100x100"}" alt="Profile Picture">
+                            <img id="profile-pic" src="${user?.pictureUrl || "https://placehold.co/100x100"}" alt="Profile Picture">
                             <form id="profile-form">
                                 ${isSignup ? "" : `<label for="file-upload">Change Picture</label>`}
                                 <input id="file-upload" type="file" accept="image/*">
@@ -775,7 +776,7 @@ const startServer = async () => {
                             const fileUpload = document.getElementById('file-upload');
                             const profilePic = document.getElementById('profile-pic');
                             const skipLink = document.getElementById('skip-link');
-                            let profilePictureUrl = "${user?.profilePictureUrl || ""}";
+                            let pictureUrl = "${user?.pictureUrl || ""}";
                             const redirectUri = new URLSearchParams(window.location.search).get('redirect_uri');
 
                             fileUpload.addEventListener('change', async (event) => {
@@ -796,7 +797,7 @@ const startServer = async () => {
 
                                 const data = await response.json();
                                 if (data.url) {
-                                    profilePictureUrl = data.url;
+                                    pictureUrl = data.url;
                                     profilePic.src = data.url;
                                 }
                             });
@@ -814,7 +815,7 @@ const startServer = async () => {
                                         'Content-Type': 'application/json',
                                         'Authorization': 'Bearer ' + token
                                     },
-                                    body: JSON.stringify({ displayName, profilePictureUrl })
+                                    body: JSON.stringify({ displayName, pictureUrl })
                                 });
 
                                 if (redirectUri) {
@@ -887,11 +888,11 @@ const startServer = async () => {
                         set.status = 404;
                         return { error: "User not found" };
                     }
-                    const user = {
+                    const user: User = {
                         did: userDoc.did,
                         instanceId: userDoc.instanceId,
                         displayName: userDoc.displayName,
-                        profilePictureUrl: userDoc.profilePictureUrl,
+                        pictureUrl: userDoc.pictureUrl || userDoc.profilePictureUrl, // TODO remove profilePictureUrl on deploy
                     };
                     return { user };
                 })
@@ -910,7 +911,7 @@ const startServer = async () => {
                             {
                                 _id: "profiles/me",
                                 name: body.displayName,
-                                pictureUrl: body.profilePictureUrl,
+                                pictureUrl: body.pictureUrl,
                             },
                             profile as JwtPayload
                         );
@@ -920,7 +921,7 @@ const startServer = async () => {
                     {
                         body: t.Object({
                             displayName: t.Optional(t.String()),
-                            profilePictureUrl: t.Optional(t.String()),
+                            pictureUrl: t.Optional(t.String()),
                         }),
                     }
                 )

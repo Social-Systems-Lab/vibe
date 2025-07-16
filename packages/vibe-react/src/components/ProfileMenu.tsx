@@ -29,7 +29,7 @@ export const ProfileMenu = () => {
         <div style={{ position: "relative", display: "inline-block" }} ref={menuRef}>
             <button onClick={() => setIsOpen(!isOpen)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}>
                 <img
-                    src={(user as any).profilePictureUrl || `https://avatar.iran.liara.run/username?username=${user.displayName}`}
+                    src={(user as any).pictureUrl || `https://avatar.iran.liara.run/username?username=${user.displayName}`}
                     alt="Profile"
                     style={{
                         width: "40px",
@@ -56,7 +56,7 @@ export const ProfileMenu = () => {
                 >
                     <div style={{ padding: "8px 12px", display: "flex", alignItems: "center" }}>
                         <img
-                            src={(user as any).profilePictureUrl || `https://source.boringavatars.com/beam/32/${user.did}?colors=264653,2a9d8f,e9c46a,f4a261,e76f51`}
+                            src={(user as any).pictureUrl || `https://source.boringavatars.com/beam/32/${user.did}?colors=264653,2a9d8f,e9c46a,f4a261,e76f51`}
                             alt="Profile"
                             style={{
                                 width: "32px",

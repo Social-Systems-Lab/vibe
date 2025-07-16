@@ -2,6 +2,7 @@ export interface User {
     did: string;
     instanceId: string;
     displayName?: string;
+    pictureUrl?: string;
 }
 
 export interface JwtPayload {

@@ -395,7 +395,7 @@ export class IdentityService {
             });
         }
     }
-    async updateUser(did: string, data: { displayName?: string; profilePictureUrl?: string }) {
+    async updateUser(did: string, data: { displayName?: string; pictureUrl?: string }) {
         await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
