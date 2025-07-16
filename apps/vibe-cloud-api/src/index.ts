@@ -912,6 +912,7 @@ const startServer = async () => {
                                 _id: "profiles/me",
                                 name: body.displayName,
                                 pictureUrl: body.pictureUrl,
+                                did: user.did,
                             },
                             profile as JwtPayload
                         );

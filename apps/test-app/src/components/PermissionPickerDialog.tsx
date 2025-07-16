@@ -1,27 +1,18 @@
+"use client";
+
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { Globe, Users, Shield, UserCheck } from "lucide-react";
+import { Globe, Users, Shield, UserCheck, Lock } from "lucide-react";
+import { useState } from "react";
 
-const permissionOptions = [
+const simplePermissionOptions = [
     {
         value: "everyone",
         label: "Everyone",
         description: "Everyone on and outside Vibe",
         icon: <Globe className="w-6 h-6" />,
-    },
-    {
-        value: "admins",
-        label: "Admins",
-        description: "Only your admins",
-        icon: <Shield className="w-6 h-6" />,
-    },
-    {
-        value: "moderators",
-        label: "Moderators",
-        description: "Only your moderators",
-        icon: <UserCheck className="w-6 h-6" />,
     },
     {
         value: "friends",
@@ -41,6 +32,28 @@ const permissionOptions = [
         description: "Only your followers",
         icon: <Users className="w-6 h-6" />,
     },
+    {
+        value: "me",
+        label: "Just Me",
+        description: "Only you can see this post",
+        icon: <Lock className="w-6 h-6" />,
+    },
+];
+
+const advancedPermissionOptions = [
+    {
+        value: "admins",
+        label: "Admins",
+        description: "Only your admins",
+        icon: <Shield className="w-6 h-6" />,
+    },
+    {
+        value: "moderators",
+        label: "Moderators",
+        description: "Only your moderators",
+        icon: <UserCheck className="w-6 h-6" />,
+    },
+    ...simplePermissionOptions,
 ];
 
 interface PermissionPickerDialogProps {
@@ -50,6 +63,9 @@ interface PermissionPickerDialogProps {
 }
 
 export function PermissionPickerDialog({ open, onOpenChange, onSelect }: PermissionPickerDialogProps) {
+    const [isAdvanced, setIsAdvanced] = useState(false);
+    const permissionOptions = isAdvanced ? advancedPermissionOptions : simplePermissionOptions;
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-[425px]">
@@ -75,7 +91,10 @@ export function PermissionPickerDialog({ open, onOpenChange, onSelect }: Permiss
                         ))}
                     </RadioGroup>
                 </div>
-                <DialogFooter>
+                <DialogFooter className="flex justify-between">
+                    <Button variant="link" onClick={() => setIsAdvanced(!isAdvanced)}>
+                        {isAdvanced ? "Simple" : "Advanced"} settings
+                    </Button>
                     <Button onClick={() => onOpenChange(false)}>Done</Button>
                 </DialogFooter>
             </DialogContent>

@@ -39,8 +39,10 @@ export function Feed() {
     }
 
     return (
-        <div className="space-y-4">
-            <CreatePost />
+        <div className="flex space-y-4 max-w-[680px] mx-auto flex-col">
+            <div className="mb-2">
+                <CreatePost />
+            </div>
             {posts.map((post) => (
                 <PostCard key={post._id} post={post} />
             ))}

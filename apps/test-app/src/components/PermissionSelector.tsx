@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { UsersIcon } from "lucide-react";
@@ -35,6 +37,9 @@ export function PermissionSelector({ acl, onAclChange }: PermissionSelectorProps
             case "followers":
                 newAcl = { read: { allow: [{ issuer: user.did, type: "follower-of" }] } };
                 break;
+            case "me":
+                newAcl = {};
+                break;
             default:
                 newAcl = { read: { allow: ["*"] } };
         }
@@ -44,6 +49,9 @@ export function PermissionSelector({ acl, onAclChange }: PermissionSelectorProps
 
     const getPermissionFromAcl = (currentAcl: Acl): string => {
         const allowRule = currentAcl.read?.allow?.[0];
+        if (!allowRule) {
+            return "me";
+        }
         if (Array.isArray(allowRule)) {
             return "custom";
         }

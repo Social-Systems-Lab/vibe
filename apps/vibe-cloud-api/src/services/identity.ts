@@ -139,6 +139,15 @@ export class IdentityService {
             consents: [],
         };
         await this.usersDb.insert(userDocument);
+
+        // 7. store profiles/me document
+        const profile = {
+            _id: "profiles/me",
+            name: displayName,
+            did,
+        };
+        await this.nano.db.use(userDbName).insert(profile);
+
         return { ...userDocument, refreshToken };
     }
 
