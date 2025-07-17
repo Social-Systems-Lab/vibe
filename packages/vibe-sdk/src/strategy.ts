@@ -14,4 +14,6 @@ export interface VibeTransportStrategy {
     write(collection: string, data: any): Promise<any>;
     remove(collection: string, data: any): Promise<any>;
     onStateChange(callback: (state: { isLoggedIn: boolean; user: User | null }) => void): () => void;
+    issueCert(targetDid: string, type: string, expires?: string): Promise<any>;
+    revokeCert(certId: string): Promise<any>;
 }

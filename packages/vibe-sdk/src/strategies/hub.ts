@@ -182,6 +182,13 @@ export class HubStrategy implements VibeTransportStrategy {
         return this.postToHub({ type, collection, payload: filter });
     }
 
+    async issueCert(targetDid: string, type: string, expires?: string): Promise<any> {
+        throw new Error("issueCert is not supported in HubStrategy. Use the authStrategy.");
+    }
+    async revokeCert(certId: string): Promise<any> {
+        throw new Error("revokeCert is not supported in HubStrategy. Use the authStrategy.");
+    }
+
     async write(collection: string, data: any): Promise<any> {
         return this.postToHub({ type: "DB_WRITE", collection, payload: data });
     }
