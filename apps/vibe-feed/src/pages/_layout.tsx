@@ -17,11 +17,11 @@ export default function Layout({ children }: { children: ReactNode }) {
     return (
         <VibeProvider config={config}>
             <header>
-                <div className="absolute top-4 right-6 flex items-center space-x-4">
+                <div className="fixed top-4 right-6 flex items-center space-x-4">
                     <AuthWidget />
                 </div>
             </header>
-            <main className="font-sans bg-[#fbfbfb]">{children}</main>
+            <main className="font-sans bg-[#fbfbfb] min-h-screen">{children}</main>
         </VibeProvider>
     );
 }

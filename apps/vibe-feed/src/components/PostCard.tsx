@@ -20,7 +20,7 @@ function getPermissionFromAcl(acl: Acl, did?: string): string {
         return "Everyone";
     }
 
-    if (typeof allowRule === "object" && "issuer" in allowRule && allowRule.issuer === did) {
+    if (typeof allowRule === "object" && "issuer" in allowRule) {
         switch (allowRule.type) {
             case "admin-of":
                 return "Admins";
@@ -34,7 +34,7 @@ function getPermissionFromAcl(acl: Acl, did?: string): string {
                 return "Followers";
         }
     }
-    return "Custom";
+    return "";
 }
 
 export function PostCard({ post }: PostCardProps) {
