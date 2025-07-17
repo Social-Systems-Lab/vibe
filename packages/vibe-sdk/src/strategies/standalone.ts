@@ -423,21 +423,19 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         const { encryptedPrivateKey } = keyData as any;
         console.log("issueCert: Encrypted private key fetched successfully.");
 
-        // 2. Prompt for password and decrypt key
-        console.log("issueCert: Prompting for password.");
-        const password = await this.promptForPassword();
-        console.log("issueCert: Password received.");
+        // 2. Get the decrypted private key using the new interactive prompt
+        const privateKeyHex = await this.promptForPasswordAndDecryptKey(encryptedPrivateKey);
 
+        if (privateKeyHex === null) {
+            // This means the user closed the prompt.
+            throw new Error("User cancelled the operation.");
+        }
+
+        // 3. Continue with signing and issuing
         try {
-            console.log("issueCert: Deriving encryption key from password.");
-            const encryptionKey = await deriveEncryptionKey(password, Buffer.from(encryptedPrivateKey.salt, "hex"));
-            console.log("issueCert: Encryption key derived. Decrypting private key...");
-            const privateKeyHex = await decryptData(encryptedPrivateKey, encryptionKey);
-            console.log("issueCert: Private key decrypted successfully.");
             const pkcs8Pem = privateKeyHexToPkcs8Pem(privateKeyHex);
             console.log("issueCert: Private key converted to PKCS#8 PEM.");
 
-            // 3. Create and sign the certificate
             const certId = `issued-certs/${type}-${targetDid}-${Date.now()}`;
             const certPayload = {
                 jti: certId,
@@ -478,28 +476,46 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             return data;
         } catch (e: any) {
             console.error("issueCert Error: An error occurred during the crypto or signing process.", e);
-            // It's possible the error from the server is not a "DataError" but something else.
-            // We re-throw to let the UI handle it.
             throw e;
         }
     }
 
-    private promptForPassword(): Promise<string> {
-        return new Promise((resolve, reject) => {
-            const openerOrigin = window.location.origin;
-            const url = `${this.config.apiUrl}/password-prompt.html?openerOrigin=${encodeURIComponent(openerOrigin)}`;
-            const popup = window.open(url, "vibe-password-prompt", "width=400,height=300,popup=true");
+    private promptForPasswordAndDecryptKey(encryptedPrivateKey: any): Promise<string | null> {
+        return new Promise((resolve) => {
+            const url = `${this.config.apiUrl}/password-prompt.html?openerOrigin=${encodeURIComponent(window.location.origin)}`;
+            const popup = window.open(url, "vibe-password-prompt", "width=400,height=350,popup=true");
 
-            const messageListener = (event: MessageEvent) => {
+            const messageListener = async (event: MessageEvent) => {
                 if (event.source !== popup) {
                     return;
                 }
+
                 if (event.data.type === "vibe_password_submission") {
-                    window.removeEventListener("message", messageListener);
-                    popup?.close();
-                    resolve(event.data.password);
+                    const { password } = event.data;
+                    try {
+                        const encryptionKey = await deriveEncryptionKey(password, Buffer.from(encryptedPrivateKey.salt, "hex"));
+                        const privateKeyHex = await decryptData(encryptedPrivateKey, encryptionKey);
+
+                        popup?.postMessage({ type: "vibe_password_accepted" }, this.config.apiUrl);
+
+                        clearInterval(interval);
+                        window.removeEventListener("message", messageListener);
+                        popup?.close();
+                        resolve(privateKeyHex);
+                    } catch (e) {
+                        console.error("issueCert Error: Decryption failed, likely incorrect password.", e);
+                        popup?.postMessage({ type: "vibe_password_invalid", error: "Incorrect password. Please try again." }, this.config.apiUrl);
+                    }
                 }
             };
+
+            const interval = setInterval(() => {
+                if (popup?.closed) {
+                    clearInterval(interval);
+                    window.removeEventListener("message", messageListener);
+                    resolve(null); // User closed the popup
+                }
+            }, 500);
 
             window.addEventListener("message", messageListener);
         });
