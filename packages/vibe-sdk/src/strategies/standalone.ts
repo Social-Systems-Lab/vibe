@@ -486,7 +486,8 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
     private promptForPassword(): Promise<string> {
         return new Promise((resolve, reject) => {
-            const url = `${this.config.apiUrl}/password-prompt.html`;
+            const openerOrigin = window.location.origin;
+            const url = `${this.config.apiUrl}/password-prompt.html?openerOrigin=${encodeURIComponent(openerOrigin)}`;
             const popup = window.open(url, "vibe-password-prompt", "width=400,height=300,popup=true");
 
             const messageListener = (event: MessageEvent) => {
@@ -495,6 +496,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                 }
                 if (event.data.type === "vibe_password_submission") {
                     window.removeEventListener("message", messageListener);
+                    popup?.close();
                     resolve(event.data.password);
                 }
             };
