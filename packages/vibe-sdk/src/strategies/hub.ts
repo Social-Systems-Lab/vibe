@@ -179,7 +179,7 @@ export class HubStrategy implements VibeTransportStrategy {
     async readOnce(collection: string, query: any = {}): Promise<any> {
         const { global, ...filter } = query;
         const type = global ? "DB_GLOBAL_QUERY" : "DB_QUERY";
-        return this.postToHub({ type, collection, payload: filter });
+        return this.postToHub({ type, collection, payload: { ...filter, collection } });
     }
 
     async issueCert(targetDid: string, type: string, expires?: string): Promise<any> {

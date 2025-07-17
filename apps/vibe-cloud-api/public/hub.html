@@ -365,14 +365,14 @@
                     case "DB_QUERY":
                         const { expand, maxCacheAge, ...selector } = payload;
                         const findResult = await db.find({
-                            selector: { ...selector, collection: collection },
+                            selector: { ...selector },
                         });
 
                         if (expand && expand.length > 0) {
                             return await _expand(findResult.docs, expand, maxCacheAge);
                         }
 
-                        return findResult.docs;
+                        return findResult;
                     case "DB_REMOVE":
                         return await db.remove(payload);
                     default:
@@ -408,6 +408,9 @@
                 }
                 try {
                     db = new PouchDB(sessionInfo.dbName);
+                    await db.createIndex({
+                        index: { fields: ["collection"] },
+                    });
                     const remoteDbUrl = new URL(`http://localhost:5984/${sessionInfo.dbName}`);
                     remoteDbUrl.username = sessionInfo.username;
                     remoteDbUrl.password = sessionInfo.password;
@@ -624,6 +627,44 @@
                     return expandedDoc;
                 });
                 return Promise.all(promises);
+            }
+        </script>
+        <script>
+            async function handleIssueCert(event) {
+                const { payload, nonce } = event.data;
+                const { targetDid, type, expires } = payload;
+                const origin = findOriginForPort(event.target);
+                const app = origin ? connectedApps.get(origin) : null;
+
+                if (!app) {
+                    console.error("Could not determine origin or app for ISSUE_CERT message.");
+                    return;
+                }
+
+                try {
+                    const token = await getAccessToken();
+                    const response = await fetch("/certs/issue", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({ targetDid, type, expires }),
+                    });
+                    const result = await response.json();
+                    if (!response.ok) {
+                        throw new Error(result.error || "Failed to issue certificate");
+                    }
+                    if (db) {
+                        await db.replicate.from(remoteDb, {
+                            doc_ids: [result._id],
+                        });
+                    }
+                    app.port.postMessage({ type: "ISSUE_CERT_ACK", success: true, data: result, nonce });
+                } catch (error) {
+                    console.error(`[HUB] Error during ISSUE_CERT for ${origin}:`, error);
+                    app.port.postMessage({ type: "ISSUE_CERT_ACK", success: false, error: error.message, nonce });
+                }
             }
         </script>
     </body>
