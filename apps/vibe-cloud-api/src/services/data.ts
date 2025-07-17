@@ -1,7 +1,7 @@
 import nano, { DocumentScope } from "nano";
 import { getUserDbName } from "../lib/db";
 import { IdentityService } from "./identity";
-import { CachedDoc, DocRef, Certificate, Acl, AclPermission, AclRule } from "vibe-sdk";
+import { CachedDoc, DocRef, Certificate, Acl, AclPermission, AclRule, publicKeyHexToSpkiPem } from "vibe-sdk";
 import * as jose from "jose";
 
 export interface JwtPayload {
@@ -287,7 +287,8 @@ export class DataService {
                 const issuer = await this.identityService.findByDid(payload.iss);
                 if (!issuer) continue;
 
-                const publicKey = await jose.importSPKI(issuer.publicKey, "ES256");
+                const spkiPem = publicKeyHexToSpkiPem(issuer.publicKey);
+                const publicKey = await jose.importSPKI(spkiPem, "EdDSA");
                 await jose.compactVerify(cert, publicKey);
 
                 if (payload.exp && payload.exp < Date.now() / 1000) {
@@ -329,6 +330,6 @@ export class DataService {
             if (rule === "*") return true;
             return rule === userDid;
         }
-        return verifiedCerts.some((cert) => cert.payload.iss === rule.issuer && cert.payload.type === rule.type);
+        return verifiedCerts.some((cert) => cert.payload.sub === userDid && cert.payload.iss === rule.issuer && cert.payload.type === rule.type);
     }
 }

@@ -263,3 +263,16 @@ export function privateKeyHexToPkcs8Pem(hexKey: string): string {
 
     return `-----BEGIN PRIVATE KEY-----\n${base64Key}\n-----END PRIVATE KEY-----`;
 }
+
+export function publicKeyHexToSpkiPem(hexKey: string): string {
+    const publicKeyBytes = Buffer.from(hexKey, "hex");
+
+    // The PKCS#8 header for an Ed25519 public key
+    const spkiHeader = Buffer.from("302a300506032b6570032100", "hex");
+
+    const spkiKey = Buffer.concat([spkiHeader, publicKeyBytes]);
+
+    const base64Key = spkiKey.toString("base64");
+
+    return `-----BEGIN PUBLIC KEY-----\n${base64Key}\n-----END PUBLIC KEY-----`;
+}
