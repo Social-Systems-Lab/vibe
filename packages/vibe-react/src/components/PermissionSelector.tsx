@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { UsersIcon } from "lucide-react";
 import { PermissionPickerDialog } from "./PermissionPickerDialog";
 import { Acl } from "vibe-sdk";
-import { useVibe } from "vibe-react";
+import { useVibe } from "@/index";
 
 interface PermissionSelectorProps {
     acl: Acl;

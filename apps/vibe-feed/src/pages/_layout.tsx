@@ -3,9 +3,10 @@
 import type { ReactNode } from "react";
 import { AuthWidget, VibeProvider, useVibe } from "vibe-react";
 import "../styles.css";
+import "vibe-react/dist/vibe-react.css";
 
 const config = {
-    appName: "Test App",
+    appName: "Vibe Feed",
     apiUrl: "http://localhost:5000",
     clientId: "http://localhost:3001",
     redirectUri: "http://localhost:3001/auth/callback",

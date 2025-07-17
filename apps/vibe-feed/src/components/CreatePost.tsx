@@ -1,15 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { useVibe } from "vibe-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useVibe, Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, Textarea, Avatar, AvatarFallback, AvatarImage, PermissionSelector, Input } from "vibe-react";
 import { Image as ImageIcon, MapPin as MapPinIcon, Users as UsersIcon } from "lucide-react";
 import { Profile, Acl } from "vibe-sdk";
-import { PermissionSelector } from "./PermissionSelector";
-import { Input } from "./ui/input";
 
 export function CreatePost() {
     const [open, setOpen] = useState(false);
