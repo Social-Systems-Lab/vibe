@@ -21,7 +21,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                     <AuthWidget />
                 </div>
             </header>
-            <main className="font-sans">{children}</main>
+            <main className="font-sans bg-[#fbfbfb]">{children}</main>
         </VibeProvider>
     );
 }
