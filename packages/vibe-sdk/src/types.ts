@@ -38,6 +38,14 @@ export interface Profile extends Document {
     pictureUrl?: string;
 }
 
+export interface CertType extends Document {
+    owner: string; // did
+    name: string;
+    description: string;
+    badgeIconUrl?: string;
+    bannerImageUrl?: string;
+}
+
 export interface Post extends Document {
     content: string;
     author: DocRef | Profile;
@@ -64,6 +72,7 @@ export interface CachedDoc<T> {
 
 export interface Certificate extends Document {
     type: string;
+    certType: DocRef;
     issuer: string; // did
     subject: string; // did
     expires?: string; // ISO timestamp

@@ -52,7 +52,7 @@ export function PostCard({ post }: PostCardProps) {
     const isOwnPost = post.author.did === user?.did;
 
     return (
-        <Card className="relative">
+        <Card className="relative gap-4 px-4 py-4">
             <CardHeader>
                 <div className="flex items-center space-x-4">
                     <Avatar>

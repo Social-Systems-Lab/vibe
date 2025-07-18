@@ -1,4 +1,4 @@
-import { ReadCallback, Subscription, User } from "./types";
+import { CertType, DocRef, ReadCallback, Subscription, User } from "./types";
 
 export interface VibeTransportStrategy {
     init?(): Promise<void>;
@@ -14,6 +14,10 @@ export interface VibeTransportStrategy {
     write(collection: string, data: any): Promise<any>;
     remove(collection: string, data: any): Promise<any>;
     onStateChange(callback: (state: { isLoggedIn: boolean; user: User | null }) => void): () => void;
-    issueCert(targetDid: string, type: string, expires?: string): Promise<any>;
+    issueCert(targetDid: string, certType: DocRef, expires?: string): Promise<any>;
     revokeCert(certId: string): Promise<any>;
+    createCertType(certType: CertType): Promise<any>;
+    getCertType(certTypeId: string): Promise<any>;
+    updateCertType(certType: CertType): Promise<any>;
+    deleteCertType(certTypeId: string): Promise<any>;
 }

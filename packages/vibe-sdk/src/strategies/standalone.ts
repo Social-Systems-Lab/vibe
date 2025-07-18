@@ -1,7 +1,7 @@
 import { VibeTransportStrategy } from "../strategy";
 import { edenTreaty } from "@elysiajs/eden";
 import type { App } from "vibe-cloud-api";
-import { User, ReadCallback, Subscription, Certificate } from "../types";
+import { User, ReadCallback, Subscription, Certificate, DocRef, CertType } from "../types";
 import { SessionManager } from "../session-manager";
 import { deriveEncryptionKey, decryptData, privateKeyHexToPkcs8Pem } from "../crypto";
 import * as jose from "jose";
@@ -396,7 +396,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         return Promise.resolve(subscription);
     }
 
-    async issueCert(targetDid: string, type: string, expires?: string): Promise<any> {
+    async issueCert(targetDid: string, certType: DocRef, expires?: string): Promise<any> {
         console.log("issueCert: Starting the certificate issuance process.");
         if (!this.authManager.isLoggedIn()) {
             console.error("issueCert Error: User is not authenticated.");
@@ -436,10 +436,10 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             const pkcs8Pem = privateKeyHexToPkcs8Pem(privateKeyHex);
             console.log("issueCert: Private key converted to PKCS#8 PEM.");
 
-            const certId = `issued-certs/${type}-${targetDid}-${Date.now()}`;
+            const certId = `issued-certs/${certType.ref}-${targetDid}-${Date.now()}`;
             const certPayload = {
                 jti: certId,
-                type,
+                type: certType.ref,
                 sub: targetDid,
                 iss: user.did,
                 exp: expires ? Math.floor(new Date(expires).getTime() / 1000) : undefined,
@@ -453,7 +453,8 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
             const certificate: Certificate = {
                 _id: certId,
-                type,
+                type: certType.ref,
+                certType: certType,
                 issuer: user.did,
                 subject: targetDid,
                 expires,
@@ -534,6 +535,65 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         if (error) {
             console.error("Error revoking certificate:", error.value);
             throw new Error("Failed to revoke certificate.");
+        }
+        return data;
+    }
+
+    async createCertType(certType: CertType): Promise<any> {
+        if (!this.authManager.isLoggedIn()) {
+            throw new Error("User is not authenticated.");
+        }
+        const { data, error } = await this.api.certs["cert-types"].post(certType, {
+            headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
+        });
+        if (error) {
+            console.error("Error creating cert type:", error.value);
+            throw new Error("Failed to create cert type.");
+        }
+        return data;
+    }
+
+    async getCertType(certTypeId: string): Promise<any> {
+        if (!this.authManager.isLoggedIn()) {
+            throw new Error("User is not authenticated.");
+        }
+        const { data, error } = await (this.api.certs as any)["cert-types"][certTypeId].get({
+            headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
+        });
+        if (error) {
+            console.error("Error getting cert type:", error.value);
+            throw new Error("Failed to get cert type.");
+        }
+        return data;
+    }
+
+    async updateCertType(certType: CertType): Promise<any> {
+        if (!this.authManager.isLoggedIn()) {
+            throw new Error("User is not authenticated.");
+        }
+        const { data, error } = await (this.api.certs as any)["cert-types"][certType._id].put(certType, {
+            headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
+        });
+        if (error) {
+            console.error("Error updating cert type:", error.value);
+            throw new Error("Failed to update cert type.");
+        }
+        return data;
+    }
+
+    async deleteCertType(certTypeId: string): Promise<any> {
+        if (!this.authManager.isLoggedIn()) {
+            throw new Error("User is not authenticated.");
+        }
+        const { data, error } = await (this.api.certs as any)["cert-types"][certTypeId].delete(
+            {},
+            {
+                headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
+            }
+        );
+        if (error) {
+            console.error("Error deleting cert type:", error.value);
+            throw new Error("Failed to delete cert type.");
         }
         return data;
     }

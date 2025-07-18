@@ -2,7 +2,7 @@ import { StandaloneStrategy } from "./strategies/standalone";
 import { AgentStrategy } from "./strategies/agent";
 import { HubStrategy } from "./strategies/hub";
 import { VibeTransportStrategy } from "./strategy";
-import { ReadCallback, Subscription } from "./types";
+import { CertType, DocRef, ReadCallback, Subscription } from "./types";
 
 export type VibeSDKConfig = {
     apiUrl: string;
@@ -121,12 +121,28 @@ export class VibeSDK {
         return this.dataStrategy.remove(collection, data);
     }
 
-    async issueCert(targetDid: string, type: string, expires?: string): Promise<any> {
-        return this.authStrategy.issueCert(targetDid, type, expires);
+    async issueCert(targetDid: string, certType: DocRef, expires?: string): Promise<any> {
+        return this.authStrategy.issueCert(targetDid, certType, expires);
     }
 
     async revokeCert(certId: string): Promise<any> {
         return this.authStrategy.revokeCert(certId);
+    }
+
+    async createCertType(certType: CertType): Promise<any> {
+        return this.dataStrategy.createCertType(certType);
+    }
+
+    async getCertType(certTypeId: string): Promise<any> {
+        return this.dataStrategy.getCertType(certTypeId);
+    }
+
+    async updateCertType(certType: CertType): Promise<any> {
+        return this.dataStrategy.updateCertType(certType);
+    }
+
+    async deleteCertType(certTypeId: string): Promise<any> {
+        return this.dataStrategy.deleteCertType(certTypeId);
     }
 
     onStateChange(callback: (state: { isAuthenticated: boolean; user: any }) => void) {

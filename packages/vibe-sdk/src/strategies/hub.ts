@@ -1,5 +1,5 @@
 import { VibeTransportStrategy } from "../strategy";
-import { ReadCallback, Subscription, User } from "../types";
+import { CertType, DocRef, ReadCallback, Subscription, User } from "../types";
 import { SessionManager } from "../session-manager";
 
 type PendingRequest = {
@@ -182,11 +182,27 @@ export class HubStrategy implements VibeTransportStrategy {
         return this.postToHub({ type, collection, payload: { ...filter, collection } });
     }
 
-    async issueCert(targetDid: string, type: string, expires?: string): Promise<any> {
-        throw new Error("issueCert is not supported in HubStrategy. Use the authStrategy.");
+    async issueCert(targetDid: string, certType: DocRef, expires?: string): Promise<any> {
+        return this.postToHub({ type: "ISSUE_CERT", payload: { targetDid, certType, expires } });
     }
     async revokeCert(certId: string): Promise<any> {
-        throw new Error("revokeCert is not supported in HubStrategy. Use the authStrategy.");
+        return this.postToHub({ type: "REVOKE_CERT", payload: { certId } });
+    }
+
+    async createCertType(certType: CertType): Promise<any> {
+        return this.postToHub({ type: "CREATE_CERT_TYPE", payload: certType });
+    }
+
+    async getCertType(certTypeId: string): Promise<any> {
+        return this.postToHub({ type: "GET_CERT_TYPE", payload: { certTypeId } });
+    }
+
+    async updateCertType(certType: CertType): Promise<any> {
+        return this.postToHub({ type: "UPDATE_CERT_TYPE", payload: certType });
+    }
+
+    async deleteCertType(certTypeId: string): Promise<any> {
+        return this.postToHub({ type: "DELETE_CERT_TYPE", payload: { certTypeId } });
     }
 
     async write(collection: string, data: any): Promise<any> {
