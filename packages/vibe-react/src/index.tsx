@@ -21,10 +21,6 @@ interface VibeContextType {
     remove: (collection: string, data: any) => Promise<any>;
     issueCert: (targetDid: string, certType: DocRef, expires?: string) => Promise<any>;
     revokeCert: (certId: string) => Promise<any>;
-    createCertType: (certType: CertType) => Promise<any>;
-    getCertType: (certTypeId: string) => Promise<any>;
-    updateCertType: (certType: CertType) => Promise<any>;
-    deleteCertType: (certTypeId: string) => Promise<any>;
 }
 
 const VibeContext = createContext<VibeContextType | undefined>(undefined);
@@ -68,10 +64,6 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
     const remove = (collection: string, data: any) => sdk.remove(collection, data);
     const issueCert = (targetDid: string, certType: DocRef, expires?: string) => sdk.issueCert(targetDid, certType, expires);
     const revokeCert = (certId: string) => sdk.revokeCert(certId);
-    const createCertType = (certType: CertType) => sdk.createCertType(certType);
-    const getCertType = (certTypeId: string) => sdk.getCertType(certTypeId);
-    const updateCertType = (certType: CertType) => sdk.updateCertType(certType);
-    const deleteCertType = (certTypeId: string) => sdk.deleteCertType(certTypeId);
 
     return (
         <VibeContext.Provider
@@ -88,10 +80,6 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
                 remove,
                 issueCert,
                 revokeCert,
-                createCertType,
-                getCertType,
-                updateCertType,
-                deleteCertType,
                 appName: config.appName,
                 appImageUrl: config.appImageUrl,
                 manageConsent,

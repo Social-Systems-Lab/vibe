@@ -60,47 +60,6 @@ export class CertsService {
         return certificate;
     }
 
-    async createCertType(certType: CertType, user: JwtPayload): Promise<any> {
-        console.log(`Creating cert type ${certType.name} by ${user.sub}`);
-        certType.owner = user.sub;
-        if (!certType._id) {
-            certType._id = `cert-types/${certType.name}`;
-        }
-        return this.dataService.write("cert-types", certType, user);
-    }
-
-    async getCertType(certTypeId: string, user: JwtPayload): Promise<any> {
-        return this.dataService.readOnce("cert-types", { _id: certTypeId }, user);
-    }
-
-    async updateCertType(certType: CertType, user: JwtPayload): Promise<any> {
-        console.log(`Updating cert type ${certType._id} by ${user.sub}`);
-        const existing = await this.dataService.readOnce("cert-types", { _id: certType._id }, user);
-        if (!existing || !existing.docs || existing.docs.length === 0) {
-            throw new Error("Certificate type not found");
-        }
-        const existingCertType = existing.docs[0];
-        if (existingCertType.owner !== user.sub) {
-            throw new Error("User is not the owner of this certificate type");
-        }
-        return this.dataService.update("cert-types", certType, user);
-    }
-
-    async deleteCertType(certTypeId: string, user: JwtPayload): Promise<any> {
-        console.log(`Deleting cert type ${certTypeId} by ${user.sub}`);
-        const existing = await this.dataService.readOnce("cert-types", { _id: certTypeId }, user);
-        if (!existing || !existing.docs || existing.docs.length === 0) {
-            throw new Error("Certificate type not found");
-        }
-        const existingCertType = existing.docs[0];
-        if (existingCertType.owner !== user.sub) {
-            throw new Error("User is not the owner of this certificate type");
-        }
-        // Note: This is a soft delete. A hard delete would require a different method in DataService.
-        existingCertType._deleted = true;
-        return this.dataService.update("cert-types", existingCertType, user);
-    }
-
     async revoke(certId: string, issuer: JwtPayload): Promise<any> {
         console.log(`Revoking cert ${certId} by ${issuer.sub}`);
 

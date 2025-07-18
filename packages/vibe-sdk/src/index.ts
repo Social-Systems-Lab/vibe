@@ -129,22 +129,6 @@ export class VibeSDK {
         return this.authStrategy.revokeCert(certId);
     }
 
-    async createCertType(certType: CertType): Promise<any> {
-        return this.dataStrategy.createCertType(certType);
-    }
-
-    async getCertType(certTypeId: string): Promise<any> {
-        return this.dataStrategy.getCertType(certTypeId);
-    }
-
-    async updateCertType(certType: CertType): Promise<any> {
-        return this.dataStrategy.updateCertType(certType);
-    }
-
-    async deleteCertType(certTypeId: string): Promise<any> {
-        return this.dataStrategy.deleteCertType(certTypeId);
-    }
-
     onStateChange(callback: (state: { isAuthenticated: boolean; user: any }) => void) {
         const authUnsubscribe = this.authStrategy.onStateChange(async (state) => {
             this.user = state.user;

@@ -10,7 +10,7 @@ import { Label } from "vibe-react/src/components/ui/label";
 import { CertType, DocRef } from "vibe-sdk";
 
 export default function CertsPage() {
-    const { user, isLoggedIn, readOnce, issueCert, revokeCert, createCertType, updateCertType, deleteCertType } = useVibe();
+    const { user, isLoggedIn, readOnce, write, remove, issueCert, revokeCert } = useVibe();
 
     const [myCerts, setMyCerts] = useState<any[]>([]);
     const [issuedCerts, setIssuedCerts] = useState<any[]>([]);
@@ -59,9 +59,9 @@ export default function CertsPage() {
         if (!user) return;
         try {
             if (isEditing && selectedCertType) {
-                await updateCertType({ ...selectedCertType, ...newCertType });
+                await write("cert-types", { ...selectedCertType, ...newCertType });
             } else {
-                await createCertType({ ...newCertType, owner: user.did, _id: `cert-types/${newCertType.name}` });
+                await write("cert-types", { ...newCertType, owner: user.did, _id: `cert-types/${newCertType.name}` });
             }
             setNewCertType({ name: "", description: "", badgeIconUrl: "", bannerImageUrl: "" });
             setIsEditing(false);
@@ -85,7 +85,7 @@ export default function CertsPage() {
 
     const handleDeleteCertType = async (certTypeId: string) => {
         try {
-            await deleteCertType(certTypeId);
+            await remove("cert-types", { _id: certTypeId });
             setSelectedCertType(null);
             await fetchAllData();
         } catch (e) {
@@ -129,15 +129,14 @@ export default function CertsPage() {
         ];
 
         try {
-            for (const type of defaultTypes) {
-                await createCertType({
-                    ...type,
-                    owner: user.did,
-                    _id: `cert-types/${type.name}`,
-                    badgeIconUrl: "",
-                    bannerImageUrl: "",
-                });
-            }
+            const certTypesToWrite = defaultTypes.map((type) => ({
+                ...type,
+                owner: user.did,
+                _id: `cert-types/${type.name}`,
+                badgeIconUrl: "",
+                bannerImageUrl: "",
+            }));
+            await write("cert-types", certTypesToWrite);
             await fetchAllData();
         } catch (e) {
             console.error("Failed to create default cert types", e);
