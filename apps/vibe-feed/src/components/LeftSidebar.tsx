@@ -17,7 +17,7 @@ const categories = [
 
 export function LeftSidebar() {
     return (
-        <aside className="hidden md:block p-4 space-y-8 mt-4">
+        <aside className="hidden md:block p-4 space-y-8">
             <nav className="space-y-2">
                 {mainNav.map((item) => (
                     <a

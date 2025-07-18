@@ -26,7 +26,7 @@ const trendingShows = [
 
 export function RightSidebar() {
     return (
-        <aside className="hidden lg:block p-4 space-y-8 mt-4">
+        <aside className="hidden lg:block p-4 space-y-8">
             <div className="bg-background p-4 rounded-lg border border-border">
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="font-semibold">Top Communities</h3>
