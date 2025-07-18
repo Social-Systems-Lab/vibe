@@ -39,7 +39,7 @@ export function Feed() {
     }
 
     return (
-        <div className="flex space-y-4 max-w-[680px] mx-auto flex-col">
+        <div className="flex max-w-[680px] mx-auto flex-col">
             <div className="mb-2">
                 <CreatePost />
             </div>

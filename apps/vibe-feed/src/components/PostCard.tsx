@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardFooter, CardHeader, Avatar, AvatarFallback, AvatarImage, Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "vibe-react";
 import { useVibe } from "vibe-react";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Heart, MessageCircle, Repeat, Bookmark } from "lucide-react";
 import { Post, Profile, Acl } from "vibe-sdk";
 
 interface PostCardProps {
@@ -52,40 +52,54 @@ export function PostCard({ post }: PostCardProps) {
     const isOwnPost = post.author.did === user?.did;
 
     return (
-        <Card className="relative gap-4 px-4 py-4">
-            <CardHeader>
-                <div className="flex items-center space-x-4">
-                    <Avatar>
-                        <AvatarImage src={(post.author as Profile)?.pictureUrl} alt={(post.author as Profile)?.name} />
-                        <AvatarFallback>{(post.author as Profile)?.name?.substring(0, 2).toUpperCase()}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                        <p className="text-sm font-medium leading-none">{(post.author as Profile)?.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                            {postDate.toLocaleDateString()} · {getPermissionFromAcl(post.acl, user?.did)}
-                        </p>
+        <div className="bg-background p-4 rounded-lg">
+            <div className="flex space-x-4">
+                <Avatar>
+                    <AvatarImage src={(post.author as Profile)?.pictureUrl} alt={(post.author as Profile)?.name} />
+                    <AvatarFallback>{(post.author as Profile)?.name?.substring(0, 2).toUpperCase()}</AvatarFallback>
+                </Avatar>
+                <div className="w-full">
+                    <div className="flex justify-between">
+                        <div>
+                            <p className="font-semibold">{(post.author as Profile)?.name}</p>
+                            <p className="text-sm text-gray-500">{postDate.toLocaleDateString()}</p>
+                        </div>
+                        {isOwnPost && (
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon">
+                                        <MoreHorizontal className="w-5 h-5" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent>
+                                    <DropdownMenuItem onClick={handleRemove} className="text-red-500">
+                                        Delete
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        )}
+                    </div>
+                    <div className="mt-2">
+                        <p>{post.content}</p>
+                    </div>
+                    <div className="flex justify-between items-center mt-4 text-gray-500">
+                        <div className="flex space-x-4">
+                            <Button variant="ghost" size="icon">
+                                <Heart className="h-5 w-5" />
+                            </Button>
+                            <Button variant="ghost" size="icon">
+                                <MessageCircle className="h-5 w-5" />
+                            </Button>
+                            <Button variant="ghost" size="icon">
+                                <Repeat className="h-5 w-5" />
+                            </Button>
+                        </div>
+                        <Button variant="ghost" size="icon">
+                            <Bookmark className="h-5 w-5" />
+                        </Button>
                     </div>
                 </div>
-                {isOwnPost && (
-                    <div className="absolute top-2 right-2">
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon">
-                                    <MoreHorizontal className="w-4 h-4" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent>
-                                <DropdownMenuItem onClick={handleRemove} className="text-red-500">
-                                    Delete
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    </div>
-                )}
-            </CardHeader>
-            <CardContent>
-                <p>{post.content}</p>
-            </CardContent>
-        </Card>
+            </div>
+        </div>
     );
 }

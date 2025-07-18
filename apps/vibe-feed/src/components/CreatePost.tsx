@@ -29,7 +29,7 @@ export function CreatePost() {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <div className="mb-2 flex flex-1 cursor-pointer items-center space-x-4  rounded-[15px] border-0 shadow-lg  bg-white p-4">
+                <div className="mb-2 flex flex-1 cursor-pointer items-center space-x-4  rounded-[15px] bg-white p-4">
                     <Avatar>
                         <AvatarImage src={user?.pictureUrl} alt={user?.displayName} />
                         <AvatarFallback>{user?.displayName?.[0]}</AvatarFallback>
