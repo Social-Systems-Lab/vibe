@@ -20,9 +20,11 @@ export function LayoutClient({ children }: { children: ReactNode }) {
             <Header />
             <main>
                 <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] lg:grid-cols-[240px_1fr_300px] gap-8 max-w-7xl mx-auto">
-                    <LeftSidebar />
+                    {/* <LeftSidebar /> */}
+                    <div></div>
                     <div>{children}</div>
-                    <RightSidebar />
+                    <div></div>
+                    {/* <RightSidebar /> */}
                 </div>
             </main>
         </VibeProvider>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useVibe, Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, Textarea, Avatar, AvatarFallback, AvatarImage, PermissionSelector, Input } from "vibe-react";
+import { useVibe, Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, Textarea, PermissionSelector, Input, Squircle } from "vibe-react";
 import { Image as ImageIcon, MapPin as MapPinIcon, Users as UsersIcon } from "lucide-react";
 import { Profile, Acl } from "vibe-sdk";
 
@@ -30,10 +30,9 @@ export function CreatePost() {
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
                 <div className="mb-2 flex flex-1 cursor-pointer items-center space-x-4  rounded-[15px] bg-white p-4">
-                    <Avatar>
-                        <AvatarImage src={user?.pictureUrl} alt={user?.displayName} />
-                        <AvatarFallback>{user?.displayName?.[0]}</AvatarFallback>
-                    </Avatar>
+                    <Squircle imageUrl={user?.pictureUrl} size={40}>
+                        {user?.displayName?.[0]}
+                    </Squircle>
                     <div className="flex flex-1">
                         <Input
                             placeholder="What's on your mind?"
@@ -46,10 +45,9 @@ export function CreatePost() {
                 <DialogHeader>
                     <DialogTitle>
                         <div className="flex items-center gap-4">
-                            <Avatar>
-                                <AvatarImage src={user?.pictureUrl} alt={user?.displayName} />
-                                <AvatarFallback>{user?.displayName?.[0]}</AvatarFallback>
-                            </Avatar>
+                            <Squircle imageUrl={user?.pictureUrl} size={40}>
+                                {user?.displayName?.[0]}
+                            </Squircle>
                             <div>
                                 <p className="font-bold">{user?.displayName || user?.did}</p>
                                 <PermissionSelector acl={acl} onAclChange={setAcl} />

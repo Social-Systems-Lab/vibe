@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, CardContent, CardFooter, CardHeader, Avatar, AvatarFallback, AvatarImage, Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "vibe-react";
+import { Card, CardContent, CardFooter, CardHeader, Avatar, AvatarFallback, AvatarImage, Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Squircle } from "vibe-react";
 import { useVibe } from "vibe-react";
 import { MoreHorizontal, Heart, MessageCircle, Repeat, Bookmark } from "lucide-react";
 import { Post, Profile, Acl } from "vibe-sdk";
@@ -52,12 +52,11 @@ export function PostCard({ post }: PostCardProps) {
     const isOwnPost = post.author.did === user?.did;
 
     return (
-        <div className="bg-background p-4 rounded-lg">
+        <div className="bg-background p-4 border-b border-[#f3f3f3]">
             <div className="flex space-x-4">
-                <Avatar>
-                    <AvatarImage src={(post.author as Profile)?.pictureUrl} alt={(post.author as Profile)?.name} />
-                    <AvatarFallback>{(post.author as Profile)?.name?.substring(0, 2).toUpperCase()}</AvatarFallback>
-                </Avatar>
+                <Squircle imageUrl={(post.author as Profile)?.pictureUrl} size={38}>
+                    {(post.author as Profile)?.name?.substring(0, 2).toUpperCase()}
+                </Squircle>
                 <div className="w-full">
                     <div className="flex justify-between">
                         <div>
