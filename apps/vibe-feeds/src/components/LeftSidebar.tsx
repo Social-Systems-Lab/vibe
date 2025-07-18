@@ -32,7 +32,7 @@ export function LeftSidebar() {
     }, []);
 
     return (
-        <aside className="hidden md:block space-y-8">
+        <div className="hidden md:block space-y-8">
             <div className="space-y-4 fixed min-w-[200px] pt-[12px] pl-[30px]">
                 <div className="flex items-center space-x-2 px-3">
                     <img src="/images/logo3.png" alt="Vibe" className="h-8 w-8" />
@@ -53,6 +53,6 @@ export function LeftSidebar() {
                     ))}
                 </div>
             </div>
-        </aside>
+        </div>
     );
 }
