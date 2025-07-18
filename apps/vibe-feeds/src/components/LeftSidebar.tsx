@@ -1,51 +1,33 @@
 "use client";
+"use client";
 
-import { Home, Users, Tv, Bookmark, Book, Code, Lightbulb, ChevronDown } from "lucide-react";
+import { Globe, Users } from "lucide-react";
+import { Link } from "waku/router/client";
 
-const mainNav = [
-    { name: "Home", icon: Home, active: true },
-    { name: "Collaborate", icon: Users },
-    { name: "Shows", icon: Tv },
-    { name: "Subscriptions", icon: Bookmark },
-    { name: "Bookmarks", icon: Book },
-];
-
-const categories = [
-    { name: "Dev Resources", icon: Code, active: true },
-    { name: "Project Ideas", icon: Lightbulb },
-];
+const feeds = [
+    { name: "Discover", href: "/feeds/discover", icon: Globe },
+    { name: "Following", href: "/feeds/following", icon: Users },
+] as const;
 
 export function LeftSidebar() {
+    const pathname = typeof window !== "undefined" ? window.location.pathname : "";
+
     return (
         <aside className="hidden md:block p-4 space-y-8">
-            <nav className="space-y-2">
-                {mainNav.map((item) => (
-                    <a
-                        key={item.name}
-                        href="#"
-                        className={`flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium ${
-                            item.active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                        }`}
-                    >
-                        <item.icon className="h-5 w-5" />
-                        <span>{item.name}</span>
-                    </a>
-                ))}
-            </nav>
             <div>
-                <h3 className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Category</h3>
+                <h3 className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Feeds</h3>
                 <div className="mt-2 space-y-2">
-                    {categories.map((item) => (
-                        <a
+                    {feeds.map((item) => (
+                        <Link
                             key={item.name}
-                            href="#"
+                            to={item.href}
                             className={`flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium ${
-                                item.active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                                pathname === item.href ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                             }`}
                         >
                             <item.icon className="h-5 w-5" />
                             <span>{item.name}</span>
-                        </a>
+                        </Link>
                     ))}
                 </div>
             </div>

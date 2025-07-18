@@ -5,12 +5,22 @@ import { useVibe } from "vibe-react";
 import { CreatePost } from "./CreatePost";
 import { PostCard } from "./PostCard";
 
-export function Feed() {
-    const { read, isLoggedIn } = useVibe();
+export function Feed({ feedId }: { feedId: string }) {
+    const { read, readOnce, isLoggedIn, user } = useVibe();
     const [posts, setPosts] = useState<any[]>([]);
+    const [following, setFollowing] = useState<string[]>([]);
 
     useEffect(() => {
-        if (!isLoggedIn) return;
+        if (!isLoggedIn || !user) return;
+
+        const fetchFollowing = async () => {
+            const profileDoc = await readOnce("profiles", { did: user.did });
+            if (profileDoc.ok && profileDoc.data.length > 0) {
+                setFollowing(profileDoc.data[0].following || []);
+            }
+        };
+
+        fetchFollowing();
 
         const processPosts = (result: { ok: boolean; data?: any; error?: string }) => {
             if (result.ok && result.data) {
@@ -20,7 +30,18 @@ export function Feed() {
             }
         };
 
-        const subscriptionPromise = read("posts", { global: true, expand: ["author"] }, processPosts);
+        let subscriptionPromise: Promise<{ unsubscribe: () => void }> | undefined;
+
+        if (feedId === "discover") {
+            subscriptionPromise = read("posts", { global: true, expand: ["author"] }, processPosts);
+        } else if (feedId === "following" && following.length > 0) {
+            subscriptionPromise = read("posts", { author: { $in: following }, expand: ["author"] }, processPosts);
+        }
+
+        if (!subscriptionPromise) {
+            setPosts([]);
+            return;
+        }
 
         let subscription: { unsubscribe: () => void };
         subscriptionPromise.then((sub) => {
@@ -32,7 +53,7 @@ export function Feed() {
                 subscription.unsubscribe();
             }
         };
-    }, [isLoggedIn, read]);
+    }, [isLoggedIn, user, read, feedId, following]);
 
     if (!isLoggedIn) {
         return <p>Please log in to see the feed.</p>;
