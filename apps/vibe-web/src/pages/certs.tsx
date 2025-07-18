@@ -24,6 +24,7 @@ export default function CertsPage() {
         bannerImageUrl: "",
     });
     const [subjectDid, setSubjectDid] = useState("");
+    const [defaultsCreated, setDefaultsCreated] = useState(false);
 
     const fetchAllData = async () => {
         if (!isLoggedIn || !user) return;
@@ -38,7 +39,8 @@ export default function CertsPage() {
             const types = certTypesResult.docs || [];
             setCertTypes(types);
 
-            if (types.length === 0) {
+            if (types.length === 0 && !defaultsCreated) {
+                setDefaultsCreated(true);
                 createDefaultCertTypes();
             }
         } catch (e) {
