@@ -8,6 +8,7 @@ interface SquircleProps {
 }
 
 const SQUIRCLE_PATH = "M 0 80 C 0 20, 20 0, 80 0 S 160 20, 160 80, 140 160 80 160, 0 140, 0 80";
+const asCircle = true;
 
 export function Squircle({ imageUrl, size = 60, className, children }: SquircleProps) {
     const clipPathId = `squircle-clip-${Math.random().toString(36).substring(2, 15)}`;

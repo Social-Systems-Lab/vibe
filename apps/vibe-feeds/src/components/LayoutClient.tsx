@@ -19,11 +19,14 @@ export function LayoutClient({ children }: { children: ReactNode }) {
         <VibeProvider config={config}>
             <Header />
             <main>
-                <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] lg:grid-cols-[240px_1fr_300px] gap-8 max-w-7xl mx-auto">
+                <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] lg:grid-cols-[240px_1fr_300px] max-w-7xl mx-auto">
                     {/* <LeftSidebar /> */}
                     <div></div>
+                    {/* <div className="border-r border-[#f3f3f3]"></div> */}
                     <div>{children}</div>
                     <div></div>
+                    {/* <div className="border-l border-[#f3f3f3]"></div> */}
+
                     {/* <RightSidebar /> */}
                 </div>
             </main>

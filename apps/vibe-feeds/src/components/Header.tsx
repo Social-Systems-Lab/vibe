@@ -11,7 +11,7 @@ export function Header() {
                 {/* border-b-[2px] border-[#f3f3f3]  */}
                 <div className="flex items-center space-x-4 ml-6">
                     <div className="flex items-center space-x-2">
-                        <img src="/images/logo2.png" alt="Vibe" className="h-8 w-8" />
+                        <img src="/images/logo3.png" alt="Vibe" className="h-8 w-8" />
                         <span className="font-semibold text-lg">Feeds</span>
                     </div>
                 </div>
