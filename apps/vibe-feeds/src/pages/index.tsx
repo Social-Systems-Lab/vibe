@@ -1,9 +1,14 @@
-import { Feed } from "@/components/Feed";
+"use client";
+
+import { useRouter } from "waku/router/client";
+import { useEffect } from "react";
 
 export default function HomePage() {
-    return (
-        <div className="container mx-auto">
-            <Feed />
-        </div>
-    );
+    const router = useRouter();
+
+    // useEffect(() => {
+    //     router.push("/feeds/discover");
+    // }, [router]);
+
+    return null;
 }

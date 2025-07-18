@@ -12,6 +12,9 @@ module.exports = {
             },
         },
         extend: {
+            borderRadius: {
+                lg: "15px",
+            },
             keyframes: {
                 "accordion-down": {
                     from: { height: "0" },
