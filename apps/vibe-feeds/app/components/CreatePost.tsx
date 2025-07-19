@@ -41,7 +41,7 @@ export function CreatePost() {
                     </div>
                 </div>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[525px]">
+            <DialogContent className="max-w-[525px]">
                 <DialogHeader>
                     <DialogTitle>
                         <div className="flex items-center gap-4">
