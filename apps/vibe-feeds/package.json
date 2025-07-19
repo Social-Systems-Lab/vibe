@@ -1,28 +1,28 @@
 {
     "name": "vibe-feeds",
-    "version": "0.0.0",
-    "type": "module",
+    "version": "0.1.0",
     "private": true,
     "scripts": {
-        "dev": "waku dev --port 3001",
-        "build": "waku build",
-        "start": "waku start"
+        "dev": "next dev",
+        "build": "next build",
+        "start": "next start",
+        "lint": "next lint"
     },
     "dependencies": {
         "lucide-react": "^0.516.0",
+        "next": "15.4.2",
         "react": "19.1.0",
         "react-dom": "19.1.0",
-        "react-server-dom-webpack": "19.1.0",
         "vibe-react": "workspace:*",
-        "waku": "^0.23.3"
+        "vibe-sdk": "workspace:*"
     },
     "devDependencies": {
-        "@types/react": "19.1.6",
-        "@types/react-dom": "19.1.6",
-        "autoprefixer": "^10.4.21",
-        "postcss": "^8.5.6",
-        "tailwindcss": "^4.1.11",
-        "typescript": "5.8.3",
-        "vite-tsconfig-paths": "^5.1.4"
+        "typescript": "^5",
+        "@types/node": "^20",
+        "@types/react": "^19",
+        "@types/react-dom": "^19",
+        "@tailwindcss/postcss": "^4",
+        "tailwindcss": "^4",
+        "tailwindcss-animate": "^1.0.7"
     }
 }

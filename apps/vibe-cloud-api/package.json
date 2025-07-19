@@ -26,11 +26,14 @@
         "minio": "^8.0.5",
         "multibase": "^4.0.6",
         "nano": "^10.1.4",
-        "varint": "^6.0.0"
+        "varint": "^6.0.0",
+        "vibe-sdk": "workspace:*",
+        "jose": "^5.8.0"
     },
     "devDependencies": {
-        "typescript": "^5.8.3",
         "@types/nano": "^7.0.0",
-        "tsup": "^8.2.3"
+        "tsup": "^8.2.3",
+        "typescript": "^5.8.3",
+        "@types/bun": "^1.2.18"
     }
 }

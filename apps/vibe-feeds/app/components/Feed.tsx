@@ -60,7 +60,7 @@ export function Feed({ feedId }: { feedId: string }) {
     }
 
     return (
-        <div className="flex max-w-[680px] mx-auto flex-col">
+        <div className="max-w-[680px] mx-auto">
             <div className="mb-2">
                 <CreatePost />
             </div>

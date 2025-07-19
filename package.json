@@ -8,11 +8,6 @@
     ],
     "scripts": {
         "build": "pnpm -r build",
-        "dev:api": "pnpm --filter vibe-cloud-api dev",
-        "dev:web": "pnpm --filter vibe-web dev",
-        "dev:test-app": "pnpm --filter test-app dev",
-        "dev:sdk": "pnpm --filter vibe-sdk dev",
-        "dev:react": "pnpm --filter vibe-react dev",
         "dev": "pnpm -r --parallel dev"
     },
     "dependencies": {

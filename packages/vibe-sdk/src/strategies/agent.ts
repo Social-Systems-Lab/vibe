@@ -1,5 +1,5 @@
 import { VibeTransportStrategy } from "../strategy";
-import { ReadCallback, Subscription } from "../types";
+import { DocRef, ReadCallback, Subscription, User } from "../types";
 
 export class AgentStrategy implements VibeTransportStrategy {
     async login(): Promise<void> {
@@ -12,6 +12,14 @@ export class AgentStrategy implements VibeTransportStrategy {
 
     async signup(): Promise<void> {
         throw new Error("Agent signup not implemented");
+    }
+
+    async manageConsent(): Promise<void> {
+        throw new Error("Agent manageConsent not implemented");
+    }
+
+    async manageProfile(): Promise<void> {
+        throw new Error("Agent manageProfile not implemented");
     }
 
     async getUser(): Promise<any> {
@@ -32,5 +40,17 @@ export class AgentStrategy implements VibeTransportStrategy {
 
     async remove(collection: string, data: any): Promise<any> {
         throw new Error("Agent delete not implemented");
+    }
+
+    onStateChange(callback: (state: { isLoggedIn: boolean; user: User | null }) => void): () => void {
+        throw new Error("Agent onStateChange not implemented");
+    }
+
+    issueCert(targetDid: string, certType: DocRef, expires?: string): Promise<any> {
+        throw new Error("Agent issueCert not implemented");
+    }
+
+    revokeCert(certId: string): Promise<any> {
+        throw new Error("Agent revokeCert not implemented");
     }
 }
