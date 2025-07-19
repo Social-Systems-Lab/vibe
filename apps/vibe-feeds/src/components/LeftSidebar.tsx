@@ -38,7 +38,7 @@ export function LeftSidebar() {
                     <img src="/images/logo3.png" alt="Vibe" className="h-8 w-8" />
                     <span className="font-semibold text-lg">Feeds</span>
                 </div>
-                <div className="space-y-2 pt-4">
+                <div className="space-y-2 pt-4 pl-[2px]">
                     {feeds.map((item) => (
                         <Link
                             key={item.name}

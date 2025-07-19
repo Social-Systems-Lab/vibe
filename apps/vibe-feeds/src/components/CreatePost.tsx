@@ -29,7 +29,7 @@ export function CreatePost() {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <div className="mb-2 flex flex-1 cursor-pointer items-center space-x-4  rounded-[15px] bg-white p-4">
+                <div className="flex flex-1 cursor-pointer items-center space-x-4  rounded-[15px] bg-white p-4">
                     <Squircle imageUrl={user?.pictureUrl} size={40}>
                         {user?.displayName?.[0]}
                     </Squircle>
