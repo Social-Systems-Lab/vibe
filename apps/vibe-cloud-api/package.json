@@ -2,8 +2,12 @@
     "name": "vibe-cloud-api",
     "version": "0.0.1",
     "private": true,
-    "main": "./src/index.ts",
-    "types": "./src/index.ts",
+    "main": "./dist/index.mjs",
+    "types": "./dist/index.d.mts",
+    "files": [
+        "dist",
+        "public"
+    ],
     "scripts": {
         "dev": "bun run --watch src/index.ts",
         "build": "tsup src/index.ts --format esm --dts"

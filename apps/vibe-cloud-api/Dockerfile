@@ -27,16 +27,16 @@ COPY apps/vibe-cloud-api/package.json ./apps/vibe-cloud-api/
 COPY packages/vibe-sdk/package.json ./packages/vibe-sdk/
 RUN pnpm install --frozen-lockfile --verbose
 COPY . .
-RUN pnpm --filter vibe-cloud-api... build
+RUN pnpm --filter vibe-sdk build
+RUN pnpm --filter vibe-cloud-api build
+RUN pnpm --filter vibe-cloud-api deploy --legacy /prod
 
 # ---- Production ----
 FROM base AS production
 RUN apk add --no-cache libc6-compat
 ENV NODE_ENV=production
-COPY --from=dependencies /usr/src/app/node_modules ./node_modules
-COPY --from=build /usr/src/app/apps/vibe-cloud-api/dist ./dist
-COPY --from=build /usr/src/app/apps/vibe-cloud-api/package.json .
-COPY --from=build /usr/src/app/apps/vibe-cloud-api/public ./public
+WORKDIR /usr/src/app
+COPY --from=build /prod .
 
 EXPOSE 5000
-CMD [ "bun", "run", "dist/index.js" ]
+CMD [ "bun", "run", "dist/index.mjs" ]
