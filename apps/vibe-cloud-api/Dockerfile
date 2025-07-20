@@ -1,23 +1,32 @@
 # ---- Base ----
-FROM oven/bun:1-alpine AS base
+FROM oven/bun:1.2.19-alpine AS base
 WORKDIR /usr/src/app
 
+# ---- PNPM ----
+FROM base as pnpm
+RUN apk add --no-cache wget
+RUN wget -qO- https://get.pnpm.io/install.sh | ENV="$HOME/.sh" SHELL="$(which sh)" sh -
+ENV PATH="/root/.local/share/pnpm:$PATH"
+
 # ---- Dependencies ----
-FROM base AS dependencies
+FROM pnpm AS dependencies
 RUN apk add --no-cache libc6-compat
-RUN npm install -g pnpm
 COPY pnpm-lock.yaml ./
 COPY pnpm-workspace.yaml ./
 COPY package.json ./
 COPY apps/vibe-cloud-api/package.json ./apps/vibe-cloud-api/
 COPY packages/vibe-sdk/package.json ./packages/vibe-sdk/
-RUN pnpm install --prod --frozen-lockfile
+RUN pnpm install --prod --frozen-lockfile --verbose
 
 # ---- Build ----
-FROM base AS build
-COPY --from=dependencies /usr/src/app/node_modules ./node_modules
+FROM pnpm AS build
+COPY pnpm-lock.yaml ./
+COPY pnpm-workspace.yaml ./
+COPY package.json ./
+COPY apps/vibe-cloud-api/package.json ./apps/vibe-cloud-api/
+COPY packages/vibe-sdk/package.json ./packages/vibe-sdk/
+RUN pnpm install --frozen-lockfile --verbose
 COPY . .
-RUN pnpm install --frozen-lockfile
 RUN pnpm -r build
 
 # ---- Production ----
