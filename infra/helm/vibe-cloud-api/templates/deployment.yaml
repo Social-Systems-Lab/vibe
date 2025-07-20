@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-deployment
+  labels:
+    app: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.port | int }}
+              protocol: TCP
+          env:
+            - name: PORT
+              value: {{ .Values.config.port | quote }}
+            - name: COUCHDB_URL
+              value: {{ .Values.config.couchdbUrl | quote }}
+            - name: STORAGE_PROVIDER
+              value: {{ .Values.config.storageProvider | quote }}
+            - name: SCALEWAY_REGION
+              value: {{ .Values.config.scalewayRegion | quote }}
+            - name: SCALEWAY_ENDPOINT
+              value: {{ .Values.config.scalewayEndpoint | quote }}
+            - name: CORS_ORIGIN
+              value: {{ .Values.config.corsOrigin | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .Release.Name }}-secret

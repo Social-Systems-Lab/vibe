@@ -1,0 +1,28 @@
+name: Deploy Helm Chart
+
+on:
+    workflow_dispatch:
+
+jobs:
+    deploy:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v3
+
+            - name: Set up Kubeconfig
+              uses: azure/k8s-set-context@v3
+              with:
+                  method: kubeconfig
+                  kubeconfig: ${{ secrets.KUBECONFIG }}
+
+            - name: Set up Helm
+              uses: azure/setup-helm@v3
+              with:
+                  version: "v3.9.4"
+
+            - name: Deploy Helm chart
+              run: |
+                  helm upgrade --install vibe-cloud-api ./infra/helm/vibe-cloud-api \
+                    --namespace vibe --create-namespace \
+                    --set image.tag=${{ github.sha }}

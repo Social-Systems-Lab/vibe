@@ -1,0 +1,32 @@
+# Default values for vibe-cloud-api.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+    repository: your-scaleway-registry/vibe-cloud-api
+    pullPolicy: IfNotPresent
+    # Overrides the image tag whose default is the chart appVersion.
+    tag: ""
+
+service:
+    type: ClusterIP
+    port: 80
+
+config:
+    # Sensitive values should be stored in a secret
+    jwtSecret: "your-jwt-secret"
+    instanceIdSecret: "your-instance-id-secret"
+    couchdbUser: "admin"
+    couchdbPassword: "password"
+    scalewayAccessKey: ""
+    scalewaySecretKey: ""
+
+    # Non-sensitive values
+    couchdbUrl: "http://couchdb-couchdb.default.svc.cluster.local:5984"
+    storageProvider: "scaleway"
+    scalewayRegion: "fr-par"
+    scalewayEndpoint: "s3.fr-par.scw.cloud"
+    corsOrigin: "http://localhost:3001" # This will be overridden by the production URL
+    port: "5000"

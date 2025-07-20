@@ -1,0 +1,21 @@
+# Default values for vibe-feeds.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+    repository: your-scaleway-registry/vibe-feeds
+    pullPolicy: IfNotPresent
+    # Overrides the image tag whose default is the chart appVersion.
+    tag: ""
+
+service:
+    type: ClusterIP
+    port: 80
+
+config:
+    # These values will be populated by your CI/CD pipeline
+    nextPublicApiUrl: ""
+    nextPublicClientId: ""
+    nextPublicRedirectUri: ""

@@ -68,7 +68,7 @@ const startServer = async () => {
     const app = new Elysia()
         .use(
             cors({
-                origin: ["http://localhost:3000", "http://localhost:3001"],
+                origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",") : ["http://localhost:3000", "http://localhost:3001"],
                 credentials: true,
             })
         )
@@ -1256,7 +1256,7 @@ const startServer = async () => {
                     }
                 )
         )
-        .listen(5000);
+        .listen(process.env.PORT || 5000);
 
     console.log(`Elysia is running at http://${app.server?.hostname}:${app.server?.port}`);
 

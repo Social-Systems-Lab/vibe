@@ -5,9 +5,9 @@ import type { ReactNode } from "react";
 
 const config = {
     appName: "Vibe Feed",
-    apiUrl: "http://localhost:5000",
-    clientId: "http://localhost:3001",
-    redirectUri: "http://localhost:3001/auth/callback",
+    apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000",
+    clientId: process.env.NEXT_PUBLIC_CLIENT_ID || "http://localhost:3001",
+    redirectUri: process.env.NEXT_PUBLIC_REDIRECT_URI || "http://localhost:3001/auth/callback",
     useHub: true,
 };
 
