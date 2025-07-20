@@ -1,27 +1,33 @@
-# Use an official Node.js runtime as a parent image
-FROM node:18-alpine
-
-# Set the working directory in the container
+# ---- Base ----
+FROM oven/bun:1-alpine AS base
 WORKDIR /usr/src/app
 
-# Copy package.json and package-lock.json (or pnpm-lock.yaml)
-COPY package.json ./
-COPY pnpm-lock.yaml ./
-
-# Install pnpm
+# ---- Dependencies ----
+FROM base AS dependencies
+RUN apk add --no-cache libc6-compat
 RUN npm install -g pnpm
+COPY pnpm-lock.yaml ./
+COPY pnpm-workspace.yaml ./
+COPY package.json ./
+COPY apps/vibe-cloud-api/package.json ./apps/vibe-cloud-api/
+COPY packages/vibe-sdk/package.json ./packages/vibe-sdk/
+RUN pnpm install --prod --frozen-lockfile
 
-# Install app dependencies
-RUN pnpm install
-
-# Bundle app source
+# ---- Build ----
+FROM base AS build
+COPY --from=dependencies /usr/src/app/node_modules ./node_modules
 COPY . .
+RUN pnpm install --frozen-lockfile
+RUN pnpm -r build
 
-# Creates a "dist" folder with the production build
-RUN pnpm build
+# ---- Production ----
+FROM base AS production
+RUN apk add --no-cache libc6-compat
+ENV NODE_ENV=production
+COPY --from=dependencies /usr/src/app/node_modules ./node_modules
+COPY --from=build /usr/src/app/apps/vibe-cloud-api/dist ./dist
+COPY --from=build /usr/src/app/apps/vibe-cloud-api/package.json .
+COPY --from=build /usr/src/app/apps/vibe-cloud-api/public ./public
 
-# Your app binds to port 5000, so you need to expose it
 EXPOSE 5000
-
-# Define the command to run your app
-CMD [ "pnpm", "start" ]
+CMD [ "bun", "run", "dist/index.js" ]

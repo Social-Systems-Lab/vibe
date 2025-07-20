@@ -25,4 +25,6 @@ jobs:
               run: |
                   helm upgrade --install vibe-cloud-api ./infra/helm/vibe-cloud-api \
                     --namespace vibe --create-namespace \
-                    --set image.tag=${{ github.sha }}
+                    --set image.tag=${{ github.sha }} \
+                    --set config.scalewayAccessKey=${{ secrets.SCALEWAY_ACCESS_KEY }} \
+                    --set config.scalewaySecretKey=${{ secrets.SCALEWAY_SECRET_KEY }}
