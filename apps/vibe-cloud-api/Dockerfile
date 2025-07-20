@@ -3,7 +3,7 @@ FROM oven/bun:1.2.19-alpine AS base
 WORKDIR /usr/src/app
 
 # ---- PNPM ----
-FROM base as pnpm
+FROM base AS pnpm
 RUN apk add --no-cache wget
 RUN wget -qO- https://get.pnpm.io/install.sh | ENV="$HOME/.sh" SHELL="$(which sh)" sh -
 ENV PATH="/root/.local/share/pnpm:$PATH"
@@ -27,7 +27,7 @@ COPY apps/vibe-cloud-api/package.json ./apps/vibe-cloud-api/
 COPY packages/vibe-sdk/package.json ./packages/vibe-sdk/
 RUN pnpm install --frozen-lockfile --verbose
 COPY . .
-RUN pnpm -r build
+RUN pnpm --filter vibe-cloud-api... build
 
 # ---- Production ----
 FROM base AS production
