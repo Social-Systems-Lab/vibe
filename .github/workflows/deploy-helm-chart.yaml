@@ -41,8 +41,9 @@ jobs:
 
             - name: Generate Kubeconfig
               run: |
-                  scw k8s kubeconfig install vibe-kapsule --region=fr-par > $RUNNER_TEMP/kubeconfig
-                  echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> $GITHUB_ENV
+                  CLUSTER_ID=$(scw k8s cluster list name=vibe-kapsule region=fr-par -o json | jq -r '.[0].id')
+                  scw k8s kubeconfig install $CLUSTER_ID region=fr-par
+                  echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
 
             - name: Set up Helm
               uses: azure/setup-helm@v3
