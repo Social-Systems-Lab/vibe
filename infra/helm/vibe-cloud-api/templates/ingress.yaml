@@ -5,8 +5,12 @@ metadata:
   name: {{ .Release.Name }}-ingress
   namespace: {{ .Release.Namespace }}
   annotations:
-    {{- toYaml .Values.ingress.annotations | nindent 4 }}
+    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ .Release.Name }}-tls
   rules:
     - host: {{ .Values.ingress.host | quote }}
       http:

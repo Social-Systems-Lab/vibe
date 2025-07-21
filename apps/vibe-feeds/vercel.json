@@ -1,5 +1,5 @@
 {
-    "installCommand": "pnpm install",
-    "buildCommand": "pnpm --filter vibe-feeds build",
-    "framework": "nextjs"
+    "$schema": "https://openapi.vercel.sh/vercel.json",
+    "installCommand": "cd ../.. && pnpm install",
+    "buildCommand": "cd ../.. && pnpm -F vibe-feeds build"
 }
