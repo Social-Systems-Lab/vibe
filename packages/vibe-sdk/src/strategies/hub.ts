@@ -1,5 +1,5 @@
 import { VibeTransportStrategy } from "../strategy";
-import { CertType, DocRef, ReadCallback, Subscription, User } from "../types";
+import { CertType, DocRef, ReadCallback, Subscription, User } from "vibe-core";
 import { SessionManager } from "../session-manager";
 
 type PendingRequest = {

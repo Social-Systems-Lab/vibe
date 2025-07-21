@@ -10,7 +10,7 @@ import { DataService, JwtPayload } from "./services/data";
 import { CertsService } from "./services/certs";
 import { StorageService, MinioStorageProvider, ScalewayStorageProvider, StorageProvider } from "./services/storage";
 import { getUserDbName } from "./lib/db";
-import { User } from "vibe-sdk";
+import { User } from "vibe-core";
 import nano from "nano";
 
 const startServer = async () => {

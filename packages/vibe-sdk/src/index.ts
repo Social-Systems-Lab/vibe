@@ -2,7 +2,7 @@ import { StandaloneStrategy } from "./strategies/standalone";
 import { AgentStrategy } from "./strategies/agent";
 import { HubStrategy } from "./strategies/hub";
 import { VibeTransportStrategy } from "./strategy";
-import { CertType, DocRef, ReadCallback, Subscription } from "./types";
+import { CertType, DocRef, ReadCallback, Subscription } from "vibe-core";
 
 export type VibeSDKConfig = {
     apiUrl: string;
@@ -159,6 +159,6 @@ export const createSdk = (config: VibeSDKConfig) => {
     return getSdk(config);
 };
 
-export * from "./types";
-export * from "./crypto";
-export * from "./did";
+export * from "vibe-core";
+export * from "vibe-core/crypto";
+export * from "vibe-core/did";

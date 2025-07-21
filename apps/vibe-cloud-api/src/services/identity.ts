@@ -1,5 +1,5 @@
 import Nano from "nano";
-import { generateEd25519KeyPair, didFromEd25519, generateSalt, deriveEncryptionKey, encryptData } from "vibe-sdk";
+import { generateEd25519KeyPair, didFromEd25519, generateSalt, deriveEncryptionKey, encryptData } from "vibe-core";
 import { instanceIdFromDid } from "../lib/did";
 import { randomBytes, createHash } from "crypto";
 import { getUserDbName } from "../lib/db";

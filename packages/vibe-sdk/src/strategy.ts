@@ -1,4 +1,4 @@
-import { CertType, DocRef, ReadCallback, Subscription, User } from "./types";
+import { CertType, DocRef, ReadCallback, Subscription, User } from "vibe-core";
 
 export interface VibeTransportStrategy {
     init?(): Promise<void>;

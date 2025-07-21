@@ -1,0 +1,21 @@
+{
+    "name": "vibe-core",
+    "version": "0.0.1",
+    "description": "Shared types and core utilities for Vibe monorepo",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build": "tsc"
+    },
+    "dependencies": {
+        "bip39": "^3.1.0",
+        "micro-ed25519-hdkey": "^0.1.2",
+        "@noble/ed25519": "^2.1.0",
+        "@noble/hashes": "^1.4.0",
+        "buffer": "^6.0.3",
+        "multibase": "^4.0.6"
+    },
+    "devDependencies": {
+        "typescript": "^5.0.0"
+    }
+}

@@ -32,7 +32,7 @@
         "multibase": "^4.0.6",
         "nano": "^10.1.4",
         "varint": "^6.0.0",
-        "vibe-sdk": "workspace:*",
+        "vibe-core": "workspace:*",
         "jose": "^5.8.0"
     },
     "devDependencies": {

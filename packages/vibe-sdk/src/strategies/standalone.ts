@@ -1,7 +1,7 @@
 import { VibeTransportStrategy } from "../strategy";
 import { edenTreaty } from "@elysiajs/eden";
 import type { App } from "vibe-cloud-api";
-import { User, ReadCallback, Subscription, Certificate, DocRef, CertType } from "../types";
+import { User, ReadCallback, Subscription, Certificate, DocRef, CertType } from "vibe-core";
 import { SessionManager } from "../session-manager";
 import { deriveEncryptionKey, decryptData, privateKeyHexToPkcs8Pem } from "../crypto";
 import * as jose from "jose";
