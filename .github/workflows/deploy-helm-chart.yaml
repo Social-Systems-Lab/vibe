@@ -33,14 +33,15 @@ jobs:
                   push: true
                   tags: rg.fr-par.scw.cloud/vibe-registry/vibe-cloud-api:${{ github.sha }}
 
-            - name: Install Scaleway CLI
-              run: |
-                  sudo apt-get update && sudo apt-get install -y scaleway-cli
-                  scw init access-key=${{ secrets.SCALEWAY_ACCESS_KEY }} secret-key=${{ secrets.SCALEWAY_SECRET_KEY }}
+            - name: Setup Scaleway CLI
+              uses: scaleway/action-scw@v0
+              with:
+                  access-key: ${{ secrets.SCALEWAY_ACCESS_KEY }}
+                  secret-key: ${{ secrets.SCALEWAY_SECRET_KEY }}
 
             - name: Generate Kubeconfig
               run: |
-                  scw k8s kubeconfig install vibe-kapsule --region=fr-par > $RUNNER_TEMP/kubeconfig
+                  scw k8s kubeconfig install vibe-kapsule --region=fr-par --output=$RUNNER_TEMP/kubeconfig
                   echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> $GITHUB_ENV
 
             - name: Set up Helm
