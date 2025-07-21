@@ -55,6 +55,9 @@ jobs:
               with:
                   version: "v3.9.4"
 
+            - name: Add CouchDB Helm repository
+              run: helm repo add couchdb https://apache.github.io/couchdb-helm
+
             - name: Update Helm dependencies
               run: helm dependency update ./infra/helm/vibe-cloud-api
 
