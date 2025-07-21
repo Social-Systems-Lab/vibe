@@ -22,19 +22,9 @@ spec:
             - name: http
               containerPort: {{ .Values.config.port | int }}
               protocol: TCP
-          env:
-            - name: PORT
-              value: {{ .Values.config.port | quote }}
-            - name: COUCHDB_URL
-              value: "http://{{ .Release.Name }}-couchdb:5984"
-            - name: STORAGE_PROVIDER
-              value: {{ .Values.config.storageProvider | quote }}
-            - name: SCALEWAY_REGION
-              value: {{ .Values.config.scalewayRegion | quote }}
-            - name: SCALEWAY_ENDPOINT
-              value: {{ .Values.config.scalewayEndpoint | quote }}
-            - name: CORS_ORIGIN
-              value: {{ .Values.config.corsOrigin | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .Release.Name }}-secret
           env:
             - name: COUCHDB_URL
               value: "http://{{ .Release.Name }}-couchdb:5984"
@@ -48,6 +38,3 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-couchdb
                   key: adminPassword
-          envFrom:
-            - secretRef:
-                name: {{ .Release.Name }}-secret

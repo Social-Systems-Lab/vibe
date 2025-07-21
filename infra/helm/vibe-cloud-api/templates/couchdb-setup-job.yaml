@@ -44,9 +44,9 @@ spec:
               COUCHDB_ENDPOINT="http://${COUCHDB_USER}:${COUCHDB_PASSWORD}@{{ .Release.Name }}-couchdb:5984"
               
               echo "Ensuring CouchDB system databases exist..."
-              curl -X PUT "${COUCHDB_ENDPOINT}/_users" || true
-              curl -X PUT "${COUCHDB_ENDPOINT}/_replicator" || true
-              curl -X PUT "${COUCHDB_ENDPOINT}/_global_changes" || true
+              curl -X PUT "${COUCHDB_ENDPOINT}/_users"
+              curl -X PUT "${COUCHDB_ENDPOINT}/_replicator"
+              curl -X PUT "${COUCHDB_ENDPOINT}/_global_changes"
               
               echo "CouchDB setup job completed."
 {{- end }}

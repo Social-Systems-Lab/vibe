@@ -53,9 +53,8 @@ ingress:
 ingress-nginx:
     controller:
         service:
-          annotations:
-            service.beta.kubernetes.io/scw-loadbalancer-type: "lb-s"
-            service.beta.kubernetes.io/scw-loadbalancer-inbound-ports: "80,443"
+            annotations:
+                service.beta.kubernetes.io/scw-loadbalancer-type: "lb-s"
                 service.beta.kubernetes.io/scw-loadbalancer-inbound-ports: "80,443"
 
 clusterIssuer:
