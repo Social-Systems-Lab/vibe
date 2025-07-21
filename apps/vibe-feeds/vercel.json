@@ -1,5 +1,5 @@
 {
-    "buildCommand": "pnpm build",
     "installCommand": "pnpm install",
+    "buildCommand": "pnpm --filter vibe-feeds build",
     "framework": "nextjs"
 }

@@ -1,11 +1,16 @@
 name: Build and Push vibe-cloud-api
 
 on:
-    push:
-        branches:
-            - main
-        paths:
-            - "apps/vibe-cloud-api/**"
+    workflow_dispatch:
+
+    # Will be removed once deploy-helm-chart.yaml is fixed
+    # To re-enable automated deployments on changes to the API or infrastructure,
+    # uncomment the following lines and remove 'workflow_dispatch:'.
+    # push:
+    #   branches:
+    #     - main
+    #   paths:
+    #     - "apps/vibe-cloud-api/**"
 
 jobs:
     build-and-push:
