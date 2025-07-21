@@ -51,3 +51,6 @@ vibe-cluster.kubeconfig
 **/.terraform/
 
 old/*
+
+# Helm secrets
+infra/helm/vibe-cloud-api/secrets.yaml

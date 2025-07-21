@@ -26,7 +26,7 @@ spec:
             - name: PORT
               value: {{ .Values.config.port | quote }}
             - name: COUCHDB_URL
-              value: {{ .Values.config.couchdbUrl | quote }}
+              value: "http://{{ .Release.Name }}-couchdb:5984"
             - name: STORAGE_PROVIDER
               value: {{ .Values.config.storageProvider | quote }}
             - name: SCALEWAY_REGION
