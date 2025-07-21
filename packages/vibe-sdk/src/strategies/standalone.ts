@@ -3,7 +3,7 @@ import { edenTreaty } from "@elysiajs/eden";
 import type { App } from "vibe-cloud-api";
 import { User, ReadCallback, Subscription, Certificate, DocRef, CertType } from "vibe-core";
 import { SessionManager } from "../session-manager";
-import { deriveEncryptionKey, decryptData, privateKeyHexToPkcs8Pem } from "../crypto";
+import { deriveEncryptionKey, decryptData, privateKeyHexToPkcs8Pem } from "vibe-core";
 import * as jose from "jose";
 
 const VIBE_API_URL = "http://localhost:5000";

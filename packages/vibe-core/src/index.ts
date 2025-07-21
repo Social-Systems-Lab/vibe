@@ -1,3 +1,6 @@
+export * from "./crypto";
+export * from "./did";
+
 export interface User {
     did: string;
     instanceId: string;
