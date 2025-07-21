@@ -22,6 +22,7 @@ Vibe-feeds will be deployed by Vercel so we are primarily interested in analysin
 
 These are shared libraries used by the applications in the monorepo.
 
+-   **`vibe-core`**: A package containing shared types and core utility functions, including cryptography and DID management.
 -   **`vibe-sdk`**: A TypeScript SDK that provides a consistent interface for interacting with the `vibe-cloud-api`. It encapsulates core functionalities like cryptography, identity management, and API communication, making it easy to reuse this logic across different applications.
 
 -   **`vibe-react`**: A shared React component library that provides a set of reusable UI components for the frontend applications. This ensures a consistent look and feel across the platform.

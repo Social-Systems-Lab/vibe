@@ -14,6 +14,7 @@ This repository is structured as a monorepo and contains the following key proje
 
 ### Packages
 
+-   **`packages/vibe-core`**: A package containing shared types and core utility functions, including cryptography and DID management.
 -   **`packages/vibe-sdk`**: A client-side JavaScript/TypeScript library that allows developers to integrate their applications with the Vibe platform. It handles authentication, data storage, and real-time synchronization.
 -   **`packages/vibe-react`**: A set of React components and hooks that simplify the integration of the `vibe-sdk` into React applications.
 
