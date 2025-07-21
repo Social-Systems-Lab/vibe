@@ -38,5 +38,9 @@ couchdb:
         username: "" # Provided in secrets.yaml
         password: "" # Provided in secrets.yaml
     persistentVolume:
-        enabled: true
-        size: 8Gi
+      enabled: true
+      size: 8Gi
+  
+  # CouchDB setup job configuration
+  couchdbSetupJob:
+    enabled: true

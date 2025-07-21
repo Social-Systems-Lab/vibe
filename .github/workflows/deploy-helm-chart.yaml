@@ -83,4 +83,5 @@ jobs:
                   helm upgrade --install vibe-cloud-api ./infra/helm/vibe-cloud-api \
                     --namespace vibe --create-namespace \
                     --values ./infra/helm/vibe-cloud-api/secrets.yaml \
-                    --set image.tag=${{ github.sha }}
+                    --set image.tag=${{ github.sha }} \
+                    --set couchdb.auth.password=${{ secrets.COUCHDB_PASSWORD }}

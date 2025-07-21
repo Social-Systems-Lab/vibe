@@ -1,0 +1,52 @@
+{{- if .Values.couchdbSetupJob.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-couchdb-setup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/component: couchdb-setup
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    # This is a Helm hook that runs after installing and upgrading
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: couchdb-setup
+          image: curlimages/curl:latest
+          env:
+            - name: COUCHDB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secret
+                  key: COUCHDB_USER
+            - name: COUCHDB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secret
+                  key: COUCHDB_PASSWORD
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -ex
+              echo "Waiting for CouchDB to be ready..."
+              until curl -s -f "http://{{ .Release.Name }}-couchdb:5984/" > /dev/null; do
+                sleep 5
+              done
+              echo "CouchDB is up."
+
+              COUCHDB_ENDPOINT="http://${COUCHDB_USER}:${COUCHDB_PASSWORD}@{{ .Release.Name }}-couchdb:5984"
+              
+              echo "Ensuring CouchDB system databases exist..."
+              curl -X PUT "${COUCHDB_ENDPOINT}/_users" || true
+              curl -X PUT "${COUCHDB_ENDPOINT}/_replicator" || true
+              curl -X PUT "${COUCHDB_ENDPOINT}/_global_changes" || true
+              
+              echo "CouchDB setup job completed."
+{{- end }}

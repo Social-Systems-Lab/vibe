@@ -75,7 +75,7 @@ For a simpler, single-server deployment, you can use the provided Docker Compose
 
 ### Step 1: Create the `.env` file
 
-Navigate to the `infra/selfhost` directory and create a `.env` file. You can copy the contents of `apps/vibe-cloud-api/.env.example` as a starting point. At a minimum, you will need to provide:
+Navigate to the `infra/selfhost` directory and create an `.env` file. You can copy the contents of `apps/vibe-cloud-api/.env.example` as a starting point. At a minimum, you will need to provide:
 
 -   `COUCHDB_USER`: The username for CouchDB.
 -   `COUCHDB_PASSWORD`: The password for CouchDB.
