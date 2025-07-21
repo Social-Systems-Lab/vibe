@@ -54,3 +54,6 @@ old/*
 
 # Helm secrets
 infra/helm/vibe-cloud-api/secrets.yaml
+
+# Helm chart dependencies
+infra/helm/vibe-cloud-api/charts/

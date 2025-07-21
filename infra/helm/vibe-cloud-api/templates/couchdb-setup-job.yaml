@@ -23,13 +23,13 @@ spec:
             - name: COUCHDB_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-secret
-                  key: COUCHDB_USER
+                  name: {{ .Release.Name }}-couchdb
+                  key: adminUsername
             - name: COUCHDB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-secret
-                  key: COUCHDB_PASSWORD
+                  name: {{ .Release.Name }}-couchdb
+                  key: adminPassword
           command:
             - /bin/sh
             - -c

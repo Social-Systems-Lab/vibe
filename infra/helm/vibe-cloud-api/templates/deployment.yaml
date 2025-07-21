@@ -35,6 +35,19 @@ spec:
               value: {{ .Values.config.scalewayEndpoint | quote }}
             - name: CORS_ORIGIN
               value: {{ .Values.config.corsOrigin | quote }}
+          env:
+            - name: COUCHDB_URL
+              value: "http://{{ .Release.Name }}-couchdb:5984"
+            - name: COUCHDB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-couchdb
+                  key: adminUsername
+            - name: COUCHDB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-couchdb
+                  key: adminPassword
           envFrom:
             - secretRef:
                 name: {{ .Release.Name }}-secret

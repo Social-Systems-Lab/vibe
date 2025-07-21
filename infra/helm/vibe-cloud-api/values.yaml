@@ -44,3 +44,14 @@ couchdb:
 # CouchDB setup job configuration
 couchdbSetupJob:
     enabled: true
+
+ingress:
+    enabled: false
+    host: vibe-cloud-api.local
+    annotations: {}
+
+ingress-nginx:
+    controller:
+        service:
+            annotations:
+                service.beta.kubernetes.io/scw-loadbalancer-type: "lb-s"

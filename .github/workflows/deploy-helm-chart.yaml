@@ -1,9 +1,16 @@
 name: Build, Push, and Deploy
 
 on:
-    push:
-        branches:
-            - main # Or your primary branch
+    workflow_dispatch:
+
+    # To re-enable automated deployments on changes to the API or infrastructure,
+    # uncomment the following lines and remove 'workflow_dispatch:'.
+    # push:
+    #   branches:
+    #     - main
+    #   paths:
+    #     - "apps/vibe-cloud-api/**"
+    #     - "infra/**"
 
 jobs:
     deploy:
