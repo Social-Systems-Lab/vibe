@@ -40,6 +40,7 @@ jobs:
                   secret-key: ${{ secrets.SCALEWAY_SECRET_KEY }}
                   export-config: true
                   default-organization-id: ${{ secrets.SCALEWAY_ORGANIZATION_ID }}
+                  default-project-id: ${{ secrets.SCALEWAY_PROJECT_ID }}
 
             - name: Generate Kubeconfig
               run: |
