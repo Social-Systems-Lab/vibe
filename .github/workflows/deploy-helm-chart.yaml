@@ -73,6 +73,9 @@ jobs:
                     auth:
                       username: "admin"
                       password: "${{ secrets.COUCHDB_PASSWORD }}"
+                    couchdbConfig:
+                      couchdb:
+                        uuid: "${{ secrets.COUCHDB_UUID }}"
                   EOF
 
             - name: Deploy Helm chart
