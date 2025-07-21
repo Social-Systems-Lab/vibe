@@ -38,6 +38,7 @@ jobs:
               with:
                   access-key: ${{ secrets.SCALEWAY_ACCESS_KEY }}
                   secret-key: ${{ secrets.SCALEWAY_SECRET_KEY }}
+                  export-config: true
 
             - name: Generate Kubeconfig
               run: |
