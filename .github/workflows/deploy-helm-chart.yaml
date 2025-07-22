@@ -88,4 +88,7 @@ jobs:
                   helm upgrade --install vibe-cloud-api ./infra/helm/vibe-cloud-api \
                     --namespace vibe --create-namespace \
                     --values ./infra/helm/vibe-cloud-api/secrets.yaml \
-                    --set image.tag=${{ github.sha }}
+                    --set image.tag=${{ github.sha }} \
+                    --set ingress.host=${{ secrets.INGRESS_HOST }} \
+                    --set config.corsOrigin=${{ secrets.CORS_ORIGIN }} \
+                    --set clusterIssuer.email=${{ secrets.CLUSTER_ISSUER_EMAIL }}
