@@ -6,10 +6,6 @@ metadata:
   namespace: {{ .Release.Namespace }}
   annotations:
     {{- toYaml .Values.ingress.annotations | nindent 4 }}
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      if ($host != '{{ .Values.ingress.host }}') {
-        return 404;
-      }
 spec:
   ingressClassName: nginx
   tls:
