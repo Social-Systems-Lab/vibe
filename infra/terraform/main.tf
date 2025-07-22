@@ -1,4 +1,14 @@
 terraform {
+  backend "s3" {
+    bucket                      = "vibe-terraform-state" # This bucket must be created manually
+    key                         = "terraform.tfstate"
+    region                      = "fr-par"
+    endpoint                    = "https://s3.fr-par.scw.cloud"
+    access_key                  = var.scw_access_key
+    secret_key                  = var.scw_secret_key
+    skip_credentials_validation = true
+    skip_region_validation      = true
+  }
   required_providers {
     scaleway = {
       source  = "scaleway/scaleway"
@@ -23,7 +33,7 @@ resource "scaleway_vpc_private_network" "vibe_pn" {
 # Kubernetes Cluster
 resource "scaleway_k8s_cluster" "vibe_cluster" {
   name                        = "vibe-kapsule"
-  version                     = "1.31.2"
+  version                     = var.k8s_version
   cni                         = "cilium"
   type                        = "kapsule"
   delete_additional_resources = true

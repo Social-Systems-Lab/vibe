@@ -2,15 +2,12 @@ name: Build, Push, and Deploy
 
 on:
     workflow_dispatch:
-
-    # To re-enable automated deployments on changes to the API or infrastructure,
-    # uncomment the following lines and remove 'workflow_dispatch:'.
-    # push:
-    #   branches:
-    #     - main
-    #   paths:
-    #     - "apps/vibe-cloud-api/**"
-    #     - "infra/**"
+    push:
+        branches:
+            - main
+        paths:
+            - "apps/vibe-cloud-api/**"
+            - "infra/**"
 
 jobs:
     deploy:
@@ -18,6 +15,11 @@ jobs:
         steps:
             - name: Checkout code
               uses: actions/checkout@v3
+
+            - name: Install dependencies and build
+              run: |
+                  pnpm install
+                  pnpm run build
 
             - name: Set up QEMU
               uses: docker/setup-qemu-action@v2
@@ -38,7 +40,7 @@ jobs:
                   context: .
                   file: ./apps/vibe-cloud-api/Dockerfile
                   push: true
-                  tags: rg.fr-par.scw.cloud/vibe-registry/vibe-cloud-api:${{ github.sha }}
+                  tags: rg.fr-par.scw.cloud/vibe-registry/vibe-cloud-api:latest,rg.fr-par.scw.cloud/vibe-registry/vibe-cloud-api:${{ github.sha }}
 
             - name: Setup Scaleway CLI
               uses: scaleway/action-scw@v0
@@ -91,5 +93,4 @@ jobs:
                   helm upgrade --install vibe-cloud-api ./infra/helm/vibe-cloud-api \
                     --namespace vibe --create-namespace \
                     --values ./infra/helm/vibe-cloud-api/secrets.yaml \
-                    --set image.tag=${{ github.sha }} \
-                    --set couchdb.auth.password=${{ secrets.COUCHDB_PASSWORD }}
+                    --set image.tag=${{ github.sha }}

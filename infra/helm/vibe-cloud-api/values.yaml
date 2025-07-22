@@ -24,7 +24,7 @@ config:
     scalewaySecretKey: ""
 
     # Non-sensitive values
-    couchdbUrl: "" # This will be dynamically generated
+    couchdbUrl: "http://{{ .Release.Name }}-couchdb:5984"
     storageProvider: "scaleway"
     scalewayRegion: "fr-par"
     scalewayEndpoint: "s3.fr-par.scw.cloud"
@@ -46,9 +46,10 @@ couchdbSetupJob:
     enabled: true
 
 ingress:
-    enabled: false
-    host: vibe-cloud-api.local
-    annotations: {}
+    enabled: true
+    host: vibe-cloud-api.example.com # Replace with your domain
+    annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
 
 ingress-nginx:
     controller:

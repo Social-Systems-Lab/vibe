@@ -26,3 +26,9 @@ variable "scw_zone" {
   type        = string
   default     = "fr-par-1"
 }
+
+variable "k8s_version" {
+  description = "Kubernetes version for the Kapsule cluster"
+  type        = string
+  default     = "1.31.2"
+}
