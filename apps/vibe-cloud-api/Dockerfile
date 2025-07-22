@@ -16,6 +16,7 @@ COPY pnpm-workspace.yaml ./
 COPY package.json ./
 COPY apps/vibe-cloud-api/package.json ./apps/vibe-cloud-api/
 COPY packages/vibe-sdk/package.json ./packages/vibe-sdk/
+COPY packages/vibe-core/package.json ./packages/vibe-core/
 RUN pnpm install --prod --frozen-lockfile --verbose
 
 # ---- Build ----
@@ -25,8 +26,10 @@ COPY pnpm-workspace.yaml ./
 COPY package.json ./
 COPY apps/vibe-cloud-api/package.json ./apps/vibe-cloud-api/
 COPY packages/vibe-sdk/package.json ./packages/vibe-sdk/
+COPY packages/vibe-core/package.json ./packages/vibe-core/
 RUN pnpm install --frozen-lockfile --verbose
 COPY . .
+RUN pnpm --filter vibe-core build
 RUN pnpm --filter vibe-sdk build
 RUN pnpm --filter vibe-cloud-api build
 RUN pnpm --filter vibe-cloud-api deploy --legacy /prod
