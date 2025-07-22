@@ -92,3 +92,7 @@ jobs:
                     --set ingress.host=${{ secrets.INGRESS_HOST }} \
                     --set config.corsOrigin=${{ secrets.CORS_ORIGIN }} \
                     --set clusterIssuer.email=${{ secrets.CLUSTER_ISSUER_EMAIL }}
+
+            - name: Wait for Certificate Readiness
+              run: |
+                  kubectl wait --for=condition=Ready certificate/vibe-cloud-api-tls -n vibe --timeout=5m
