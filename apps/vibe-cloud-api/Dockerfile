@@ -38,6 +38,8 @@ RUN pnpm --filter vibe-cloud-api deploy --legacy /prod
 FROM base AS production
 RUN apk add --no-cache libc6-compat
 ENV NODE_ENV=production
+ARG APP_VERSION=unknown
+ENV APP_VERSION=$APP_VERSION
 WORKDIR /usr/src/app
 COPY --from=build /prod .
 

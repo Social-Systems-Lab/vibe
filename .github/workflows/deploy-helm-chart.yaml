@@ -29,6 +29,25 @@ jobs:
                   username: nologin
                   password: ${{ secrets.SCALEWAY_SECRET_KEY }}
 
+            - name: Prepare App Version
+              id: prep_version
+              run: |
+                  GIT_SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+                  PKG_JSON_PATH="./apps/vibe-cloud-api/package.json"
+                  EFFECTIVE_VERSION=$GIT_SHA_SHORT
+                  if [ -f "$PKG_JSON_PATH" ]; then
+                    PKG_VERSION=$(jq -r .version "$PKG_JSON_PATH")
+                    if [ "$PKG_VERSION" != "null" ] && [ -n "$PKG_VERSION" ]; then
+                      EFFECTIVE_VERSION="${PKG_VERSION}-${GIT_SHA_SHORT}"
+                    else
+                      echo "Warning: Could not read version from $PKG_JSON_PATH, or version was null/empty."
+                    fi
+                  else
+                    echo "Warning: No package.json found at $PKG_JSON_PATH."
+                  fi
+                  echo "EFFECTIVE_APP_VERSION=${EFFECTIVE_VERSION}" >> $GITHUB_ENV
+                  echo "Determined APP_VERSION: ${EFFECTIVE_VERSION}"
+
             - name: Build and push Docker image
               uses: docker/build-push-action@v4
               with:
@@ -36,6 +55,8 @@ jobs:
                   file: ./apps/vibe-cloud-api/Dockerfile
                   push: true
                   tags: rg.fr-par.scw.cloud/vibe-registry/vibe-cloud-api:latest,rg.fr-par.scw.cloud/vibe-registry/vibe-cloud-api:${{ github.sha }}
+                  build-args: |
+                      APP_VERSION=${{ env.EFFECTIVE_APP_VERSION }}
 
             - name: Setup Scaleway CLI
               uses: scaleway/action-scw@v0

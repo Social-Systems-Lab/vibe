@@ -103,6 +103,8 @@ const startServer = async () => {
         )
         .get("/health", () => ({
             status: identityService.isConnected ? "ok" : "error",
+            service: "vibe-cloud-api",
+            version: process.env.APP_VERSION || "unknown",
             details: identityService.isConnected ? "All systems operational" : "Database connection failed",
         }))
         .decorate("identityService", identityService)
@@ -1258,7 +1260,7 @@ const startServer = async () => {
         )
         .listen(process.env.PORT || 5000);
 
-    console.log(`Elysia is running at http://${app.server?.hostname}:${app.server?.port}`);
+    console.log(`Vibe Cloud API (${process.env.APP_VERSION}) is running at http://${app.server?.hostname}:${app.server?.port}`);
 
     return app;
 };
