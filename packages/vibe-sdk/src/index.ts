@@ -1,8 +1,7 @@
 import { StandaloneStrategy } from "./strategies/standalone";
-import { AgentStrategy } from "./strategies/agent";
 import { HubStrategy } from "./strategies/hub";
 import { VibeTransportStrategy } from "./strategy";
-import { CertType, DocRef, ReadCallback, Subscription } from "vibe-core";
+import { DocRef, ReadCallback, Subscription } from "vibe-core";
 
 export type VibeSDKConfig = {
     apiUrl: string;
@@ -25,6 +24,7 @@ export class VibeSDK {
     constructor(config: VibeSDKConfig) {
         if (config.useHub) {
             this.authStrategy = new StandaloneStrategy({
+                apiUrl: config.apiUrl,
                 clientId: config.clientId,
                 redirectUri: config.redirectUri,
             });
@@ -34,6 +34,7 @@ export class VibeSDK {
             });
         } else {
             const standalone = new StandaloneStrategy({
+                apiUrl: config.apiUrl,
                 clientId: config.clientId,
                 redirectUri: config.redirectUri,
             });

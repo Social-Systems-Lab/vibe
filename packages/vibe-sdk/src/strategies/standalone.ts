@@ -6,8 +6,6 @@ import { SessionManager } from "../session-manager";
 import { deriveEncryptionKey, decryptData, privateKeyHexToPkcs8Pem } from "vibe-core";
 import * as jose from "jose";
 
-const VIBE_API_URL = "http://localhost:5000";
-
 // --- PKCE Helper ---
 export async function generatePkce() {
     const verifier = window.crypto.getRandomValues(new Uint8Array(32)).reduce((s, byte) => s + String.fromCharCode(byte), "");
@@ -69,22 +67,23 @@ class AuthManager {
 }
 
 // --- Standalone Strategy (Redirect Flow) ---
+export type StandaloneStrategyConfig = {
+    clientId: string;
+    redirectUri: string;
+    apiUrl: string;
+    appImageUrl?: string;
+};
+
 export class StandaloneStrategy implements VibeTransportStrategy {
     private authManager: AuthManager;
     private sessionManager: SessionManager;
     private api;
-    private config: {
-        clientId: string;
-        redirectUri: string;
-        apiUrl: string;
-        appImageUrl?: string;
-    };
+    private config: StandaloneStrategyConfig;
 
-    constructor(config: { clientId: string; redirectUri: string; apiUrl?: string; appImageUrl?: string }) {
+    constructor(config: StandaloneStrategyConfig) {
         this.authManager = new AuthManager();
-        const apiUrl = config.apiUrl || VIBE_API_URL;
-        this.api = edenTreaty<App>(apiUrl);
-        this.config = { ...config, apiUrl };
+        this.api = edenTreaty<App>(config.apiUrl);
+        this.config = config;
         this.sessionManager = new SessionManager(this.config);
     }
 
@@ -448,7 +447,9 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
             const privateKey = await jose.importPKCS8(pkcs8Pem, "EdDSA");
             console.log("issueCert: jose.Private key imported.");
-            const signature = await new jose.CompactSign(new TextEncoder().encode(JSON.stringify(certPayload))).setProtectedHeader({ alg: "EdDSA" }).sign(privateKey);
+            const signature = await new jose.CompactSign(new TextEncoder().encode(JSON.stringify(certPayload)))
+                .setProtectedHeader({ alg: "EdDSA" })
+                .sign(privateKey);
             console.log("issueCert: Certificate signed successfully.");
 
             const certificate: Certificate = {
