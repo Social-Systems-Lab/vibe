@@ -165,7 +165,13 @@ importers:
       multibase:
         specifier: ^4.0.6
         version: 4.0.6
+      varint:
+        specifier: ^6.0.0
+        version: 6.0.0
     devDependencies:
+      '@types/varint':
+        specifier: ^6.0.0
+        version: 6.0.3
       typescript:
         specifier: ^5.0.0
         version: 5.8.3

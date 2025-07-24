@@ -18,6 +18,8 @@ export function instanceIdFromDid(did: string, secret: string): string {
         throw new Error("Instance ID generation secret is missing or empty.");
     }
 
+    console.debug("Generating instance ID from DID:", did);
+
     if (!/^did:vibe:z[1-9A-HJ-NP-Za-km-z]+$/i.test(did)) {
         throw new Error("Input does not look like a valid did:vibe DID for instanceId generation.");
     }

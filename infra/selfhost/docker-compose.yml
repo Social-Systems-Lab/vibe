@@ -46,9 +46,3 @@ services:
         depends_on:
             - couchdb-setup
             - minio
-    vibe-web:
-        build:
-            context: ../../
-            dockerfile: apps/vibe-web/Dockerfile
-        ports:
-            - "3001:3001"
