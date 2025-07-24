@@ -479,7 +479,11 @@ const startServer = async () => {
                                 page(
                                     "Authorize Application",
                                     `
-                                ${app_image_url ? `<img src="${app_image_url}" alt="App Image" style="max-width: 100px; max-height: 100px; margin-bottom: 1rem; border-radius: 8px;" />` : ""}
+                                ${
+                                    app_image_url
+                                        ? `<img src="${app_image_url}" alt="App Image" style="max-width: 100px; max-height: 100px; margin-bottom: 1rem; border-radius: 8px;" />`
+                                        : ""
+                                }
                                 <p>The application <strong>${client_id}</strong> wants to access your data.</p>
                                 <p>Scopes: ${scope}</p>
                                 <form method="POST" action="/auth/authorize/decision?${queryString}">
@@ -1066,32 +1070,36 @@ const startServer = async () => {
                         const { collection } = ws.data.params;
 
                         if (message.type === "auth") {
-                            const profile = await ws.data.jwt.verify(message.token);
-                            if (!profile) {
-                                ws.close(4001, "Unauthorized");
-                                return;
-                            }
-                            (ws.data as any).profile = profile;
-                            console.log(`WebSocket authenticated for collection: ${collection} by user ${profile.sub}`);
-
-                            const dbName = getUserDbName(profile.instanceId);
-                            const db = couch.use(dbName);
-
-                            const processAndSend = async () => {
-                                const result = await dataService.readOnce(collection, message.query || {}, profile as JwtPayload);
-                                ws.send(result.docs);
-                            };
-
-                            await processAndSend();
-
-                            const changes = db.changesReader.start({ since: "now", includeDocs: true });
-                            (ws.data as any).changes = changes;
-
-                            changes.on("change", async (change) => {
-                                if (change.doc?.collection === collection) {
-                                    await processAndSend();
+                            try {
+                                const profile = await ws.data.jwt.verify(message.token);
+                                if (!profile) {
+                                    ws.close(4001, "Unauthorized");
+                                    return;
                                 }
-                            });
+                                (ws.data as any).profile = profile;
+                                console.log(`WebSocket authenticated for collection: ${collection} by user ${profile.sub}`);
+
+                                const dbName = getUserDbName(profile.instanceId);
+                                const db = couch.use(dbName);
+
+                                const processAndSend = async () => {
+                                    const result = await dataService.readOnce(collection, message.query || {}, profile as JwtPayload);
+                                    ws.send(result.docs);
+                                };
+
+                                await processAndSend();
+
+                                const changes = db.changesReader.start({ since: "now", includeDocs: true });
+                                (ws.data as any).changes = changes;
+
+                                changes.on("change", async (change) => {
+                                    if (change.doc?.collection === collection) {
+                                        await processAndSend();
+                                    }
+                                });
+                            } catch (e) {
+                                ws.send({ type: "error", message: "Token expired" });
+                            }
                         }
                     },
                     close(ws) {

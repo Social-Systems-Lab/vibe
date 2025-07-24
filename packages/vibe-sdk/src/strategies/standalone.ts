@@ -168,6 +168,8 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                     this.getUser();
                     resolve();
                 } else if (event.data.type === "vibe_auth_callback") {
+                    window.removeEventListener("message", messageListener);
+                    popup?.close();
                     if (promptConsent) {
                         const url = new URL(event.data.url);
                         const error = url.searchParams.get("error");
@@ -175,14 +177,10 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                             this.authManager.setAccessToken(null);
                             this.authManager.setUser(null);
                         }
-                        window.removeEventListener("message", messageListener);
-                        popup?.close();
                         this.getUser();
                         this.authManager.notifyStateChange();
                         resolve();
                     } else {
-                        window.removeEventListener("message", messageListener);
-                        popup?.close();
                         try {
                             await this.handleRedirectCallback(event.data.url);
                             resolve();
@@ -255,6 +253,11 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         if (data && typeof data === "object" && "access_token" in data) {
             this.authManager.setAccessToken(data.access_token as string);
             await this.getUser();
+
+            const formType = new URL(url).searchParams.get("form_type");
+            if (formType === "signup") {
+                await this.manageProfile();
+            }
         } else {
             throw new Error("Invalid response from token endpoint.");
         }
@@ -379,8 +382,22 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             ws.send(JSON.stringify(authMessage));
         });
 
-        ws.on("message", (message: any) => {
-            callback({ ok: true, data: message.data });
+        ws.on("message", async (message: any) => {
+            if (message.data.type === "error" && message.data.message === "Token expired") {
+                try {
+                    await this.getUser(); // This will trigger a token refresh if needed
+                    const authMessage = {
+                        type: "auth",
+                        token: this.authManager.getAccessToken(),
+                        query: { ...restQuery, collection: global ? collection : undefined },
+                    };
+                    ws.send(JSON.stringify(authMessage));
+                } catch (e) {
+                    callback({ ok: false, error: "Failed to refresh token" });
+                }
+            } else {
+                callback({ ok: true, data: message.data });
+            }
         });
 
         ws.on("error", (error: any) => {

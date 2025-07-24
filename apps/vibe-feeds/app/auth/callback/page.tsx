@@ -10,7 +10,12 @@ export default function AuthCallbackPage() {
 
     useEffect(() => {
         if (isLoggedIn) {
-            router.push("/");
+            if (window.opener) {
+                window.opener.postMessage({ type: "vibe_auth_callback", url: window.location.href }, "*");
+                window.close();
+            } else {
+                router.push("/");
+            }
         }
     }, [isLoggedIn, router]);
 
