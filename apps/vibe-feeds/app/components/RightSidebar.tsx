@@ -11,11 +11,11 @@ const topCommunities = [
 ];
 
 const suggestedPeople = [
-    { name: "Florin Pop", handle: "@florinpop17", avatar: "/avatars/florin.jpg" },
-    { name: "Patrick Loeber", handle: "@patrickloeber", avatar: "/avatars/patrick.jpg" },
-    { name: "Favor", handle: "@theyonuoha", avatar: "/avatars/favor.jpg" },
-    { name: "Chris Bongers", handle: "@dailydevtips", avatar: "/avatars/chris.jpg" },
-    { name: "Alvaro Saburido", handle: "@alvarosaburido", avatar: "/avatars/alvaro.jpg" },
+    { name: "Florin Pop", handle: "@florinpop17", avatar: "" },
+    { name: "Patrick Loeber", handle: "@patrickloeber", avatar: "" },
+    { name: "Favor", handle: "@theyonuoha", avatar: "" },
+    { name: "Chris Bongers", handle: "@dailydevtips", avatar: "" },
+    { name: "Alvaro Saburido", handle: "@alvarosaburido", avatar: "" },
 ];
 
 const trendingShows = [

@@ -1,6 +1,5 @@
 import { Feed } from "@/app/components/Feed";
 import { LeftSidebar } from "@/app/components/LeftSidebar";
-import { RightSidebar } from "@/app/components/RightSidebar";
 
 type PageProps = {
     params: Promise<{ feedId: string }>;
@@ -16,7 +15,7 @@ export default async function FeedPage(props: PageProps) {
             <div className="w-full">
                 <Feed feedId={params.feedId} />
             </div>
-            <RightSidebar />
+            <div></div>
         </div>
     );
 }

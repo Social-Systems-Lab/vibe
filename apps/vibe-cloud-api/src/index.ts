@@ -770,7 +770,7 @@ const startServer = async () => {
                             <h1>${isSignup ? "Complete Your Profile" : "Profile Settings"}</h1>
                             <img id="profile-pic" src="${user?.pictureUrl || "https://placehold.co/100x100"}" alt="Profile Picture">
                             <form id="profile-form">
-                                ${isSignup ? "" : `<label for="file-upload">Change Picture</label>`}
+                                <label for="file-upload">${isSignup ? "Upload Picture" : "Change Picture"}</label>
                                 <input id="file-upload" type="file" accept="image/*">
                                 <input type="text" id="display-name" value="${user?.displayName || ""}" placeholder="Display Name">
                                 <button type="submit">${isSignup ? "Continue" : "Save"}</button>
