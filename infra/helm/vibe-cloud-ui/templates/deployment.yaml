@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-vibe-cloud-ui
+  labels:
+    app: vibe-cloud-ui
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: vibe-cloud-ui
+  template:
+    metadata:
+      labels:
+        app: vibe-cloud-ui
+    spec:
+      containers:
+        - name: vibe-cloud-ui
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 4000
+              protocol: TCP

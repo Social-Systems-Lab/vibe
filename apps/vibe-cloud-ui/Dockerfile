@@ -1,21 +1,27 @@
 # Stage 1: Build the application
 FROM node:18-alpine AS builder
 
+# Install pnpm
+RUN npm i -g pnpm
+
 # Set working directory
 WORKDIR /usr/src/app
 
-# Copy package.json and lock file
+# Copy workspace files
+COPY ../../pnpm-lock.yaml ./
+COPY ../../package.json ./
+
+# Copy app-specific package.json
 COPY package.json ./
-COPY package-lock.json ./
 
 # Install dependencies
-RUN npm install
+RUN pnpm install --prod
 
 # Copy the rest of the application source code
 COPY . .
 
 # Build the Next.js application
-RUN npm run build
+RUN pnpm build
 
 # Stage 2: Production image
 FROM node:18-alpine
@@ -27,9 +33,10 @@ WORKDIR /usr/src/app
 COPY --from=builder /usr/src/app/.next ./.next
 COPY --from=builder /usr/src/app/public ./public
 COPY --from=builder /usr/src/app/package.json ./package.json
+COPY --from=builder /usr/src/app/next.config.ts ./
 
 # Expose the port the app runs on
-EXPOSE 3000
+EXPOSE 4000
 
 # Set the command to start the server
-CMD ["npm", "start"]
+CMD ["pnpm", "start", "-p", "4000"]

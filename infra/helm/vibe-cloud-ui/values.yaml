@@ -1,0 +1,14 @@
+replicaCount: 1
+
+image:
+    repository: vibe/vibe-cloud-ui
+    pullPolicy: IfNotPresent
+    tag: "latest"
+
+service:
+    type: ClusterIP
+    port: 4000
+
+# We don't create an ingress for this service as it's only accessed via the API proxy.
+ingress:
+    enabled: false
