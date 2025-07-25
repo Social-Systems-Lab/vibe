@@ -110,616 +110,430 @@ const startServer = async () => {
         }))
         .decorate("identityService", identityService)
         .decorate("storageService", storageService)
+        .group("/auth", (app) =>
+            app
+                .derive(({ request }) => {
+                    return { url: new URL(request.url) };
+                })
+                .post(
+                    "/signup",
+                    async ({ body, sessionJwt, cookie, set, query }) => {
+                        const { email, password } = body;
+                        const existingUser = await identityService.findByEmail(email);
+                        if (existingUser) {
+                            set.status = 409;
+                            return { error: "User already exists" };
+                        }
+                        const password_hash = await Bun.password.hash(password);
+                        const user = await identityService.register(email, password_hash, password, "");
+
+                        const sessionToken = await sessionJwt.sign({
+                            sessionId: user.did,
+                        });
+
+                        cookie.vibe_session.set({
+                            value: sessionToken,
+                            httpOnly: true,
+                            maxAge: 30 * 86400, // 30 days
+                            path: "/",
+                            sameSite: "lax",
+                        });
+
+                        // Redirect back to the authorization flow
+                        const authQuery = new URLSearchParams(query as any).toString();
+                        const redirectUrl = `/auth/authorize?${authQuery}`;
+                        return new Response(null, {
+                            status: 302,
+                            headers: {
+                                Location: redirectUrl,
+                            },
+                        });
+                    },
+                    {
+                        body: t.Object({
+                            email: t.String(),
+                            password: t.String(),
+                            displayName: t.Optional(t.String()),
+                        }),
+                    }
+                )
+                .post(
+                    "/login",
+                    async ({ body, sessionJwt, cookie, set, query }) => {
+                        const { email, password } = body;
+                        try {
+                            const user = await identityService.login(email, password);
+                            const sessionToken = await sessionJwt.sign({
+                                sessionId: user.did,
+                            });
+
+                            cookie.vibe_session.set({
+                                value: sessionToken,
+                                httpOnly: true,
+                                maxAge: 30 * 86400, // 30 days
+                                path: "/",
+                                sameSite: "lax",
+                            });
+
+                            // Redirect back to the authorization flow
+                            const authQuery = new URLSearchParams(query as any).toString();
+                            const redirectUrl = `/auth/authorize?${authQuery}`;
+                            return new Response(null, {
+                                status: 302,
+                                headers: {
+                                    Location: redirectUrl,
+                                },
+                            });
+                        } catch (error: any) {
+                            set.status = 401;
+                            return { error: error.message };
+                        }
+                    },
+                    {
+                        body: t.Object({
+                            email: t.String(),
+                            password: t.String(),
+                        }),
+                    }
+                )
+                .post(
+                    "/refresh",
+                    async ({ jwt, body, set }) => {
+                        const { refreshToken } = body;
+
+                        if (!refreshToken) {
+                            set.status = 401;
+                            return { error: "Unauthorized" };
+                        }
+
+                        try {
+                            const result = await identityService.validateRefreshToken(refreshToken);
+                            const newAccessToken = await jwt.sign({
+                                sub: result.did,
+                                instanceId: result.instanceId,
+                            });
+                            return { token: newAccessToken, refreshToken: result.refreshToken };
+                        } catch (error: any) {
+                            console.error("Error refreshing token:", error.message);
+                            set.status = 401;
+                            return { error: "Unauthorized" };
+                        }
+                    },
+                    {
+                        body: t.Object({
+                            refreshToken: t.String(),
+                        }),
+                    }
+                )
+                .get(
+                    "/logout",
+                    ({ cookie, set, query }) => {
+                        cookie.vibe_session.set({
+                            value: "",
+                            maxAge: -1,
+                            path: "/",
+                            httpOnly: true,
+                            sameSite: "lax",
+                        });
+
+                        const redirectUri = query.redirect_uri || "/";
+                        return new Response(null, {
+                            status: 302,
+                            headers: {
+                                Location: redirectUri,
+                            },
+                        });
+                    },
+                    {
+                        query: t.Object({
+                            redirect_uri: t.Optional(t.String()),
+                        }),
+                    }
+                )
+                .get("/api-token", async ({ sessionJwt, cookie, jwt, set, identityService }) => {
+                    const sessionToken = cookie.vibe_session.value;
+                    if (!sessionToken) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    const session = await sessionJwt.verify(sessionToken);
+                    if (!session || !session.sessionId) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    const user = await identityService.findByDid(session.sessionId);
+                    if (!user) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    const accessToken = await jwt.sign({
+                        sub: user.did,
+                        instanceId: user.instanceId,
+                    });
+                    return { token: accessToken };
+                })
+                .get("/session", async ({ sessionJwt, cookie, set, identityService }) => {
+                    const sessionToken = cookie.vibe_session.value;
+                    if (!sessionToken) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    const session = await sessionJwt.verify(sessionToken);
+                    if (!session || !session.sessionId) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    const user = await identityService.findByDid(session.sessionId);
+                    if (!user) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+
+                    const dbCreds = await identityService.createDbSession(user);
+
+                    return {
+                        ...dbCreds,
+                        dbName: getUserDbName(user.instanceId),
+                    };
+                })
+                .get(
+                    "/permissions",
+                    async ({ query, cookie, sessionJwt, set, identityService }) => {
+                        const { origin } = query;
+                        const sessionToken = cookie.vibe_session.value;
+                        if (!sessionToken) {
+                            return { scopes: [] }; // No session, no permissions
+                        }
+                        const session = await sessionJwt.verify(sessionToken);
+                        if (!session || !session.sessionId) {
+                            return { scopes: [] };
+                        }
+                        const user = await identityService.findByDid(session.sessionId);
+                        if (!user) {
+                            return { scopes: [] };
+                        }
+
+                        const hasConsented = await identityService.hasUserConsented(user.did, origin);
+                        if (hasConsented) {
+                            // For now, grant full read/write access if consented.
+                            // This will be replaced with a more granular permission system.
+                            return { scopes: ["read", "write"] };
+                        }
+
+                        return { scopes: [] };
+                    },
+                    {
+                        query: t.Object({
+                            origin: t.String(),
+                        }),
+                    }
+                )
+                .post(
+                    "/authorize/decision",
+                    async ({ query, body, cookie, sessionJwt, set }) => {
+                        const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope } = query;
+                        const { decision } = body;
+
+                        const sessionToken = cookie.vibe_session.value;
+                        if (!sessionToken) {
+                            set.status = 401;
+                            return "Unauthorized. Please log in.";
+                        }
+
+                        const session = await sessionJwt.verify(sessionToken);
+                        if (!session || !session.sessionId) {
+                            set.status = 401;
+                            return "Invalid session.";
+                        }
+
+                        const userDid = session.sessionId;
+
+                        if (decision === "deny") {
+                            await identityService.revokeConsent(userDid, client_id);
+                            const redirectUrl = new URL(redirect_uri);
+                            redirectUrl.searchParams.set("error", "access_denied");
+                            if (state) {
+                                redirectUrl.searchParams.set("state", state);
+                            }
+                            return new Response(null, {
+                                status: 302,
+                                headers: {
+                                    Location: redirectUrl.toString(),
+                                },
+                            });
+                        }
+
+                        // Decision is "allow"
+                        await identityService.storeUserConsent(userDid, client_id);
+
+                        const authCode = await identityService.createAuthCode({
+                            userDid,
+                            clientId: client_id,
+                            scope,
+                            redirectUri: redirect_uri,
+                            codeChallenge: code_challenge,
+                            codeChallengeMethod: code_challenge_method || "S256",
+                        });
+
+                        const redirectUrl = new URL(redirect_uri);
+                        redirectUrl.searchParams.set("code", authCode);
+                        if (state) {
+                            redirectUrl.searchParams.set("state", state);
+                        }
+                        return new Response(null, {
+                            status: 302,
+                            headers: {
+                                Location: redirectUrl.toString(),
+                            },
+                        });
+                    },
+                    {
+                        body: t.Object({
+                            decision: t.String(),
+                        }),
+                        query: t.Object({
+                            client_id: t.String(),
+                            redirect_uri: t.String(),
+                            response_type: t.String(),
+                            scope: t.String(),
+                            state: t.Optional(t.String()),
+                            code_challenge: t.String(),
+                            code_challenge_method: t.Optional(t.String()),
+                        }),
+                    }
+                )
+                .post(
+                    "/token",
+                    async ({ body, jwt, set }) => {
+                        const { grant_type, code, code_verifier, client_id, redirect_uri } = body;
+
+                        try {
+                            const clientIdOrigin = new URL(client_id).origin;
+                            const redirectUriOrigin = new URL(redirect_uri).origin;
+                            if (clientIdOrigin !== redirectUriOrigin) {
+                                set.status = 400;
+                                return { error: "invalid_grant", error_description: "Invalid redirect_uri." };
+                            }
+                        } catch (e) {
+                            set.status = 400;
+                            return { error: "invalid_grant", error_description: "Invalid client_id or redirect_uri." };
+                        }
+
+                        if (grant_type !== "authorization_code") {
+                            set.status = 400;
+                            return { error: "invalid_grant", error_description: "grant_type must be authorization_code" };
+                        }
+
+                        try {
+                            const { userDid, clientId, scope } = await identityService.validateAuthCode(code, code_verifier);
+
+                            if (clientId !== client_id) {
+                                set.status = 400;
+                                return { error: "invalid_client", error_description: "Client ID mismatch." };
+                            }
+
+                            const user = await identityService.findByDid(userDid);
+                            if (!user) {
+                                set.status = 401;
+                                return { error: "invalid_grant", error_description: "User not found." };
+                            }
+
+                            const accessToken = await jwt.sign({
+                                sub: user.did,
+                                instanceId: user.instanceId,
+                            });
+
+                            return {
+                                access_token: accessToken,
+                                token_type: "Bearer",
+                                expires_in: 900, // 15 minutes in seconds
+                                scope: scope,
+                            };
+                        } catch (error: any) {
+                            set.status = 400;
+                            return { error: "invalid_grant", error_description: error.message };
+                        }
+                    },
+                    {
+                        body: t.Object({
+                            grant_type: t.String(),
+                            code: t.String(),
+                            code_verifier: t.String(),
+                            client_id: t.String(),
+                            redirect_uri: t.String(),
+                        }),
+                    }
+                )
+                .get(
+                    "/session-check",
+                    async ({ query, cookie, sessionJwt, html }) => {
+                        const { client_id, redirect_uri, code_challenge, code_challenge_method } = query;
+
+                        const renderScript = (data: any) => `
+                            <script>
+                                if (window.parent) {
+                                    window.parent.postMessage(${JSON.stringify(data)}, '${new URL(redirect_uri).origin}');
+                                }
+                            </script>
+                        `;
+
+                        const sessionToken = cookie.vibe_session.value;
+                        if (!sessionToken) {
+                            return html(renderScript({ status: "LOGGED_OUT" }));
+                        }
+
+                        try {
+                            const session = await sessionJwt.verify(sessionToken);
+                            if (!session || !session.sessionId) {
+                                return html(renderScript({ status: "LOGGED_OUT" }));
+                            }
+
+                            const userDid = session.sessionId;
+                            const user = await identityService.findByDid(userDid);
+                            if (!user) {
+                                return html(renderScript({ status: "LOGGED_OUT" }));
+                            }
+
+                            const hasConsented = await identityService.hasUserConsented(userDid, client_id);
+
+                            // Sanitize user object before sending to client
+                            const sanitizedUser = {
+                                did: user.did,
+                                instanceId: user.instanceId,
+                                displayName: user.displayName,
+                            };
+
+                            if (hasConsented) {
+                                // Silently log in
+                                const authCode = await identityService.createAuthCode({
+                                    userDid,
+                                    clientId: client_id,
+                                    scope: "openid profile email", // Assuming default scope
+                                    redirectUri: redirect_uri,
+                                    codeChallenge: code_challenge,
+                                    codeChallengeMethod: code_challenge_method || "S256",
+                                });
+                                return html(renderScript({ status: "SILENT_LOGIN_SUCCESS", code: authCode, user: sanitizedUser }));
+                            } else {
+                                // Prompt for one-tap
+                                return html(renderScript({ status: "ONE_TAP_REQUIRED", user: sanitizedUser }));
+                            }
+                        } catch (e) {
+                            // Invalid token or other error
+                            return html(renderScript({ status: "LOGGED_OUT" }));
+                        }
+                    },
+                    {
+                        query: t.Object({
+                            client_id: t.String(),
+                            redirect_uri: t.String(),
+                            code_challenge: t.String(),
+                            code_challenge_method: t.Optional(t.String()),
+                        }),
+                    }
+                )
+        )
         .use(proxy)
-        // .group("/auth", (app) =>
-        //     app
-        //         .derive(({ request }) => {
-        //             return { url: new URL(request.url) };
-        //         })
-        //         .post(
-        //             "/signup",
-        //             async ({ body, sessionJwt, cookie, set, query }) => {
-        //                 const { email, password } = body;
-        //                 const existingUser = await identityService.findByEmail(email);
-        //                 if (existingUser) {
-        //                     set.status = 409;
-        //                     return { error: "User already exists" };
-        //                 }
-        //                 const password_hash = await Bun.password.hash(password);
-        //                 const user = await identityService.register(email, password_hash, password, "");
-
-        //                 const sessionToken = await sessionJwt.sign({
-        //                     sessionId: user.did,
-        //                 });
-
-        //                 cookie.vibe_session.set({
-        //                     value: sessionToken,
-        //                     httpOnly: true,
-        //                     maxAge: 30 * 86400, // 30 days
-        //                     path: "/",
-        //                     sameSite: "lax",
-        //                 });
-
-        //                 // Redirect back to the authorization flow
-        //                 const authQuery = new URLSearchParams(query as any).toString();
-        //                 const redirectUrl = `/auth/authorize?${authQuery}`;
-        //                 return new Response(null, {
-        //                     status: 302,
-        //                     headers: {
-        //                         Location: redirectUrl,
-        //                     },
-        //                 });
-        //             },
-        //             {
-        //                 body: t.Object({
-        //                     email: t.String(),
-        //                     password: t.String(),
-        //                     displayName: t.Optional(t.String()),
-        //                 }),
-        //             }
-        //         )
-        //         .post(
-        //             "/login",
-        //             async ({ body, sessionJwt, cookie, set, query }) => {
-        //                 const { email, password } = body;
-        //                 try {
-        //                     const user = await identityService.login(email, password);
-        //                     const sessionToken = await sessionJwt.sign({
-        //                         sessionId: user.did,
-        //                     });
-
-        //                     cookie.vibe_session.set({
-        //                         value: sessionToken,
-        //                         httpOnly: true,
-        //                         maxAge: 30 * 86400, // 30 days
-        //                         path: "/",
-        //                         sameSite: "lax",
-        //                     });
-
-        //                     // Redirect back to the authorization flow
-        //                     const authQuery = new URLSearchParams(query as any).toString();
-        //                     const redirectUrl = `/auth/authorize?${authQuery}`;
-        //                     return new Response(null, {
-        //                         status: 302,
-        //                         headers: {
-        //                             Location: redirectUrl,
-        //                         },
-        //                     });
-        //                 } catch (error: any) {
-        //                     set.status = 401;
-        //                     return { error: error.message };
-        //                 }
-        //             },
-        //             {
-        //                 body: t.Object({
-        //                     email: t.String(),
-        //                     password: t.String(),
-        //                 }),
-        //             }
-        //         )
-        //         .post(
-        //             "/refresh",
-        //             async ({ jwt, body, set }) => {
-        //                 const { refreshToken } = body;
-
-        //                 if (!refreshToken) {
-        //                     set.status = 401;
-        //                     return { error: "Unauthorized" };
-        //                 }
-
-        //                 try {
-        //                     const result = await identityService.validateRefreshToken(refreshToken);
-        //                     const newAccessToken = await jwt.sign({
-        //                         sub: result.did,
-        //                         instanceId: result.instanceId,
-        //                     });
-        //                     return { token: newAccessToken, refreshToken: result.refreshToken };
-        //                 } catch (error: any) {
-        //                     console.error("Error refreshing token:", error.message);
-        //                     set.status = 401;
-        //                     return { error: "Unauthorized" };
-        //                 }
-        //             },
-        //             {
-        //                 body: t.Object({
-        //                     refreshToken: t.String(),
-        //                 }),
-        //             }
-        //         )
-        //         .get(
-        //             "/logout",
-        //             ({ cookie, set, query }) => {
-        //                 cookie.vibe_session.set({
-        //                     value: "",
-        //                     maxAge: -1,
-        //                     path: "/",
-        //                     httpOnly: true,
-        //                     sameSite: "lax",
-        //                 });
-
-        //                 const redirectUri = query.redirect_uri || "/";
-        //                 return new Response(null, {
-        //                     status: 302,
-        //                     headers: {
-        //                         Location: redirectUri,
-        //                     },
-        //                 });
-        //             },
-        //             {
-        //                 query: t.Object({
-        //                     redirect_uri: t.Optional(t.String()),
-        //                 }),
-        //             }
-        //         )
-        //         .get("/api-token", async ({ sessionJwt, cookie, jwt, set, identityService }) => {
-        //             const sessionToken = cookie.vibe_session.value;
-        //             if (!sessionToken) {
-        //                 set.status = 401;
-        //                 return { error: "Unauthorized" };
-        //             }
-        //             const session = await sessionJwt.verify(sessionToken);
-        //             if (!session || !session.sessionId) {
-        //                 set.status = 401;
-        //                 return { error: "Unauthorized" };
-        //             }
-        //             const user = await identityService.findByDid(session.sessionId);
-        //             if (!user) {
-        //                 set.status = 401;
-        //                 return { error: "Unauthorized" };
-        //             }
-        //             const accessToken = await jwt.sign({
-        //                 sub: user.did,
-        //                 instanceId: user.instanceId,
-        //             });
-        //             return { token: accessToken };
-        //         })
-        //         .get("/session", async ({ sessionJwt, cookie, set, identityService }) => {
-        //             const sessionToken = cookie.vibe_session.value;
-        //             if (!sessionToken) {
-        //                 set.status = 401;
-        //                 return { error: "Unauthorized" };
-        //             }
-        //             const session = await sessionJwt.verify(sessionToken);
-        //             if (!session || !session.sessionId) {
-        //                 set.status = 401;
-        //                 return { error: "Unauthorized" };
-        //             }
-        //             const user = await identityService.findByDid(session.sessionId);
-        //             if (!user) {
-        //                 set.status = 401;
-        //                 return { error: "Unauthorized" };
-        //             }
-
-        //             const dbCreds = await identityService.createDbSession(user);
-
-        //             return {
-        //                 ...dbCreds,
-        //                 dbName: getUserDbName(user.instanceId),
-        //             };
-        //         })
-        //         .get(
-        //             "/permissions",
-        //             async ({ query, cookie, sessionJwt, set, identityService }) => {
-        //                 const { origin } = query;
-        //                 const sessionToken = cookie.vibe_session.value;
-        //                 if (!sessionToken) {
-        //                     return { scopes: [] }; // No session, no permissions
-        //                 }
-        //                 const session = await sessionJwt.verify(sessionToken);
-        //                 if (!session || !session.sessionId) {
-        //                     return { scopes: [] };
-        //                 }
-        //                 const user = await identityService.findByDid(session.sessionId);
-        //                 if (!user) {
-        //                     return { scopes: [] };
-        //                 }
-
-        //                 const hasConsented = await identityService.hasUserConsented(user.did, origin);
-        //                 if (hasConsented) {
-        //                     // For now, grant full read/write access if consented.
-        //                     // This will be replaced with a more granular permission system.
-        //                     return { scopes: ["read", "write"] };
-        //                 }
-
-        //                 return { scopes: [] };
-        //             },
-        //             {
-        //                 query: t.Object({
-        //                     origin: t.String(),
-        //                 }),
-        //             }
-        //         )
-        //         .get(
-        //             "/authorize",
-        //             async ({ query, cookie, sessionJwt, set, html, url }) => {
-        //                 const { client_id, response_type, scope, form_type = "login", redirect_uri, prompt, app_image_url } = query;
-
-        //                 const style = `
-        //                     body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f2f5; }
-        //                     .container { background-color: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 100%; }
-        //                     h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
-        //                     p { margin-bottom: 1.5rem; color: #666; }
-        //                     strong { color: #333; }
-        //                     form { display: flex; flex-direction: column; gap: 1rem; }
-        //                     input { padding: 0.75rem; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
-        //                     button { padding: 0.75rem; border: none; border-radius: 4px; background-color: #1a73e8; color: white; font-size: 1rem; cursor: pointer; }
-        //                     button[value="deny"] { background-color: #ccc; }
-        //                     hr { border: none; border-top: 1px solid #eee; margin: 1.5rem 0; }
-        //                     a { color: #1a73e8; text-decoration: none; }
-        //                 `;
-
-        //                 const page = (title: string, content: string) => `
-        //                     <style>${style}</style>
-        //                     <div class="container">
-        //                         <h1>${title}</h1>
-        //                         ${content}
-        //                     </div>
-        //                 `;
-
-        //                 try {
-        //                     const clientIdOrigin = new URL(client_id).origin;
-        //                     const redirectUriOrigin = new URL(redirect_uri).origin;
-        //                     if (clientIdOrigin !== redirectUriOrigin) {
-        //                         set.status = 400;
-        //                         return "Invalid redirect_uri. Must be on the same domain as the client_id.";
-        //                     }
-        //                 } catch (e) {
-        //                     set.status = 400;
-        //                     return "Invalid client_id or redirect_uri.";
-        //                 }
-
-        //                 if (response_type !== "code") {
-        //                     return "Invalid request"; // Or a more user-friendly error page
-        //                 }
-
-        //                 const sessionToken = cookie.vibe_session.value;
-        //                 if (!sessionToken) {
-        //                     const loginParams = new URLSearchParams(url.search);
-        //                     loginParams.set("form_type", "login");
-
-        //                     const signupParams = new URLSearchParams(url.search);
-        //                     signupParams.set("form_type", "signup");
-
-        //                     if (form_type === "signup") {
-        //                         // Show Sign Up form
-        //                         return html(
-        //                             page(
-        //                                 "Sign Up",
-        //                                 `
-        //                            <p>To authorize <strong>${client_id}</strong></p>
-        //                            <form method="POST" action="/auth/signup?${signupParams.toString()}">
-        //                                <input type="email" name="email" placeholder="Email" required />
-        //                                <input type="password" name="password" placeholder="Password" required />
-        //                                <button type="submit">Sign Up</button>
-        //                            </form>
-        //                            <hr/>
-        //                            <p>Already have an account? <a href="/auth/authorize?${loginParams.toString()}">Log in</a></p>
-        //                         `
-        //                             )
-        //                         );
-        //                     }
-
-        //                     // Show Login form by default
-        //                     return html(
-        //                         page(
-        //                             "Login",
-        //                             `
-        //                         <p>To authorize <strong>${client_id}</strong></p>
-        //                         <form method="POST" action="/auth/login?${loginParams.toString()}">
-        //                             <input type="email" name="email" placeholder="Email" required />
-        //                             <input type="password" name="password" placeholder="Password" required />
-        //                             <button type="submit">Login</button>
-        //                         </form>
-        //                         <hr/>
-        //                         <p>Don't have an account? <a href="/auth/authorize?${signupParams.toString()}">Sign up here</a></p>
-        //                    `
-        //                         )
-        //                     );
-        //                 }
-
-        //                 try {
-        //                     const session = await sessionJwt.verify(sessionToken);
-        //                     if (!session || !session.sessionId) {
-        //                         cookie.vibe_session.set({ value: "", maxAge: -1, path: "/", httpOnly: true });
-        //                         // Session is invalid, show login page again
-        //                         return "Invalid session. Please log in again.";
-        //                     }
-
-        //                     const userDid = session.sessionId;
-        //                     const user = await identityService.findByDid(userDid);
-        //                     if (!user) {
-        //                         cookie.vibe_session.set({ value: "", maxAge: -1, path: "/", httpOnly: true });
-        //                         return "Invalid session. Please log in again.";
-        //                     }
-
-        //                     if (!user.displayName || form_type === "profile") {
-        //                         const returnUrl = new URL(url.href);
-        //                         returnUrl.searchParams.set("form_type", "login"); // Avoid profile loop
-
-        //                         const profileParams = new URLSearchParams({
-        //                             ...query,
-        //                             redirect_uri: returnUrl.toString(),
-        //                             is_signup: (!user.displayName).toString(),
-        //                         });
-        //                         return new Response(null, {
-        //                             status: 302,
-        //                             headers: {
-        //                                 Location: `/user/profile?${profileParams.toString()}`,
-        //                             },
-        //                         });
-        //                     }
-
-        //                     const hasConsented = await identityService.hasUserConsented(userDid, client_id);
-
-        //                     if (hasConsented && prompt !== "consent") {
-        //                         // User has already consented, so we can skip the consent screen
-        //                         const authCode = await identityService.createAuthCode({
-        //                             userDid,
-        //                             clientId: client_id,
-        //                             scope,
-        //                             redirectUri: query.redirect_uri,
-        //                             codeChallenge: query.code_challenge,
-        //                             codeChallengeMethod: query.code_challenge_method || "S256",
-        //                         });
-
-        //                         const redirectUrl = new URL(query.redirect_uri);
-        //                         redirectUrl.searchParams.set("code", authCode);
-        //                         if (query.state) {
-        //                             redirectUrl.searchParams.set("state", query.state);
-        //                         }
-        //                         return new Response(null, {
-        //                             status: 302,
-        //                             headers: {
-        //                                 Location: redirectUrl.toString(),
-        //                             },
-        //                         });
-        //                     }
-
-        //                     // User is logged in, but hasn't consented yet. Show the consent screen.
-        //                     const queryString = new URLSearchParams(query as any).toString();
-        //                     return html(
-        //                         page(
-        //                             "Authorize Application",
-        //                             `
-        //                          ${
-        //                              app_image_url
-        //                                  ? `<img src="${app_image_url}" alt="App Image" style="max-width: 100px; max-height: 100px; margin-bottom: 1rem; border-radius: 8px;" />`
-        //                                  : ""
-        //                          }
-        //                          <p>The application <strong>${client_id}</strong> wants to access your data.</p>
-        //                          <p>Scopes: ${scope}</p>
-        //                          <form method="POST" action="/auth/authorize/decision?${queryString}">
-        //                              <button type="submit" name="decision" value="allow">Allow</button>
-        //                              <button type="submit" name="decision" value="deny">Deny</button>
-        //                          </form>
-        //                      `
-        //                         )
-        //                     );
-        //                 } catch (e) {
-        //                     cookie.vibe_session.set({ value: "", maxAge: -1, path: "/", httpOnly: true });
-        //                     return "Your session has expired. Please log in again.";
-        //                 }
-        //             },
-        //             {
-        //                 query: t.Object({
-        //                     client_id: t.String(),
-        //                     redirect_uri: t.String(),
-        //                     response_type: t.String(),
-        //                     scope: t.String(),
-        //                     state: t.Optional(t.String()),
-        //                     code_challenge: t.String(),
-        //                     code_challenge_method: t.Optional(t.String()),
-        //                     form_type: t.Optional(t.String()),
-        //                     prompt: t.Optional(t.String()),
-        //                     app_image_url: t.Optional(t.String()),
-        //                 }),
-        //             }
-        //         )
-        //         .post(
-        //             "/authorize/decision",
-        //             async ({ query, body, cookie, sessionJwt, set }) => {
-        //                 const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope } = query;
-        //                 const { decision } = body;
-
-        //                 const sessionToken = cookie.vibe_session.value;
-        //                 if (!sessionToken) {
-        //                     set.status = 401;
-        //                     return "Unauthorized. Please log in.";
-        //                 }
-
-        //                 const session = await sessionJwt.verify(sessionToken);
-        //                 if (!session || !session.sessionId) {
-        //                     set.status = 401;
-        //                     return "Invalid session.";
-        //                 }
-
-        //                 const userDid = session.sessionId;
-
-        //                 if (decision === "deny") {
-        //                     await identityService.revokeConsent(userDid, client_id);
-        //                     const redirectUrl = new URL(redirect_uri);
-        //                     redirectUrl.searchParams.set("error", "access_denied");
-        //                     if (state) {
-        //                         redirectUrl.searchParams.set("state", state);
-        //                     }
-        //                     return new Response(null, {
-        //                         status: 302,
-        //                         headers: {
-        //                             Location: redirectUrl.toString(),
-        //                         },
-        //                     });
-        //                 }
-
-        //                 // Decision is "allow"
-        //                 await identityService.storeUserConsent(userDid, client_id);
-
-        //                 const authCode = await identityService.createAuthCode({
-        //                     userDid,
-        //                     clientId: client_id,
-        //                     scope,
-        //                     redirectUri: redirect_uri,
-        //                     codeChallenge: code_challenge,
-        //                     codeChallengeMethod: code_challenge_method || "S256",
-        //                 });
-
-        //                 const redirectUrl = new URL(redirect_uri);
-        //                 redirectUrl.searchParams.set("code", authCode);
-        //                 if (state) {
-        //                     redirectUrl.searchParams.set("state", state);
-        //                 }
-        //                 return new Response(null, {
-        //                     status: 302,
-        //                     headers: {
-        //                         Location: redirectUrl.toString(),
-        //                     },
-        //                 });
-        //             },
-        //             {
-        //                 body: t.Object({
-        //                     decision: t.String(),
-        //                 }),
-        //                 query: t.Object({
-        //                     client_id: t.String(),
-        //                     redirect_uri: t.String(),
-        //                     response_type: t.String(),
-        //                     scope: t.String(),
-        //                     state: t.Optional(t.String()),
-        //                     code_challenge: t.String(),
-        //                     code_challenge_method: t.Optional(t.String()),
-        //                 }),
-        //             }
-        //         )
-        //         .post(
-        //             "/token",
-        //             async ({ body, jwt, set }) => {
-        //                 const { grant_type, code, code_verifier, client_id, redirect_uri } = body;
-
-        //                 try {
-        //                     const clientIdOrigin = new URL(client_id).origin;
-        //                     const redirectUriOrigin = new URL(redirect_uri).origin;
-        //                     if (clientIdOrigin !== redirectUriOrigin) {
-        //                         set.status = 400;
-        //                         return { error: "invalid_grant", error_description: "Invalid redirect_uri." };
-        //                     }
-        //                 } catch (e) {
-        //                     set.status = 400;
-        //                     return { error: "invalid_grant", error_description: "Invalid client_id or redirect_uri." };
-        //                 }
-
-        //                 if (grant_type !== "authorization_code") {
-        //                     set.status = 400;
-        //                     return { error: "invalid_grant", error_description: "grant_type must be authorization_code" };
-        //                 }
-
-        //                 try {
-        //                     const { userDid, clientId, scope } = await identityService.validateAuthCode(code, code_verifier);
-
-        //                     if (clientId !== client_id) {
-        //                         set.status = 400;
-        //                         return { error: "invalid_client", error_description: "Client ID mismatch." };
-        //                     }
-
-        //                     const user = await identityService.findByDid(userDid);
-        //                     if (!user) {
-        //                         set.status = 401;
-        //                         return { error: "invalid_grant", error_description: "User not found." };
-        //                     }
-
-        //                     const accessToken = await jwt.sign({
-        //                         sub: user.did,
-        //                         instanceId: user.instanceId,
-        //                     });
-
-        //                     return {
-        //                         access_token: accessToken,
-        //                         token_type: "Bearer",
-        //                         expires_in: 900, // 15 minutes in seconds
-        //                         scope: scope,
-        //                     };
-        //                 } catch (error: any) {
-        //                     set.status = 400;
-        //                     return { error: "invalid_grant", error_description: error.message };
-        //                 }
-        //             },
-        //             {
-        //                 body: t.Object({
-        //                     grant_type: t.String(),
-        //                     code: t.String(),
-        //                     code_verifier: t.String(),
-        //                     client_id: t.String(),
-        //                     redirect_uri: t.String(),
-        //                 }),
-        //             }
-        //         )
-        //         .get(
-        //             "/session-check",
-        //             async ({ query, cookie, sessionJwt, html }) => {
-        //                 const { client_id, redirect_uri, code_challenge, code_challenge_method } = query;
-
-        //                 const renderScript = (data: any) => `
-        //                     <script>
-        //                         if (window.parent) {
-        //                             window.parent.postMessage(${JSON.stringify(data)}, '${new URL(redirect_uri).origin}');
-        //                         }
-        //                     </script>
-        //                 `;
-
-        //                 const sessionToken = cookie.vibe_session.value;
-        //                 if (!sessionToken) {
-        //                     return html(renderScript({ status: "LOGGED_OUT" }));
-        //                 }
-
-        //                 try {
-        //                     const session = await sessionJwt.verify(sessionToken);
-        //                     if (!session || !session.sessionId) {
-        //                         return html(renderScript({ status: "LOGGED_OUT" }));
-        //                     }
-
-        //                     const userDid = session.sessionId;
-        //                     const user = await identityService.findByDid(userDid);
-        //                     if (!user) {
-        //                         return html(renderScript({ status: "LOGGED_OUT" }));
-        //                     }
-
-        //                     const hasConsented = await identityService.hasUserConsented(userDid, client_id);
-
-        //                     // Sanitize user object before sending to client
-        //                     const sanitizedUser = {
-        //                         did: user.did,
-        //                         instanceId: user.instanceId,
-        //                         displayName: user.displayName,
-        //                     };
-
-        //                     if (hasConsented) {
-        //                         // Silently log in
-        //                         const authCode = await identityService.createAuthCode({
-        //                             userDid,
-        //                             clientId: client_id,
-        //                             scope: "openid profile email", // Assuming default scope
-        //                             redirectUri: redirect_uri,
-        //                             codeChallenge: code_challenge,
-        //                             codeChallengeMethod: code_challenge_method || "S256",
-        //                         });
-        //                         return html(renderScript({ status: "SILENT_LOGIN_SUCCESS", code: authCode, user: sanitizedUser }));
-        //                     } else {
-        //                         // Prompt for one-tap
-        //                         return html(renderScript({ status: "ONE_TAP_REQUIRED", user: sanitizedUser }));
-        //                     }
-        //                 } catch (e) {
-        //                     // Invalid token or other error
-        //                     return html(renderScript({ status: "LOGGED_OUT" }));
-        //                 }
-        //             },
-        //             {
-        //                 query: t.Object({
-        //                     client_id: t.String(),
-        //                     redirect_uri: t.String(),
-        //                     code_challenge: t.String(),
-        //                     code_challenge_method: t.Optional(t.String()),
-        //                 }),
-        //             }
-        //         )
-        // )
         .group("/user", (app) =>
             app
                 .derive(async ({ cookie, sessionJwt }) => {
