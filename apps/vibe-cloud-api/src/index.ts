@@ -115,8 +115,24 @@ const startServer = async () => {
                 .derive(({ request }) => {
                     return { url: new URL(request.url) };
                 })
-                .get("/authorize", ({ request }) => {
-                    return proxyRequest(request);
+                .get("/authorize", ({ request, query }) => {
+                    const params = new URLSearchParams(query as any);
+                    const formType = params.get("form_type") || "login";
+
+                    let newPath = "/auth/login";
+                    if (formType === "signup") {
+                        newPath = "/auth/signup";
+                    }
+
+                    const url = new URL(request.url);
+                    url.pathname = newPath;
+
+                    const newRequest = new Request(url.toString(), {
+                        method: request.method,
+                        headers: request.headers,
+                    });
+
+                    return proxyRequest(newRequest);
                 })
                 .get("/login", ({ request }) => {
                     return proxyRequest(request);
@@ -544,6 +560,10 @@ const startServer = async () => {
                         }),
                     }
                 )
+                // This must be the last route in the group to act as a fallback
+                .all("*", ({ request }) => {
+                    return proxyRequest(request);
+                })
         )
         .group("/user", (app) =>
             app
