@@ -1,87 +1,36 @@
-"use client";
+type PageProps = {
+    searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+};
 
-import { useSearchParams } from "next/navigation";
-
-export default function LoginPage() {
-    const searchParams = useSearchParams();
-    const query = new URLSearchParams(searchParams.toString());
+export default async function LoginPage({ searchParams }: PageProps) {
+    const params = await searchParams;
+    const queryString = new URLSearchParams(params as any).toString();
 
     return (
-        <div
-            style={{
-                fontFamily: "sans-serif",
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-                height: "100vh",
-                margin: 0,
-                backgroundColor: "#f0f2f5",
-            }}
-        >
-            <div
-                style={{
-                    backgroundColor: "white",
-                    padding: "2rem",
-                    borderRadius: "8px",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                    textAlign: "center",
-                    maxWidth: "400px",
-                    width: "100%",
-                }}
-            >
-                <h1>Login</h1>
-                <p>
-                    To authorize <strong>{query.get("client_id")}</strong>
+        <div className="flex items-center justify-center h-screen bg-gray-100">
+            <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
+                <h1 className="text-2xl font-bold text-center">Login</h1>
+                <p className="text-center text-gray-600">
+                    To authorize <strong>{params.client_id}</strong>
                 </p>
-                <form method="POST" action={`/api/auth/login?${query.toString()}`}>
-                    <input
-                        type="email"
-                        name="email"
-                        placeholder="Email"
-                        required
-                        style={{
-                            padding: "0.75rem",
-                            border: "1px solid #ccc",
-                            borderRadius: "4px",
-                            fontSize: "1rem",
-                            width: "calc(100% - 1.5rem)",
-                            marginBottom: "1rem",
-                        }}
-                    />
-                    <input
-                        type="password"
-                        name="password"
-                        placeholder="Password"
-                        required
-                        style={{
-                            padding: "0.75rem",
-                            border: "1px solid #ccc",
-                            borderRadius: "4px",
-                            fontSize: "1rem",
-                            width: "calc(100% - 1.5rem)",
-                            marginBottom: "1rem",
-                        }}
-                    />
-                    <button
-                        type="submit"
-                        style={{
-                            padding: "0.75rem",
-                            border: "none",
-                            borderRadius: "4px",
-                            backgroundColor: "#1a73e8",
-                            color: "white",
-                            fontSize: "1rem",
-                            cursor: "pointer",
-                            width: "100%",
-                        }}
-                    >
+                <form method="POST" action={`/api/auth/login?${queryString}`} className="space-y-6">
+                    <input type="email" name="email" placeholder="Email" required className="w-full px-4 py-2 border rounded-lg" />
+                    <input type="password" name="password" placeholder="Password" required className="w-full px-4 py-2 border rounded-lg" />
+                    <button type="submit" className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
                         Login
                     </button>
                 </form>
-                <hr style={{ border: "none", borderTop: "1px solid #eee", margin: "1.5rem 0" }} />
-                <p>
+                <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-gray-300"></div>
+                    </div>
+                    <div className="relative flex justify-center text-sm">
+                        <span className="px-2 bg-white text-gray-500">Or</span>
+                    </div>
+                </div>
+                <p className="text-center">
                     Don't have an account?{" "}
-                    <a href={`/auth/signup?${query.toString()}`} style={{ color: "#1a73e8", textDecoration: "none" }}>
+                    <a href={`/auth/signup?${queryString}`} className="text-blue-600 hover:underline">
                         Sign up here
                     </a>
                 </p>
