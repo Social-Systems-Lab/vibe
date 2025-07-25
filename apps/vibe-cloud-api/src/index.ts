@@ -12,7 +12,7 @@ import { StorageService, MinioStorageProvider, ScalewayStorageProvider, StorageP
 import { getUserDbName } from "./lib/db";
 import { User } from "vibe-core";
 import nano from "nano";
-import { proxy } from "./lib/proxy";
+import { proxyRequest } from "./lib/proxy";
 
 const startServer = async () => {
     let storageProvider: StorageProvider;
@@ -114,6 +114,18 @@ const startServer = async () => {
             app
                 .derive(({ request }) => {
                     return { url: new URL(request.url) };
+                })
+                .get("/authorize", ({ request }) => {
+                    return proxyRequest(request);
+                })
+                .get("/login", ({ request }) => {
+                    return proxyRequest(request);
+                })
+                .get("/signup", ({ request }) => {
+                    return proxyRequest(request);
+                })
+                .get("/consent", ({ request }) => {
+                    return proxyRequest(request);
                 })
                 .post(
                     "/signup",
@@ -533,7 +545,6 @@ const startServer = async () => {
                     }
                 )
         )
-        .use(proxy)
         .group("/user", (app) =>
             app
                 .derive(async ({ cookie, sessionJwt }) => {

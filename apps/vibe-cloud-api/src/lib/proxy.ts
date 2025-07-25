@@ -13,13 +13,15 @@ function forwardHeaders(req: Request) {
     return headers;
 }
 
-export const proxy = (app: Elysia) =>
-    app.all("/auth/*", async ({ request }) => {
-        const url = new URL(request.url);
+export async function proxyRequest(request: Request) {
+    const url = new URL(request.url);
+    console.log(`[PROXY] Incoming request: ${request.method} ${url.pathname}`);
 
-        // Keep the /auth/* path when you set basePath:'/auth' in Next
-        const target = new URL(url.pathname + url.search, NEXT_INTERNAL);
+    // Keep the /auth/* path when you set basePath:'/auth' in Next
+    const target = new URL(url.pathname + url.search, NEXT_INTERNAL);
+    console.log(`[PROXY] Forwarding to: ${target.href}`);
 
+    try {
         const res = await fetch(target, {
             method: request.method,
             headers: forwardHeaders(request),
@@ -27,10 +29,16 @@ export const proxy = (app: Elysia) =>
             duplex: "half",
         } as any);
 
+        console.log(`[PROXY] Received response with status: ${res.status}`);
+
         // Stream back as-is
         const responseHeaders = new Headers(res.headers);
         return new Response(res.body, {
             status: res.status,
             headers: responseHeaders,
         });
-    });
+    } catch (error) {
+        console.error("[PROXY] Error forwarding request:", error);
+        return new Response("Proxy error", { status: 502 });
+    }
+}
