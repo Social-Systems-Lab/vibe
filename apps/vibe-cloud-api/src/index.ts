@@ -416,20 +416,25 @@ const startServer = async () => {
                         if (!sessionToken) {
                             return { scopes: [] }; // No session, no permissions
                         }
-                        const session = await sessionJwt.verify(sessionToken);
-                        if (!session || !session.sessionId) {
-                            return { scopes: [] };
-                        }
-                        const user = await identityService.findByDid(session.sessionId);
-                        if (!user) {
-                            return { scopes: [] };
-                        }
+                        try {
+                            const session = await sessionJwt.verify(sessionToken);
+                            if (!session || !session.sessionId) {
+                                return { scopes: [] };
+                            }
+                            const user = await identityService.findByDid(session.sessionId);
+                            if (!user) {
+                                return { scopes: [] };
+                            }
 
-                        const hasConsented = await identityService.hasUserConsented(user.did, origin);
-                        if (hasConsented) {
-                            // For now, grant full read/write access if consented.
-                            // This will be replaced with a more granular permission system.
-                            return { scopes: ["read", "write"] };
+                            const hasConsented = await identityService.hasUserConsented(user.did, origin);
+                            if (hasConsented) {
+                                // For now, grant full read/write access if consented.
+                                // This will be replaced with a more granular permission system.
+                                return { scopes: ["read", "write"] };
+                            }
+                        } catch (e) {
+                            // Invalid token
+                            return { scopes: [] };
                         }
 
                         return { scopes: [] };

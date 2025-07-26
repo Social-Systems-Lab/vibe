@@ -1,6 +1,20 @@
 "use client";
 
-import { Card, CardContent, CardFooter, CardHeader, Avatar, AvatarFallback, AvatarImage, Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Squircle } from "vibe-react";
+import {
+    Card,
+    CardContent,
+    CardFooter,
+    CardHeader,
+    Avatar,
+    AvatarFallback,
+    AvatarImage,
+    Button,
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+    Squircle,
+} from "vibe-react";
 import { useVibe } from "vibe-react";
 import { MoreHorizontal, Heart, MessageCircle, Repeat, Bookmark } from "lucide-react";
 import { Post, Profile, Acl } from "vibe-sdk";
@@ -48,7 +62,7 @@ export function PostCard({ post }: PostCardProps) {
         }
     };
 
-    const postDate = new Date(parseInt(post._id.split("/")[1].split("-")[0]) * 1);
+    const postDate = new Date(parseInt(post._id?.split("/")[1]?.split("-")[0]) * 1);
     const isOwnPost = post.author.did === user?.did;
 
     return (
