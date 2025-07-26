@@ -48,16 +48,27 @@ export default function ProfilePage() {
         const updatedUser = await response.json();
         console.log("Profile saved successfully. Received updated user:", updatedUser);
 
-        const params = new URLSearchParams(searchParams.toString());
-        const consentUrl = `/auth/consent?${params.toString()}`;
-        console.log("Redirecting to consent page:", consentUrl);
-        window.location.href = consentUrl;
+        const flow = searchParams.get("flow");
+        if (flow === "settings") {
+            window.opener.postMessage({ type: "vibe_auth_profile_updated" }, "*");
+            window.close();
+        } else {
+            const params = new URLSearchParams(searchParams.toString());
+            const consentUrl = `/auth/consent?${params.toString()}`;
+            console.log("Redirecting to consent page:", consentUrl);
+            window.location.href = consentUrl;
+        }
     };
 
     const handleSkip = () => {
-        const params = new URLSearchParams(searchParams.toString());
-        const consentUrl = `/auth/consent?${params.toString()}`;
-        window.location.href = consentUrl;
+        const flow = searchParams.get("flow");
+        if (flow === "settings") {
+            window.close();
+        } else {
+            const params = new URLSearchParams(searchParams.toString());
+            const consentUrl = `/auth/consent?${params.toString()}`;
+            window.location.href = consentUrl;
+        }
     };
 
     return (

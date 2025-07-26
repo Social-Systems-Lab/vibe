@@ -139,7 +139,7 @@ const startServer = async () => {
                     return { url: new URL(request.url) };
                 })
                 .get("/authorize", async ({ request, query, cookie, sessionJwt, identityService }) => {
-                    const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope } = query;
+                    const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope, form_type, prompt } = query;
                     const sessionToken = cookie.vibe_session.value;
 
                     if (sessionToken) {
@@ -147,33 +147,39 @@ const startServer = async () => {
                         if (session && session.sessionId) {
                             const user = await identityService.findByDid(session.sessionId);
                             if (user) {
-                                // Check if user needs to complete their profile
-                                if (!user.displayName) {
-                                    const returnUrl = new URL(request.url);
+                                const returnUrl = new URL(request.url);
+                                const { redirect_uri, ...restOfQuery } = query;
+                                const proxyParams = new URLSearchParams({
+                                    ...(restOfQuery as any),
+                                    redirect_uri: returnUrl.toString(),
+                                });
 
-                                    console.log("[AUTHZ] Return URL for profile completion:", returnUrl.toString());
-
-                                    // By destructuring, we isolate the incorrect redirect_uri and can build clean params.
-                                    const { redirect_uri, ...restOfQuery } = query;
-
-                                    const profileParams = new URLSearchParams({
-                                        ...(restOfQuery as any),
-                                        redirect_uri: returnUrl.toString(),
-                                        is_signup: "true",
-                                    });
-
+                                if (form_type === "profile") {
                                     const profileUrl = new URL(request.url);
                                     profileUrl.pathname = "/auth/profile";
-                                    profileUrl.search = profileParams.toString();
+                                    profileUrl.search = proxyParams.toString();
+                                    const newRequest = new Request(profileUrl.toString(), { method: request.method, headers: request.headers });
+                                    return proxyRequest(newRequest);
+                                }
 
+                                if (prompt === "consent") {
+                                    const consentUrl = new URL(request.url);
+                                    consentUrl.pathname = "/auth/consent";
+                                    const newRequest = new Request(consentUrl.toString(), { method: request.method, headers: request.headers });
+                                    return proxyRequest(newRequest);
+                                }
+
+                                if (!user.displayName) {
+                                    proxyParams.set("is_signup", "true");
+                                    const profileUrl = new URL(request.url);
+                                    profileUrl.pathname = "/auth/profile";
+                                    profileUrl.search = proxyParams.toString();
                                     const newRequest = new Request(profileUrl.toString(), { method: request.method, headers: request.headers });
                                     return proxyRequest(newRequest);
                                 }
 
                                 const hasConsented = await identityService.hasUserConsented(user.did, client_id!);
-                                console.log(`[AUTHZ] User: ${user.did}, Client: ${client_id}, Has Consented: ${hasConsented}`);
                                 if (hasConsented) {
-                                    // User is logged in and has consented, issue auth code and redirect back to client
                                     const authCode = await identityService.createAuthCode({
                                         userDid: user.did,
                                         clientId: client_id!,
@@ -183,17 +189,16 @@ const startServer = async () => {
                                         codeChallengeMethod: code_challenge_method || "S256",
                                     });
 
-                                    const redirectUrl = new URL(redirect_uri!);
-                                    redirectUrl.searchParams.set("code", authCode);
+                                    const finalRedirectUrl = new URL(redirect_uri!);
+                                    finalRedirectUrl.searchParams.set("code", authCode);
                                     if (state) {
-                                        redirectUrl.searchParams.set("state", state);
+                                        finalRedirectUrl.searchParams.set("state", state);
                                     }
-                                    return new Response(null, { status: 302, headers: { Location: redirectUrl.toString() } });
+                                    return new Response(null, { status: 302, headers: { Location: finalRedirectUrl.toString() } });
                                 } else {
-                                    // User is logged in but has not consented, show consent UI
-                                    const url = new URL(request.url);
-                                    url.pathname = "/auth/consent";
-                                    const newRequest = new Request(url.toString(), { method: request.method, headers: request.headers });
+                                    const consentUrl = new URL(request.url);
+                                    consentUrl.pathname = "/auth/consent";
+                                    const newRequest = new Request(consentUrl.toString(), { method: request.method, headers: request.headers });
                                     return proxyRequest(newRequest);
                                 }
                             }
@@ -202,9 +207,9 @@ const startServer = async () => {
 
                     // User is not logged in, show login/signup UI
                     const params = new URLSearchParams(query as any);
-                    const formType = params.get("form_type") || "login";
+                    const effectiveFormType = params.get("form_type") || "login";
                     let newPath = "/auth/login";
-                    if (formType === "signup") {
+                    if (effectiveFormType === "signup") {
                         newPath = "/auth/signup";
                     }
                     const url = new URL(request.url);

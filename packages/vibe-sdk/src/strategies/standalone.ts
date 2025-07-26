@@ -128,7 +128,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         }
     }
 
-    private redirectToAuthorize(formType: "login" | "signup" | "profile", promptConsent = false): Promise<void> {
+    private redirectToAuthorize(formType: "login" | "signup" | "profile", promptConsent = false, flow: "signup" | "settings" = "signup"): Promise<void> {
         return new Promise(async (resolve, reject) => {
             const pkce = await generatePkce();
             sessionStorage.setItem("vibe_pkce_verifier", pkce.verifier);
@@ -145,6 +145,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                 code_challenge: pkce.challenge,
                 code_challenge_method: "S256",
                 form_type: formType,
+                flow: flow,
             });
 
             if (promptConsent) {
@@ -212,11 +213,11 @@ export class StandaloneStrategy implements VibeTransportStrategy {
     }
 
     async manageConsent(): Promise<void> {
-        await this.redirectToAuthorize("login", true);
+        await this.redirectToAuthorize("login", true, "settings");
     }
 
     async manageProfile(): Promise<void> {
-        await this.redirectToAuthorize("profile");
+        await this.redirectToAuthorize("profile", false, "settings");
     }
 
     async handleRedirectCallback(url: string): Promise<void> {
