@@ -24,6 +24,7 @@ export default function ProfilePage() {
 
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
+        console.log("Profile form submitted.");
         const token = await getAccessToken();
         if (!token) {
             console.error("Could not obtain access token. Cannot update profile.");
@@ -41,14 +42,19 @@ export default function ProfilePage() {
         });
 
         if (!response.ok) {
-            console.error("Failed to save profile:", await response.text());
+            console.error("Failed to save profile. Status:", response.status, "Response:", await response.text());
             return;
         }
-        console.log("Profile saved successfully.");
+        const updatedUser = await response.json();
+        console.log("Profile saved successfully. Received updated user:", updatedUser);
 
         const redirectUri = searchParams.get("redirect_uri");
+        console.log("Redirect URI from params:", redirectUri);
         if (redirectUri) {
+            console.log("Redirecting to:", redirectUri);
             window.location.href = redirectUri;
+        } else {
+            console.error("No redirect_uri found in search params.");
         }
     };
 

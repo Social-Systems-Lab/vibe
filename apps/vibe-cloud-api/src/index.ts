@@ -69,7 +69,9 @@ const startServer = async () => {
     const app = new Elysia()
         .use(
             cors({
-                origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",") : ["http://localhost:3000", "http://localhost:3001"],
+                origin: process.env.CORS_ORIGIN
+                    ? process.env.CORS_ORIGIN.split(",")
+                    : ["http://localhost:3000", "http://localhost:3001", "http://localhost:4000", "http://localhost:5000"],
                 credentials: true,
             })
         )
@@ -148,8 +150,14 @@ const startServer = async () => {
                                 // Check if user needs to complete their profile
                                 if (!user.displayName) {
                                     const returnUrl = new URL(request.url);
+
+                                    console.log("[AUTHZ] Return URL for profile completion:", returnUrl.toString());
+
+                                    // By destructuring, we isolate the incorrect redirect_uri and can build clean params.
+                                    const { redirect_uri, ...restOfQuery } = query;
+
                                     const profileParams = new URLSearchParams({
-                                        ...query,
+                                        ...(restOfQuery as any),
                                         redirect_uri: returnUrl.toString(),
                                         is_signup: "true",
                                     });
@@ -163,6 +171,7 @@ const startServer = async () => {
                                 }
 
                                 const hasConsented = await identityService.hasUserConsented(user.did, client_id!);
+                                console.log(`[AUTHZ] User: ${user.did}, Client: ${client_id}, Has Consented: ${hasConsented}`);
                                 if (hasConsented) {
                                     // User is logged in and has consented, issue auth code and redirect back to client
                                     const authCode = await identityService.createAuthCode({
