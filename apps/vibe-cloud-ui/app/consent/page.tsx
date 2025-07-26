@@ -1,26 +1,48 @@
-type PageProps = {
-    searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-};
+"use client";
+import { useSearchParams } from "next/navigation";
+import { FormEvent } from "react";
 
-export default async function ConsentPage({ searchParams }: PageProps) {
-    const params = await searchParams;
-    const queryString = new URLSearchParams(params as any).toString();
-    const appImageUrl = params.app_image_url as string;
+export default function ConsentPage() {
+    const searchParams = useSearchParams();
+    const queryString = searchParams.toString();
+    const clientId = searchParams.get("client_id");
+    const scope = searchParams.get("scope");
+
+    const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        const decision = (event.nativeEvent as any).submitter.value;
+
+        const response = await fetch(`/auth/authorize/decision?${queryString}`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ decision }),
+        });
+
+        if (response.redirected) {
+            window.location.href = response.url;
+        } else {
+            // Handle potential errors if the response isn't a redirect
+            console.error("Expected a redirect, but did not receive one.");
+        }
+    };
 
     return (
         <div className="flex items-center justify-center h-screen bg-gray-100">
             <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md text-center">
                 <h1 className="text-2xl font-bold">Authorize Application</h1>
-                {appImageUrl && <img src={appImageUrl} alt="App Image" className="mx-auto mb-4 rounded-lg max-w-[100px] max-h-[100px]" />}
-                <p>
-                    The application <strong>{params.client_id}</strong> wants to access your data.
+                <p className="text-gray-600">
+                    The application <strong>{clientId}</strong> wants to access your data.
                 </p>
-                <p>Scopes: {params.scope}</p>
-                <form method="POST" action={`/api/auth/authorize/decision?${queryString}`} className="space-y-4">
+                <p className="text-gray-600">
+                    Scopes requested: <strong>{scope}</strong>
+                </p>
+                <form onSubmit={handleSubmit} className="space-y-4">
                     <button type="submit" name="decision" value="allow" className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
                         Allow
                     </button>
-                    <button type="submit" name="decision" value="deny" className="w-full px-4 py-2 text-white bg-gray-400 rounded-lg hover:bg-gray-500">
+                    <button type="submit" name="decision" value="deny" className="w-full px-4 py-2 text-gray-600 bg-gray-200 rounded-lg hover:bg-gray-300">
                         Deny
                     </button>
                 </form>

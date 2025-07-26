@@ -136,23 +136,71 @@ const startServer = async () => {
                 .derive(({ request }) => {
                     return { url: new URL(request.url) };
                 })
-                .get("/authorize", ({ request, query }) => {
+                .get("/authorize", async ({ request, query, cookie, sessionJwt, identityService }) => {
+                    const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope } = query;
+                    const sessionToken = cookie.vibe_session.value;
+
+                    if (sessionToken) {
+                        const session = await sessionJwt.verify(sessionToken);
+                        if (session && session.sessionId) {
+                            const user = await identityService.findByDid(session.sessionId);
+                            if (user) {
+                                // Check if user needs to complete their profile
+                                if (!user.displayName) {
+                                    const returnUrl = new URL(request.url);
+                                    const profileParams = new URLSearchParams({
+                                        ...query,
+                                        redirect_uri: returnUrl.toString(),
+                                        is_signup: "true",
+                                    });
+
+                                    const profileUrl = new URL(request.url);
+                                    profileUrl.pathname = "/auth/profile";
+                                    profileUrl.search = profileParams.toString();
+
+                                    const newRequest = new Request(profileUrl.toString(), { method: request.method, headers: request.headers });
+                                    return proxyRequest(newRequest);
+                                }
+
+                                const hasConsented = await identityService.hasUserConsented(user.did, client_id!);
+                                if (hasConsented) {
+                                    // User is logged in and has consented, issue auth code and redirect back to client
+                                    const authCode = await identityService.createAuthCode({
+                                        userDid: user.did,
+                                        clientId: client_id!,
+                                        scope: scope!,
+                                        redirectUri: redirect_uri!,
+                                        codeChallenge: code_challenge!,
+                                        codeChallengeMethod: code_challenge_method || "S256",
+                                    });
+
+                                    const redirectUrl = new URL(redirect_uri!);
+                                    redirectUrl.searchParams.set("code", authCode);
+                                    if (state) {
+                                        redirectUrl.searchParams.set("state", state);
+                                    }
+                                    return new Response(null, { status: 302, headers: { Location: redirectUrl.toString() } });
+                                } else {
+                                    // User is logged in but has not consented, show consent UI
+                                    const url = new URL(request.url);
+                                    url.pathname = "/auth/consent";
+                                    const newRequest = new Request(url.toString(), { method: request.method, headers: request.headers });
+                                    return proxyRequest(newRequest);
+                                }
+                            }
+                        }
+                    }
+
+                    // User is not logged in, show login/signup UI
                     const params = new URLSearchParams(query as any);
                     const formType = params.get("form_type") || "login";
-
                     let newPath = "/auth/login";
                     if (formType === "signup") {
                         newPath = "/auth/signup";
                     }
-
                     const url = new URL(request.url);
                     url.pathname = newPath;
-
-                    const newRequest = new Request(url.toString(), {
-                        method: request.method,
-                        headers: request.headers,
-                    });
-
+                    const newRequest = new Request(url.toString(), { method: request.method, headers: request.headers });
                     return proxyRequest(newRequest);
                 })
                 .get("/login", ({ request }) => {
@@ -167,6 +215,7 @@ const startServer = async () => {
                 .post(
                     "/signup",
                     async ({ body, sessionJwt, cookie, set, query }) => {
+                        console.log(`[API] POST /auth/signup received. Body:`, body);
                         const { email, password } = body;
                         const existingUser = await identityService.findByEmail(email);
                         if (existingUser) {

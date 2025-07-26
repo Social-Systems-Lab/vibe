@@ -1,19 +1,44 @@
-type PageProps = {
-    searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-};
+"use client";
+import { useSearchParams } from "next/navigation";
+import { FormEvent } from "react";
 
-export default async function SignupPage({ searchParams }: PageProps) {
-    const params = await searchParams;
-    const queryString = new URLSearchParams(params as any).toString();
+export default function SignupPage() {
+    const searchParams = useSearchParams();
+    const queryString = searchParams.toString();
+    const clientId = searchParams.get("client_id");
+
+    const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        const formData = new FormData(event.currentTarget);
+        const email = formData.get("email");
+        const password = formData.get("password");
+
+        console.log("Submitting form to /auth/signup");
+        const response = await fetch(`/auth/signup?${queryString}`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ email, password }),
+        });
+
+        console.log("Received response:", response);
+        if (response.redirected) {
+            console.log("Redirecting to:", response.url);
+            window.location.href = response.url;
+        } else {
+            console.log("No redirect detected.");
+        }
+    };
 
     return (
         <div className="flex items-center justify-center h-screen bg-gray-100">
             <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
                 <h1 className="text-2xl font-bold text-center">Sign Up</h1>
                 <p className="text-center text-gray-600">
-                    To authorize <strong>{params.client_id}</strong>
+                    To authorize <strong>{clientId}</strong>
                 </p>
-                <form method="POST" action={`/auth/signup?${queryString}`} className="space-y-6">
+                <form onSubmit={handleSubmit} className="space-y-6">
                     <input type="email" name="email" placeholder="Email" required className="w-full px-4 py-2 border rounded-lg" />
                     <input type="password" name="password" placeholder="Password" required className="w-full px-4 py-2 border rounded-lg" />
                     <button type="submit" className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
