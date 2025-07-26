@@ -48,21 +48,16 @@ export default function ProfilePage() {
         const updatedUser = await response.json();
         console.log("Profile saved successfully. Received updated user:", updatedUser);
 
-        const redirectUri = searchParams.get("redirect_uri");
-        console.log("Redirect URI from params:", redirectUri);
-        if (redirectUri) {
-            console.log("Redirecting to:", redirectUri);
-            window.location.href = redirectUri;
-        } else {
-            console.error("No redirect_uri found in search params.");
-        }
+        const params = new URLSearchParams(searchParams.toString());
+        const consentUrl = `/auth/consent?${params.toString()}`;
+        console.log("Redirecting to consent page:", consentUrl);
+        window.location.href = consentUrl;
     };
 
     const handleSkip = () => {
-        const redirectUri = searchParams.get("redirect_uri");
-        if (redirectUri) {
-            window.location.href = redirectUri;
-        }
+        const params = new URLSearchParams(searchParams.toString());
+        const consentUrl = `/auth/consent?${params.toString()}`;
+        window.location.href = consentUrl;
     };
 
     return (
