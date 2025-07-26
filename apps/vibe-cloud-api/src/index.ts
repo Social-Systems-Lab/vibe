@@ -110,6 +110,9 @@ const startServer = async () => {
         }))
         .decorate("identityService", identityService)
         .decorate("storageService", storageService)
+        .get("/auth/_next/*", ({ request }) => {
+            return proxyRequest(request);
+        })
         .group("/auth", (app) =>
             app
                 .derive(({ request }) => {
@@ -561,7 +564,7 @@ const startServer = async () => {
                     }
                 )
                 // This must be the last route in the group to act as a fallback
-                .all("*", ({ request }) => {
+                .all("/*", ({ request }) => {
                     return proxyRequest(request);
                 })
         )
