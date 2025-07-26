@@ -12,7 +12,10 @@ export default function ConsentPage() {
         event.preventDefault();
         const decision = (event.nativeEvent as any).submitter.value;
 
-        const response = await fetch(`/auth/authorize/decision?${queryString}`, {
+        const params = new URLSearchParams(queryString);
+        params.delete("form_type");
+
+        const response = await fetch(`/auth/authorize/decision?${params.toString()}`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -20,8 +23,9 @@ export default function ConsentPage() {
             body: JSON.stringify({ decision }),
         });
 
-        if (response.redirected) {
-            window.location.href = response.url;
+        const data = await response.json();
+        if (data.redirect) {
+            window.location.href = data.redirect;
         } else {
             // Handle potential errors if the response isn't a redirect
             console.error("Expected a redirect, but did not receive one.");

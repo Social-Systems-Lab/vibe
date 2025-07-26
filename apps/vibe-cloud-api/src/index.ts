@@ -455,44 +455,33 @@ const startServer = async () => {
 
                         const userDid = session.sessionId;
 
+                        const redirectUrl = new URL(redirect_uri);
                         if (decision === "deny") {
                             await identityService.revokeConsent(userDid, client_id);
-                            const redirectUrl = new URL(redirect_uri);
                             redirectUrl.searchParams.set("error", "access_denied");
                             if (state) {
                                 redirectUrl.searchParams.set("state", state);
                             }
-                            return new Response(null, {
-                                status: 302,
-                                headers: {
-                                    Location: redirectUrl.toString(),
-                                },
+                        } else {
+                            // Decision is "allow"
+                            await identityService.storeUserConsent(userDid, client_id);
+
+                            const authCode = await identityService.createAuthCode({
+                                userDid,
+                                clientId: client_id,
+                                scope,
+                                redirectUri: redirect_uri,
+                                codeChallenge: code_challenge,
+                                codeChallengeMethod: code_challenge_method || "S256",
                             });
+
+                            redirectUrl.searchParams.set("code", authCode);
+                            if (state) {
+                                redirectUrl.searchParams.set("state", state);
+                            }
                         }
 
-                        // Decision is "allow"
-                        await identityService.storeUserConsent(userDid, client_id);
-
-                        const authCode = await identityService.createAuthCode({
-                            userDid,
-                            clientId: client_id,
-                            scope,
-                            redirectUri: redirect_uri,
-                            codeChallenge: code_challenge,
-                            codeChallengeMethod: code_challenge_method || "S256",
-                        });
-
-                        const redirectUrl = new URL(redirect_uri);
-                        redirectUrl.searchParams.set("code", authCode);
-                        if (state) {
-                            redirectUrl.searchParams.set("state", state);
-                        }
-                        return new Response(null, {
-                            status: 302,
-                            headers: {
-                                Location: redirectUrl.toString(),
-                            },
-                        });
+                        return { redirect: redirectUrl.toString() };
                     },
                     {
                         body: t.Object({

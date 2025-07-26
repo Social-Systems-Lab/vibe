@@ -13,7 +13,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
                 <p className="text-center text-gray-600">
                     To authorize <strong>{params.client_id}</strong>
                 </p>
-                <form method="POST" action={`/api/auth/login?${queryString}`} className="space-y-6">
+                <form method="POST" action={`/auth/login?${queryString}`} className="space-y-6">
                     <input type="email" name="email" placeholder="Email" required className="w-full px-4 py-2 border rounded-lg" />
                     <input type="password" name="password" placeholder="Password" required className="w-full px-4 py-2 border rounded-lg" />
                     <button type="submit" className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
