@@ -110,6 +110,24 @@ const startServer = async () => {
         }))
         .decorate("identityService", identityService)
         .decorate("storageService", storageService)
+        .ws("/auth/_next/webpack-hmr", {
+            open(ws) {
+                console.log("[WS] HMR client connected");
+                const serverWs = new WebSocket("ws://127.0.0.1:4000/auth/_next/webpack-hmr");
+                (ws.data as any).serverWs = serverWs;
+
+                serverWs.onmessage = ({ data }) => ws.send(data);
+                serverWs.onclose = (e) => ws.close(e.code, e.reason);
+            },
+            message(ws, message) {
+                const { serverWs } = ws.data as any;
+                serverWs.send(message);
+            },
+            close(ws) {
+                const { serverWs } = ws.data as any;
+                serverWs.close();
+            },
+        })
         .get("/auth/_next/*", ({ request }) => {
             return proxyRequest(request);
         })
