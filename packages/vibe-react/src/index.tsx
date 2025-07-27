@@ -25,8 +25,8 @@ interface VibeContextType {
 
 const VibeContext = createContext<VibeContextType | undefined>(undefined);
 
-export const VibeProvider = ({ children, config }: { children: ReactNode; config: VibeSDKConfig }) => {
-    const [sdk] = useState(() => createSdk(config));
+export const VibeProvider = ({ children, config, authFlow = "onetap" }: { children: ReactNode; config: VibeSDKConfig; authFlow?: "onetap" | "default" }) => {
+    const [sdk] = useState(() => createSdk({ ...config, authFlow }));
     const [user, setUser] = useState<User | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
 
