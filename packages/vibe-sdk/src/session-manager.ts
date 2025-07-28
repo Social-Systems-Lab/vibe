@@ -46,7 +46,6 @@ export class SessionManager {
                 window.removeEventListener("message", messageListener);
                 document.body.removeChild(iframe);
 
-                console.log("Session check completed", event.data);
                 resolve(event.data as SessionState);
             };
 

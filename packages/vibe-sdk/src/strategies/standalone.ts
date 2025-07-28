@@ -110,8 +110,9 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         if (!storedVerifier) {
             throw new Error("Missing PKCE verifier for token exchange.");
         }
+        const tokenEndpoint = this.config.authFlow === "default" ? this.api.auth.token.post : this.api.auth.onetap.token.post;
 
-        const { data, error } = await this.api.auth.token.post({
+        const { data, error } = await tokenEndpoint({
             grant_type: "authorization_code",
             code,
             code_verifier: storedVerifier,
@@ -248,8 +249,9 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         if (!storedVerifier) {
             throw new Error("Missing PKCE verifier.");
         }
+        const tokenEndpoint = this.config.authFlow === "default" ? this.api.auth.token.post : this.api.auth.onetap.token.post;
 
-        const { data, error } = await this.api.auth.token.post({
+        const { data, error } = await tokenEndpoint({
             grant_type: "authorization_code",
             code,
             code_verifier: storedVerifier,
@@ -295,7 +297,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         }
         try {
             const { data, error } = await this.api.users.me.get({
-                $headers: {
+                headers: {
                     Authorization: `Bearer ${this.authManager.getAccessToken()}`,
                 },
             });
@@ -441,7 +443,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         // 1. Fetch the encrypted private key
         console.log("issueCert: Fetching encrypted private key...");
         const { data: keyData, error: keyError } = await this.api.users.me["encrypted-key"].get({
-            $headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
+            headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
         });
 
         if (keyError) {

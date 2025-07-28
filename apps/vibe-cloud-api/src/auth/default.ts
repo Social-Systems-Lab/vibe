@@ -5,8 +5,7 @@ export const defaultAuth = (app: Elysia) =>
         group
             .get(
                 "/authorize",
-                async ({ query, cookie, sessionJwt, identityService, redirect }) => {
-                    console.log("[AUTH] /authorize called", query);
+                async ({ query, cookie, sessionJwt, identityService, redirect }: any) => {
                     const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope, form_type, prompt } = query;
                     const sessionToken = cookie.vibe_session.value;
 
@@ -59,7 +58,6 @@ export const defaultAuth = (app: Elysia) =>
             .get(
                 "/session-check",
                 async ({ query, cookie, sessionJwt, identityService }: any) => {
-                    console.log("[AUTH] /session-check called", query);
                     const { client_id, redirect_uri } = query;
 
                     const renderScript = (data: any) => `
@@ -108,6 +106,41 @@ export const defaultAuth = (app: Elysia) =>
                 },
                 {
                     query: t.Object({
+                        client_id: t.String(),
+                        redirect_uri: t.String(),
+                    }),
+                }
+            )
+            .post(
+                "/token",
+                async ({ body, identityService, jwt }: any) => {
+                    const { grant_type, code, code_verifier, client_id, redirect_uri } = body;
+
+                    if (grant_type !== "authorization_code") {
+                        return new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 });
+                    }
+
+                    const userDid = await identityService.validateAuthCode(code, code_verifier!, client_id, redirect_uri);
+                    if (!userDid) {
+                        return new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 });
+                    }
+
+                    const user = await identityService.findByDid(userDid);
+                    if (!user) {
+                        return new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 });
+                    }
+
+                    const accessToken = await jwt.sign({ sub: user.did, instanceId: user.instanceId });
+                    return {
+                        access_token: accessToken,
+                        token_type: "Bearer",
+                    };
+                },
+                {
+                    body: t.Object({
+                        grant_type: t.String(),
+                        code: t.String(),
+                        code_verifier: t.String(),
                         client_id: t.String(),
                         redirect_uri: t.String(),
                     }),
