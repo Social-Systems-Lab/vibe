@@ -93,6 +93,12 @@ export class VibeSDK {
         await this.authStrategy.manageProfile();
     }
 
+    async handleRedirectCallback(url: string) {
+        if ("handleRedirectCallback" in this.authStrategy) {
+            await (this.authStrategy as any).handleRedirectCallback(url);
+        }
+    }
+
     async forceRefreshPermissions() {
         if ("forceRefreshPermissions" in this.dataStrategy) {
             await (this.dataStrategy as any).forceRefreshPermissions();

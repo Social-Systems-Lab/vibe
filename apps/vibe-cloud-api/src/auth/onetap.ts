@@ -2,9 +2,8 @@ import { Elysia, t } from "elysia";
 import { IdentityService } from "../services/identity";
 import { proxyRequest } from "../lib/proxy";
 import { getUserDbName } from "../lib/db";
-import { App } from "..";
 
-export const onetapAuth = (app: App) =>
+export const onetapAuth = (app: Elysia) =>
     app.group("/onetap", (group) =>
         group
             .derive(({ request }) => {

@@ -1,7 +1,6 @@
 import { Elysia, t } from "elysia";
-import { App } from "..";
 
-export const defaultAuth = (app: App) =>
+export const defaultAuth = (app: Elysia) =>
     app.group("", (group) =>
         group
             .get(

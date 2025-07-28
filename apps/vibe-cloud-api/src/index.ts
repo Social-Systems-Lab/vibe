@@ -103,11 +103,7 @@ const app = new Elysia()
     .decorate("identityService", identityService)
     .decorate("storageService", storageService)
     .decorate("dataService", dataService)
-    .decorate("certsService", certsService);
-
-export type App = typeof app;
-
-const configuredApp = app
+    .decorate("certsService", certsService)
     .get("/health", () => ({
         status: identityService.isConnected ? "ok" : "error",
         service: "vibe-cloud-api",
@@ -137,8 +133,8 @@ const configuredApp = app
     })
     .group("/auth", (authGroup) =>
         authGroup
-            .use(onetapAuth as any)
-            .use(defaultAuth as any)
+            .use(onetapAuth)
+            .use(defaultAuth)
             .all("/*", ({ request }) => {
                 return proxyRequest(request);
             })
@@ -542,4 +538,6 @@ const configuredApp = app
     )
     .listen(process.env.PORT || 5000);
 
-console.log(`Vibe Cloud API (${process.env.APP_VERSION}) is running at http://${configuredApp.server?.hostname}:${configuredApp.server?.port}`);
+export type App = typeof app;
+
+console.log(`Vibe Cloud API (${process.env.APP_VERSION}) is running at http://${app.server?.hostname}:${app.server?.port}`);

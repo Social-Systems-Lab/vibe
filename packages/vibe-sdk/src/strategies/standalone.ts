@@ -1,5 +1,5 @@
 import { VibeTransportStrategy } from "../strategy";
-import { edenTreaty } from "@elysiajs/eden";
+import { edenTreaty, treaty } from "@elysiajs/eden";
 import type { App } from "vibe-cloud-api";
 import { User, ReadCallback, Subscription, Certificate, DocRef, CertType } from "vibe-core";
 import { SessionManager } from "../session-manager";
@@ -83,7 +83,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
     constructor(config: StandaloneStrategyConfig) {
         this.authManager = new AuthManager();
-        this.api = edenTreaty<App>(config.apiUrl);
+        this.api = treaty<App>(config.apiUrl);
         this.config = config;
         this.sessionManager = new SessionManager(this.config);
     }
