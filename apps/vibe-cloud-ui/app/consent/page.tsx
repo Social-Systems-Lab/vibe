@@ -1,8 +1,8 @@
 "use client";
 import { useSearchParams } from "next/navigation";
-import { FormEvent } from "react";
+import { FormEvent, Suspense } from "react";
 
-export default function ConsentPage() {
+function ConsentForm() {
     const searchParams = useSearchParams();
     const queryString = searchParams.toString();
     const clientId = searchParams.get("client_id");
@@ -52,5 +52,13 @@ export default function ConsentPage() {
                 </form>
             </div>
         </div>
+    );
+}
+
+export default function ConsentPage() {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <ConsentForm />
+        </Suspense>
     );
 }

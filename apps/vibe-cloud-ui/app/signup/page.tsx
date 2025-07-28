@@ -1,8 +1,8 @@
 "use client";
 import { useSearchParams } from "next/navigation";
-import { FormEvent } from "react";
+import { FormEvent, Suspense } from "react";
 
-export default function SignupPage() {
+function SignupForm() {
     const searchParams = useSearchParams();
     const queryString = searchParams.toString();
     const clientId = searchParams.get("client_id");
@@ -61,5 +61,13 @@ export default function SignupPage() {
                 </p>
             </div>
         </div>
+    );
+}
+
+export default function SignupPage() {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <SignupForm />
+        </Suspense>
     );
 }

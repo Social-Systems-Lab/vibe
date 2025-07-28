@@ -11,6 +11,7 @@ export type VibeSDKConfig = {
     hubUrl?: string;
     appName?: string;
     appImageUrl?: string;
+    authFlow?: "onetap" | "default";
 };
 
 export class VibeSDK {
@@ -37,6 +38,7 @@ export class VibeSDK {
                 apiUrl: config.apiUrl,
                 clientId: config.clientId,
                 redirectUri: config.redirectUri,
+                authFlow: config.authFlow,
             });
             this.authStrategy = standalone;
             this.dataStrategy = standalone;

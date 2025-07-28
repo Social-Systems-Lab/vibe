@@ -1,8 +1,8 @@
 "use client";
 import { useSearchParams } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, Suspense, useState } from "react";
 
-export default function ProfilePage() {
+function ProfileForm() {
     const searchParams = useSearchParams();
     const [displayName, setDisplayName] = useState("");
     const [pictureUrl, setPictureUrl] = useState("https://placehold.co/100x100");
@@ -95,5 +95,13 @@ export default function ProfilePage() {
                 </button>
             </div>
         </div>
+    );
+}
+
+export default function ProfilePage() {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <ProfileForm />
+        </Suspense>
     );
 }
