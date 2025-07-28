@@ -63,12 +63,15 @@ try {
     process.exit(1);
 }
 
+console.log("Cors Origin:", process.env.CORS_ORIGIN);
+
 const app = new Elysia()
     .use(
         cors({
-            origin: process.env.CORS_ORIGIN
-                ? process.env.CORS_ORIGIN.split(",")
-                : ["http://localhost:3000", "http://localhost:3001", "http://localhost:4000", "http://localhost:5000"],
+            // origin: process.env.CORS_ORIGIN
+            //     ? process.env.CORS_ORIGIN.split(",")
+            //     : ["http://localhost:3000", "http://localhost:3001", "http://localhost:4000", "http://localhost:5000"],
+            origin: ["http://127.0.0.1:3000", "http://localhost:3000", "http://localhost:4000", "http://localhost:5000"],
             credentials: true,
         })
     )
@@ -131,14 +134,15 @@ const app = new Elysia()
     .get("/auth/_next/*", ({ request }) => {
         return proxyRequest(request);
     })
-    .group("/auth", (authGroup) =>
-        authGroup
-            .use(onetapAuth)
-            .use(defaultAuth)
-            .all("/*", ({ request }) => {
-                return proxyRequest(request);
-            })
-    )
+    .group("/auth", (authGroup) => authGroup.use(onetapAuth).use(defaultAuth))
+    .all("/auth/*", ({ request }) => {
+        console.log("Proxying request to /auth/*:", request.url);
+        return proxyRequest(request);
+    })
+    .all("*", ({ request }) => {
+        console.log("Proxying all other requests:", request.url);
+        return proxyRequest(request);
+    })
     .group("/users", (app) =>
         app
             .derive(async ({ jwt, headers }) => {

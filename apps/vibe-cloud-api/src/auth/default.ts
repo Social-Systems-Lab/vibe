@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { proxyRequest } from "../lib/proxy";
 
 export const defaultAuth = (app: Elysia) =>
     app.group("", (group) =>
@@ -6,7 +7,8 @@ export const defaultAuth = (app: Elysia) =>
             .get(
                 "/authorize",
                 async ({ query, cookie, sessionJwt, identityService, redirect }: any) => {
-                    const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope, form_type, prompt } = query;
+                    console.log("Hit /authorize endpoint with query:", query);
+                    const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope, prompt } = query;
                     const sessionToken = cookie.vibe_session.value;
 
                     if (sessionToken) {
@@ -37,7 +39,11 @@ export const defaultAuth = (app: Elysia) =>
                     }
 
                     // If not logged in, or consent is required, redirect to the UI wizard
-                    const params = new URLSearchParams(query as any);
+                    const { form_type, ...rest } = query as any;
+                    const params = new URLSearchParams(rest);
+                    if (form_type) {
+                        params.set("step", form_type);
+                    }
                     const redirectPath = `/auth/wizard?${params.toString()}`;
                     return redirect(redirectPath);
                 },
@@ -146,4 +152,9 @@ export const defaultAuth = (app: Elysia) =>
                     }),
                 }
             )
+            .all("/wizard", ({ request }) => proxyRequest(request))
+            .all("/login", ({ request }) => proxyRequest(request))
+            .all("/signup", ({ request }) => proxyRequest(request))
+            .all("/profile", ({ request }) => proxyRequest(request))
+            .all("/consent", ({ request }) => proxyRequest(request))
     );
