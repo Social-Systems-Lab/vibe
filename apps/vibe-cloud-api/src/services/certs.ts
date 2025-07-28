@@ -1,8 +1,8 @@
 import { IdentityService } from "./identity";
 import { DataService, JwtPayload } from "./data";
-import { Certificate, CertType } from "vibe-sdk";
 import * as jose from "jose";
 import { publicKeyHexToSpkiPem } from "../lib/did";
+import { Certificate, CertType } from "vibe-core";
 
 export class CertsService {
     constructor(private identityService: IdentityService, private dataService: DataService) {}
@@ -15,7 +15,11 @@ export class CertsService {
             throw new Error("Certificate must have a valid certType DocRef");
         }
 
-        const certTypeResult = await this.dataService.readOnce("cert-types", { _id: certificate.certType.ref }, { sub: certificate.certType.did, instanceId: "0" });
+        const certTypeResult = await this.dataService.readOnce(
+            "cert-types",
+            { _id: certificate.certType.ref },
+            { sub: certificate.certType.did, instanceId: "0" }
+        );
         if (!certTypeResult || !certTypeResult.docs || certTypeResult.docs.length === 0) {
             throw new Error(`Certificate Type ${certificate.certType.ref} not found for did ${certificate.certType.did}`);
         }

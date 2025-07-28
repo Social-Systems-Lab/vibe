@@ -32,7 +32,7 @@ interface VibeProviderConfig extends VibeSDKConfig {
 export const VibeProvider = ({
     children,
     config,
-    authFlow = "onetap",
+    authFlow = "default",
 }: {
     children: ReactNode;
     config: VibeProviderConfig;
