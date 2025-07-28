@@ -3,7 +3,6 @@ import { Elysia, t } from "elysia";
 import { jwt } from "@elysiajs/jwt";
 import { cookie } from "@elysiajs/cookie";
 import { cors } from "@elysiajs/cors";
-import { html } from "@elysiajs/html";
 import { staticPlugin } from "@elysiajs/static";
 import { IdentityService } from "./services/identity";
 import { DataService, JwtPayload } from "./services/data";
@@ -74,7 +73,6 @@ const app = new Elysia()
         })
     )
     .use(cookie())
-    .use(html())
     .use(
         staticPlugin({
             assets: "public",
@@ -144,155 +142,6 @@ const configuredApp = app
             .all("/*", ({ request }) => {
                 return proxyRequest(request);
             })
-    )
-    .group("/user", (userGroup) =>
-        userGroup
-            .derive(async ({ cookie, sessionJwt }) => {
-                const sessionToken = cookie.vibe_session.value;
-                if (!sessionToken) return { session: null };
-                const session = await sessionJwt.verify(sessionToken);
-                return { session };
-            })
-            .guard({
-                beforeHandle: ({ session, set }) => {
-                    if (!session) {
-                        set.status = 401;
-                        return { error: "Unauthorized" };
-                    }
-                },
-            })
-            .get(
-                "/profile",
-                async ({ session, html, identityService, set, query }) => {
-                    if (!session) {
-                        set.status = 401;
-                        return "Unauthorized";
-                    }
-                    const user = await identityService.findByDid(session.sessionId);
-                    const isSignup = query.is_signup === "true";
-
-                    const style = `
-                    body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f2f5; }
-                    .container { background-color: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 100%; }
-                    img { width: 100px; height: 100px; border-radius: 50%; object-fit: cover; margin-bottom: 1rem; }
-                    input[type="file"] { display: none; }
-                    label { cursor: pointer; }
-                    button {
-                        margin-top: 1rem;
-                        padding: 0.75rem;
-                        border: none;
-                        border-radius: 4px;
-                        background-color: #1a73e8;
-                        color: white;
-                        font-size: 1rem;
-                        cursor: pointer;
-                        width: 100%;
-                    }
-                    .skip { font-size: 0.8rem; margin-top: 1rem; }
-                `;
-
-                    return html(`
-                    <style>${style}</style>
-                    <div class="container">
-                        <h1>${isSignup ? "Complete Your Profile" : "Profile Settings"}</h1>
-                        <img id="profile-pic" src="${user?.pictureUrl || "https://placehold.co/100x100"}" alt="Profile Picture">
-                        <form id="profile-form">
-                            <label for="file-upload">${isSignup ? "Upload Picture" : "Change Picture"}</label>
-                            <input id="file-upload" type="file" accept="image/*">
-                            <input type="text" id="display-name" value="${user?.displayName || ""}" placeholder="Display Name">
-                            <button type="submit">${isSignup ? "Continue" : "Save"}</button>
-                        </form>
-                        ${isSignup ? `<a href="#" id="skip-link" class="skip">Skip for now</a>` : ""}
-                    </div>
-                    <script>
-                        const form = document.getElementById('profile-form');
-                        const fileUpload = document.getElementById('file-upload');
-                        const profilePic = document.getElementById('profile-pic');
-                        const skipLink = document.getElementById('skip-link');
-                        let pictureUrl = "${user?.pictureUrl || ""}";
-                        const redirectUri = new URLSearchParams(window.location.search).get('redirect_uri');
-
-                        fileUpload.addEventListener('change', async (event) => {
-                            const file = event.target.files[0];
-                            if (!file) return;
-
-                            const formData = new FormData();
-                            formData.append('file', file);
-
-                            const token = await getAccessToken();
-                            if (!token) return; // Handle error
-
-                            const response = await fetch('/storage/upload', {
-                                method: 'POST',
-                                body: formData,
-                                headers: { 'Authorization': 'Bearer ' + token }
-                            });
-
-                            const data = await response.json();
-                            if (data.url) {
-                                pictureUrl = data.url;
-                                profilePic.src = data.url;
-                            }
-                        });
-
-                        form.addEventListener('submit', async (event) => {
-                            event.preventDefault();
-                            const displayName = document.getElementById('display-name').value;
-                            
-                            const token = await getAccessToken();
-                            if (!token) return; // Handle error
-
-                            await fetch('/users/me', {
-                                method: 'PATCH',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'Authorization': 'Bearer ' + token
-                                },
-                                body: JSON.stringify({ displayName, pictureUrl })
-                            });
-
-                            if (redirectUri) {
-                                window.location.href = redirectUri;
-                            } else {
-                                if (window.opener) {
-                                    window.opener.postMessage({ type: "vibe_auth_profile_updated" }, "*");
-                                }
-                                window.close();
-                            }
-                        });
-
-                        if (skipLink) {
-                            skipLink.addEventListener('click', (e) => {
-                                e.preventDefault();
-                                if (redirectUri) {
-                                    window.location.href = redirectUri;
-                                }
-                            });
-                        }
-
-                        async function getAccessToken() {
-                            try {
-                                const response = await fetch('/auth/api-token');
-                                if (!response.ok) {
-                                    console.error('Failed to get API token');
-                                    return null;
-                                }
-                                const data = await response.json();
-                                return data.token;
-                            } catch (error) {
-                                console.error('Error fetching API token:', error);
-                                return null;
-                            }
-                        }
-                    </script>
-                `);
-                },
-                {
-                    query: t.Object({
-                        is_signup: t.Optional(t.String()),
-                    }),
-                }
-            )
     )
     .group("/users", (app) =>
         app
