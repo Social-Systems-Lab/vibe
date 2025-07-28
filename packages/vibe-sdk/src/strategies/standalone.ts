@@ -133,7 +133,11 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         }
     }
 
-    private redirectToAuthorize(formType: "login" | "signup" | "profile", promptConsent = false, flow: "signup" | "settings" = "signup"): Promise<void> {
+    private redirectToAuthorize(
+        formType: "login" | "signup" | "profile" = "signup",
+        promptConsent = false,
+        flow: "signup" | "settings" = "signup"
+    ): Promise<void> {
         return new Promise(async (resolve, reject) => {
             const pkce = await generatePkce();
             sessionStorage.setItem("vibe_pkce_verifier", pkce.verifier);

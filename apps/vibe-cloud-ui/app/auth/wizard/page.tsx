@@ -71,52 +71,40 @@ const SignupForm = ({ setStep }: { setStep: (step: string) => void }) => {
     const clientId = searchParams.get("client_id");
 
     return (
-        <div>
-            <h2 className="text-3xl font-bold mb-2 text-center">Create your account</h2>
-            <p className="text-gray-600 mb-8 text-center">
-                to get started with <strong>{clientId || "your app"}</strong>
-            </p>
-            <form action={`/auth/signup?${queryString}`} method="POST">
-                <div className="mb-4">
-                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="signup-email">
-                        Email
-                    </label>
-                    <input
-                        className="shadow-sm appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        id="signup-email"
-                        type="email"
-                        name="email"
-                        placeholder="you@example.com"
-                        required
-                    />
+        <div className="w-full max-w-md space-y-6">
+            <div className="text-center">
+                <h1 className="text-3xl font-bold">Create your account</h1>
+                <p className="mt-2 text-gray-600">
+                    to get started with <strong>{clientId || "your app"}</strong>
+                </p>
+            </div>
+            <form method="POST" action={`/auth/signup?${queryString}`} className="space-y-6">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Email</label>
+                    <input type="email" name="email" placeholder="you@example.com" required className="w-full px-4 py-2 mt-1 border rounded-lg" />
                 </div>
-                <div className="mb-6">
-                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="signup-password">
-                        Password
-                    </label>
-                    <input
-                        className="shadow-sm appearance-none border rounded w-full py-3 px-4 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        id="signup-password"
-                        type="password"
-                        name="password"
-                        required
-                    />
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Password</label>
+                    <input type="password" name="password" placeholder="••••••••" required className="w-full px-4 py-2 mt-1 border rounded-lg" />
                 </div>
-                <button
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded focus:outline-none focus:shadow-outline w-full"
-                    type="submit"
-                >
+                <button type="submit" className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
                     Sign Up
                 </button>
             </form>
-            <div className="text-center mt-6">
-                <p>
-                    Already have an account?{" "}
-                    <button onClick={() => setStep("login")} className="font-bold text-blue-600 hover:underline">
-                        Log In
-                    </button>
-                </p>
+            <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-300"></div>
+                </div>
+                <div className="relative flex justify-center text-sm">
+                    <span className="px-2 bg-white text-gray-500">Or</span>
+                </div>
             </div>
+            <p className="text-center">
+                Already have an account?{" "}
+                <button onClick={() => setStep("login")} className="text-blue-600 hover:underline">
+                    Log in
+                </button>
+            </p>
         </div>
     );
 };
@@ -127,41 +115,23 @@ const LoginForm = () => {
     const clientId = searchParams.get("client_id");
 
     return (
-        <div>
-            <h2 className="text-3xl font-bold mb-2 text-center">Welcome Back!</h2>
-            <p className="text-gray-600 mb-8 text-center">
-                Log in to access <strong>{clientId || "your app"}</strong>
-            </p>
-            <form action={`/auth/login?${queryString}`} method="POST">
-                <div className="mb-4">
-                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="login-email">
-                        Email
-                    </label>
-                    <input
-                        className="shadow-sm appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        id="login-email"
-                        type="email"
-                        name="email"
-                        placeholder="you@example.com"
-                        required
-                    />
+        <div className="w-full max-w-md space-y-6">
+            <div className="text-center">
+                <h1 className="text-3xl font-bold">Welcome Back!</h1>
+                <p className="mt-2 text-gray-600">
+                    Log in to access <strong>{clientId || "your app"}</strong>
+                </p>
+            </div>
+            <form method="POST" action={`/auth/login?${queryString}`} className="space-y-6">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Email</label>
+                    <input type="email" name="email" placeholder="you@example.com" required className="w-full px-4 py-2 mt-1 border rounded-lg" />
                 </div>
-                <div className="mb-6">
-                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="login-password">
-                        Password
-                    </label>
-                    <input
-                        className="shadow-sm appearance-none border rounded w-full py-3 px-4 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        id="login-password"
-                        type="password"
-                        name="password"
-                        required
-                    />
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Password</label>
+                    <input type="password" name="password" placeholder="••••••••" required className="w-full px-4 py-2 mt-1 border rounded-lg" />
                 </div>
-                <button
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded focus:outline-none focus:shadow-outline w-full"
-                    type="submit"
-                >
+                <button type="submit" className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
                     Log In
                 </button>
             </form>
@@ -174,38 +144,21 @@ const ProfileForm = () => {
     const queryString = searchParams.toString();
 
     return (
-        <div>
-            <h2 className="text-3xl font-bold mb-2 text-center">Complete Your Profile</h2>
-            <p className="text-gray-600 mb-8 text-center">Just a few more details to get you set up.</p>
-            <form action={`/auth/profile?${queryString}`} method="POST">
-                <div className="mb-4">
-                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="display-name">
-                        Display Name
-                    </label>
-                    <input
-                        className="shadow-sm appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        id="display-name"
-                        type="text"
-                        name="displayName"
-                        placeholder="Your Name"
-                        required
-                    />
+        <div className="w-full max-w-md space-y-6">
+            <div className="text-center">
+                <h1 className="text-3xl font-bold">Complete Your Profile</h1>
+                <p className="mt-2 text-gray-600">Just a few more details to get you set up.</p>
+            </div>
+            <form method="POST" action={`/auth/profile?${queryString}`} className="space-y-6">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Display Name</label>
+                    <input type="text" name="displayName" placeholder="Your Name" required className="w-full px-4 py-2 mt-1 border rounded-lg" />
                 </div>
-                <div className="mb-6">
-                    <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="bio">
-                        Bio (Optional)
-                    </label>
-                    <textarea
-                        className="shadow-sm appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        id="bio"
-                        name="bio"
-                        placeholder="Tell us a little about yourself..."
-                    />
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Bio (Optional)</label>
+                    <textarea name="bio" placeholder="Tell us a little about yourself..." className="w-full px-4 py-2 mt-1 border rounded-lg" />
                 </div>
-                <button
-                    className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded focus:outline-none focus:shadow-outline w-full"
-                    type="submit"
-                >
+                <button type="submit" className="w-full px-4 py-2 text-white bg-green-500 rounded-lg hover:bg-green-600">
                     Save and Continue
                 </button>
             </form>
