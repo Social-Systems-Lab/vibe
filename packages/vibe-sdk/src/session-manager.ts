@@ -1,5 +1,5 @@
+import { User } from "vibe-core";
 import { generatePkce } from "./strategies/standalone";
-import { User } from "./types";
 
 export type SessionState = {
     status: "LOGGED_OUT" | "ONE_TAP_REQUIRED" | "SILENT_LOGIN_SUCCESS";
@@ -12,9 +12,10 @@ export class SessionManager {
         clientId: string;
         redirectUri: string;
         apiUrl: string;
+        authFlow?: "onetap" | "default";
     };
 
-    constructor(config: { clientId: string; redirectUri: string; apiUrl: string }) {
+    constructor(config: { clientId: string; redirectUri: string; apiUrl: string; authFlow?: "onetap" | "default" }) {
         this.config = config;
     }
 
@@ -30,9 +31,10 @@ export class SessionManager {
                 code_challenge_method: "S256",
             });
 
+            const sessionCheckPath = this.config.authFlow === "default" ? "/auth/session-check" : "/auth/onetap/session-check";
             const iframe = document.createElement("iframe");
             iframe.style.display = "none";
-            iframe.src = `${this.config.apiUrl}/auth/session-check?${params.toString()}`;
+            iframe.src = `${this.config.apiUrl}${sessionCheckPath}?${params.toString()}`;
             document.body.appendChild(iframe);
 
             const messageListener = (event: MessageEvent) => {
@@ -44,6 +46,7 @@ export class SessionManager {
                 window.removeEventListener("message", messageListener);
                 document.body.removeChild(iframe);
 
+                console.log("Session check completed", event.data);
                 resolve(event.data as SessionState);
             };
 

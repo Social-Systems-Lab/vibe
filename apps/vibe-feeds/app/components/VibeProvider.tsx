@@ -10,6 +10,7 @@ export function VibeProvider({ children }: { children: ReactNode }) {
         clientId: process.env.NEXT_PUBLIC_CLIENT_ID || "http://localhost:3000",
         redirectUri: process.env.NEXT_PUBLIC_REDIRECT_URI || "http://localhost:3000/auth/callback",
         authFlow: "default" as "default" | "onetap" | undefined,
+        useHub: false,
     };
     return <VibeProviderReact config={config}>{children}</VibeProviderReact>;
 }

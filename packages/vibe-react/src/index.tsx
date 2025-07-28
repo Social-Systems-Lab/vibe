@@ -29,22 +29,17 @@ interface VibeProviderConfig extends VibeSDKConfig {
     authFlow?: "onetap" | "default";
 }
 
-export const VibeProvider = ({
-    children,
-    config,
-    authFlow = "default",
-}: {
-    children: ReactNode;
-    config: VibeProviderConfig;
-    authFlow?: "onetap" | "default";
-}) => {
-    const [sdk] = useState(() => createSdk({ ...config, authFlow } as any));
+export const VibeProvider = ({ children, config }: { children: ReactNode; config: VibeProviderConfig }) => {
+    const [sdk] = useState(() => createSdk(config));
     const [user, setUser] = useState<User | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSessionChecked, setIsSessionChecked] = useState(false);
 
     useEffect(() => {
         const initSdk = async () => {
             await sdk.init();
+            setIsSessionChecked(true);
         };
         initSdk();
 
@@ -57,6 +52,12 @@ export const VibeProvider = ({
             unsubscribe();
         };
     }, [sdk]);
+
+    useEffect(() => {
+        if (isSessionChecked && config.authFlow === "default" && !isLoggedIn) {
+            sdk.login();
+        }
+    }, [isSessionChecked, isLoggedIn, config.authFlow, sdk]);
 
     const login = () => sdk.login();
     const logout = () => sdk.logout();
@@ -76,6 +77,10 @@ export const VibeProvider = ({
     const remove = (collection: string, data: any) => sdk.remove(collection, data);
     const issueCert = (targetDid: string, certType: DocRef, expires?: string) => sdk.issueCert(targetDid, certType, expires);
     const revokeCert = (certId: string) => sdk.revokeCert(certId);
+
+    if (isLoading) {
+        return null; // or a loading spinner
+    }
 
     return (
         <VibeContext.Provider
