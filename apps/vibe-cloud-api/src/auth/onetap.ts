@@ -9,7 +9,7 @@ export const onetapAuth = (app: Elysia) =>
             .derive(({ request }) => {
                 return { url: new URL(request.url) };
             })
-            .get("/authorize", async ({ request, query, cookie, sessionJwt, identityService }) => {
+            .get("/authorize", async ({ request, query, cookie, sessionJwt, identityService }: any) => {
                 const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope, form_type, prompt } = query;
                 const sessionToken = cookie.vibe_session.value;
 
@@ -90,7 +90,7 @@ export const onetapAuth = (app: Elysia) =>
             })
             .post(
                 "/signup",
-                async ({ body, sessionJwt, cookie, set, query, identityService }) => {
+                async ({ body, sessionJwt, cookie, set, query, identityService }: any) => {
                     console.log(`[API] POST /auth/onetap/signup received. Body:`, body);
                     const { email, password } = body;
                     const existingUser = await identityService.findByEmail(email);
@@ -133,7 +133,7 @@ export const onetapAuth = (app: Elysia) =>
             )
             .post(
                 "/login",
-                async ({ body, sessionJwt, cookie, set, query, identityService }) => {
+                async ({ body, sessionJwt, cookie, set, query, identityService }: any) => {
                     const { email, password } = body;
                     try {
                         const user = await identityService.login(email, password);
@@ -172,7 +172,7 @@ export const onetapAuth = (app: Elysia) =>
             )
             .post(
                 "/refresh",
-                async ({ jwt, body, set, identityService }) => {
+                async ({ jwt, body, set, identityService }: any) => {
                     const { refreshToken } = body;
 
                     if (!refreshToken) {
@@ -226,7 +226,7 @@ export const onetapAuth = (app: Elysia) =>
             )
             .post(
                 "/authorize/decision",
-                async ({ query, body, cookie, sessionJwt, set, identityService }) => {
+                async ({ query, body, cookie, sessionJwt, set, identityService }: any) => {
                     const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope } = query;
                     const { decision } = body;
 
@@ -289,7 +289,7 @@ export const onetapAuth = (app: Elysia) =>
             )
             .post(
                 "/token",
-                async ({ body, jwt, set, identityService }) => {
+                async ({ body, jwt, set, identityService }: any) => {
                     const { grant_type, code, code_verifier, client_id, redirect_uri } = body;
 
                     try {
@@ -351,7 +351,7 @@ export const onetapAuth = (app: Elysia) =>
             )
             .get(
                 "/session-check",
-                async ({ query, cookie, sessionJwt, html, identityService }) => {
+                async ({ query, cookie, sessionJwt, html, identityService }: any) => {
                     const { client_id, redirect_uri, code_challenge, code_challenge_method } = query;
 
                     const renderScript = (data: any) => `

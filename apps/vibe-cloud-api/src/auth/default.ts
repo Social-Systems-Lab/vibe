@@ -58,7 +58,7 @@ export const defaultAuth = (app: Elysia) =>
             )
             .get(
                 "/session-check",
-                async ({ query, cookie, sessionJwt, identityService }) => {
+                async ({ query, cookie, sessionJwt, identityService }: any) => {
                     console.log("[AUTH] /session-check called", query);
                     const { client_id, redirect_uri } = query;
 
