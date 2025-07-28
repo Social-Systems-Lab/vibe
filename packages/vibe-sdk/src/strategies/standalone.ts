@@ -83,7 +83,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
     constructor(config: StandaloneStrategyConfig) {
         this.authManager = new AuthManager();
-        this.api = treaty<App>(config.apiUrl);
+        this.api = edenTreaty<App>(config.apiUrl);
         this.config = config;
         this.sessionManager = new SessionManager(this.config);
     }
@@ -297,7 +297,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         }
         try {
             const { data, error } = await this.api.users.me.get({
-                headers: {
+                $headers: {
                     Authorization: `Bearer ${this.authManager.getAccessToken()}`,
                 },
             });
@@ -443,7 +443,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         // 1. Fetch the encrypted private key
         console.log("issueCert: Fetching encrypted private key...");
         const { data: keyData, error: keyError } = await this.api.users.me["encrypted-key"].get({
-            headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
+            $headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
         });
 
         if (keyError) {
