@@ -97,6 +97,9 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             } catch (e) {
                 console.error("Silent login failed:", e);
             }
+        } else if ((sessionState.status as any) === "LOGGED_IN") {
+            this.authManager.setUser(sessionState.user || null);
+            this.authManager.notifyStateChange();
         } else if (sessionState.status === "ONE_TAP_REQUIRED") {
             this.authManager.setUser(sessionState.user || null);
         }

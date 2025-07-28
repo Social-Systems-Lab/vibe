@@ -34,30 +34,35 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
     const [user, setUser] = useState<User | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
-    const [isSessionChecked, setIsSessionChecked] = useState(false);
 
     useEffect(() => {
+        let isMounted = true;
+
         const initSdk = async () => {
             await sdk.init();
-            setIsSessionChecked(true);
+            if (isMounted) {
+                setIsLoading(false);
+            }
         };
-        initSdk();
 
         const unsubscribe = sdk.onStateChange((state) => {
-            setIsLoggedIn(state.isAuthenticated);
-            setUser(state.user);
+            if (isMounted) {
+                setIsLoggedIn(state.isAuthenticated);
+                setUser(state.user);
+                // If the session is now checked and we're still not logged in, trigger login for the default flow.
+                if (!state.isAuthenticated && config.authFlow === "default") {
+                    // sdk.login();
+                }
+            }
         });
 
+        initSdk();
+
         return () => {
+            isMounted = false;
             unsubscribe();
         };
-    }, [sdk]);
-
-    useEffect(() => {
-        if (isSessionChecked && config.authFlow === "default" && !isLoggedIn) {
-            sdk.login();
-        }
-    }, [isSessionChecked, isLoggedIn, config.authFlow, sdk]);
+    }, [sdk, config.authFlow]);
 
     const login = () => sdk.login();
     const logout = () => sdk.logout();

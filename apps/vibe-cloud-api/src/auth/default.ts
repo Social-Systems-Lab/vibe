@@ -7,6 +7,7 @@ export const defaultAuth = (app: App) =>
             .get(
                 "/authorize",
                 async ({ query, cookie, sessionJwt, identityService, redirect }) => {
+                    console.log("[AUTH] /authorize called", query);
                     const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope, form_type, prompt } = query;
                     const sessionToken = cookie.vibe_session.value;
 
@@ -59,6 +60,7 @@ export const defaultAuth = (app: App) =>
             .get(
                 "/session-check",
                 async ({ query, cookie, sessionJwt, identityService }) => {
+                    console.log("[AUTH] /session-check called", query);
                     const { client_id, redirect_uri } = query;
 
                     const renderScript = (data: any) => `
