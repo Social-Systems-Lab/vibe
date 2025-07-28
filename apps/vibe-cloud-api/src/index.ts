@@ -113,10 +113,10 @@ const app = new Elysia()
         version: process.env.APP_VERSION || "unknown",
         details: identityService.isConnected ? "All systems operational" : "Database connection failed",
     }))
-    .ws("/auth/_next/webpack-hmr", {
+    .ws("/_next/webpack-hmr", {
         open(ws) {
             console.log("[WS] HMR client connected");
-            const serverWs = new WebSocket("ws://127.0.0.1:4000/auth/_next/webpack-hmr");
+            const serverWs = new WebSocket("ws://127.0.0.1:4000/_next/webpack-hmr");
             (ws.data as any).serverWs = serverWs;
 
             serverWs.onmessage = ({ data }) => ws.send(data);
@@ -131,18 +131,10 @@ const app = new Elysia()
             serverWs.close();
         },
     })
-    .get("/auth/_next/*", ({ request }) => {
+    .get("/_next/*", ({ request }) => {
         return proxyRequest(request);
     })
     .group("/auth", (authGroup) => authGroup.use(onetapAuth).use(defaultAuth))
-    .all("/auth/*", ({ request }) => {
-        console.log("Proxying request to /auth/*:", request.url);
-        return proxyRequest(request);
-    })
-    .all("*", ({ request }) => {
-        console.log("Proxying all other requests:", request.url);
-        return proxyRequest(request);
-    })
     .group("/users", (app) =>
         app
             .derive(async ({ jwt, headers }) => {
