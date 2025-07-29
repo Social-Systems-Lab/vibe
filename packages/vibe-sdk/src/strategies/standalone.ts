@@ -164,14 +164,17 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                 params.set("prompt", "consent");
             }
 
+            if (this.config.appName) {
+                params.set("appName", this.config.appName);
+            }
             if (this.config.appImageUrl) {
-                params.set("app_image_url", this.config.appImageUrl);
+                params.set("appImageUrl", this.config.appImageUrl);
             }
             if (this.config.appTagline) {
-                params.set("app_tagline", this.config.appTagline);
+                params.set("appTagline", this.config.appTagline);
             }
             if (this.config.appDescription) {
-                params.set("app_description", this.config.appDescription);
+                params.set("appDescription", this.config.appDescription);
             }
 
             const authPath = this.config.authFlow === "default" ? "/auth/authorize" : "/auth/onetap/authorize";

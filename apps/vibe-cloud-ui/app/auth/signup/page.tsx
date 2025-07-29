@@ -6,6 +6,7 @@ function SignupForm() {
     const searchParams = useSearchParams();
     const queryString = searchParams.toString();
     const clientId = searchParams.get("client_id");
+    const appName = searchParams.get("app_name");
 
     return (
         <div className="grid md:grid-cols-2 h-screen">
@@ -18,7 +19,7 @@ function SignupForm() {
                     <div className="text-center">
                         <h1 className="text-3xl font-bold">Create your account</h1>
                         <p className="mt-2 text-gray-600">
-                            to get started with <strong>{clientId || "your app"}</strong>
+                            to get started with <strong>{appName || clientId || "your app"}</strong>
                         </p>
                     </div>
                     <form method="POST" action={`/auth/signup?${queryString}`} className="space-y-6">

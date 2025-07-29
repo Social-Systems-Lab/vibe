@@ -8,10 +8,10 @@ function Wizard() {
     const [step, setStep] = useState(searchParams.get("step") || "signup");
 
     // Extract branding and app info from URL
-    const appName = searchParams.get("app_name") || "your application";
-    const appImageUrl = searchParams.get("app_image_url");
-    const appTagline = searchParams.get("app_tagline");
-    const appDescription = searchParams.get("app_description");
+    const appName = searchParams.get("appName") || "your application";
+    const appImageUrl = searchParams.get("appImageUrl");
+    const appTagline = searchParams.get("appTagline");
+    const appDescription = searchParams.get("appDescription");
     const themeColor = searchParams.get("theme_color") || "#000000";
     const customLandingPage = searchParams.get("custom_landing_page");
 
@@ -39,7 +39,7 @@ function Wizard() {
                 <div className="text-left">
                     <h2 className="text-2xl font-bold">Vibe</h2>
                 </div>
-                <div className="text-center">
+                <div className="flex flex-col text-center items-center">
                     {appImageUrl && <img src={appImageUrl} alt={`${appName} logo`} className="w-24 h-24 mb-8 rounded-lg shadow-xl mx-auto" />}
                     <h1 className="text-4xl font-bold mb-4 text-center">Welcome to {appName}</h1>
                     {appTagline && <p className="text-xl text-center max-w-md mb-4">{appTagline}</p>}
@@ -69,6 +69,7 @@ const SignupForm = ({ setStep }: { setStep: (step: string) => void }) => {
     const searchParams = useSearchParams();
     const queryString = searchParams.toString();
     const clientId = searchParams.get("client_id");
+    const appName = searchParams.get("appName");
     const [isLoading, setIsLoading] = useState(false);
 
     const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -80,7 +81,7 @@ const SignupForm = ({ setStep }: { setStep: (step: string) => void }) => {
             <div className="text-center">
                 <h1 className="text-3xl font-bold">Create your account</h1>
                 <p className="mt-2 text-gray-600">
-                    to get started with <strong>{clientId || "your app"}</strong>
+                    to get started with <strong>{appName || clientId || "your app"}</strong>
                 </p>
             </div>
             <form method="POST" action={`/auth/signup?${queryString}`} className="space-y-6" onSubmit={handleSubmit}>
