@@ -85,7 +85,14 @@ const SignupForm = ({ setStep }: { setStep: (step: string) => void }) => {
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Password</label>
-                    <input type="password" name="password" placeholder="••••••••" required className="w-full px-4 py-2 mt-1 border rounded-lg" />
+                    <input
+                        type="password"
+                        name="password"
+                        placeholder="••••••••"
+                        required
+                        className="w-full px-4 py-2 mt-1 border rounded-lg"
+                        autoComplete="new-password"
+                    />
                 </div>
                 <button type="submit" className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
                     Sign Up
@@ -129,7 +136,14 @@ const LoginForm = ({ setStep }: { setStep: (step: string) => void }) => {
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Password</label>
-                    <input type="password" name="password" placeholder="••••••••" required className="w-full px-4 py-2 mt-1 border rounded-lg" />
+                    <input
+                        type="password"
+                        name="password"
+                        placeholder="••••••••"
+                        required
+                        className="w-full px-4 py-2 mt-1 border rounded-lg"
+                        autoComplete="current-password"
+                    />
                 </div>
                 <button type="submit" className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
                     Log In

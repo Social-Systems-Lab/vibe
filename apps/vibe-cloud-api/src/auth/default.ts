@@ -153,8 +153,99 @@ export const defaultAuth = (app: Elysia) =>
                 }
             )
             .all("/wizard", ({ request }) => proxyRequest(request))
-            .all("/login", ({ request }) => proxyRequest(request))
-            .all("/signup", ({ request }) => proxyRequest(request))
-            .all("/profile", ({ request }) => proxyRequest(request))
+            .post(
+                "/login",
+                async ({ body, sessionJwt, cookie, set, query, identityService, redirect }: any) => {
+                    const { email, password } = body;
+                    try {
+                        const user = await identityService.login(email, password);
+                        const sessionToken = await sessionJwt.sign({
+                            sessionId: user.did,
+                        });
+
+                        cookie.vibe_session.set({
+                            value: sessionToken,
+                            httpOnly: true,
+                            maxAge: 30 * 86400, // 30 days
+                            path: "/",
+                            sameSite: "lax",
+                        });
+
+                        const params = new URLSearchParams(query as any);
+                        return redirect(`/auth/authorize?${params.toString()}`);
+                    } catch (error: any) {
+                        set.status = 401;
+                        return { error: error.message };
+                    }
+                },
+                {
+                    body: t.Object({
+                        email: t.String(),
+                        password: t.String(),
+                    }),
+                }
+            )
+            .post(
+                "/signup",
+                async ({ body, sessionJwt, cookie, set, query, identityService, redirect }: any) => {
+                    const { email, password } = body;
+                    const existingUser = await identityService.findByEmail(email);
+                    if (existingUser) {
+                        set.status = 409;
+                        return { error: "User already exists" };
+                    }
+                    const password_hash = await Bun.password.hash(password);
+                    const user = await identityService.register(email, password_hash, password, "");
+
+                    const sessionToken = await sessionJwt.sign({
+                        sessionId: user.did,
+                    });
+
+                    cookie.vibe_session.set({
+                        value: sessionToken,
+                        httpOnly: true,
+                        maxAge: 30 * 86400, // 30 days
+                        path: "/",
+                        sameSite: "lax",
+                    });
+
+                    const params = new URLSearchParams(query as any);
+                    params.set("step", "profile");
+                    return redirect(`/auth/wizard?${params.toString()}`);
+                },
+                {
+                    body: t.Object({
+                        email: t.String(),
+                        password: t.String(),
+                    }),
+                }
+            )
+            .post(
+                "/profile",
+                async ({ body, sessionJwt, cookie, set, query, identityService, redirect }: any) => {
+                    const sessionToken = cookie.vibe_session.value;
+                    if (!sessionToken) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+
+                    const session = await sessionJwt.verify(sessionToken);
+                    if (!session || !session.sessionId) {
+                        set.status = 401;
+                        return { error: "Invalid session" };
+                    }
+
+                    await identityService.updateUser(session.sessionId, body);
+
+                    const params = new URLSearchParams(query as any);
+                    return redirect(`/auth/authorize?${params.toString()}`);
+                },
+                {
+                    body: t.Object({
+                        displayName: t.String(),
+                        bio: t.Optional(t.String()),
+                    }),
+                }
+            )
             .all("/consent", ({ request }) => proxyRequest(request))
     );
