@@ -58,6 +58,10 @@ export const defaultAuth = (app: Elysia) =>
                         code_challenge_method: t.Optional(t.String()),
                         form_type: t.Optional(t.String()),
                         prompt: t.Optional(t.String()),
+                        appName: t.Optional(t.String()),
+                        appImageUrl: t.Optional(t.String()),
+                        appTagline: t.Optional(t.String()),
+                        appDescription: t.Optional(t.String()),
                     }),
                 }
             )

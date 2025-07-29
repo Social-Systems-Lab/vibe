@@ -41,6 +41,10 @@ export class VibeSDK {
                 clientId: config.clientId,
                 redirectUri: config.redirectUri,
                 authFlow: config.authFlow,
+                appName: config.appName,
+                appImageUrl: config.appImageUrl,
+                appTagline: config.appTagline,
+                appDescription: config.appDescription,
             });
             this.authStrategy = standalone;
             this.dataStrategy = standalone;

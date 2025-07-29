@@ -71,6 +71,7 @@ export type StandaloneStrategyConfig = {
     clientId: string;
     redirectUri: string;
     apiUrl: string;
+    appName?: string;
     appImageUrl?: string;
     appTagline?: string;
     appDescription?: string;
