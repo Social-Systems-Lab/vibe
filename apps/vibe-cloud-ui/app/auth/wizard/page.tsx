@@ -69,6 +69,11 @@ const SignupForm = ({ setStep }: { setStep: (step: string) => void }) => {
     const searchParams = useSearchParams();
     const queryString = searchParams.toString();
     const clientId = searchParams.get("client_id");
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+        setIsLoading(true);
+    };
 
     return (
         <div className="w-full max-w-md space-y-6">
@@ -78,7 +83,7 @@ const SignupForm = ({ setStep }: { setStep: (step: string) => void }) => {
                     to get started with <strong>{clientId || "your app"}</strong>
                 </p>
             </div>
-            <form method="POST" action={`/auth/signup?${queryString}`} className="space-y-6">
+            <form method="POST" action={`/auth/signup?${queryString}`} className="space-y-6" onSubmit={handleSubmit}>
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Email</label>
                     <input type="email" name="email" placeholder="you@example.com" required className="w-full px-4 py-2 mt-1 border rounded-lg" />
@@ -94,8 +99,8 @@ const SignupForm = ({ setStep }: { setStep: (step: string) => void }) => {
                         autoComplete="new-password"
                     />
                 </div>
-                <button type="submit" className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
-                    Sign Up
+                <button type="submit" className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700" disabled={isLoading}>
+                    {isLoading ? "Signing up..." : "Sign Up"}
                 </button>
             </form>
             <div className="relative">
@@ -120,6 +125,11 @@ const LoginForm = ({ setStep }: { setStep: (step: string) => void }) => {
     const searchParams = useSearchParams();
     const queryString = searchParams.toString();
     const clientId = searchParams.get("client_id");
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+        setIsLoading(true);
+    };
 
     return (
         <div className="w-full max-w-md space-y-6">
@@ -129,7 +139,7 @@ const LoginForm = ({ setStep }: { setStep: (step: string) => void }) => {
                     Log in to access <strong>{clientId || "your app"}</strong>
                 </p>
             </div>
-            <form method="POST" action={`/auth/login?${queryString}`} className="space-y-6">
+            <form method="POST" action={`/auth/login?${queryString}`} className="space-y-6" onSubmit={handleSubmit}>
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Email</label>
                     <input type="email" name="email" placeholder="you@example.com" required className="w-full px-4 py-2 mt-1 border rounded-lg" />
@@ -145,8 +155,8 @@ const LoginForm = ({ setStep }: { setStep: (step: string) => void }) => {
                         autoComplete="current-password"
                     />
                 </div>
-                <button type="submit" className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">
-                    Log In
+                <button type="submit" className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700" disabled={isLoading}>
+                    {isLoading ? "Logging in..." : "Log In"}
                 </button>
             </form>
             <p className="text-center">
@@ -162,6 +172,11 @@ const LoginForm = ({ setStep }: { setStep: (step: string) => void }) => {
 const ProfileForm = () => {
     const searchParams = useSearchParams();
     const queryString = searchParams.toString();
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+        setIsLoading(true);
+    };
 
     return (
         <div className="w-full max-w-md space-y-6">
@@ -169,7 +184,7 @@ const ProfileForm = () => {
                 <h1 className="text-3xl font-bold">Complete Your Profile</h1>
                 <p className="mt-2 text-gray-600">Just a few more details to get you set up.</p>
             </div>
-            <form method="POST" action={`/auth/profile?${queryString}`} className="space-y-6">
+            <form method="POST" action={`/auth/profile?${queryString}`} className="space-y-6" onSubmit={handleSubmit}>
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Display Name</label>
                     <input type="text" name="displayName" placeholder="Your Name" required className="w-full px-4 py-2 mt-1 border rounded-lg" />
@@ -178,8 +193,8 @@ const ProfileForm = () => {
                     <label className="block text-sm font-medium text-gray-700">Bio (Optional)</label>
                     <textarea name="bio" placeholder="Tell us a little about yourself..." className="w-full px-4 py-2 mt-1 border rounded-lg" />
                 </div>
-                <button type="submit" className="w-full px-4 py-2 text-white bg-green-500 rounded-lg hover:bg-green-600">
-                    Save and Continue
+                <button type="submit" className="w-full px-4 py-2 text-white bg-green-500 rounded-lg hover:bg-green-600" disabled={isLoading}>
+                    {isLoading ? "Saving..." : "Save and Continue"}
                 </button>
             </form>
         </div>

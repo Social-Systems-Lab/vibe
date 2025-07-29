@@ -238,7 +238,8 @@ export const defaultAuth = (app: Elysia) =>
                     await identityService.updateUser(session.sessionId, body);
 
                     const params = new URLSearchParams(query as any);
-                    return redirect(`/auth/authorize?${params.toString()}`);
+                    params.set("step", "consent");
+                    return redirect(`/auth/wizard?${params.toString()}`);
                 },
                 {
                     body: t.Object({
