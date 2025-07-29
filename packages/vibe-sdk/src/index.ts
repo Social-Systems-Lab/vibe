@@ -11,6 +11,8 @@ export type VibeSDKConfig = {
     hubUrl?: string;
     appName?: string;
     appImageUrl?: string;
+    appTagline?: string;
+    appDescription?: string;
     authFlow?: "onetap" | "default";
 };
 

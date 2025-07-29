@@ -72,6 +72,8 @@ export type StandaloneStrategyConfig = {
     redirectUri: string;
     apiUrl: string;
     appImageUrl?: string;
+    appTagline?: string;
+    appDescription?: string;
     authFlow?: "onetap" | "default";
 };
 
@@ -163,6 +165,12 @@ export class StandaloneStrategy implements VibeTransportStrategy {
 
             if (this.config.appImageUrl) {
                 params.set("app_image_url", this.config.appImageUrl);
+            }
+            if (this.config.appTagline) {
+                params.set("app_tagline", this.config.appTagline);
+            }
+            if (this.config.appDescription) {
+                params.set("app_description", this.config.appDescription);
             }
 
             const authPath = this.config.authFlow === "default" ? "/auth/authorize" : "/auth/onetap/authorize";
