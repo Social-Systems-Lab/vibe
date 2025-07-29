@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 
@@ -47,15 +48,18 @@ function Wizard() {
                     color: fontColor,
                 }}
             >
-                <div className="max-w-md">
-                    {appLogotypeUrl ? (
-                        <img src={appLogotypeUrl} alt={`${appName} logotype`} className="h-12 mb-8" />
-                    ) : (
-                        <div className="flex items-center mb-8">
-                            {appLogoUrl && <img src={appLogoUrl} alt={`${appName} logo`} className="w-12 h-12 mr-4" />}
-                            <h1 className="text-3xl font-bold">{appName}</h1>
-                        </div>
-                    )}
+                <div className="max-w-md z-30">
+                    <div className="flex flex-row items-center mb-3">
+                        {appLogotypeUrl ? (
+                            <img src={appLogotypeUrl} alt={`${appName} logotype`} />
+                        ) : (
+                            <div className="flex items-center">
+                                {appLogoUrl && <img src={appLogoUrl} alt={`${appName} logo`} className="w-12 h-12 mr-4" />}
+
+                                <h1 className="text-3xl font-bold">{appName}</h1>
+                            </div>
+                        )}
+                    </div>
                     {appTagline && <p className="text-5xl font-bold mb-6">{appTagline}</p>}
                     {appDescription && <p className="text-lg opacity-80 mb-8">{appDescription}</p>}
                     {appShowcaseUrl && <img src={appShowcaseUrl} alt={`${appName} showcase`} className="w-full " />}
@@ -65,13 +69,16 @@ function Wizard() {
     };
 
     return (
-        <div className="flex h-screen bg-white">
+        <div className="flex h-screen bg-white relative">
+            {/* <div className="absolute inset-0 z-20 flex items-center justify-center">
+                <Image src="/images/vibe.png" alt="Vibe Logo" width="800" height="800" className="opacity-5" />
+            </div> */}
             {/* Left Column (Branding) */}
-            <div className="hidden lg:block lg:w-1/2">{renderBranding()}</div>
+            <div className="hidden lg:block lg:w-1/2 z-10">{renderBranding()}</div>
 
             {/* Right Column (Form) */}
             <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-8 overflow-y-auto bg-[#f5f5f5]">
-                <div className="w-full max-w-md">{renderStep()}</div>
+                <div className="w-full max-w-md z-30">{renderStep()}</div>
             </div>
         </div>
     );
@@ -90,14 +97,14 @@ const SignupForm = ({ setStep }: { setStep: (step: string) => void }) => {
     };
 
     return (
-        <div className="w-full max-w-md space-y-6 ">
+        <div className="w-full max-w-md space-y-6 z-30">
             {/* bg-white rounded-lg p-8 shadow-lg */}
-            {/* <div className="text-center">
+            <div className="text-center">
                 <h1 className="text-3xl font-bold">Create your account</h1>
                 <p className="mt-2 text-gray-600">
                     to get started with <strong>{appName || clientId || "your app"}</strong>
                 </p>
-            </div> */}
+            </div>
             <form method="POST" action={`/auth/signup?${queryString}`} className="space-y-6" onSubmit={handleSubmit}>
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Email</label>
@@ -147,7 +154,7 @@ const LoginForm = ({ setStep }: { setStep: (step: string) => void }) => {
     };
 
     return (
-        <div className="w-full max-w-md space-y-6">
+        <div className="w-full max-w-md space-y-6 z-30">
             <div className="text-center">
                 <h1 className="text-3xl font-bold">Welcome Back!</h1>
                 <p className="mt-2 text-gray-600">
@@ -194,7 +201,7 @@ const ProfileForm = () => {
     };
 
     return (
-        <div className="w-full max-w-md space-y-6">
+        <div className="w-full max-w-md space-y-6 z-30">
             <div className="text-center">
                 <h1 className="text-3xl font-bold">Complete Your Profile</h1>
                 <p className="mt-2 text-gray-600">Just a few more details to get you set up.</p>
