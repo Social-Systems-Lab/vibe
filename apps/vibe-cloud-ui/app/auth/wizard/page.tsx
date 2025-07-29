@@ -21,7 +21,7 @@ function Wizard() {
     const renderStep = () => {
         switch (step) {
             case "login":
-                return <LoginForm />;
+                return <LoginForm setStep={setStep} />;
             case "profile":
                 return <ProfileForm />;
             case "signup":
@@ -46,7 +46,7 @@ function Wizard() {
                     {appDescription && <p className="text-md text-center max-w-md opacity-80">{appDescription}</p>}
                 </div>
                 <div className="text-center">
-                    <p className="text-sm opacity-70">Powered by Vibe. One account for a universe of apps.</p>
+                    <p className="text-sm opacity-70">Powered by Vibe. Your everything.</p>
                 </div>
             </div>
         );
@@ -109,7 +109,7 @@ const SignupForm = ({ setStep }: { setStep: (step: string) => void }) => {
     );
 };
 
-const LoginForm = () => {
+const LoginForm = ({ setStep }: { setStep: (step: string) => void }) => {
     const searchParams = useSearchParams();
     const queryString = searchParams.toString();
     const clientId = searchParams.get("client_id");
@@ -135,6 +135,12 @@ const LoginForm = () => {
                     Log In
                 </button>
             </form>
+            <p className="text-center">
+                Don't have an account?{" "}
+                <button onClick={() => setStep("signup")} className="text-blue-600 hover:underline">
+                    Sign up
+                </button>
+            </p>
         </div>
     );
 };

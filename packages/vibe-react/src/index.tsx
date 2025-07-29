@@ -51,7 +51,7 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
                 setUser(state.user);
                 // If the session is now checked and we're still not logged in, trigger login for the default flow.
                 if (!state.isAuthenticated && config.authFlow === "default") {
-                    sdk.login();
+                    sdk.signup();
                 }
             }
         });
