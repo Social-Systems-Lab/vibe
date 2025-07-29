@@ -59,9 +59,15 @@ export const defaultAuth = (app: Elysia) =>
                         form_type: t.Optional(t.String()),
                         prompt: t.Optional(t.String()),
                         appName: t.Optional(t.String()),
-                        appImageUrl: t.Optional(t.String()),
+                        backgroundImageUrl: t.Optional(t.String()),
                         appTagline: t.Optional(t.String()),
                         appDescription: t.Optional(t.String()),
+                        themeColor: t.Optional(t.String()),
+                        appLogoUrl: t.Optional(t.String()),
+                        appLogotypeUrl: t.Optional(t.String()),
+                        appShowcaseUrl: t.Optional(t.String()),
+                        backgroundColor: t.Optional(t.String()),
+                        buttonColor: t.Optional(t.String()),
                     }),
                 }
             )

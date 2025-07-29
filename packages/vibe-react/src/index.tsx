@@ -8,7 +8,7 @@ interface VibeContextType {
     user: User | null;
     isLoggedIn: boolean;
     appName?: string;
-    appImageUrl?: string;
+    appLogoUrl?: string;
     login: () => Promise<void>;
     logout: () => Promise<void>;
     signup: () => Promise<void>;
@@ -103,7 +103,7 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
                 issueCert,
                 revokeCert,
                 appName: config.appName,
-                appImageUrl: config.appImageUrl,
+                appLogoUrl: config.appLogoUrl,
                 manageConsent,
                 manageProfile,
             }}

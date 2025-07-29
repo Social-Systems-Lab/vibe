@@ -2,7 +2,7 @@ import { VibeSDKConfig } from "vibe-sdk";
 
 export const sdkConfig: VibeSDKConfig & { authFlow?: "onetap" | "default"; appName: string; useHub: boolean } = {
     appName: "Vibe Feed",
-    appImageUrl: process.env.NEXT_PUBLIC_APP_IMAGE_URL || "https://picsum.photos/400/400",
+    backgroundImageUrl: `${process.env.NEXT_PUBLIC_CLIENT_ID || "http://127.0.0.1:3000"}/images/logo.png`,
     appTagline: "You control your feed.",
     appDescription: "Create custom feeds and share content on your terms.",
     apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:5000",
@@ -10,4 +10,11 @@ export const sdkConfig: VibeSDKConfig & { authFlow?: "onetap" | "default"; appNa
     redirectUri: process.env.NEXT_PUBLIC_REDIRECT_URI || "http://127.0.0.1:3000/auth/callback",
     authFlow: "default",
     useHub: false,
+    themeColor: "#000000",
+    appLogoUrl: `${process.env.NEXT_PUBLIC_CLIENT_ID || "http://127.0.0.1:3000"}/images/logo.png`,
+    appLogotypeUrl: `${process.env.NEXT_PUBLIC_CLIENT_ID || "http://127.0.0.1:3000"}/images/logotype.png`,
+    appShowcaseUrl: `${process.env.NEXT_PUBLIC_CLIENT_ID || "http://127.0.0.1:3000"}/images/showcase.png`,
+    backgroundColor: "#000000",
+    buttonColor: "#0000FF",
+    fontColor: "#000000",
 };

@@ -10,9 +10,16 @@ export type VibeSDKConfig = {
     useHub?: boolean;
     hubUrl?: string;
     appName?: string;
-    appImageUrl?: string;
+    backgroundImageUrl?: string;
     appTagline?: string;
     appDescription?: string;
+    themeColor?: string;
+    appLogoUrl?: string;
+    appLogotypeUrl?: string;
+    appShowcaseUrl?: string;
+    backgroundColor?: string;
+    buttonColor?: string;
+    fontColor?: string;
     authFlow?: "onetap" | "default";
 };
 
@@ -42,9 +49,16 @@ export class VibeSDK {
                 redirectUri: config.redirectUri,
                 authFlow: config.authFlow,
                 appName: config.appName,
-                appImageUrl: config.appImageUrl,
+                backgroundImageUrl: config.backgroundImageUrl,
                 appTagline: config.appTagline,
                 appDescription: config.appDescription,
+                themeColor: config.themeColor,
+                appLogoUrl: config.appLogoUrl,
+                appLogotypeUrl: config.appLogotypeUrl,
+                appShowcaseUrl: config.appShowcaseUrl,
+                backgroundColor: config.backgroundColor,
+                buttonColor: config.buttonColor,
+                fontColor: config.fontColor,
             });
             this.authStrategy = standalone;
             this.dataStrategy = standalone;

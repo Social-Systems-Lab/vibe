@@ -4,7 +4,7 @@ import React from "react";
 import { useVibe } from "../index";
 
 export const OneTapChip = () => {
-    const { user, login, appName, appImageUrl } = useVibe();
+    const { user, login, appName, appLogoUrl } = useVibe();
 
     if (!user) {
         return null;
@@ -30,7 +30,7 @@ export const OneTapChip = () => {
             }}
         >
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                {appImageUrl && <img src={appImageUrl} alt={appName} style={{ width: "24px", height: "24px", borderRadius: "4px" }} />}
+                {appLogoUrl && <img src={appLogoUrl} alt={appName} style={{ width: "24px", height: "24px", borderRadius: "4px" }} />}
                 <div style={{ fontWeight: "bold", fontSize: "16px" }}>Sign in to {appName || "your app"}</div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>

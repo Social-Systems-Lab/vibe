@@ -72,9 +72,16 @@ export type StandaloneStrategyConfig = {
     redirectUri: string;
     apiUrl: string;
     appName?: string;
-    appImageUrl?: string;
+    backgroundImageUrl?: string;
     appTagline?: string;
     appDescription?: string;
+    themeColor?: string;
+    appLogoUrl?: string;
+    appLogotypeUrl?: string;
+    appShowcaseUrl?: string;
+    backgroundColor?: string;
+    buttonColor?: string;
+    fontColor?: string;
     authFlow?: "onetap" | "default";
 };
 
@@ -167,14 +174,35 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             if (this.config.appName) {
                 params.set("appName", this.config.appName);
             }
-            if (this.config.appImageUrl) {
-                params.set("appImageUrl", this.config.appImageUrl);
+            if (this.config.backgroundImageUrl) {
+                params.set("backgroundImageUrl", this.config.backgroundImageUrl);
             }
             if (this.config.appTagline) {
                 params.set("appTagline", this.config.appTagline);
             }
             if (this.config.appDescription) {
                 params.set("appDescription", this.config.appDescription);
+            }
+            if (this.config.themeColor) {
+                params.set("theme_color", this.config.themeColor);
+            }
+            if (this.config.appLogoUrl) {
+                params.set("appLogoUrl", this.config.appLogoUrl);
+            }
+            if (this.config.appLogotypeUrl) {
+                params.set("appLogotypeUrl", this.config.appLogotypeUrl);
+            }
+            if (this.config.appShowcaseUrl) {
+                params.set("appShowcaseUrl", this.config.appShowcaseUrl);
+            }
+            if (this.config.backgroundColor) {
+                params.set("backgroundColor", this.config.backgroundColor);
+            }
+            if (this.config.buttonColor) {
+                params.set("buttonColor", this.config.buttonColor);
+            }
+            if (this.config.fontColor) {
+                params.set("fontColor", this.config.fontColor);
             }
 
             const authPath = this.config.authFlow === "default" ? "/auth/authorize" : "/auth/onetap/authorize";
