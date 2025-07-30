@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
 import { VibeSDK, User, ReadCallback, Subscription, createSdk, DocRef, CertType, VibeManifest } from "vibe-sdk";
 
 interface VibeContextType {
@@ -34,8 +34,12 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
     const [user, setUser] = useState<User | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [isSessionChecked, setIsSessionChecked] = useState(false);
+    const initCalled = useRef(false);
 
     useEffect(() => {
+        if (initCalled.current) return;
+        initCalled.current = true;
+
         let isMounted = true;
 
         const initSdk = async () => {

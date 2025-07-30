@@ -285,6 +285,8 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         // Clear client-side session first
         this.authManager.setAccessToken(null);
         this.authManager.setUser(null);
+        sessionStorage.removeItem("vibe_pkce_verifier");
+        sessionStorage.removeItem("vibe_oauth_state");
 
         // Redirect to the central logout endpoint
         const logoutUrl = new URL(`${this.config.apiUrl}/auth/logout`);
