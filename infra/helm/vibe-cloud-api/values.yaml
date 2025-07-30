@@ -28,8 +28,8 @@ config:
     storageProvider: "scaleway"
     scalewayRegion: "fr-par"
     scalewayEndpoint: "s3.fr-par.scw.cloud"
-    corsOrigin: "http://127.0.0.1:3001" # This will be overridden by the production URL
-    port: "5000"
+    corsOrigin: "http://127.0.0.1:3000" # This will be overridden by the production URL
+    port: "5050"
 
 # CouchDB sub-chart configuration
 couchdb:

@@ -43,5 +43,5 @@ ENV APP_VERSION=$APP_VERSION
 WORKDIR /usr/src/app
 COPY --from=build /prod .
 
-EXPOSE 5000
+EXPOSE 5050
 CMD [ "bun", "run", "dist/index.mjs" ]

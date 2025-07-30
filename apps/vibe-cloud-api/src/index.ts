@@ -63,7 +63,7 @@ try {
 
 const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(",")
-    : ["http://127.0.0.1:3000", "http://127.0.0.1:4000", "http://127.0.0.1:5000", "http://localhost:3000", "http://localhost:4000", "http://localhost:5000"];
+    : ["http://127.0.0.1:3000", "http://127.0.0.1:4000", "http://127.0.0.1:5050", "http://localhost:3000", "http://localhost:4000", "http://localhost:5050"];
 console.log("Cors Origin:", allowedOrigins);
 
 const app = new Elysia()
@@ -140,8 +140,12 @@ const app = new Elysia()
         app
             .get(
                 "/authorize",
-                async ({ query, cookie, sessionJwt, identityService, redirect }) => {
-                    console.log("Hit /authorize endpoint with query:", query);
+                async ({ query, request, cookie, sessionJwt, identityService, redirect }) => {
+                    console.log("[authorize] Hit /authorize endpoint with query:", query);
+                    console.log("[authorize] Session cookie:", cookie.vibe_session.value);
+                    const origin = new URL(request.url).origin;
+                    console.log("[authorize] Request origin:", origin);
+
                     const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope, prompt } = query;
                     const sessionToken = cookie.vibe_session.value;
 
@@ -352,7 +356,7 @@ const app = new Elysia()
                             httpOnly: true,
                             maxAge: 30 * 86400, // 30 days
                             path: "/",
-                            sameSite: "lax",
+                            sameSite: "strict",
                         });
 
                         const params = new URLSearchParams(query as any);
@@ -392,7 +396,7 @@ const app = new Elysia()
                         httpOnly: true,
                         maxAge: 30 * 86400, // 30 days
                         path: "/",
-                        sameSite: "lax",
+                        sameSite: "strict",
                     });
 
                     const params = new URLSearchParams(query as any);
@@ -469,17 +473,19 @@ const app = new Elysia()
             )
             .get(
                 "/logout",
-                ({ cookie, query, redirect, request }) => {
+                async ({ cookie, query, redirect, request }) => {
                     const origin = new URL(request.url).origin;
-                    console.log(`[logout] Clearing cookie on origin: ${origin}`);
+                    console.log(`[logout] Clearing cookie ${cookie.vibe_session.value} on origin: ${origin}`);
                     cookie.vibe_session.set({
                         value: "",
                         maxAge: -1,
                         path: "/",
                         httpOnly: true,
-                        sameSite: "lax",
+                        sameSite: "strict",
                     });
+                    console.log(`Cookie cleared. Set to ${cookie.vibe_session.value}`);
                     console.log("After logout, cookie should be cleared.");
+                    await new Promise((resolve) => setTimeout(resolve, 100));
                     return redirect(query.redirect_uri);
                 },
                 {
@@ -910,7 +916,7 @@ const app = new Elysia()
                 }
             )
     )
-    .listen(process.env.PORT || 5000);
+    .listen(process.env.PORT || 5050);
 
 export type App = typeof app;
 

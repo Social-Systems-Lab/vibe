@@ -5,7 +5,7 @@ export const appManifest: VibeManifest = {
     backgroundImageUrl: `${process.env.NEXT_PUBLIC_CLIENT_ID || "http://127.0.0.1:3000"}/images/logo.png`,
     appTagline: "You control your feed.",
     appDescription: "Create custom feeds and share content on your terms.",
-    apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:5000",
+    apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:5050",
     clientId: process.env.NEXT_PUBLIC_CLIENT_ID || "http://127.0.0.1:3000",
     redirectUri: process.env.NEXT_PUBLIC_REDIRECT_URI || "http://127.0.0.1:3000/auth/callback",
     useHub: false,

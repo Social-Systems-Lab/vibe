@@ -38,7 +38,7 @@ services:
             context: ../../
             dockerfile: apps/vibe-cloud-api/Dockerfile
         ports:
-            - "5000:5000"
+            - "5050:5050"
         environment:
             - COUCHDB_URL=http://couchdb:5984
             - COUCHDB_USER=admin
