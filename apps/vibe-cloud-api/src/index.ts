@@ -63,7 +63,7 @@ try {
 
 const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(",")
-    : ["http://localhost:3000", "http://localhost:3001", "http://localhost:4000", "http://localhost:5000"];
+    : ["http://127.0.0.1:3000", "http://127.0.0.1:3001", "http://127.0.0.1:4000", "http://127.0.0.1:5000"];
 console.log("Cors Origin:", allowedOrigins);
 
 const app = new Elysia()
@@ -139,7 +139,7 @@ const app = new Elysia()
     .ws("/_next/webpack-hmr", {
         open(ws) {
             console.log("[WS] HMR client connected");
-            const serverWs = new WebSocket("ws://localhost:4000/_next/webpack-hmr");
+            const serverWs = new WebSocket("ws://127.0.0.1:4000/_next/webpack-hmr");
             (ws.data as any).serverWs = serverWs;
 
             serverWs.onmessage = ({ data }) => ws.send(data);
@@ -304,7 +304,7 @@ const app = new Elysia()
                         return new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 });
                     }
 
-                    const userDid = await identityService.validateAuthCode(code, code_verifier!, client_id, redirect_uri);
+                    const userDid = await identityService.validateAuthCode(code, code_verifier, client_id, redirect_uri);
                     if (!userDid) {
                         return new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 });
                     }

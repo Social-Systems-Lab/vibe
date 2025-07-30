@@ -295,7 +295,14 @@ export class IdentityService {
 
         await this.usersDb.insert(user);
     }
-    async createAuthCode(data: { userDid: string; clientId: string; redirectUri: string; codeChallenge: string; codeChallengeMethod: string; scope: string }): Promise<string> {
+    async createAuthCode(data: {
+        userDid: string;
+        clientId: string;
+        redirectUri: string;
+        codeChallenge: string;
+        codeChallengeMethod: string;
+        scope: string;
+    }): Promise<string> {
         await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
@@ -316,7 +323,7 @@ export class IdentityService {
         return code;
     }
 
-    async validateAuthCode(code: string, codeVerifier: string): Promise<{ userDid: string; clientId: string; scope: string }> {
+    async validateAuthCode(code: string, codeVerifier: string, clientId: string, redirectUri: string): Promise<string> {
         await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
@@ -339,6 +346,14 @@ export class IdentityService {
             throw new Error("Invalid or expired authorization code.");
         }
 
+        if (doc.clientId !== clientId) {
+            throw new Error("Client ID does not match.");
+        }
+
+        if (doc.redirectUri !== redirectUri) {
+            throw new Error("Redirect URI does not match.");
+        }
+
         // PKCE verification
         if (doc.codeChallengeMethod === "S256") {
             const hashedVerifier = createHash("sha256").update(codeVerifier).digest("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
@@ -352,11 +367,7 @@ export class IdentityService {
             }
         }
 
-        return {
-            userDid: doc.userDid,
-            clientId: doc.clientId,
-            scope: doc.scope,
-        };
+        return doc.userDid;
     }
     async storeUserConsent(userDid: string, clientId: string) {
         await this.reauthenticate();

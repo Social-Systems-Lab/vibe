@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
 
-const NEXT_INTERNAL = process.env.VIBE_CLOUD_UI_URL || "http://localhost:4000"; // your Next server
+const NEXT_INTERNAL = process.env.VIBE_CLOUD_UI_URL || "http://127.0.0.1:4000"; // your Next server
 
 function forwardHeaders(req: Request) {
     const headers = new Headers(req.headers);
