@@ -212,8 +212,11 @@ const app = new Elysia()
 
                     const renderScript = (data: any) => `
                         <script>
-                            if (window.parent) {
-                                window.parent.postMessage(${JSON.stringify(data)}, '${new URL(redirect_uri).origin}');
+                            if (window.opener) {
+                                window.opener.postMessage(${JSON.stringify(data)}, '*');
+                                window.close();
+                            } else if (window.parent) {
+                                window.parent.postMessage(${JSON.stringify(data)}, '*');
                             }
                         </script>
                     `;
