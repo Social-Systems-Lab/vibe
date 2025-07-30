@@ -110,17 +110,15 @@ const SignupForm = ({ setStep }: { setStep: (step: string) => void }) => {
             </div>
             <form method="POST" action={`/auth/signup?${queryString}`} className="space-y-6" onSubmit={handleSubmit}>
                 <div>
-                    <label className="block text-sm font-medium text-gray-700">Email</label>
-                    <input type="email" name="email" placeholder="you@example.com" required className="w-full px-4 py-2 mt-1 border rounded-lg bg-white" />
+                    <input type="email" name="email" placeholder="Email" required className="w-full px-4 py-2 border rounded-lg bg-white mt-1" />
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-gray-700">Password</label>
                     <input
                         type="password"
                         name="password"
-                        placeholder="••••••••"
+                        placeholder="Password"
                         required
-                        className="w-full px-4 py-2 mt-1 border rounded-lg bg-white"
+                        className="w-full px-4 py-2 border rounded-lg bg-white"
                         autoComplete="new-password"
                     />
                 </div>
@@ -166,17 +164,15 @@ const LoginForm = ({ setStep }: { setStep: (step: string) => void }) => {
             </div>
             <form method="POST" action={`/auth/login?${queryString}`} className="space-y-6" onSubmit={handleSubmit}>
                 <div>
-                    <label className="block text-sm font-medium text-gray-700">Email</label>
-                    <input type="email" name="email" placeholder="you@example.com" required className="w-full px-4 py-2 mt-1 border rounded-lg" />
+                    <input type="email" name="email" placeholder="Email" required className="w-full px-4 py-2 mt-1 border rounded-lg" />
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-gray-700">Password</label>
                     <input
                         type="password"
                         name="password"
-                        placeholder="••••••••"
+                        placeholder="Password"
                         required
-                        className="w-full px-4 py-2 mt-1 border rounded-lg"
+                        className="w-full px-4 py-2 border rounded-lg"
                         autoComplete="current-password"
                     />
                 </div>
@@ -212,11 +208,11 @@ const ProfileForm = () => {
             <form method="POST" action={`/auth/profile?${queryString}`} className="space-y-6" onSubmit={handleSubmit}>
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Display Name</label>
-                    <input type="text" name="displayName" placeholder="Your Name" required className="w-full px-4 py-2 mt-1 border rounded-lg" />
+                    <input type="text" name="displayName" placeholder="Your Name" required className="w-full px-4 py-2 mt-1 border rounded-lg bg-white" />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Bio (Optional)</label>
-                    <textarea name="bio" placeholder="Tell us a little about yourself..." className="w-full px-4 py-2 mt-1 border rounded-lg" />
+                    <textarea name="bio" placeholder="Tell us a little about yourself..." className="w-full px-4 py-2 mt-1 border rounded-lg bg-white" />
                 </div>
                 <button type="submit" className="w-full px-4 py-2 text-white bg-green-500 rounded-lg hover:bg-green-600" disabled={isLoading}>
                     {isLoading ? "Saving..." : "Save and Continue"}
