@@ -40,7 +40,7 @@ export class DataService {
         await this.couch.auth(this.config.user, this.config.pass);
     }
 
-    private getDb(instanceId: string): DocumentScope<any> {
+    public getDb(instanceId: string): DocumentScope<any> {
         const dbName = getUserDbName(instanceId);
         return this.couch.use(dbName);
     }

@@ -63,7 +63,7 @@ try {
 
 const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(",")
-    : ["http://127.0.0.1:3000", "http://127.0.0.1:3001", "http://127.0.0.1:4000", "http://127.0.0.1:5000"];
+    : ["http://127.0.0.1:3000", "http://127.0.0.1:4000", "http://127.0.0.1:5000", "http://localhost:3000", "http://localhost:4000", "http://localhost:5000"];
 console.log("Cors Origin:", allowedOrigins);
 
 const app = new Elysia()
@@ -71,11 +71,10 @@ const app = new Elysia()
         cors({
             origin: allowedOrigins,
             credentials: true,
-            methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-            allowedHeaders: ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
-            exposeHeaders: ["Content-Disposition"],
-            // exposedHeaders: ["Content-Disposition"],
-            maxAge: 86400, // 24 hours
+            // methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            // allowedHeaders: ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
+            // exposeHeaders: ["Content-Disposition"],
+            // maxAge: 86400, // 24 hours
         })
     )
     .onAfterHandle(({ request, set }) => {
@@ -670,9 +669,6 @@ const app = new Elysia()
                             (ws.data as any).profile = profile;
                             console.log(`WebSocket authenticated for collection: ${collection} by user ${profile.sub}`);
 
-                            const dbName = getUserDbName(profile.instanceId);
-                            const db = nano(process.env.COUCHDB_URL!).use(dbName);
-
                             const processAndSend = async () => {
                                 const result = await dataService.readOnce(collection, message.query || {}, profile as JwtPayload);
                                 ws.send(result.docs);
@@ -680,6 +676,7 @@ const app = new Elysia()
 
                             await processAndSend();
 
+                            const db = dataService.getDb(profile.instanceId);
                             const changes = db.changesReader.start({ since: "now", includeDocs: true });
                             (ws.data as any).changes = changes;
 
@@ -737,14 +734,19 @@ const app = new Elysia()
                         await processAndSend();
 
                         for (const dbName of dbNames) {
-                            const db = nano(process.env.COUCHDB_URL!).use(dbName);
-                            const changes = db.changesReader.start({ since: "now", includeDocs: true });
-                            changes.on("change", async (change) => {
-                                if (change.doc?.collection === collection) {
-                                    await processAndSend();
-                                }
-                            });
-                            changesFeeds.push(changes);
+                            try {
+                                const instanceId = dbName.replace("userdb-", "");
+                                const db = dataService.getDb(instanceId);
+                                const changes = db.changesReader.start({ since: "now", includeDocs: true });
+                                changes.on("change", async (change) => {
+                                    if (change.doc?.collection === collection) {
+                                        await processAndSend();
+                                    }
+                                });
+                                changesFeeds.push(changes);
+                            } catch (error) {
+                                console.error(`Error processing database ${dbName}:`, error);
+                            }
                         }
                         (ws.data as any).changes = changesFeeds;
                     }
@@ -775,7 +777,7 @@ const app = new Elysia()
                             set.status = 404;
                             return { error: "User not found" };
                         }
-                        const db = nano(process.env.COUCHDB_URL!).use(getUserDbName(user.instanceId));
+                        const db = dataService.getDb(user.instanceId);
                         const doc = await db.get(ref);
                         return doc;
                     } catch (error) {
