@@ -29,7 +29,9 @@ function Wizard() {
             case "login":
                 return <LoginForm setStep={setStep} />;
             case "profile":
-                return <ProfileForm />;
+                return <ProfileForm setStep={setStep} />;
+            case "consent":
+                return <ConsentForm setStep={setStep} />;
             case "signup":
             default:
                 return <SignupForm setStep={setStep} />;
@@ -190,13 +192,27 @@ const LoginForm = ({ setStep }: { setStep: (step: string) => void }) => {
     );
 };
 
-const ProfileForm = () => {
+const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
     const searchParams = useSearchParams();
     const queryString = searchParams.toString();
     const [isLoading, setIsLoading] = useState(false);
 
-    const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
         setIsLoading(true);
+
+        const formData = new FormData(e.currentTarget);
+        const response = await fetch(`/auth/profile?${queryString}`, {
+            method: "POST",
+            body: formData,
+        });
+
+        if (response.ok) {
+            setStep("consent");
+        } else {
+            // Handle error
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -205,7 +221,7 @@ const ProfileForm = () => {
                 <h1 className="text-3xl font-bold font-heading">Complete Your Profile</h1>
                 <p className="mt-2 text-gray-600">Just a few more details to get you set up.</p>
             </div>
-            <form method="POST" action={`/auth/profile?${queryString}`} className="space-y-6" onSubmit={handleSubmit}>
+            <form className="space-y-6" onSubmit={handleSubmit}>
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Display Name</label>
                     <input type="text" name="displayName" placeholder="Your Name" required className="w-full px-4 py-2 mt-1 border rounded-lg bg-white" />
@@ -216,6 +232,64 @@ const ProfileForm = () => {
                 </div>
                 <button type="submit" className="w-full px-4 py-2 text-white bg-green-500 rounded-lg hover:bg-green-600" disabled={isLoading}>
                     {isLoading ? "Saving..." : "Save and Continue"}
+                </button>
+            </form>
+        </div>
+    );
+};
+
+const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
+    const searchParams = useSearchParams();
+    const queryString = searchParams.toString();
+    const appName = searchParams.get("appName") || "your application";
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleSubmit = async (action: "approve" | "deny") => {
+        setIsLoading(true);
+
+        const response = await fetch(`/auth/consent?${queryString}`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ action }),
+        });
+
+        if (response.ok && response.redirected) {
+            window.location.href = response.url;
+        } else {
+            // Handle error
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <div className="w-full max-w-md space-y-6 z-30">
+            <div className="text-center">
+                <h1 className="text-3xl font-bold font-heading">Almost there!</h1>
+                <p className="mt-2 text-gray-600">{appName} is requesting permission to access your Vibe account.</p>
+            </div>
+            <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
+                <div className="p-4 bg-gray-100 rounded-lg">
+                    <h3 className="font-bold">Permissions requested:</h3>
+                    <ul className="list-disc list-inside mt-2 text-gray-700">
+                        <li>Read your profile information</li>
+                        <li>Read your contacts</li>
+                    </ul>
+                </div>
+                <button
+                    onClick={() => handleSubmit("approve")}
+                    className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                    disabled={isLoading}
+                >
+                    {isLoading ? "Approving..." : "Approve"}
+                </button>
+                <button
+                    onClick={() => handleSubmit("deny")}
+                    className="w-full px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300"
+                    disabled={isLoading}
+                >
+                    Deny
                 </button>
             </form>
         </div>

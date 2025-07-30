@@ -258,5 +258,37 @@ export const defaultAuth = (app: Elysia) =>
                     }),
                 }
             )
-            .all("/consent", ({ request }) => proxyRequest(request))
+            .post(
+                "/consent",
+                async ({ body, query, cookie, sessionJwt, identityService, redirect, set }: any) => {
+                    const { action } = body;
+                    const { client_id } = query;
+                    const sessionToken = cookie.vibe_session.value;
+
+                    if (!sessionToken) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+
+                    const session = await sessionJwt.verify(sessionToken);
+                    if (!session || !session.sessionId) {
+                        set.status = 401;
+                        return { error: "Invalid session" };
+                    }
+
+                    if (action === "approve") {
+                        await identityService.storeUserConsent(session.sessionId, client_id);
+                    } else {
+                        // Handle denial if necessary, for now, we'll just redirect
+                    }
+
+                    const params = new URLSearchParams(query as any);
+                    return redirect(`/auth/authorize?${params.toString()}`);
+                },
+                {
+                    body: t.Object({
+                        action: t.String(),
+                    }),
+                }
+            )
     );
