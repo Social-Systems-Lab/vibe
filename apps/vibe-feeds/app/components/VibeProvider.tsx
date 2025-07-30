@@ -3,8 +3,8 @@
 import { VibeProvider as VibeProviderReact } from "vibe-react";
 import type { ReactNode } from "react";
 
-import { sdkConfig } from "../lib/sdkConfig";
+import { appManifest } from "../lib/manifest";
 
 export function VibeProvider({ children }: { children: ReactNode }) {
-    return <VibeProviderReact config={sdkConfig}>{children}</VibeProviderReact>;
+    return <VibeProviderReact config={appManifest}>{children}</VibeProviderReact>;
 }

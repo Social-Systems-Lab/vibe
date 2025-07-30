@@ -3,7 +3,7 @@ import { HubStrategy } from "./strategies/hub";
 import { VibeTransportStrategy } from "./strategy";
 import { DocRef, ReadCallback, Subscription } from "vibe-core";
 
-export type VibeSDKConfig = {
+export type VibeManifest = {
     apiUrl: string;
     clientId: string;
     redirectUri: string;
@@ -20,7 +20,6 @@ export type VibeSDKConfig = {
     backgroundColor?: string;
     buttonColor?: string;
     fontColor?: string;
-    authFlow?: "onetap" | "default";
 };
 
 export class VibeSDK {
@@ -31,7 +30,7 @@ export class VibeSDK {
     private isInitialized = false;
     private isInitializing = false;
 
-    constructor(config: VibeSDKConfig) {
+    constructor(config: VibeManifest) {
         if (config.useHub) {
             this.authStrategy = new StandaloneStrategy({
                 apiUrl: config.apiUrl,
@@ -47,7 +46,6 @@ export class VibeSDK {
                 apiUrl: config.apiUrl,
                 clientId: config.clientId,
                 redirectUri: config.redirectUri,
-                authFlow: config.authFlow,
                 appName: config.appName,
                 backgroundImageUrl: config.backgroundImageUrl,
                 appTagline: config.appTagline,
@@ -184,7 +182,7 @@ export class VibeSDK {
 
 import { getSdk } from "./sdk-manager";
 
-export const createSdk = (config: VibeSDKConfig) => {
+export const createSdk = (config: VibeManifest) => {
     return getSdk(config);
 };
 

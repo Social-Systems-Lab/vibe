@@ -82,7 +82,6 @@ export type StandaloneStrategyConfig = {
     backgroundColor?: string;
     buttonColor?: string;
     fontColor?: string;
-    authFlow?: "onetap" | "default";
 };
 
 export class StandaloneStrategy implements VibeTransportStrategy {
@@ -120,9 +119,8 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         if (!storedVerifier) {
             throw new Error("Missing PKCE verifier for token exchange.");
         }
-        const tokenEndpoint = this.config.authFlow === "default" ? this.api.auth.token.post : this.api.auth.onetap.token.post;
 
-        const { data, error } = await tokenEndpoint({
+        const { data, error } = await this.api.auth.token.post({
             grant_type: "authorization_code",
             code,
             code_verifier: storedVerifier,
@@ -205,50 +203,8 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                 params.set("fontColor", this.config.fontColor);
             }
 
-            const authPath = this.config.authFlow === "default" ? "/auth/authorize" : "/auth/onetap/authorize";
-            const url = `${this.config.apiUrl}${authPath}?${params.toString()}`;
-
-            if (this.config.authFlow === "default") {
-                window.location.href = url;
-                return;
-            }
-
-            const popup = window.open(url, "vibe-auth", "width=600,height=700,popup=true");
-
-            const messageListener = async (event: MessageEvent) => {
-                if (event.source !== popup) {
-                    return;
-                }
-
-                if (event.data.type === "vibe_auth_profile_updated") {
-                    popup?.close();
-                    this.getUser();
-                    resolve();
-                } else if (event.data.type === "vibe_auth_callback") {
-                    window.removeEventListener("message", messageListener);
-                    popup?.close();
-                    if (promptConsent) {
-                        const url = new URL(event.data.url);
-                        const error = url.searchParams.get("error");
-                        if (error === "access_denied") {
-                            this.authManager.setAccessToken(null);
-                            this.authManager.setUser(null);
-                        }
-                        this.getUser();
-                        this.authManager.notifyStateChange();
-                        resolve();
-                    } else {
-                        try {
-                            await this.handleRedirectCallback(event.data.url);
-                            resolve();
-                        } catch (e) {
-                            reject(e);
-                        }
-                    }
-                }
-            };
-
-            window.addEventListener("message", messageListener);
+            const url = `${this.config.apiUrl}/auth/authorize?${params.toString()}`;
+            window.location.href = url;
         });
     }
 
@@ -293,9 +249,8 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         if (!storedVerifier) {
             throw new Error("Missing PKCE verifier.");
         }
-        const tokenEndpoint = this.config.authFlow === "default" ? this.api.auth.token.post : this.api.auth.onetap.token.post;
 
-        const { data, error } = await tokenEndpoint({
+        const { data, error } = await this.api.auth.token.post({
             grant_type: "authorization_code",
             code,
             code_verifier: storedVerifier,

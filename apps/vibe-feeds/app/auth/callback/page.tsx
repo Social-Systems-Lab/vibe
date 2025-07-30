@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { createSdk } from "vibe-sdk";
-import { sdkConfig } from "../../lib/sdkConfig";
+import { appManifest } from "../../lib/manifest";
 
 export default function AuthCallbackPage() {
     const router = useRouter();
@@ -14,7 +14,7 @@ export default function AuthCallbackPage() {
                 window.opener.postMessage({ type: "vibe_auth_callback", url: window.location.href }, "*");
                 window.close();
             } else {
-                const sdk = createSdk(sdkConfig);
+                const sdk = createSdk(appManifest);
                 await sdk.handleRedirectCallback(window.location.href);
                 router.push("/");
             }

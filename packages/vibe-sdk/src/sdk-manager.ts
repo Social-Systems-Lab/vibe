@@ -1,4 +1,4 @@
-import { VibeSDK, VibeSDKConfig } from "./index";
+import { VibeSDK, VibeManifest } from "./index";
 
 // By attaching the instance to the window object, we ensure that it's a true
 // singleton across the entire application, even with React's Strict Mode
@@ -9,7 +9,7 @@ declare global {
     }
 }
 
-export const getSdk = (config: VibeSDKConfig): VibeSDK => {
+export const getSdk = (config: VibeManifest): VibeSDK => {
     if (typeof window === "undefined") {
         // We are on the server, so we can't use the window singleton.
         // We'll create a new instance for each server-side render.

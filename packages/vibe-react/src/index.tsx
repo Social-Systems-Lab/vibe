@@ -1,14 +1,12 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { VibeSDK, VibeSDKConfig, User, ReadCallback, Subscription, createSdk, DocRef, CertType } from "vibe-sdk";
+import { VibeSDK, User, ReadCallback, Subscription, createSdk, DocRef, CertType, VibeManifest } from "vibe-sdk";
 
 interface VibeContextType {
     sdk: VibeSDK;
     user: User | null;
     isLoggedIn: boolean;
-    appName?: string;
-    appLogoUrl?: string;
     login: () => Promise<void>;
     logout: () => Promise<void>;
     signup: () => Promise<void>;
@@ -25,11 +23,7 @@ interface VibeContextType {
 
 const VibeContext = createContext<VibeContextType | undefined>(undefined);
 
-interface VibeProviderConfig extends VibeSDKConfig {
-    authFlow?: "onetap" | "default";
-}
-
-export const VibeProvider = ({ children, config }: { children: ReactNode; config: VibeProviderConfig }) => {
+export const VibeProvider = ({ children, config }: { children: ReactNode; config: VibeManifest }) => {
     const [sdk] = useState(() => createSdk(config));
     const [user, setUser] = useState<User | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -50,8 +44,9 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
                 setIsLoggedIn(state.isAuthenticated);
                 setUser(state.user);
                 // If the session is now checked and we're still not logged in, trigger login for the default flow.
-                if (!state.isAuthenticated && config.authFlow === "default") {
-                    sdk.signup();
+                if (!state.isAuthenticated) {
+                    // TODO check when this is to be called, caused redirect when logged in
+                    // sdk.signup();
                 }
             }
         });
@@ -62,7 +57,7 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
             isMounted = false;
             unsubscribe();
         };
-    }, [sdk, config.authFlow]);
+    }, [sdk]);
 
     const login = () => sdk.login();
     const logout = () => sdk.logout();
@@ -102,8 +97,6 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
                 remove,
                 issueCert,
                 revokeCert,
-                appName: config.appName,
-                appLogoUrl: config.appLogoUrl,
                 manageConsent,
                 manageProfile,
             }}
@@ -121,10 +114,7 @@ export const useVibe = () => {
     return context;
 };
 
-export * from "./components/LoginButton";
-export * from "./components/SignupButton";
 export * from "./components/ProfileMenu";
-export * from "./components/AuthWidget";
 export * from "./components/PermissionSelector";
 export * from "./components/PermissionPickerDialog";
 export * from "./components/ui/avatar";
