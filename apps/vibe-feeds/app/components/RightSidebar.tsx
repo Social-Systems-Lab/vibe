@@ -29,7 +29,7 @@ export function RightSidebar() {
         <aside className="hidden lg:block p-4 space-y-8">
             <div className="bg-background p-4 rounded-lg border border-border">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-semibold">Top Communities</h3>
+                    <h3 className="font-semibold font-heading">Top Communities</h3>
                     <a href="#" className="text-sm text-blue-500">
                         See All
                     </a>
@@ -46,7 +46,7 @@ export function RightSidebar() {
 
             <div className="bg-background p-4 rounded-lg border border-border">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-semibold">Suggested People</h3>
+                    <h3 className="font-semibold font-heading">Suggested People</h3>
                     <a href="#" className="text-sm text-blue-500">
                         See All
                     </a>
@@ -74,7 +74,7 @@ export function RightSidebar() {
 
             <div className="bg-background p-4 rounded-lg border border-border">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-semibold">Trending Shows</h3>
+                    <h3 className="font-semibold font-heading">Trending Shows</h3>
                 </div>
                 <div className="space-y-4">
                     {trendingShows.map((show) => (

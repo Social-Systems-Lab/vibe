@@ -1,9 +1,10 @@
-@import url("https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,400;0,700;1,400;1,700&display=swap") layer(base);
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
+    --font-sans: var(--font-libre-franklin);
+    --font-heading: var(--font-wix-madefor-display);
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
@@ -118,6 +119,6 @@
         @apply border-border outline-ring/50;
     }
     body {
-        @apply bg-background text-foreground;
+        @apply bg-background text-foreground font-sans;
     }
 }

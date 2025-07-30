@@ -17,7 +17,7 @@ function SignupForm() {
             <div className="flex flex-col items-center justify-center bg-white p-8">
                 <div className="w-full max-w-md space-y-6">
                     <div className="text-center">
-                        <h1 className="text-3xl font-bold">Create your account</h1>
+                        <h1 className="text-3xl font-bold font-heading">Create your account</h1>
                         <p className="mt-2 text-gray-600">
                             to get started with <strong>{appName || clientId || "your app"}</strong>
                         </p>

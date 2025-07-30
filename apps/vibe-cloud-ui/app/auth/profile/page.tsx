@@ -19,7 +19,7 @@ function ProfileForm() {
             <div className="flex flex-col items-center justify-center bg-white p-8">
                 <div className="w-full max-w-md space-y-6">
                     <div className="text-center">
-                        <h1 className="text-3xl font-bold">Complete Your Profile</h1>
+                        <h1 className="text-3xl font-bold font-heading">Complete Your Profile</h1>
                         <p className="mt-2 text-gray-600">Personalize your Vibe account.</p>
                         <img id="profile-pic" src={pictureUrl} alt="Profile Picture" className="w-24 h-24 mx-auto rounded-full mt-4" />
                     </div>

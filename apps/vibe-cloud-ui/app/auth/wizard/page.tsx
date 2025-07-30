@@ -49,20 +49,23 @@ function Wizard() {
                 }}
             >
                 <div className="max-w-md z-30">
-                    <div className="flex flex-row items-center mb-3">
+                    <div className="flex flex-row items-center mb-4">
                         {appLogotypeUrl ? (
                             <img src={appLogotypeUrl} alt={`${appName} logotype`} />
                         ) : (
                             <div className="flex items-center">
                                 {appLogoUrl && <img src={appLogoUrl} alt={`${appName} logo`} className="w-12 h-12 mr-4" />}
 
-                                <h1 className="text-3xl font-bold">{appName}</h1>
+                                <h1 className="text-3xl font-bold font-heading">{appName}</h1>
                             </div>
                         )}
                     </div>
                     {appTagline && <p className="text-5xl font-bold mb-6">{appTagline}</p>}
                     {appDescription && <p className="text-lg opacity-80 mb-8">{appDescription}</p>}
                     {appShowcaseUrl && <img src={appShowcaseUrl} alt={`${appName} showcase`} className="w-full " />}
+                </div>
+                <div className="text-center absolute bottom-4">
+                    <p className="text-sm opacity-70">Powered by Vibe. Your everything.</p>
                 </div>
             </div>
         );
@@ -100,7 +103,7 @@ const SignupForm = ({ setStep }: { setStep: (step: string) => void }) => {
         <div className="w-full max-w-md space-y-6 z-30">
             {/* bg-white rounded-lg p-8 shadow-lg */}
             <div className="text-center">
-                <h1 className="text-3xl font-bold">Create your account</h1>
+                <h1 className="text-3xl font-bold font-heading">Create your account</h1>
                 <p className="mt-2 text-gray-600">
                     to get started with <strong>{appName || clientId || "your app"}</strong>
                 </p>
@@ -156,7 +159,7 @@ const LoginForm = ({ setStep }: { setStep: (step: string) => void }) => {
     return (
         <div className="w-full max-w-md space-y-6 z-30">
             <div className="text-center">
-                <h1 className="text-3xl font-bold">Welcome Back!</h1>
+                <h1 className="text-3xl font-bold font-heading">Welcome Back!</h1>
                 <p className="mt-2 text-gray-600">
                     Log in to access <strong>{clientId || "your app"}</strong>
                 </p>
@@ -203,7 +206,7 @@ const ProfileForm = () => {
     return (
         <div className="w-full max-w-md space-y-6 z-30">
             <div className="text-center">
-                <h1 className="text-3xl font-bold">Complete Your Profile</h1>
+                <h1 className="text-3xl font-bold font-heading">Complete Your Profile</h1>
                 <p className="mt-2 text-gray-600">Just a few more details to get you set up.</p>
             </div>
             <form method="POST" action={`/auth/profile?${queryString}`} className="space-y-6" onSubmit={handleSubmit}>
