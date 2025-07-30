@@ -98,20 +98,25 @@ export class StandaloneStrategy implements VibeTransportStrategy {
     }
 
     async init(): Promise<void> {
+        console.log("StandaloneStrategy: init started.");
         const sessionState = await this.sessionManager.checkSession();
+        console.log("StandaloneStrategy: session state checked.", sessionState);
 
         if (sessionState.status === "SILENT_LOGIN_SUCCESS" && sessionState.code) {
+            console.log("StandaloneStrategy: Silent login success, exchanging code for token.");
             try {
                 await this.exchangeCodeForToken(sessionState.code);
             } catch (e) {
                 console.error("Silent login failed:", e);
             }
         } else if ((sessionState.status as any) === "LOGGED_IN") {
+            console.log("StandaloneStrategy: User is logged in.", sessionState.user);
             this.authManager.setUser(sessionState.user || null);
             this.authManager.notifyStateChange();
-        } else if (sessionState.status === "ONE_TAP_REQUIRED") {
-            this.authManager.setUser(sessionState.user || null);
+        } else {
+            console.log("StandaloneStrategy: No active session found or session status is not LOGGED_IN.");
         }
+        console.log("StandaloneStrategy: init finished.");
     }
 
     private async exchangeCodeForToken(code: string): Promise<void> {

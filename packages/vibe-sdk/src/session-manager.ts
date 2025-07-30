@@ -19,9 +19,11 @@ export class SessionManager {
     }
 
     async checkSession(): Promise<SessionState> {
+        console.log("SessionManager: Starting session check.");
         return new Promise(async (resolve) => {
             const pkce = await generatePkce();
             sessionStorage.setItem("vibe_pkce_verifier", pkce.verifier);
+            console.log("SessionManager: PKCE verifier stored.");
 
             const params = new URLSearchParams({
                 client_id: this.config.clientId,
@@ -34,6 +36,7 @@ export class SessionManager {
             iframe.style.display = "none";
             iframe.src = `${this.config.apiUrl}/auth/session-check?${params.toString()}`;
             document.body.appendChild(iframe);
+            console.log("SessionManager: Iframe created and added to body.", iframe.src);
 
             const messageListener = (event: MessageEvent) => {
                 if (event.source !== iframe.contentWindow) {
@@ -43,12 +46,14 @@ export class SessionManager {
                 // Clean up
                 window.removeEventListener("message", messageListener);
                 document.body.removeChild(iframe);
+                console.log("SessionManager: Iframe removed.");
 
-                console.log("Session check response:", event.data);
+                console.log("SessionManager: Session check response received:", event.data);
                 resolve(event.data as SessionState);
             };
 
             window.addEventListener("message", messageListener);
+            console.log("SessionManager: Message listener added.");
         });
     }
 }

@@ -68,6 +68,7 @@ export class VibeSDK {
             return;
         }
         this.isInitializing = true;
+        console.log("VibeSDK: Initializing...");
 
         // The onStateChange listener is now the single source of truth for handling auth changes.
         // It will be responsible for updating the VibeSDK's state and configuring the dataStrategy.
@@ -82,6 +83,7 @@ export class VibeSDK {
 
         this.isInitialized = true;
         this.isInitializing = false;
+        console.log("VibeSDK: Initialization complete.");
     }
 
     async login() {
@@ -157,7 +159,9 @@ export class VibeSDK {
     }
 
     onStateChange(callback: (state: { isAuthenticated: boolean; user: any }) => void) {
+        console.log("VibeSDK: onStateChange listener added.");
         const authUnsubscribe = this.authStrategy.onStateChange(async (state) => {
+            console.log("VibeSDK: onStateChange triggered.", state);
             this.user = state.user;
 
             // This is the key: whenever the auth state changes, we inform the data strategy.
@@ -174,6 +178,10 @@ export class VibeSDK {
         });
 
         // Immediately notify the new listener with the current state.
+        console.log("VibeSDK: Immediately notifying listener with current state.", {
+            isAuthenticated: this.isAuthenticated,
+            user: this.user,
+        });
         callback({ isAuthenticated: this.isAuthenticated, user: this.user });
 
         return authUnsubscribe;

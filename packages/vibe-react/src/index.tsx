@@ -23,11 +23,17 @@ interface VibeContextType {
 
 const VibeContext = createContext<VibeContextType | undefined>(undefined);
 
-export const VibeProvider = ({ children, config }: { children: ReactNode; config: VibeManifest }) => {
+const DefaultLoadingComponent = () => (
+    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
+        <p>Loading...</p>
+    </div>
+);
+
+export const VibeProvider = ({ children, config, loadingComponent }: { children: ReactNode; config: VibeManifest; loadingComponent?: ReactNode }) => {
     const [sdk] = useState(() => createSdk(config));
     const [user, setUser] = useState<User | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isSessionChecked, setIsSessionChecked] = useState(false);
 
     useEffect(() => {
         let isMounted = true;
@@ -35,7 +41,7 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
         const initSdk = async () => {
             await sdk.init();
             if (isMounted) {
-                setIsLoading(false);
+                setIsSessionChecked(true);
             }
         };
 
@@ -43,11 +49,6 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
             if (isMounted) {
                 setIsLoggedIn(state.isAuthenticated);
                 setUser(state.user);
-                // If the session is now checked and we're still not logged in, trigger login for the default flow.
-                if (!state.isAuthenticated) {
-                    // TODO check when this is to be called, caused redirect when logged in
-                    // sdk.signup();
-                }
             }
         });
 
@@ -78,8 +79,15 @@ export const VibeProvider = ({ children, config }: { children: ReactNode; config
     const issueCert = (targetDid: string, certType: DocRef, expires?: string) => sdk.issueCert(targetDid, certType, expires);
     const revokeCert = (certId: string) => sdk.revokeCert(certId);
 
-    if (isLoading) {
-        return null; // or a loading spinner
+    const LoadingComponent = loadingComponent || <DefaultLoadingComponent />;
+
+    if (!isSessionChecked) {
+        return <>{LoadingComponent}</>;
+    }
+
+    if (!isLoggedIn) {
+        sdk.signup();
+        return <>{LoadingComponent}</>;
     }
 
     return (
