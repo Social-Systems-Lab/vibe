@@ -288,7 +288,7 @@ const app = new Elysia()
                 const origin = request.headers.get("origin") ?? "";
                 console.log(`[onAfterHandle] Processing response | URL: ${request.url} | Method: ${request.method} | Origin: ${origin}`);
 
-                if (allowedOrigins.includes(origin)) {
+                if (!origin || allowedOrigins.includes(origin)) {
                     // Set headers without duplication (these will override if already set)
                     set.headers["Access-Control-Allow-Origin"] = origin;
                     set.headers["Access-Control-Allow-Credentials"] = "true";
@@ -518,7 +518,7 @@ const app = new Elysia()
                 const origin = request.headers.get("origin") ?? "";
                 console.log(`[onAfterHandle] Processing response | URL: ${request.url} | Method: ${request.method} | Origin: ${origin}`);
 
-                if (allowedOrigins.includes(origin)) {
+                if (!origin || allowedOrigins.includes(origin)) {
                     // Set headers without duplication (these will override if already set)
                     set.headers["Access-Control-Allow-Origin"] = origin;
                     set.headers["Access-Control-Allow-Credentials"] = "true";

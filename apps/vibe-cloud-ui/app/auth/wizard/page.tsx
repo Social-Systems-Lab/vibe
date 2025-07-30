@@ -53,7 +53,7 @@ function Wizard() {
                 <div className="max-w-md z-30">
                     <div className="flex flex-row items-center mb-4">
                         {appLogotypeUrl ? (
-                            <img src={appLogotypeUrl} alt={`${appName} logotype`} />
+                            <img src={appLogotypeUrl} alt={`${appName} logotype`} className="h-12" />
                         ) : (
                             <div className="flex items-center">
                                 {appLogoUrl && <img src={appLogoUrl} alt={`${appName} logo`} className="w-12 h-12 mr-4" />}

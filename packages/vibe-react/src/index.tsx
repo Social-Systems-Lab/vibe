@@ -34,6 +34,7 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
     const [user, setUser] = useState<User | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [isSessionChecked, setIsSessionChecked] = useState(false);
+    const [isLoggingOut, setIsLoggingOut] = useState(false);
     const initCalled = useRef(false);
 
     useEffect(() => {
@@ -65,7 +66,10 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
     }, [sdk]);
 
     const login = () => sdk.login();
-    const logout = () => sdk.logout();
+    const logout = async () => {
+        setIsLoggingOut(true);
+        await sdk.logout();
+    };
     const signup = () => sdk.signup();
     const manageConsent = () => sdk.manageConsent();
     const manageProfile = () => sdk.manageProfile();
@@ -85,12 +89,17 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
 
     const LoadingComponent = loadingComponent || <DefaultLoadingComponent />;
 
-    if (!isSessionChecked) {
+    useEffect(() => {
+        if (isSessionChecked && !isLoggedIn && !isLoggingOut) {
+            sdk.signup();
+        }
+    }, [isSessionChecked, isLoggedIn, isLoggingOut, sdk]);
+
+    if (!isSessionChecked || isLoggingOut) {
         return <>{LoadingComponent}</>;
     }
 
     if (!isLoggedIn) {
-        sdk.signup();
         return <>{LoadingComponent}</>;
     }
 
