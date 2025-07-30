@@ -459,6 +459,18 @@ const app = new Elysia()
                     }),
                 }
             )
+            .get(
+                "/logout",
+                ({ cookie, query, redirect }) => {
+                    cookie.vibe_session.remove();
+                    return redirect(query.redirect_uri);
+                },
+                {
+                    query: t.Object({
+                        redirect_uri: t.String(),
+                    }),
+                }
+            )
     )
     .group("/users", (app) =>
         app
