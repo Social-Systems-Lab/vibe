@@ -274,6 +274,7 @@ const app = new Elysia()
                 }
             )
             .onAfterHandle(({ request, set }) => {
+                // onAfterHandle needed to get rid off CORS errors in /token endpoint
                 if (request.method === "OPTIONS") return; // Let CORS plugin handle preflight fully to avoid duplication
 
                 const origin = request.headers.get("origin") ?? "";
@@ -476,6 +477,7 @@ const app = new Elysia()
                 },
             })
             .onAfterHandle(({ request, set }) => {
+                // onAfterHandle needed to get rid off CORS errors in /users/me endpoint
                 if (request.method === "OPTIONS") return; // Let CORS plugin handle preflight fully to avoid duplication
 
                 const origin = request.headers.get("origin") ?? "";
