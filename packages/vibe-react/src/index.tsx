@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
 import { VibeSDK, User, ReadCallback, Subscription, createSdk, DocRef, CertType, VibeManifest } from "vibe-sdk";
+import LoadingAnimation from "./components/LoadingAnimation";
 
 interface VibeContextType {
     sdk: VibeSDK;
@@ -25,7 +26,7 @@ const VibeContext = createContext<VibeContextType | undefined>(undefined);
 
 const DefaultLoadingComponent = () => (
     <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
-        <p>Loading...</p>
+        <LoadingAnimation />
     </div>
 );
 

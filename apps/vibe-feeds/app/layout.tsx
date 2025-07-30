@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Libre_Franklin, Wix_Madefor_Display } from "next/font/google";
 import "./globals.css";
-import "vibe-react/dist/vibe-react.css";
 
 const libre_franklin = Libre_Franklin({
     subsets: ["latin"],

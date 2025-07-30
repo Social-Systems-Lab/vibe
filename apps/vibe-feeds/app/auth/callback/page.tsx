@@ -22,5 +22,5 @@ export default function AuthCallbackPage() {
         handleAuth();
     }, [router]);
 
-    return <div>Loading...</div>;
+    return <div></div>;
 }

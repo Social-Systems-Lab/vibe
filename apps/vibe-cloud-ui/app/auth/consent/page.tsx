@@ -83,7 +83,7 @@ function ConsentForm() {
 
 export default function ConsentPage() {
     return (
-        <Suspense fallback={<div>Loading...</div>}>
+        <Suspense fallback={<div></div>}>
             <ConsentForm />
         </Suspense>
     );

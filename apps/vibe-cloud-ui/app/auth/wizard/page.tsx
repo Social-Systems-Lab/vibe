@@ -298,7 +298,7 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
 
 export default function WizardPage() {
     return (
-        <Suspense fallback={<div className="flex h-screen items-center justify-center">Loading...</div>}>
+        <Suspense fallback={<div className="flex h-screen items-center justify-center"></div>}>
             <Wizard />
         </Suspense>
     );
