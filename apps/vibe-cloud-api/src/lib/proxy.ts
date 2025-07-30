@@ -26,8 +26,7 @@ export async function proxyRequest(request: Request) {
             method: request.method,
             headers: forwardHeaders(request),
             body: ["GET", "HEAD"].includes(request.method) ? undefined : request.body,
-            duplex: "half",
-        } as any);
+        } as RequestInit);
 
         console.log(`[PROXY] Received response with status: ${res.status}`);
 
