@@ -209,6 +209,7 @@ const app = new Elysia()
                 "/session-check",
                 async ({ query, cookie, sessionJwt, identityService }) => {
                     const { client_id, redirect_uri } = query;
+                    console.log("[session-check] Received request. Cookie:", cookie.vibe_session.value);
 
                     const renderScript = (data: any) => `
                         <script>
@@ -336,13 +337,15 @@ const app = new Elysia()
             .all("/wizard", ({ request }) => proxyRequest(request))
             .post(
                 "/login",
-                async ({ body, sessionJwt, cookie, set, query, identityService, redirect }) => {
+                async ({ body, sessionJwt, cookie, set, query, identityService, redirect, request }) => {
                     const { email, password } = body;
                     try {
                         const user = await identityService.login(email, password);
                         const sessionToken = await sessionJwt.sign({
                             sessionId: user.did,
                         });
+                        const origin = new URL(request.url).origin;
+                        console.log("[login] Setting session cookie on origin:", origin);
 
                         cookie.vibe_session.set({
                             value: sessionToken,
@@ -368,7 +371,7 @@ const app = new Elysia()
             )
             .post(
                 "/signup",
-                async ({ body, sessionJwt, cookie, set, query, identityService, redirect }) => {
+                async ({ body, sessionJwt, cookie, set, query, identityService, redirect, request }) => {
                     const { email, password } = body;
                     const existingUser = await identityService.findByEmail(email);
                     if (existingUser) {
@@ -381,6 +384,8 @@ const app = new Elysia()
                     const sessionToken = await sessionJwt.sign({
                         sessionId: user.did,
                     });
+                    const origin = new URL(request.url).origin;
+                    console.log("[signup] Setting session cookie on origin:", origin);
 
                     cookie.vibe_session.set({
                         value: sessionToken,
@@ -464,8 +469,17 @@ const app = new Elysia()
             )
             .get(
                 "/logout",
-                ({ cookie, query, redirect }) => {
-                    cookie.vibe_session.remove();
+                ({ cookie, query, redirect, request }) => {
+                    const origin = new URL(request.url).origin;
+                    console.log(`[logout] Clearing cookie on origin: ${origin}`);
+                    cookie.vibe_session.set({
+                        value: "",
+                        maxAge: -1,
+                        path: "/",
+                        httpOnly: true,
+                        sameSite: "lax",
+                    });
+                    console.log("After logout, cookie should be cleared.");
                     return redirect(query.redirect_uri);
                 },
                 {
