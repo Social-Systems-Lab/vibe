@@ -9,8 +9,8 @@ This repository is structured as a monorepo and contains the following key proje
 ### Applications
 
 -   **`apps/vibe-cloud-api`**: The central service that handles user identity, authentication, and data storage. It provides the backend for the Vibe ecosystem.
--   **`apps/test-app`**: A minimal client application used for testing and demonstrating the core features of the Vibe platform.
--   **`apps/vibe-web`**: A more feature-rich web application that serves as a second client for testing multi-app scenarios.
+-   **`apps/vibe-cloud-ui`**: Contains rich UI for auth flows.
+-   **`apps/vibe-feeds`**: A social media feeds client application used for testing and demonstrating the core features of the Vibe platform.
 
 ### Packages
 
@@ -43,7 +43,7 @@ To get started with local development, follow these steps:
     To build all the packages and applications, run the following command from the root of the repository:
 
     ```bash
-    pnpm run build
+    pnpm build
     ```
 
 4.  **Run the development servers:**
@@ -51,7 +51,7 @@ To get started with local development, follow these steps:
     To start the development servers for all applications, run the following command from the root of the repository:
 
     ```bash
-    pnpm run dev
+    pnpm dev
     ```
 
 For more detailed information about a specific project, please refer to the `README.md` file within its directory.

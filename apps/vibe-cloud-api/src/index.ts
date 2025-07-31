@@ -63,7 +63,9 @@ try {
 
 const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(",")
-    : ["http://127.0.0.1:3000", "http://127.0.0.1:4000", "http://127.0.0.1:5050", "http://localhost:3000", "http://localhost:4000", "http://localhost:5050"];
+    : "http://localhost:3000,http://localhost:3001,http://localhost:4000,http://localhost:5050,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:4000,http://127.0.0.1:5050".split(
+          ","
+      );
 console.log("Cors Origin:", allowedOrigins);
 
 const app = new Elysia()
@@ -71,10 +73,6 @@ const app = new Elysia()
         cors({
             origin: allowedOrigins,
             credentials: true,
-            // methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-            // allowedHeaders: ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
-            // exposeHeaders: ["Content-Disposition"],
-            // maxAge: 86400, // 24 hours
         })
     )
     .use(cookie())

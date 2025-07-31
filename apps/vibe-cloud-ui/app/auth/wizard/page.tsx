@@ -294,10 +294,12 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
             <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
                 <div className="p-4 bg-gray-100 rounded-lg">
                     <h3 className="font-bold">Permissions requested:</h3>
-                    <ul className="list-disc list-inside mt-2 text-gray-700">
-                        <li>Read your profile information</li>
-                        <li>Read your contacts</li>
-                    </ul>
+                    <div className="bg-gray-50 p-6 rounded-lg">
+                        <ul className="list-disc list-inside mt-2 text-gray-700">
+                            <li>Read your profile information</li>
+                            <li>Read your contacts</li>
+                        </ul>
+                    </div>
                 </div>
                 <button
                     onClick={() => handleSubmit("approve")}
