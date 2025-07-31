@@ -112,7 +112,14 @@ const SignupForm = ({ setStep }: { setStep: (step: string) => void }) => {
             </div>
             <form method="POST" action={`/auth/signup?${queryString}`} className="space-y-6" onSubmit={handleSubmit}>
                 <div>
-                    <input type="email" name="email" placeholder="Email" required className="w-full px-4 py-2 border rounded-lg bg-white mt-1" />
+                    <input
+                        type="email"
+                        name="email"
+                        placeholder="Email"
+                        autoComplete="username"
+                        required
+                        className="w-full px-4 py-2 border rounded-lg bg-white mt-1"
+                    />
                 </div>
                 <div>
                     <input
@@ -150,6 +157,7 @@ const LoginForm = ({ setStep }: { setStep: (step: string) => void }) => {
     const searchParams = useSearchParams();
     const queryString = searchParams.toString();
     const clientId = searchParams.get("client_id");
+    const appName = searchParams.get("appName");
     const [isLoading, setIsLoading] = useState(false);
 
     const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -161,12 +169,19 @@ const LoginForm = ({ setStep }: { setStep: (step: string) => void }) => {
             <div className="text-center">
                 <h1 className="text-3xl font-bold font-heading">Welcome Back!</h1>
                 <p className="mt-2 text-gray-600">
-                    Log in to access <strong>{clientId || "your app"}</strong>
+                    Log in to access <strong>{appName || clientId || "your app"}</strong>
                 </p>
             </div>
             <form method="POST" action={`/auth/login?${queryString}`} className="space-y-6" onSubmit={handleSubmit}>
                 <div>
-                    <input type="email" name="email" placeholder="Email" required className="w-full px-4 py-2 mt-1 border rounded-lg" />
+                    <input
+                        type="email"
+                        name="email"
+                        placeholder="Email"
+                        autoComplete="username"
+                        required
+                        className="w-full px-4 py-2 mt-1 border rounded-lg bg-white"
+                    />
                 </div>
                 <div>
                     <input
@@ -174,7 +189,7 @@ const LoginForm = ({ setStep }: { setStep: (step: string) => void }) => {
                         name="password"
                         placeholder="Password"
                         required
-                        className="w-full px-4 py-2 border rounded-lg"
+                        className="w-full px-4 py-2 border rounded-lg bg-white"
                         autoComplete="current-password"
                     />
                 </div>
@@ -224,7 +239,14 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
             <form className="space-y-6" onSubmit={handleSubmit}>
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Display Name</label>
-                    <input type="text" name="displayName" placeholder="Your Name" required className="w-full px-4 py-2 mt-1 border rounded-lg bg-white" />
+                    <input
+                        type="text"
+                        name="displayName"
+                        placeholder="Your Name"
+                        autoComplete="nickname"
+                        required
+                        className="w-full px-4 py-2 mt-1 border rounded-lg bg-white"
+                    />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Bio (Optional)</label>
