@@ -10,14 +10,9 @@ export default function AuthCallbackPage() {
 
     useEffect(() => {
         const handleAuth = async () => {
-            if (window.opener) {
-                window.opener.postMessage({ type: "vibe_auth_callback", url: window.location.href }, "*");
-                window.close();
-            } else {
-                const sdk = createSdk(appManifest);
-                await sdk.handleRedirectCallback(window.location.href);
-                //router.push("/");
-            }
+            const sdk = createSdk(appManifest);
+            await sdk.handleRedirectCallback(window.location.href);
+            window.location.replace("/");
         };
         handleAuth();
     }, [router]);
