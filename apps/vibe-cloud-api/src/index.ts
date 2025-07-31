@@ -126,7 +126,11 @@ const app = new Elysia()
         },
         message(ws, message) {
             const { serverWs } = ws.data as any;
-            serverWs.send(message);
+            const toSend =
+                typeof message === "object" && message !== null
+                    ? JSON.stringify(message) // Explicitly stringify objects to valid JSON
+                    : message;
+            serverWs.send(toSend);
         },
         close(ws) {
             const { serverWs } = ws.data as any;
@@ -142,38 +146,63 @@ const app = new Elysia()
                 "/authorize",
                 async ({ query, request, cookie, sessionJwt, identityService, redirect }) => {
                     console.log("[authorize] Hit /authorize endpoint with query:", query);
-                    console.log("[authorize] Session cookie:", cookie.vibe_session.value);
                     const origin = new URL(request.url).origin;
                     console.log("[authorize] Request origin:", origin);
 
                     const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope, prompt } = query;
                     const sessionToken = cookie.vibe_session.value;
+                    console.log("[authorize] Session token from cookie:", cookie.vibe_session.value);
+                    console.log("[authorize] Using session token:", sessionToken);
 
                     if (sessionToken) {
-                        const session = await sessionJwt.verify(sessionToken);
-                        if (session && session.sessionId) {
-                            const user = await identityService.findByDid(session.sessionId);
-                            if (user) {
-                                const hasConsented = await identityService.hasUserConsented(user.did, client_id!);
-                                if (hasConsented && prompt !== "consent") {
-                                    const authCode = await identityService.createAuthCode({
-                                        userDid: user.did,
-                                        clientId: client_id!,
-                                        scope: scope!,
-                                        redirectUri: redirect_uri!,
-                                        codeChallenge: code_challenge!,
-                                        codeChallengeMethod: code_challenge_method || "S256",
-                                    });
+                        try {
+                            const session = await sessionJwt.verify(sessionToken);
+                            console.log("[authorize] Session verified:", session);
 
-                                    const finalRedirectUrl = new URL(redirect_uri!);
-                                    finalRedirectUrl.searchParams.set("code", authCode);
-                                    if (state) {
-                                        finalRedirectUrl.searchParams.set("state", state);
+                            if (session && session.sessionId) {
+                                const user = await identityService.findByDid(session.sessionId);
+                                console.log("[authorize] User found:", user ? user.did : "No user found");
+
+                                if (user) {
+                                    const hasConsented = await identityService.hasUserConsented(user.did, client_id!);
+                                    console.log("[authorize] User has consented:", hasConsented);
+
+                                    if (hasConsented && prompt !== "consent") {
+                                        console.log("[authorize] User has consented, creating auth code.");
+                                        const authCode = await identityService.createAuthCode({
+                                            userDid: user.did,
+                                            clientId: client_id!,
+                                            scope: scope!,
+                                            redirectUri: redirect_uri!,
+                                            codeChallenge: code_challenge!,
+                                            codeChallengeMethod: code_challenge_method || "S256",
+                                        });
+
+                                        const finalRedirectUrl = new URL(redirect_uri!);
+                                        finalRedirectUrl.searchParams.set("code", authCode);
+                                        if (state) {
+                                            finalRedirectUrl.searchParams.set("state", state);
+                                        }
+                                        console.log("[authorize] Redirecting to client with auth code:", finalRedirectUrl.toString());
+                                        return redirect(finalRedirectUrl.toString());
+                                    } else {
+                                        console.log("[authorize] User has not consented or prompt is 'consent'.");
+                                        const { form_type, ...rest } = query as any;
+                                        const params = new URLSearchParams(rest);
+                                        params.set("step", "consent");
+                                        const redirectPath = `/auth/wizard?${params.toString()}`;
+                                        console.log("[authorize] Redirecting to wizard for consent:", redirectPath);
+                                        return redirect(redirectPath);
                                     }
-                                    return redirect(finalRedirectUrl.toString());
                                 }
+                            } else {
+                                console.log("[authorize] Invalid session object.");
                             }
+                        } catch (error) {
+                            console.error("[authorize] Error verifying session:", error);
                         }
+                    } else {
+                        console.log("[authorize] No session token found.");
                     }
 
                     // If not logged in, or consent is required, redirect to the UI wizard
@@ -181,8 +210,11 @@ const app = new Elysia()
                     const params = new URLSearchParams(rest);
                     if (form_type) {
                         params.set("step", form_type);
+                    } else {
+                        params.set("step", "signup");
                     }
                     const redirectPath = `/auth/wizard?${params.toString()}`;
+                    console.log("[authorize] Redirecting to wizard:", redirectPath);
                     return redirect(redirectPath);
                 },
                 {
@@ -288,7 +320,7 @@ const app = new Elysia()
                 const origin = request.headers.get("origin") ?? "";
                 console.log(`[onAfterHandle] Processing response | URL: ${request.url} | Method: ${request.method} | Origin: ${origin}`);
 
-                if (!origin || allowedOrigins.includes(origin)) {
+                if (allowedOrigins.includes(origin)) {
                     // Set headers without duplication (these will override if already set)
                     set.headers["Access-Control-Allow-Origin"] = origin;
                     set.headers["Access-Control-Allow-Credentials"] = "true";

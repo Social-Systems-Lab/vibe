@@ -16,7 +16,7 @@ export default function AuthCallbackPage() {
             } else {
                 const sdk = createSdk(appManifest);
                 await sdk.handleRedirectCallback(window.location.href);
-                router.push("/");
+                //router.push("/");
             }
         };
         handleAuth();

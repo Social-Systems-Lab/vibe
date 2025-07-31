@@ -34,6 +34,7 @@ export async function proxyRequest(request: Request) {
         const responseHeaders = new Headers(res.headers);
         return new Response(res.body, {
             status: res.status,
+            statusText: res.statusText,
             headers: responseHeaders,
         });
     } catch (error) {
