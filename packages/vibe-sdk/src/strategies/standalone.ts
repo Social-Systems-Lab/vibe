@@ -113,6 +113,9 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             console.log("StandaloneStrategy: User is logged in.", sessionState.user);
             this.authManager.setUser(sessionState.user || null);
             this.authManager.notifyStateChange();
+        } else if (sessionState.status === "CONSENT_REQUIRED") {
+            console.log("StandaloneStrategy: Consent is required.");
+            await this.redirectToAuthorize("login", true);
         } else {
             console.log("StandaloneStrategy: No active session found or session status is not LOGGED_IN.");
         }

@@ -165,7 +165,7 @@ const app = new Elysia()
                                     const hasConsented = await identityService.hasUserConsented(user.did, client_id!);
                                     console.log("[authorize] User has consented:", hasConsented);
 
-                                    if (hasConsented && prompt !== "consent") {
+                                    if (hasConsented) {
                                         console.log("[authorize] User has consented, creating auth code.");
                                         const authCode = await identityService.createAuthCode({
                                             userDid: user.did,

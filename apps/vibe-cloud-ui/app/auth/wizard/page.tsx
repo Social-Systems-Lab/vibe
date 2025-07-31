@@ -292,7 +292,7 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
                 <p className="mt-2 text-gray-600">{appName} is requesting permission to access your Vibe account.</p>
             </div>
             <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
-                <div className="p-4 bg-gray-100 rounded-lg">
+                <div className="bg-gray-100 rounded-lg">
                     <h3 className="font-bold">Permissions requested:</h3>
                     <div className="bg-gray-50 p-6 rounded-lg">
                         <ul className="list-disc list-inside mt-2 text-gray-700">
