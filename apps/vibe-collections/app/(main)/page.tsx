@@ -1,14 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
 
 export default function HomePage() {
-    const router = useRouter();
-
-    useEffect(() => {
-        router.push("/feeds/discover");
-    }, [router]);
-
-    return null;
+    return <div className="flex items-center justify-center h-screen">Collections</div>;
 }
