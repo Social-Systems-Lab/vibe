@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
-import { VibeSDK, User, ReadCallback, Subscription, createSdk, DocRef, CertType, VibeManifest } from "vibe-sdk";
+import { VibeSDK, User, ReadCallback, Subscription, createSdk, DocRef, CertType, VibeManifest, SessionState } from "vibe-sdk";
 import LoadingAnimation from "./components/LoadingAnimation";
 
 interface VibeContextType {
@@ -45,10 +45,11 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
         let isMounted = true;
 
         const initSdk = async () => {
-            await sdk.init();
+            const sessionState = await sdk.init();
             if (isMounted) {
                 setIsSessionChecked(true);
             }
+            return sessionState;
         };
 
         const unsubscribe = sdk.onStateChange((state) => {
@@ -58,7 +59,13 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
             }
         });
 
-        initSdk();
+        initSdk().then((sessionState) => {
+            if (isMounted && sessionState) {
+                if (sessionState.status === "LOGGED_OUT") {
+                    sdk.signup();
+                }
+            }
+        });
 
         return () => {
             isMounted = false;
@@ -90,18 +97,14 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
 
     const LoadingComponent = loadingComponent || <DefaultLoadingComponent />;
 
-    useEffect(() => {
-        if (isSessionChecked && !isLoggedIn && !isLoggingOut) {
-            sdk.signup();
-        }
-    }, [isSessionChecked, isLoggedIn, isLoggingOut, sdk]);
-
     if (!isSessionChecked || isLoggingOut) {
         return <>{LoadingComponent}</>;
     }
 
     if (!isLoggedIn) {
-        return <>{LoadingComponent}</>;
+        // Don't render children, but don't show a loading spinner
+        // This allows the signup/consent flow to happen
+        return null;
     }
 
     return (

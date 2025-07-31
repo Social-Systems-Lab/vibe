@@ -1,7 +1,8 @@
 import { StandaloneStrategy } from "./strategies/standalone";
 import { HubStrategy } from "./strategies/hub";
 import { VibeTransportStrategy } from "./strategy";
-import { DocRef, ReadCallback, Subscription } from "vibe-core";
+import { DocRef, ReadCallback, Subscription, User } from "vibe-core";
+import { SessionState } from "./session-manager";
 
 export type VibeManifest = {
     apiUrl: string;
@@ -63,7 +64,7 @@ export class VibeSDK {
         }
     }
 
-    async init() {
+    async init(): Promise<SessionState | void> {
         if (this.isInitialized || this.isInitializing) {
             return;
         }
@@ -75,7 +76,7 @@ export class VibeSDK {
         this.onStateChange(() => {});
 
         if (this.authStrategy.init) {
-            await this.authStrategy.init();
+            return await this.authStrategy.init();
         }
         if (this.dataStrategy.init) {
             await (this.dataStrategy as any).init(this.user);
@@ -195,5 +196,6 @@ export const createSdk = (config: VibeManifest) => {
 };
 
 export * from "vibe-core";
+export type { SessionState };
 export * from "vibe-core/crypto";
 export * from "vibe-core/did";

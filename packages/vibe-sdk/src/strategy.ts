@@ -1,7 +1,8 @@
 import { CertType, DocRef, ReadCallback, Subscription, User } from "vibe-core";
+import { SessionState } from "./session-manager";
 
 export interface VibeTransportStrategy {
-    init?(): Promise<void>;
+    init?(): Promise<SessionState | void>;
     login(): Promise<void>;
     logout(): Promise<void>;
     signup(): Promise<void>;

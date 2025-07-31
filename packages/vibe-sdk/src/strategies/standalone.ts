@@ -2,7 +2,7 @@ import { VibeTransportStrategy } from "../strategy";
 import { edenTreaty, treaty } from "@elysiajs/eden";
 import type { App } from "vibe-cloud-api";
 import { User, ReadCallback, Subscription, Certificate, DocRef, CertType } from "vibe-core";
-import { SessionManager } from "../session-manager";
+import { SessionManager, SessionState } from "../session-manager";
 import { deriveEncryptionKey, decryptData, privateKeyHexToPkcs8Pem } from "vibe-core";
 import * as jose from "jose";
 
@@ -97,7 +97,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         this.sessionManager = new SessionManager(this.config);
     }
 
-    async init(): Promise<void> {
+    async init(): Promise<SessionState> {
         console.log("StandaloneStrategy: init started.");
         const sessionState = await this.sessionManager.checkSession();
         console.log("StandaloneStrategy: session state checked.", sessionState);
@@ -109,7 +109,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             } catch (e) {
                 console.error("Silent login failed:", e);
             }
-        } else if ((sessionState.status as any) === "LOGGED_IN") {
+        } else if (sessionState.status === "LOGGED_IN") {
             console.log("StandaloneStrategy: User is logged in.", sessionState.user);
             this.authManager.setUser(sessionState.user || null);
             this.authManager.notifyStateChange();
@@ -117,6 +117,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             console.log("StandaloneStrategy: No active session found or session status is not LOGGED_IN.");
         }
         console.log("StandaloneStrategy: init finished.");
+        return sessionState;
     }
 
     private async exchangeCodeForToken(code: string): Promise<void> {

@@ -3,14 +3,14 @@
     "version": "0.1.0",
     "private": true,
     "scripts": {
-        "dev": "next dev -p 4000",
+        "dev": "next dev -p 4000 --turbopack",
         "build": "next build",
         "start": "next start",
         "lint": "next lint"
     },
     "dependencies": {
         "lucide-react": "^0.516.0",
-        "next": "15.4.2",
+        "next": "^15.4.3",
         "react": "19.1.0",
         "react-dom": "19.1.0",
         "vibe-react": "workspace:*",

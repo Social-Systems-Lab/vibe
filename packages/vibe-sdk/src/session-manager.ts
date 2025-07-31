@@ -2,7 +2,7 @@ import { User } from "vibe-core";
 import { generatePkce } from "./strategies/standalone";
 
 export type SessionState = {
-    status: "LOGGED_IN" | "LOGGED_OUT" | "ONE_TAP_REQUIRED" | "SILENT_LOGIN_SUCCESS";
+    status: "LOGGED_IN" | "LOGGED_OUT" | "SILENT_LOGIN_SUCCESS";
     code?: string;
     user?: User;
 };

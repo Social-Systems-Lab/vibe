@@ -53,7 +53,7 @@ export function Feed({ feedId }: { feedId: string }) {
                 subscription.unsubscribe();
             }
         };
-    }, [isLoggedIn, user, read, feedId, following]);
+    }, [isLoggedIn, user, read, feedId]);
 
     if (!isLoggedIn) {
         return <p>Please log in to see the feed.</p>;
