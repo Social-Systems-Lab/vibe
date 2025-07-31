@@ -1,5 +1,5 @@
 import { VibeTransportStrategy } from "../strategy";
-import { DocRef, ReadCallback, Subscription, User } from "../types";
+import { DocRef, ReadCallback, Subscription, User, Document, ReadOnceApiResponse } from "vibe-core";
 
 export class AgentStrategy implements VibeTransportStrategy {
     async login(): Promise<void> {
@@ -30,7 +30,7 @@ export class AgentStrategy implements VibeTransportStrategy {
         throw new Error("Agent read not implemented");
     }
 
-    async readOnce(collection: string, filter?: any): Promise<any> {
+    async readOnce<T extends Document>(collection: string, filter?: any): Promise<ReadOnceApiResponse<T>> {
         throw new Error("Agent readOnce not implemented");
     }
 

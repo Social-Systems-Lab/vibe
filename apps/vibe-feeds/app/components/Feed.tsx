@@ -2,25 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useVibe } from "vibe-react";
+import { Post } from "vibe-sdk";
 import { CreatePost } from "./CreatePost";
 import { PostCard } from "./PostCard";
 
 export function Feed({ feedId }: { feedId: string }) {
     const { read, readOnce, isLoggedIn, user } = useVibe();
-    const [posts, setPosts] = useState<any[]>([]);
-    const [following, setFollowing] = useState<string[]>([]);
+    const [posts, setPosts] = useState<Post[]>([]);
 
     useEffect(() => {
         if (!isLoggedIn || !user) return;
-
-        const fetchFollowing = async () => {
-            const profileDoc = await readOnce("profiles", { did: user.did });
-            if (profileDoc.ok && profileDoc.data.length > 0) {
-                setFollowing(profileDoc.data[0].following || []);
-            }
-        };
-
-        fetchFollowing();
 
         const processPosts = (result: { ok: boolean; data?: any; error?: string }) => {
             if (result.ok && result.data) {
@@ -31,11 +22,18 @@ export function Feed({ feedId }: { feedId: string }) {
         };
 
         let subscriptionPromise: Promise<{ unsubscribe: () => void }> | undefined;
-
         if (feedId === "discover") {
-            subscriptionPromise = read("posts", { global: true, expand: ["author"] }, processPosts);
-        } else if (feedId === "following" && following.length > 0) {
-            subscriptionPromise = read("posts", { author: { $in: following }, expand: ["author"] }, processPosts);
+            // disabled until read is optimized
+            //subscriptionPromise = read("posts", { global: true, expand: ["author"] }, processPosts);
+
+            // read posts once
+            readOnce<Post>("posts", { global: true, expand: ["author"] }).then((res) => {
+                if (res && res.docs) {
+                    setPosts(res.docs);
+                } else {
+                    console.error("Failed to fetch posts:", res);
+                }
+            });
         }
 
         if (!subscriptionPromise) {

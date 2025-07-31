@@ -1,5 +1,5 @@
 import { VibeTransportStrategy } from "../strategy";
-import { CertType, DocRef, ReadCallback, Subscription, User } from "vibe-core";
+import { CertType, DocRef, ReadCallback, Subscription, User, Document, ReadOnceApiResponse } from "vibe-core";
 import { SessionManager } from "../session-manager";
 
 type PendingRequest = {
@@ -176,7 +176,7 @@ export class HubStrategy implements VibeTransportStrategy {
         return () => {};
     }
 
-    async readOnce(collection: string, query: any = {}): Promise<any> {
+    async readOnce<T extends Document>(collection: string, query: any = {}): Promise<ReadOnceApiResponse<T>> {
         const { global, ...filter } = query;
         const type = global ? "DB_GLOBAL_QUERY" : "DB_QUERY";
         return this.postToHub({ type, collection, payload: { ...filter, collection } });

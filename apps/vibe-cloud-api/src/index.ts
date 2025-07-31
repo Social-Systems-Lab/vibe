@@ -760,7 +760,7 @@ const app = new Elysia()
 
                             const processAndSend = async () => {
                                 const result = await dataService.readOnce(collection, message.query || {}, profile as JwtPayload);
-                                ws.send(result.docs);
+                                ws.send(result);
                             };
 
                             await processAndSend();
@@ -817,7 +817,7 @@ const app = new Elysia()
 
                         const processAndSend = async () => {
                             const result = await dataService.readOnce(collection, { ...query, global: true }, profile as JwtPayload);
-                            ws.send(result.docs);
+                            ws.send(result);
                         };
 
                         await processAndSend();

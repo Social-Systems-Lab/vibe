@@ -1,7 +1,7 @@
 import nano, { DocumentScope } from "nano";
 import { getUserDbName } from "../lib/db";
 import { IdentityService } from "./identity";
-import { CachedDoc, DocRef, Certificate, Acl, AclPermission, AclRule, publicKeyHexToSpkiPem } from "vibe-core";
+import { CachedDoc, DocRef, Certificate, Acl, AclPermission, AclRule, publicKeyHexToSpkiPem, Document, ReadOnceApiResponse } from "vibe-core";
 import * as jose from "jose";
 
 export interface JwtPayload {
@@ -82,13 +82,13 @@ export class DataService {
         return allDbs.filter((db) => db.startsWith("userdb-"));
     }
 
-    async readOnce(collection: string, query: any, user: JwtPayload) {
+    async readOnce<T extends Document>(collection: string, query: any, user: JwtPayload): Promise<ReadOnceApiResponse<T>> {
         await this.reauthenticate();
         const { expand, maxCacheAge, global, ...selector } = query;
 
         if (global) {
             const dbNames = await this.getAllUserDbNames();
-            const allDocs: any[] = [];
+            const allDocs: T[] = [];
 
             for (const dbName of dbNames) {
                 try {
@@ -100,10 +100,10 @@ export class DataService {
                         },
                     };
                     const result = await db.find(dbQuery);
-                    const accessibleDocs = [];
+                    const accessibleDocs: T[] = [];
                     for (const doc of result.docs) {
                         if (await this.verifyAccess(doc, user, "read", dbName)) {
-                            accessibleDocs.push(doc);
+                            accessibleDocs.push(doc as unknown as T);
                         }
                     }
                     allDocs.push(...accessibleDocs);
@@ -114,7 +114,7 @@ export class DataService {
 
             if (expand && expand.length > 0) {
                 const docs = await this._expand(allDocs, expand, user, maxCacheAge);
-                return { docs };
+                return { docs: docs as T[] };
             }
 
             return { docs: allDocs };
@@ -129,16 +129,16 @@ export class DataService {
             };
             const result = await db.find(dbQuery);
 
-            const accessibleDocs = [];
+            const accessibleDocs: T[] = [];
             for (const doc of result.docs) {
                 if (await this.verifyAccess(doc, user, "read", dbName)) {
-                    accessibleDocs.push(doc);
+                    accessibleDocs.push(doc as unknown as T);
                 }
             }
 
             if (expand && expand.length > 0) {
                 const docs = await this._expand(accessibleDocs, expand, user, maxCacheAge);
-                return { docs };
+                return { docs: docs as T[] };
             }
 
             return { docs: accessibleDocs };

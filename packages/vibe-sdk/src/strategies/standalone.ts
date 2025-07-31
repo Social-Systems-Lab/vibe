@@ -1,7 +1,7 @@
 import { VibeTransportStrategy } from "../strategy";
 import { edenTreaty, treaty } from "@elysiajs/eden";
 import type { App } from "vibe-cloud-api";
-import { User, ReadCallback, Subscription, Certificate, DocRef, CertType } from "vibe-core";
+import { User, ReadCallback, Subscription, Certificate, DocRef, CertType, Document, ReadOnceApiResponse } from "vibe-core";
 import { SessionManager, SessionState } from "../session-manager";
 import { deriveEncryptionKey, decryptData, privateKeyHexToPkcs8Pem } from "vibe-core";
 import * as jose from "jose";
@@ -336,7 +336,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
     }
 
     // --- Vibe DB Methods (unchanged) ---
-    async readOnce(collection: string, query: any = {}): Promise<any> {
+    async readOnce<T extends Document>(collection: string, query: any = {}): Promise<ReadOnceApiResponse<T>> {
         if (!this.authManager.isLoggedIn()) {
             throw new Error("User is not authenticated.");
         }
@@ -359,7 +359,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             console.error("Error reading data:", error.value);
             throw new Error("Failed to read data.");
         }
-        return data;
+        return data as ReadOnceApiResponse<T>;
     }
 
     async write(collection: string, doc: any): Promise<any> {

@@ -1,4 +1,4 @@
-import { CertType, DocRef, ReadCallback, Subscription, User } from "vibe-core";
+import { CertType, DocRef, ReadCallback, Subscription, User, Document, ReadOnceApiResponse } from "vibe-core";
 import { SessionState } from "./session-manager";
 
 export interface VibeTransportStrategy {
@@ -11,7 +11,7 @@ export interface VibeTransportStrategy {
     getUser(): Promise<any>;
     isLoggedIn?(): boolean;
     read(collection: string, query: any, callback: ReadCallback): Promise<Subscription>;
-    readOnce(collection: string, query?: any): Promise<any>;
+    readOnce<T extends Document>(collection: string, query?: any): Promise<ReadOnceApiResponse<T>>;
     write(collection: string, data: any): Promise<any>;
     remove(collection: string, data: any): Promise<any>;
     onStateChange(callback: (state: { isLoggedIn: boolean; user: User | null }) => void): () => void;

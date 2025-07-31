@@ -1,7 +1,7 @@
 import { StandaloneStrategy } from "./strategies/standalone";
 import { HubStrategy } from "./strategies/hub";
 import { VibeTransportStrategy } from "./strategy";
-import { DocRef, ReadCallback, Subscription, User } from "vibe-core";
+import { DocRef, ReadCallback, Subscription, User, Document, ReadOnceResponse } from "vibe-core";
 import { SessionState } from "./session-manager";
 
 export type VibeManifest = {
@@ -139,8 +139,12 @@ export class VibeSDK {
         return this.dataStrategy.read(collection, query, callback as ReadCallback);
     }
 
-    async readOnce(collection: string, query?: any): Promise<any> {
-        return this.dataStrategy.readOnce(collection, query);
+    async readOnce<T extends Document>(collection: string, query?: any): Promise<ReadOnceResponse<T>> {
+        const res = await this.dataStrategy.readOnce<T>(collection, query);
+        return {
+            docs: res.docs,
+            doc: res.docs[0],
+        };
     }
 
     async write(collection: string, data: any): Promise<any> {

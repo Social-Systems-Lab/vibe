@@ -19,6 +19,14 @@ export type ReadResult<T = any> = {
     data?: T;
     error?: string;
 };
+export type ReadOnceApiResponse<T extends Document = Document> = {
+    docs: T[];
+};
+
+export type ReadOnceResponse<T extends Document = Document> = {
+    docs: T[];
+    doc: T | undefined;
+};
 
 export type ReadCallback<T = any> = (result: ReadResult<T>) => void;
 

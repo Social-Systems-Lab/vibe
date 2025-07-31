@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
-import { VibeSDK, User, ReadCallback, Subscription, createSdk, DocRef, CertType, VibeManifest, SessionState } from "vibe-sdk";
+import { VibeSDK, User, ReadCallback, Subscription, createSdk, DocRef, CertType, VibeManifest, SessionState, Document, ReadOnceResponse } from "vibe-sdk";
 import LoadingAnimation from "./components/LoadingAnimation";
 
 interface VibeContextType {
@@ -15,7 +15,7 @@ interface VibeContextType {
     manageProfile: () => Promise<void>;
     read(collection: string, callback: ReadCallback): Promise<Subscription>;
     read(collection: string, query: any, callback: ReadCallback): Promise<Subscription>;
-    readOnce: (collection: string, query?: any) => Promise<any>;
+    readOnce: <T extends Document>(collection: string, query?: any) => Promise<ReadOnceResponse<T>>;
     write: (collection: string, data: any) => Promise<any>;
     remove: (collection: string, data: any) => Promise<any>;
     issueCert: (targetDid: string, certType: DocRef, expires?: string) => Promise<any>;
@@ -89,7 +89,7 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
         }
         return sdk.read(collection, queryOrCallback, callback as ReadCallback);
     }
-    const readOnce = (collection: string, query?: any) => sdk.readOnce(collection, query);
+    const readOnce = <T extends Document>(collection: string, query?: any) => sdk.readOnce<T>(collection, query);
     const write = (collection: string, data: any) => sdk.write(collection, data);
     const remove = (collection: string, data: any) => sdk.remove(collection, data);
     const issueCert = (targetDid: string, certType: DocRef, expires?: string) => sdk.issueCert(targetDid, certType, expires);
