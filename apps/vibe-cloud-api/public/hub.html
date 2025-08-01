@@ -281,11 +281,14 @@
                 }
 
                 if (type === "DB_GLOBAL_QUERY") {
+                    console.log(`[HUB] Received DB_GLOBAL_QUERY for collection: ${collection}`, payload);
                     performGlobalQuery(type, collection, payload)
                         .then((result) => {
+                            console.log(`[HUB] DB_GLOBAL_QUERY successful, returning ${result.length} docs.`);
                             sourcePort.postMessage({ type: "DB_GLOBAL_QUERY_ACK", success: true, data: result, nonce });
                         })
                         .catch((dbError) => {
+                            console.error(`[HUB] DB_GLOBAL_QUERY failed:`, dbError);
                             sourcePort.postMessage({ type: "DB_GLOBAL_QUERY_ACK", success: false, error: dbError.message, nonce });
                         });
                     return;
@@ -532,28 +535,38 @@
             }
 
             async function performGlobalQuery(type, collection, payload) {
-                const { expand, ...selector } = payload;
-                const query = new URLSearchParams({
-                    global: "true",
-                });
-                if (expand) {
-                    query.set("expand", expand.join(","));
+                console.log(`[HUB] Performing global query for collection: ${collection}`, payload);
+                try {
+                    const { expand, ...selector } = payload;
+                    const query = new URLSearchParams({
+                        global: "true",
+                    });
+                    if (expand) {
+                        query.set("expand", expand.join(","));
+                    }
+                    const token = await getAccessToken();
+                    const response = await fetch(`/data/${collection}/query?${query.toString()}`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify(selector),
+                    });
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error(`[HUB] Global query API error: ${response.status}`, errorText);
+                        throw new Error(`API Error: ${response.status} - ${errorText}`);
+                    }
+
+                    const result = await response.json();
+                    console.log(`[HUB] Global query successful, received ${result.docs?.length || 0} docs.`);
+                    return result.docs;
+                } catch (error) {
+                    console.error("[HUB] Error in performGlobalQuery:", error);
+                    throw error;
                 }
-                const token = await getAccessToken();
-                const response = await fetch(`/data/${collection}/query?${query.toString()}`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify(selector),
-                });
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error || "Failed to perform global query");
-                }
-                const result = await response.json();
-                return result.docs;
             }
 
             function createSharedGlobalListener(collection, query) {
