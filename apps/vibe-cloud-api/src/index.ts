@@ -946,6 +946,66 @@ const app = new Elysia()
                 }
             )
     )
+    .group("/hub", (app) =>
+        app
+            .derive(async ({ cookie, sessionJwt, identityService }) => {
+                const sessionToken = cookie.vibe_session.value;
+                if (!sessionToken) return { session: null, user: null };
+                try {
+                    const session = await sessionJwt.verify(sessionToken);
+                    if (!session || !session.sessionId) return { session: null, user: null };
+                    const user = await identityService.findByDid(session.sessionId);
+                    return { session, user };
+                } catch (e) {
+                    return { session: null, user: null };
+                }
+            })
+            .get(
+                "/permissions",
+                async ({ query, user, identityService }) => {
+                    const { origin } = query;
+                    if (!user) {
+                        return { scopes: [] }; // No session, no permissions
+                    }
+
+                    const hasConsented = await identityService.hasUserConsented(user.did, origin);
+                    if (hasConsented) {
+                        // For now, grant full read/write access if consented.
+                        // This will be replaced with a more granular permission system.
+                        return { scopes: ["read", "write"] };
+                    }
+
+                    return { scopes: [] };
+                },
+                {
+                    query: t.Object({
+                        origin: t.String(),
+                    }),
+                }
+            )
+            .guard({
+                beforeHandle: ({ user, set }) => {
+                    if (!user) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                },
+            })
+            .get("/session", async ({ user, identityService }) => {
+                const dbCreds = await identityService.createDbSession(user!);
+                return {
+                    ...dbCreds,
+                    dbName: getUserDbName(user!.instanceId),
+                };
+            })
+            .get("/api-token", async ({ user, jwt }) => {
+                const accessToken = await jwt.sign({
+                    sub: user!.did,
+                    instanceId: user!.instanceId,
+                });
+                return { token: accessToken };
+            })
+    )
     .listen(process.env.PORT || 5050);
 
 export type App = typeof app;

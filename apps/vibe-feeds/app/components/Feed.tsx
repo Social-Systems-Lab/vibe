@@ -16,8 +16,6 @@ export function Feed({ feedId }: { feedId: string }) {
         const processPosts = (result: { ok: boolean; data?: any; error?: string }) => {
             if (result.ok && result.data) {
                 setPosts(result.data);
-            } else if (result.error) {
-                console.error("Failed to fetch posts:", result.error);
             }
         };
 
@@ -30,8 +28,6 @@ export function Feed({ feedId }: { feedId: string }) {
             readOnce<Post>("posts", { global: true, expand: ["author"] }).then((res) => {
                 if (res && res.docs) {
                     setPosts(res.docs);
-                } else {
-                    console.error("Failed to fetch posts:", res);
                 }
             });
         }

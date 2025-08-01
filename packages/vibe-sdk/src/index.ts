@@ -143,7 +143,7 @@ export class VibeSDK {
         const res = await this.dataStrategy.readOnce<T>(collection, query);
         return {
             docs: res.docs,
-            doc: res.docs[0],
+            doc: res.docs?.[0],
         };
     }
 

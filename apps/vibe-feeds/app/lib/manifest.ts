@@ -10,14 +10,14 @@ const getBaseUrl = () => {
 const baseUrl = getBaseUrl();
 
 export const appManifest: VibeManifest = {
-    appName: "Vibe Feed",
+    appName: "Feeds",
     backgroundImageUrl: `${baseUrl}/images/logo.png`,
     appTagline: "You control your feed.",
     appDescription: "Create custom feeds and share content on your terms.",
     apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:5050",
     clientId: baseUrl,
     redirectUri: `${baseUrl}/auth/callback`,
-    useHub: false,
+    useHub: true,
     themeColor: "#000000",
     appLogoUrl: `${baseUrl}/images/logo.png`,
     appLogotypeUrl: `${baseUrl}/images/logotype.png`,

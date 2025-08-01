@@ -385,7 +385,7 @@
             }
 
             async function getPermissions(origin) {
-                const response = await fetch(`/auth/permissions?origin=${encodeURIComponent(origin)}`, {
+                const response = await fetch(`/hub/permissions?origin=${encodeURIComponent(origin)}`, {
                     credentials: "include",
                 });
                 if (!response.ok) {
@@ -398,7 +398,7 @@
             // The find plugin is automatically registered by its script.
 
             async function getDbSession() {
-                const response = await fetch("/auth/session", { credentials: "include" });
+                const response = await fetch("/hub/session", { credentials: "include" });
                 if (!response.ok) {
                     throw new Error("Failed to fetch DB session");
                 }
@@ -561,7 +561,7 @@
             }
 
             async function getAccessToken() {
-                const response = await fetch("/auth/api-token", { credentials: "include" });
+                const response = await fetch("/hub/api-token", { credentials: "include" });
                 if (!response.ok) {
                     throw new Error("Failed to fetch API token");
                 }
