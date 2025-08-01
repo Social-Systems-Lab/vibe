@@ -227,7 +227,8 @@
                 }
             }
 
-            function handleDataOperation(event) {
+            async function handleDataOperation(event) {
+                await dbOperationLock; // Ensure DB is ready before any data ops
                 const { type, collection, payload, nonce, subscriptionId } = event.data;
                 const origin = event.target.origin || findOriginForPort(event.target);
 
@@ -251,15 +252,21 @@
                     subscriptions.set(subscriptionId, {
                         canonicalKey,
                         port: app.port,
+                        query: query,
                     });
 
                     if (!sharedListeners.has(canonicalKey)) {
                         console.log(`[HUB] Creating new shared listener for ${canonicalKey}`);
                         const listener = createSharedListener(collection, query || {});
-                        sharedListeners.set(canonicalKey, {
-                            listener,
-                            subscribers: new Set([subscriptionId]),
-                        });
+                        if (listener) {
+                            console.log(`[HUB] Shared listener created successfully for ${canonicalKey}`);
+                            sharedListeners.set(canonicalKey, {
+                                listener,
+                                subscribers: new Set([subscriptionId]),
+                            });
+                        } else {
+                            console.error(`[HUB] Failed to create shared listener for ${canonicalKey}`);
+                        }
                     } else {
                         console.log(`[HUB] Attaching to existing shared listener for ${canonicalKey}`);
                         sharedListeners.get(canonicalKey).subscribers.add(subscriptionId);
@@ -521,31 +528,34 @@
                         selector: { collection: collection },
                     })
                     .on("change", async (change) => {
-                        console.log(`[HUB] Change detected for shared listener on collection ${collection}:`, change);
-                        const canonicalKey = `${collection}|${JSON.stringify(query)}`;
-                        const sharedListener = sharedListeners.get(canonicalKey);
+                        console.log(`[HUB] Change detected for collection ${collection}:`, change.doc);
+                        // This is a simplified matching. For production, you'd need a robust query engine
+                        // that can evaluate a document against a Mango query selector.
+                        const doc = change.doc;
 
-                        if (sharedListener) {
-                            const { expand, maxCacheAge, ...selector } = query;
-                            const findResult = await db.find({
-                                selector: { ...selector, collection: collection },
-                            });
+                        for (const [subId, sub] of subscriptions.entries()) {
+                            // This is a very basic check. A real implementation would need a mini-mango engine.
+                            const queryMatches = Object.entries(sub.query || {}).every(([key, value]) => doc[key] === value);
 
-                            let docs = findResult.docs;
-                            if (expand && expand.length > 0) {
-                                docs = await _expand(docs, expand, maxCacheAge);
-                            }
+                            if (queryMatches) {
+                                console.log(`[HUB] Change matches subscription ${subId}. Re-running query.`);
+                                // Re-run the original query for that specific subscriber to get the fresh, ordered list.
+                                const { expand, maxCacheAge, ...selector } = sub.query;
+                                const findResult = await db.find({
+                                    selector: { ...selector, collection: collection },
+                                });
 
-                            sharedListener.subscribers.forEach((subId) => {
-                                const sub = subscriptions.get(subId);
-                                if (sub) {
-                                    sub.port.postMessage({
-                                        type: "DB_UPDATE",
-                                        subscriptionId: subId,
-                                        data: docs,
-                                    });
+                                let docs = findResult.docs;
+                                if (expand && expand.length > 0) {
+                                    docs = await _expand(docs, expand, maxCacheAge);
                                 }
-                            });
+
+                                sub.port.postMessage({
+                                    type: "DB_UPDATE",
+                                    subscriptionId: subId,
+                                    data: docs,
+                                });
+                            }
                         }
                     });
                 return changes;
@@ -761,7 +771,7 @@
             async function performApiWrite(collection, doc) {
                 const token = await getAccessToken();
                 const response = await fetch(`/data/${collection}`, {
-                    method: "POST", // The data.ts write endpoint handles both create and update
+                    method: "POST",
                     headers: {
                         "Content-Type": "application/json",
                         Authorization: `Bearer ${token}`,
@@ -773,7 +783,28 @@
                     const errorText = await response.text();
                     throw new Error(`API Write Error: ${response.status} - ${errorText}`);
                 }
-                return await response.json();
+                const result = await response.json();
+                console.log("[HUB] API write successful:", result);
+
+                if (db && result && result.ok) {
+                    console.log("[HUB] Writing to local PouchDB to trigger update.");
+                    try {
+                        const docToPut = { ...doc, _id: result.id, collection };
+                        try {
+                            const localDoc = await db.get(result.id);
+                            docToPut._rev = localDoc._rev;
+                            console.log(`[HUB] Found existing local doc with _rev: ${docToPut._rev}`);
+                        } catch (e) {
+                            console.log("[HUB] No existing local doc found. Creating new one.");
+                        }
+                        console.log("[HUB] Putting document to local DB:", docToPut);
+                        const putResponse = await db.put(docToPut);
+                        console.log("[HUB] Local PouchDB write successful:", putResponse);
+                    } catch (e) {
+                        console.error("[HUB] Error writing to local PouchDB:", e);
+                    }
+                }
+                return result;
             }
         </script>
         <script>
