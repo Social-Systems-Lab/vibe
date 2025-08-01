@@ -97,10 +97,10 @@ export class DataService {
                 const acl = doc.acl as Acl;
                 const globalId = `${doc.collection}/${user.sub}/${doc._id.split("/")[1]}`;
 
-                // Check if any read ACL rules are set, indicating potential global readability.
-                const hasGlobalRead = acl?.read?.allow && acl.read.allow.length > 0;
+                // Any ACL makes a document globally accessible, so it must be indexed.
+                const isGloballyAccessible = acl && Object.keys(acl).length > 0;
 
-                if (hasGlobalRead) {
+                if (isGloballyAccessible) {
                     // Create or update the DocRef in the global database
                     const docRef = {
                         _id: globalId,
@@ -147,10 +147,12 @@ export class DataService {
         if (global) {
             const dbQuery = {
                 selector: {
+                    _id: {
+                        $gte: `${collection}/`,
+                        $lt: `${collection}/\ufff0`,
+                    },
                     ...selector,
                 },
-                startkey: `${collection}/`,
-                endkey: `${collection}/\ufff0`,
             };
 
             // Query the global database directly
@@ -299,10 +301,10 @@ export class DataService {
                 const acl = doc.acl as Acl;
                 const globalId = `${doc.collection}/${user.sub}/${doc._id.split("/")[1]}`;
 
-                // Check if any read ACL rules are set, indicating potential global readability.
-                const hasGlobalRead = acl?.read?.allow && acl.read.allow.length > 0;
+                // Any ACL makes a document potentially global, so it must be indexed.
+                const isPotentiallyGlobal = acl && Object.keys(acl).length > 0;
 
-                if (hasGlobalRead) {
+                if (isPotentiallyGlobal) {
                     const docRef = {
                         _id: globalId,
                         ref: {

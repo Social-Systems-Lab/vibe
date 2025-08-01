@@ -418,10 +418,20 @@
                 console.log(`Performing ${type} on collection '${collection}' with payload:`, payload);
                 switch (type) {
                     case "DB_WRITE":
-                        if (!payload._id) {
-                            payload._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                        // Any ACL makes a document globally accessible, so it must be written via the API.
+                        const isGloballyAcessible = payload.acl && Object.keys(payload.acl).length > 0;
+                        if (isGloballyAcessible) {
+                            // If ACL is set, write through the API to trigger global DB logic
+                            console.log("[HUB] Writing document with ACL through API.", payload);
+                            return await performApiWrite(collection, payload);
+                        } else {
+                            // Otherwise, write locally for speed
+                            console.log("[HUB] Writing document without ACL locally.", payload);
+                            if (!payload._id) {
+                                payload._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                            }
+                            return await db.put({ ...payload, collection });
                         }
-                        return await db.put({ ...payload, collection });
                     case "DB_READ":
                         return await db.get(payload.id);
                     case "DB_QUERY":
@@ -699,6 +709,24 @@
                     return expandedDoc;
                 });
                 return Promise.all(promises);
+            }
+
+            async function performApiWrite(collection, doc) {
+                const token = await getAccessToken();
+                const response = await fetch(`/data/${collection}`, {
+                    method: "POST", // The data.ts write endpoint handles both create and update
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify(doc),
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`API Write Error: ${response.status} - ${errorText}`);
+                }
+                return await response.json();
             }
         </script>
         <script>
