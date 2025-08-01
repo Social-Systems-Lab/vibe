@@ -159,26 +159,26 @@ export class DataService {
             };
             console.log("[data.ts] Executing global DB query:", JSON.stringify(dbQuery, null, 2));
 
-            // Query the global database directly
+            // 1. Get DocRefs from the global DB
             const result = await this.globalDb.find(dbQuery);
-            const allDocs = result.docs as any[];
+            const docRefs = result.docs as any[];
 
-            if (expand && expand.length > 0) {
-                // The _expand function expects a list of documents and a field name to expand.
-                // We have a list of DocRefs. We will simulate this by creating a temporary
-                // object with a field named 'ref' containing the reference details.
-                const docsToExpand = allDocs.map((doc) => ({
-                    _id: doc._id,
-                    ref: doc.ref,
-                }));
-                // We then call _expand telling it to expand the 'ref' field.
-                const expandedDocs = await this._expand(docsToExpand, ["ref"], user, maxCacheAge);
-                // The result will have the 'ref' field replaced with the full document.
-                // We map it back to the desired final structure.
-                return { docs: expandedDocs.map((doc) => doc.ref) as T[] };
+            if (docRefs.length === 0) {
+                return { docs: [] };
             }
 
-            return { docs: allDocs as T[] };
+            // 2. ALWAYS perform the first, implicit expansion from DocRef to full document.
+            // The client expects full documents, not our internal DocRefs.
+            const tempDocsForExpansion = docRefs.map((doc) => ({ _id: doc._id, ref: doc.ref }));
+            let fullDocs = (await this._expand(tempDocsForExpansion, ["ref"], user, maxCacheAge)).map((doc) => doc.ref);
+
+            // 3. Perform the second, explicit expansion if requested in the original query.
+            if (expand && expand.length > 0) {
+                fullDocs = await this._expand(fullDocs, expand, user, maxCacheAge);
+            }
+
+            // 4. Return the final list of documents.
+            return { docs: fullDocs as T[] };
         } else {
             const db = this.getDb(user.instanceId);
             const dbName = getUserDbName(user.instanceId);
