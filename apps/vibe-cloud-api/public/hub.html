@@ -529,17 +529,10 @@
                     })
                     .on("change", async (change) => {
                         console.log(`[HUB] Change detected for collection ${collection}:`, change.doc);
-                        // This is a simplified matching. For production, you'd need a robust query engine
-                        // that can evaluate a document against a Mango query selector.
-                        const doc = change.doc;
-
+                        // Find all subscriptions for this collection and notify them.
                         for (const [subId, sub] of subscriptions.entries()) {
-                            // This is a very basic check. A real implementation would need a mini-mango engine.
-                            const queryMatches = Object.entries(sub.query || {}).every(([key, value]) => doc[key] === value);
-
-                            if (queryMatches) {
+                            if (sub.canonicalKey.startsWith(collection + "|")) {
                                 console.log(`[HUB] Change matches subscription ${subId}. Re-running query.`);
-                                // Re-run the original query for that specific subscriber to get the fresh, ordered list.
                                 const { expand, maxCacheAge, ...selector } = sub.query;
                                 const findResult = await db.find({
                                     selector: { ...selector, collection: collection },
