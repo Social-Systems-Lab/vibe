@@ -106,7 +106,7 @@ export class DataService {
                         _id: globalId,
                         ref: {
                             did: user.sub,
-                            docId: doc._id,
+                            ref: doc._id,
                         },
                         acl: doc.acl,
                     };
@@ -145,15 +145,19 @@ export class DataService {
         const { expand, maxCacheAge, global, ...selector } = query;
 
         if (global) {
+            console.log(`[data.ts] Performing global query for collection '${collection}' with selector:`, selector);
             const dbQuery = {
                 selector: {
                     _id: {
                         $gte: `${collection}/`,
                         $lt: `${collection}/\ufff0`,
                     },
-                    ...selector,
+                    // Do not include the rest of the selector, as it may contain fields
+                    // like 'collection' which do not exist on the DocRef documents in the global DB.
+                    // The _id prefix is the sole filter for collections.
                 },
             };
+            console.log("[data.ts] Executing global DB query:", JSON.stringify(dbQuery, null, 2));
 
             // Query the global database directly
             const result = await this.globalDb.find(dbQuery);
@@ -301,15 +305,15 @@ export class DataService {
                 const acl = doc.acl as Acl;
                 const globalId = `${doc.collection}/${user.sub}/${doc._id.split("/")[1]}`;
 
-                // Any ACL makes a document potentially global, so it must be indexed.
-                const isPotentiallyGlobal = acl && Object.keys(acl).length > 0;
+                // Any ACL makes a document globally accessible, so it must be indexed.
+                const isGloballyAccessible = acl && Object.keys(acl).length > 0;
 
-                if (isPotentiallyGlobal) {
+                if (isGloballyAccessible) {
                     const docRef = {
                         _id: globalId,
                         ref: {
                             did: user.sub,
-                            docId: doc._id,
+                            ref: doc._id,
                         },
                         acl: doc.acl,
                     };

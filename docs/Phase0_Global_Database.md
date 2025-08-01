@@ -123,7 +123,7 @@ This format guarantees uniqueness and allows for efficient range queries on the 
         "_rev": "1-...",
         "ref": {
             "did": "did:vibe:zDxUwpkymXAzDwiKMvwWeYtWS6r7JdxvCWX5fEaK1enUsbTrU",
-            "docId": "posts/1753556109407-4da7b627643df8"
+            "ref": "posts/1753556109407-4da7b627643df8"
         },
         "acl": { "read": { "allow": ["*"] } }
     }

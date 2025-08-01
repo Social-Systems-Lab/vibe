@@ -26,6 +26,7 @@ export function Feed({ feedId }: { feedId: string }) {
 
             // read posts once
             readOnce<Post>("posts", { global: true, expand: ["author"] }).then((res) => {
+                console.log("***Fetched posts:", JSON.stringify(res, null, 2));
                 if (res && res.docs) {
                     setPosts(res.docs);
                 }
