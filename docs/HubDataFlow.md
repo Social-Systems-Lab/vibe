@@ -123,6 +123,47 @@ sequenceDiagram
 -   **PouchDB Sync**: The local data is kept up-to-date by a continuous, live PouchDB sync process that runs in the background between the hub and the user's personal database on the `vibe-cloud-api`.
 -   **Real-time**: The `read` operation works similarly, but instead of a one-time query, it listens for changes on the local PouchDB instance and pushes updates to the app.
 
+#### Sub-Scenario: Non-Global `readOnce` with Remote `expand`
+
+This is a hybrid scenario that demonstrates the hub's caching and remote fetching capabilities.
+
+```mermaid
+sequenceDiagram
+    participant App as vibe-feeds
+    participant SDK as vibe-sdk
+    participant HubStrategy
+    participant Hub as hub.html (iframe)
+    participant API as vibe-cloud-api
+
+    App->>SDK: sdk.readOnce('posts', { expand: ['author'] })
+    SDK->>HubStrategy: readOnce('posts', { expand: ['author'] })
+    HubStrategy->>Hub: postMessage({ type: 'DB_QUERY' })
+    Hub->>Hub: performPouchDbOperation('DB_QUERY')
+    Hub->>Hub: db.find({ selector: ... })
+    Hub->>Hub: _expand(docs)
+
+    alt DocRef is for another user AND not in cache
+        Hub->>API: GET /data/expand?did=...&ref=...
+        API-->>Hub: Returns author profile document
+        Hub->>Hub: db.put(cached_profile)
+    end
+
+    Hub-->>HubStrategy: postMessage({ type: 'DB_QUERY_ACK', data: posts_with_authors })
+    HubStrategy-->>SDK: Returns { docs: posts_with_authors }
+    SDK-->>App: Returns { docs: posts_with_authors }
+```
+
+**Step-by-Step Breakdown:**
+
+1.  **Initial Query**: The flow begins identically to a standard `readOnce`, with the hub querying its local PouchDB.
+2.  **Expansion Trigger**: After retrieving the initial set of documents (posts), the hub's `_expand` function is called. It iterates through the documents and the fields specified in the `expand` array.
+3.  **Cache Check**: For each `DocRef` (e.g., an author), the hub first checks its local PouchDB for a cached version of that document. It constructs a cache-specific ID (e.g., `cache/did/ref`).
+4.  **Staleness Check**: If a cached version is found, it checks if the data is stale based on the `maxCacheAge` parameter provided in the query.
+5.  **Remote Fetch**: If the document is not in the cache or is stale, the hub performs a `fetch` to the `/data/expand?did=...&ref=...` endpoint on the `vibe-cloud-api`.
+6.  **Cache Update**: Upon receiving the document from the API, the hub stores it in its local PouchDB, along with a timestamp, for future requests.
+7.  **Final Assembly**: The hub assembles the final response, embedding the expanded documents (either from the cache or the remote fetch) into the parent documents.
+8.  **Return to App**: The fully expanded data is then returned to the application.
+
 ### Scenario 4: `write` Operation
 
 All write operations (`write`, `remove`) are handled by the hub and synced to the cloud.
