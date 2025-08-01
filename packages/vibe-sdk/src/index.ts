@@ -291,6 +291,9 @@ export class VibeSDK {
             form_type: formType,
             flow: flow,
         });
+        if (flow === "settings") {
+            params.set("redirect_uri", window.location.href);
+        }
         if (promptConsent) {
             params.set("prompt", "consent");
         }

@@ -448,7 +448,7 @@ const app = new Elysia()
             )
             .post(
                 "/profile",
-                async ({ body, sessionJwt, cookie, set, query, identityService, redirect }) => {
+                async ({ body, sessionJwt, cookie, set, query, identityService, storageService, dataService, redirect }) => {
                     const sessionToken = cookie.vibe_session.value;
                     if (!sessionToken) {
                         set.status = 401;
@@ -461,9 +461,64 @@ const app = new Elysia()
                         return { error: "Invalid session" };
                     }
 
-                    await identityService.updateUser(session.sessionId, body);
+                    const userDid = session.sessionId;
+                    const { displayName, bio, picture } = body;
+
+                    let pictureUrl: string | undefined = undefined;
+
+                    if (picture && picture.size > 0) {
+                        try {
+                            const user = await identityService.findByDid(userDid);
+                            if (!user) {
+                                set.status = 404;
+                                return { error: "User not found" };
+                            }
+                            const buffer = Buffer.from(await picture.arrayBuffer());
+                            const bucketName = `user-${user.instanceId}`;
+                            const fileName = `profile-${Date.now()}-${picture.name}`;
+                            await storageService.upload(bucketName, fileName, buffer, picture.type);
+                            pictureUrl = await storageService.getPublicURL(bucketName, fileName);
+                        } catch (error) {
+                            console.error("Error uploading profile picture:", error);
+                            set.status = 500;
+                            return { error: "Failed to upload profile picture." };
+                        }
+                    }
+
+                    const userData: { displayName: string; bio?: string; pictureUrl?: string } = { displayName };
+                    if (bio) {
+                        userData.bio = bio;
+                    }
+                    if (pictureUrl) {
+                        userData.pictureUrl = pictureUrl;
+                    }
+
+                    const updatedUser = await identityService.updateUser(userDid, userData);
+
+                    // Also update the 'profiles/me' document
+                    await dataService.update(
+                        "profiles",
+                        {
+                            _id: `profiles/${userDid}`,
+                            name: updatedUser.displayName,
+                            pictureUrl: updatedUser.pictureUrl,
+                            did: updatedUser.did,
+                        },
+                        { sub: updatedUser.did, instanceId: updatedUser.instanceId }
+                    );
 
                     const params = new URLSearchParams(query as any);
+                    const flow = params.get("flow");
+
+                    if (flow === "settings") {
+                        // When editing from profile settings, we might want to stay on the page
+                        // or redirect somewhere else. For now, let's redirect back to the app.
+                        const clientRedirect = params.get("redirect_uri");
+                        if (clientRedirect) {
+                            return { redirectTo: clientRedirect };
+                        }
+                    }
+
                     params.set("step", "consent");
                     return redirect(`/auth/wizard?${params.toString()}`);
                 },
@@ -471,6 +526,7 @@ const app = new Elysia()
                     body: t.Object({
                         displayName: t.String(),
                         bio: t.Optional(t.String()),
+                        picture: t.Optional(t.File()),
                     }),
                 }
             )

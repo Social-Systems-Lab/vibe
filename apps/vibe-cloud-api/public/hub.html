@@ -469,6 +469,7 @@
                     return;
                 }
                 try {
+                    console.log(`[HUB] Creating DB: ${sessionInfo.dbName}`);
                     db = new PouchDB(sessionInfo.dbName);
                     await db.createIndex({
                         index: { fields: ["collection"] },

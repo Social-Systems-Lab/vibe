@@ -211,6 +211,20 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
     const searchParams = useSearchParams();
     const queryString = searchParams.toString();
     const [isLoading, setIsLoading] = useState(false);
+    const [preview, setPreview] = useState<string | null>(null);
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setPreview(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        } else {
+            setPreview(null);
+        }
+    };
 
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -223,9 +237,15 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
         });
 
         if (response.ok) {
-            setStep("consent");
+            const result = await response.json();
+            if (result.redirectTo) {
+                window.location.href = result.redirectTo;
+            } else {
+                setStep("consent");
+            }
         } else {
             // Handle error
+            console.error("Profile update failed");
             setIsLoading(false);
         }
     };
@@ -236,7 +256,19 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
                 <h1 className="text-3xl font-bold font-heading">Complete Your Profile</h1>
                 <p className="mt-2 text-gray-600">Just a few more details to get you set up.</p>
             </div>
-            <form className="space-y-6" onSubmit={handleSubmit}>
+            <form className="space-y-6" onSubmit={handleSubmit} encType="multipart/form-data">
+                <div className="flex flex-col items-center space-y-4">
+                    <label htmlFor="picture" className="cursor-pointer">
+                        <div className="w-32 h-32 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+                            {preview ? (
+                                <img src={preview} alt="Profile preview" className="w-full h-full object-cover" />
+                            ) : (
+                                <span className="text-gray-500">Upload Photo</span>
+                            )}
+                        </div>
+                    </label>
+                    <input id="picture" name="picture" type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+                </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Display Name</label>
                     <input
