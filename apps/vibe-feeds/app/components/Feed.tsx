@@ -22,11 +22,10 @@ export function Feed({ feedId }: { feedId: string }) {
         let subscriptionPromise: Promise<{ unsubscribe: () => void }> | undefined;
         if (feedId === "discover") {
             // disabled until read is optimized
-            //subscriptionPromise = read("posts", { global: true, expand: ["author"] }, processPosts);
+            //subscriptionPromise = read("posts", { global: false, expand: ["author"] }, processPosts);
 
             // read posts once
-            readOnce<Post>("posts", { global: true, expand: ["author"] }).then((res) => {
-                console.log("***Fetched posts:", JSON.stringify(res, null, 2));
+            readOnce<Post>("posts", { global: false, expand: ["author"] }).then((res) => {
                 if (res && res.docs) {
                     setPosts(res.docs);
                 }
