@@ -82,6 +82,31 @@ export class HubStrategy implements VibeTransportStrategy {
                     return;
                 }
 
+                if (type === "HUB_LOG") {
+                    const { level, args } = data;
+                    const style = "color: #888; background-color: #f0f0f0; padding: 2px 4px; border-radius: 2px;";
+                    switch (level) {
+                        case "log":
+                            console.log(`%c[HUB]`, style, ...args);
+                            break;
+                        case "warn":
+                            console.warn(`%c[HUB]`, style, ...args);
+                            break;
+                        case "error":
+                            console.error(`%c[HUB]`, style, ...args);
+                            break;
+                        case "info":
+                            console.info(`%c[HUB]`, style, ...args);
+                            break;
+                        case "debug":
+                            console.debug(`%c[HUB]`, style, ...args);
+                            break;
+                        default:
+                            console.log(`%c[HUB]`, style, ...args);
+                    }
+                    return;
+                }
+
                 if (type.endsWith("_ACK")) {
                     const pending = this.pendingRequests.get(nonce);
                     if (pending) {

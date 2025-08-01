@@ -9,6 +9,30 @@
         <h1>Vibe Data Hub</h1>
         <script>
             // --- 1. Initialization and State ---
+            const originalConsole = { ...console };
+            const logToParent = (level, args) => {
+                try {
+                    for (const app of connectedApps.values()) {
+                        app.port.postMessage({
+                            type: "HUB_LOG",
+                            data: {
+                                level,
+                                args: [...args],
+                            },
+                        });
+                    }
+                } catch (error) {
+                    originalConsole.error("Error posting log to parent:", error);
+                }
+            };
+
+            ["log", "warn", "error", "info", "debug"].forEach((level) => {
+                console[level] = (...args) => {
+                    originalConsole[level](...args);
+                    logToParent(level, args);
+                };
+            });
+
             console.log("Hub script loaded.");
 
             const permissionsCache = new Map();
