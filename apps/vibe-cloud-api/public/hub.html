@@ -9,32 +9,6 @@
         <h1>Vibe Data Hub</h1>
         <script>
             // --- 1. Initialization and State ---
-            const originalConsole = { ...console };
-            const logToParent = (level, args) => {
-                try {
-                    for (const app of connectedApps.values()) {
-                        app.port.postMessage({
-                            type: "HUB_LOG",
-                            data: {
-                                level,
-                                args: [...args],
-                            },
-                        });
-                    }
-                } catch (error) {
-                    originalConsole.error("Error posting log to parent:", error);
-                }
-            };
-
-            ["log", "warn", "error", "info", "debug"].forEach((level) => {
-                console[level] = (...args) => {
-                    originalConsole[level](...args);
-                    logToParent(level, args);
-                };
-            });
-
-            console.log("Hub script loaded.");
-
             const permissionsCache = new Map();
             const connectedApps = new Map();
             let db = null;
@@ -45,6 +19,39 @@
             const sharedListeners = new Map();
             let isUpdatingState = false;
             let messageQueue = [];
+
+            // --- 1.1 Logging Bridge ---
+            const originalConsole = { ...console };
+            const logToParent = (level, args) => {
+                try {
+                    // We need to check if connectedApps is being initialized to avoid errors
+                    if (connectedApps && connectedApps.values) {
+                        for (const app of connectedApps.values()) {
+                            app.port.postMessage({
+                                type: "HUB_LOG",
+                                data: {
+                                    level,
+                                    // Ensure args are serializable
+                                    args: JSON.parse(JSON.stringify(args)),
+                                },
+                            });
+                        }
+                    }
+                } catch (error) {
+                    // Use original console to avoid infinite loops
+                    originalConsole.error("Error posting log to parent:", error);
+                }
+            };
+            const levels = ["log", "warn", "error", "info", "debug"];
+            levels.forEach((level) => {
+                const originalMethod = console[level];
+                console[level] = (...args) => {
+                    originalMethod.apply(console, args);
+                    logToParent(level, args);
+                };
+            });
+
+            console.log("Hub script loaded.");
 
             // --- 2. Main Message Handler ---
             window.addEventListener("message", (event) => {
