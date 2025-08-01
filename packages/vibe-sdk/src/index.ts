@@ -99,8 +99,8 @@ export class VibeSDK {
         this.isInitializing = true;
         console.log("VibeSDK: Initializing...");
 
-        // Start Hub initialization
-        this.initHub();
+        // Start Hub initialization and wait for it to be ready
+        await this.initHub();
 
         // Listen for auth state changes to sync with the Hub
         this.onStateChange(() => {});
@@ -148,9 +148,10 @@ export class VibeSDK {
                 if (!this.hubFrame || !this.hubFrame.contentWindow) {
                     return reject(new Error("Hub iframe failed to load."));
                 }
+                const targetOrigin = new URL(this.hubUrl).origin;
                 this.hubFrame.contentWindow.postMessage(
                     { type: "INIT", payload: { origin: window.location.origin, user: this.user, redirectUri: this.config.redirectUri } },
-                    this.hubUrl,
+                    targetOrigin,
                     [channel.port2]
                 );
             };

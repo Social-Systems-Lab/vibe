@@ -518,7 +518,7 @@
                         since: "now",
                         live: true,
                         include_docs: true,
-                        filter: (doc) => doc.collection === collection,
+                        selector: { collection: collection },
                     })
                     .on("change", async (change) => {
                         console.log(`[HUB] Change detected for shared listener on collection ${collection}:`, change);
