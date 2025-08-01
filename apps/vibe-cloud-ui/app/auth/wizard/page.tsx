@@ -96,6 +96,7 @@ const SignupForm = ({ setStep }: { setStep: (step: string) => void }) => {
     const appName = searchParams.get("appName");
     const buttonColor = searchParams.get("buttonColor") || "#2563EB";
     const [isLoading, setIsLoading] = useState(false);
+    const error = searchParams.get("error");
 
     const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         setIsLoading(true);
@@ -110,6 +111,7 @@ const SignupForm = ({ setStep }: { setStep: (step: string) => void }) => {
                     to get started with <strong>{appName || clientId || "your app"}</strong>
                 </p>
             </div>
+            {error && <p className="text-red-500 text-center">{error}</p>}
             <form method="POST" action={`/auth/signup?${queryString}`} className="space-y-6" onSubmit={handleSubmit}>
                 <div>
                     <input
@@ -237,10 +239,21 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
         });
 
         if (response.ok) {
-            const result = await response.json();
-            if (result.redirectTo) {
-                window.location.href = result.redirectTo;
-            } else {
+            if (response.redirected) {
+                window.location.href = response.url;
+                return;
+            }
+            try {
+                const result = await response.json();
+                if (result.redirectTo) {
+                    window.location.href = result.redirectTo;
+                } else {
+                    setStep("consent");
+                }
+            } catch (e) {
+                // If the response is not JSON, it might be a redirect from the server
+                // that the browser didn't follow automatically.
+                // In that case, we can assume the next step is consent.
                 setStep("consent");
             }
         } else {

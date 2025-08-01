@@ -415,8 +415,9 @@ const app = new Elysia()
                     const { email, password } = body;
                     const existingUser = await identityService.findByEmail(email);
                     if (existingUser) {
-                        set.status = 409;
-                        return { error: "User already exists" };
+                        const params = new URLSearchParams(query as any);
+                        params.set("error", "User already exists");
+                        return redirect(`/auth/wizard?${params.toString()}`);
                     }
                     const password_hash = await Bun.password.hash(password);
                     const user = await identityService.register(email, password_hash, password, "");
@@ -495,17 +496,7 @@ const app = new Elysia()
 
                     const updatedUser = await identityService.updateUser(userDid, userData);
 
-                    // Also update the 'profiles/me' document
-                    await dataService.update(
-                        "profiles",
-                        {
-                            _id: `profiles/${userDid}`,
-                            name: updatedUser.displayName,
-                            pictureUrl: updatedUser.pictureUrl,
-                            did: updatedUser.did,
-                        },
-                        { sub: updatedUser.did, instanceId: updatedUser.instanceId }
-                    );
+                    // The hub will handle syncing the profile document
 
                     const params = new URLSearchParams(query as any);
                     const flow = params.get("flow");

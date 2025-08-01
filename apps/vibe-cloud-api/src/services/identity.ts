@@ -429,6 +429,31 @@ export class IdentityService {
         const updatedUser = { ...user, ...data };
         await this.usersDb.insert(updatedUser);
 
+        // Also update the 'profiles/me' document in the user's own database
+        const userDbName = getUserDbName(user.instanceId);
+        const userDb = this.nano.db.use(userDbName);
+        try {
+            const profileDoc = (await userDb.get("profiles/me")) as any;
+            await userDb.insert({
+                ...profileDoc,
+                name: updatedUser.displayName,
+                pictureUrl: updatedUser.pictureUrl,
+            });
+        } catch (error: any) {
+            if (error.statusCode === 404) {
+                // Profile doc doesn't exist, create it
+                await userDb.insert({
+                    _id: "profiles/me",
+                    name: updatedUser.displayName,
+                    pictureUrl: updatedUser.pictureUrl,
+                    did: updatedUser.did,
+                });
+            } else {
+                console.error("Error updating profiles/me doc:", error);
+                // Don't throw, as the main user update succeeded
+            }
+        }
+
         return updatedUser;
     }
 
