@@ -25,15 +25,26 @@ export class DataService {
     private couch: nano.ServerScope;
     private config: { url: string; user: string; pass: string };
     private identityService: IdentityService;
+    private globalDb: DocumentScope<any>;
 
     constructor(config: { url: string; user: string; pass: string }, identityService: IdentityService) {
         this.config = config;
         this.couch = nano(config.url);
         this.identityService = identityService;
+        this.globalDb = this.couch.use("global");
     }
 
     async init() {
         await this.couch.auth(this.config.user, this.config.pass);
+        try {
+            await this.couch.db.create("global");
+            console.log("Global database created.");
+        } catch (error: any) {
+            if (error.statusCode !== 412) {
+                // 412 Precondition Failed means DB already exists
+                throw error;
+            }
+        }
     }
 
     private async reauthenticate() {
@@ -74,6 +85,53 @@ export class DataService {
         );
 
         const response = await db.bulk({ docs });
+
+        // After successful write, update the global database
+        await Promise.all(
+            response.map(async (result, index) => {
+                if (result.error) {
+                    console.error(`Error processing doc ${result.id}: ${result.error}`);
+                    return;
+                }
+                const doc = itemsToProcess[index];
+                const acl = doc.acl as Acl;
+                const globalId = `${doc.collection}/${user.sub}/${doc._id.split("/")[1]}`;
+
+                // Check if any read ACL rules are set, indicating potential global readability.
+                const hasGlobalRead = acl?.read?.allow && acl.read.allow.length > 0;
+
+                if (hasGlobalRead) {
+                    // Create or update the DocRef in the global database
+                    const docRef = {
+                        _id: globalId,
+                        ref: {
+                            did: user.sub,
+                            docId: doc._id,
+                        },
+                        acl: doc.acl,
+                    };
+                    try {
+                        const existing = await this.globalDb.get(globalId);
+                        (docRef as any)._rev = existing._rev;
+                    } catch (e: any) {
+                        if (e.statusCode !== 404) throw e;
+                    }
+                    await this.globalDb.insert(docRef as any);
+                } else {
+                    // If no global read access, try to remove it from the global DB
+                    try {
+                        const existing = await this.globalDb.get(globalId);
+                        await this.globalDb.destroy(globalId, existing._rev);
+                    } catch (e: any) {
+                        if (e.statusCode !== 404) {
+                            // Don't throw if it's already gone, but log other errors
+                            console.error(`Error removing DocRef ${globalId} from global db`, e);
+                        }
+                    }
+                }
+            })
+        );
+
         return response;
     }
 
@@ -87,37 +145,34 @@ export class DataService {
         const { expand, maxCacheAge, global, ...selector } = query;
 
         if (global) {
-            const dbNames = await this.getAllUserDbNames();
-            const allDocs: T[] = [];
+            const dbQuery = {
+                selector: {
+                    ...selector,
+                },
+                startkey: `${collection}/`,
+                endkey: `${collection}/\ufff0`,
+            };
 
-            for (const dbName of dbNames) {
-                try {
-                    const db = this.couch.use(dbName);
-                    const dbQuery = {
-                        selector: {
-                            ...selector,
-                            collection: collection,
-                        },
-                    };
-                    const result = await db.find(dbQuery);
-                    const accessibleDocs: T[] = [];
-                    for (const doc of result.docs) {
-                        if (await this.verifyAccess(doc, user, "read", dbName)) {
-                            accessibleDocs.push(doc as unknown as T);
-                        }
-                    }
-                    allDocs.push(...accessibleDocs);
-                } catch (error) {
-                    console.error(`Error querying database ${dbName}:`, error);
-                }
-            }
+            // Query the global database directly
+            const result = await this.globalDb.find(dbQuery);
+            const allDocs = result.docs as any[];
 
             if (expand && expand.length > 0) {
-                const docs = await this._expand(allDocs, expand, user, maxCacheAge);
-                return { docs: docs as T[] };
+                // The _expand function expects a list of documents and a field name to expand.
+                // We have a list of DocRefs. We will simulate this by creating a temporary
+                // object with a field named 'ref' containing the reference details.
+                const docsToExpand = allDocs.map((doc) => ({
+                    _id: doc._id,
+                    ref: doc.ref,
+                }));
+                // We then call _expand telling it to expand the 'ref' field.
+                const expandedDocs = await this._expand(docsToExpand, ["ref"], user, maxCacheAge);
+                // The result will have the 'ref' field replaced with the full document.
+                // We map it back to the desired final structure.
+                return { docs: expandedDocs.map((doc) => doc.ref) as T[] };
             }
 
-            return { docs: allDocs };
+            return { docs: allDocs as T[] };
         } else {
             const db = this.getDb(user.instanceId);
             const dbName = getUserDbName(user.instanceId);
@@ -232,6 +287,49 @@ export class DataService {
         );
 
         const response = await db.bulk({ docs });
+
+        // After successful update, also update the global database
+        await Promise.all(
+            response.map(async (result, index) => {
+                if (result.error) {
+                    console.error(`Error processing doc ${result.id}: ${result.error}`);
+                    return;
+                }
+                const doc = itemsToProcess[index];
+                const acl = doc.acl as Acl;
+                const globalId = `${doc.collection}/${user.sub}/${doc._id.split("/")[1]}`;
+
+                // Check if any read ACL rules are set, indicating potential global readability.
+                const hasGlobalRead = acl?.read?.allow && acl.read.allow.length > 0;
+
+                if (hasGlobalRead) {
+                    const docRef = {
+                        _id: globalId,
+                        ref: {
+                            did: user.sub,
+                            docId: doc._id,
+                        },
+                        acl: doc.acl,
+                    };
+                    try {
+                        const existing = await this.globalDb.get(globalId);
+                        (docRef as any)._rev = existing._rev;
+                    } catch (e: any) {
+                        if (e.statusCode !== 404) throw e;
+                    }
+                    await this.globalDb.insert(docRef as any);
+                } else {
+                    try {
+                        const existing = await this.globalDb.get(globalId);
+                        await this.globalDb.destroy(globalId, existing._rev);
+                    } catch (e: any) {
+                        if (e.statusCode !== 404) {
+                            console.error(`Error removing DocRef ${globalId} from global db`, e);
+                        }
+                    }
+                }
+            })
+        );
         return response;
     }
 

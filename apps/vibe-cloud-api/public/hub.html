@@ -20,7 +20,31 @@
             let isUpdatingState = false;
             let messageQueue = [];
 
-            // --- 1.1 Logging Bridge ---
+            // --- 1.2 Shared Worker Initialization ---
+            let sharedWorker = null;
+            if (window.SharedWorker) {
+                console.log("[HUB] Shared Worker is supported. Initializing...");
+                sharedWorker = new SharedWorker("shared-worker.js");
+
+                sharedWorker.port.onmessage = (event) => {
+                    console.log("[HUB] Received message from Shared Worker:", event.data);
+                    // Handle messages from the worker, e.g., forward to the correct app port
+                };
+
+                sharedWorker.onerror = (err) => {
+                    console.error("[HUB] Shared Worker error:", err);
+                };
+
+                // Start the port to allow messages to be received
+                sharedWorker.port.start();
+
+                // Test message to see if the connection is working
+                sharedWorker.port.postMessage({ type: "HUB_INIT" });
+            } else {
+                console.warn("[HUB] Shared Worker is not supported in this browser.");
+            }
+
+            // --- 1.3 Logging Bridge ---
             const originalConsole = { ...console };
             const logToParent = (level, args) => {
                 try {

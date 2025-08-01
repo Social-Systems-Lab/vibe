@@ -21,7 +21,7 @@ To ensure efficient multi-tab operation and prepare for more advanced client-sid
 
 ### 2.2. Server-Side: The Global Database
 
-A new, central CouchDB database, named `global`, will be created within the `vibe-cloud-api`.
+A new, central CouchDB database, named `global` (CouchDB reserves the `_` prefix for system databases), will be created within the `vibe-cloud-api`.
 
 -   **Purpose**: To hold a live, aggregated collection of all documents from all users that are explicitly marked as accessible to others via their ACLs.
 -   **Mechanism**: This database is populated and maintained in real-time during standard data operations, not by a background batch process.
@@ -37,7 +37,7 @@ The primary change is in the `vibe-cloud-api`'s data writing endpoint (e.g., `/d
 3.  **After the write, the API inspects the document's ACL.**
 4.  **If the ACL permits global access**:
     -   The API transforms the document's ID to prevent collisions (see Section 4.1).
-    -   The API writes a copy of the document to the `global` database.
+    -   The API creates and writes a lean "pointer" document (a DocRef) to the `global` database (see Section 4.3).
 5.  **If an existing document's ACL is updated to remove global access**:
     -   The API deletes the corresponding document from the `global` database.
 
@@ -68,8 +68,8 @@ sequenceDiagram
     UserDB-->>API: Success
 
     API->>API: Inspects ACL -> Global access is true
-    API->>API: Transform ID (e.g., 'did:user:abc:post123')
-    API->>GlobalDB: Writes copy of document
+    API->>API: Transform ID (e.g., 'posts/did:user:abc/...')
+    API->>GlobalDB: Writes DocRef pointer document
     GlobalDB-->>API: Success
 
     API-->>Hub: Write operation successful
@@ -83,24 +83,55 @@ sequenceDiagram
 
 **Problem**: Documents from different users might have the same `_id`, which would cause conflicts in the `global` database.
 
-**Solution**: We will enforce unique IDs in the `global` database by creating a composite key. The new `_id` will be a concatenation of the owner's DID and the original document's `_id`.
+**Solution**: We will enforce unique and queryable IDs in the `global` database by creating a composite key that preserves the collection prefix.
 
--   **Original `_id`**: `post123`
--   **Owner's DID**: `did:vibe:user:abc`
--   **Global DB `_id`**: `did:vibe:user:abc:post123`
+-   **Original `_id`**: `posts/1753556109407-4da7b627643df8`
+-   **Owner's DID**: `did:vibe:zDxUwpkymXAzDwiKMvwWeYtWS6r7JdxvCWX5fEaK1enUsbTrU`
+-   **Global DB `_id`**: `posts/did:vibe:zDxUwpkymXAzDwiKMvwWeYtWS6r7JdxvCWX5fEaK1enUsbTrU/1753556109407-4da7b627643df8`
 
-This format guarantees uniqueness, is predictable, and maintains a clear reference to the document's origin.
+This format guarantees uniqueness and allows for efficient range queries on the `_id` field to retrieve all documents for a specific collection (e.g., using `startkey="posts/"`).
 
 ### 4.2. Sequencing and Fetching Changes
 
 **Problem**: A common and critical operation will be for clients to fetch only what's new since their last query.
 
-**Solution**: We will leverage CouchDB's native `_changes` feed on the `global` database.
+**Solution**: We will leverage CouchDB's native **filtered `_changes` feed**. This allows clients to subscribe to changes for only the collections they are interested in.
 
--   The CouchDB `_changes` feed provides a `last_seq` value that represents a point in time in the database's history.
--   Clients can perform a query and receive the current `last_seq`.
--   For subsequent updates, the client can query the `_changes` feed with a `since=<last_seq>` parameter to receive only the documents that have been added or changed since that point.
--   This is a highly efficient, built-in mechanism that perfectly suits the need for chronological updates.
+1.  **Design Document**: A design document will be created in the `global` database with a filter function that matches documents based on their collection prefix.
+    ```javascript
+    // In _design/app
+    {
+      "filters": {
+        "by_collection": "function(doc, req) { return doc._id.startsWith(req.query.collection + '/'); }"
+      }
+    }
+    ```
+2.  **Client Request**: The client can then request a changes feed for a specific collection.
+    `GET /global/_changes?filter=app/by_collection&collection=posts`
+3.  **Sequencing**: This feed provides a `last_seq` value, allowing the client to resume listening from that point using the `since` parameter, ensuring no updates are missed.
+
+### 4.3. Global Document Structure (DocRefs)
+
+**Problem**: Storing full copies of documents in the `global` database leads to significant data duplication and can make the central database very large.
+
+**Solution**: The `global` database will not store full documents. Instead, it will store lightweight "pointer" documents, or **DocRefs**. This keeps the global database lean and fast, serving as a discoverable index of content, while leveraging the client's existing `_expand` and caching logic to fetch the full data.
+
+-   **Example DocRef in `global` database**:
+    ```json
+    {
+        "_id": "posts/did:vibe:zDxUwpkymXAzDwiKMvwWeYtWS6r7JdxvCWX5fEaK1enUsbTrU/1753556109407-4da7b627643df8",
+        "_rev": "1-...",
+        "ref": {
+            "did": "did:vibe:zDxUwpkymXAzDwiKMvwWeYtWS6r7JdxvCWX5fEaK1enUsbTrU",
+            "docId": "posts/1753556109407-4da7b627643df8"
+        },
+        "acl": { "read": { "allow": ["*"] } }
+    }
+    ```
+-   **Client Workflow**:
+    1.  Client fetches a list of these DocRefs from the `global` database.
+    2.  For each DocRef, the client uses the `vibe-sdk`'s `_expand` mechanism to fetch the full document content from its original location (`did` + `docId`).
+    3.  The results are served from the client's local PouchDB cache if available, minimizing API calls.
 
 ## 5. Future Considerations
 
