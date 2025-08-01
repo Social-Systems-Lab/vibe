@@ -17,7 +17,7 @@
             let syncHandler = null;
             const subscriptions = new Map();
             const sharedListeners = new Map();
-            let dbOperationLock = Promise.resolve();
+            let dbOperationLock = Promise.resolve(); // Re-introducing the lock as it's the correct pattern.
 
             // --- 1.2 Shared Worker Initialization ---
             let sharedWorker = null;
@@ -674,28 +674,35 @@
             }
 
             async function _expand(docs, expand, maxCacheAge) {
+                await dbOperationLock; // Wait for the db to be ready.
                 const promises = docs.map(async (doc) => {
                     const expandedDoc = { ...doc };
                     for (const field of expand) {
                         const ref = doc[field];
                         if (!ref || !ref.did || !ref.ref) continue;
 
-                        if (currentUser && ref.did === currentUser.did) {
+                        // If the db is available and the doc belongs to the current user, try to get it locally first.
+                        if (db && currentUser && ref.did === currentUser.did) {
                             try {
-                                expandedDoc[field] = await db.get(ref.ref);
+                                const localDoc = await db.get(ref.ref);
+                                expandedDoc[field] = localDoc;
+                                continue; // Skip to the next field if found locally
                             } catch (error) {
-                                console.error(`Error fetching local document from PouchDB: ${ref.ref}`, error);
+                                if (error.name !== "not_found") {
+                                    console.error(`Error fetching local document from PouchDB: ${ref.ref}`, error);
+                                }
                             }
-                            continue;
                         }
 
                         // Handle remote refs with caching
                         const cacheId = `cache/${ref.did}/${ref.ref}`;
                         let existingCacheItem = null;
-                        try {
-                            existingCacheItem = await db.get(cacheId);
-                        } catch (error) {
-                            // Ignore not_found errors
+                        if (db) {
+                            try {
+                                existingCacheItem = await db.get(cacheId);
+                            } catch (error) {
+                                // Ignore not_found errors
+                            }
                         }
 
                         const isCacheFresh = () => {
@@ -715,17 +722,18 @@
                                     const remoteDoc = await response.json();
                                     expandedDoc[field] = remoteDoc;
 
-                                    // Update cache
-                                    const newCacheItem = {
-                                        _id: cacheId,
-                                        _rev: existingCacheItem?._rev,
-                                        type: "cache",
-                                        data: remoteDoc,
-                                        cachedAt: Date.now(),
-                                        originalDid: ref.did,
-                                        originalRef: ref.ref,
-                                    };
-                                    await db.put(newCacheItem);
+                                    if (db) {
+                                        const newCacheItem = {
+                                            _id: cacheId,
+                                            _rev: existingCacheItem?._rev,
+                                            type: "cache",
+                                            data: remoteDoc,
+                                            cachedAt: Date.now(),
+                                            originalDid: ref.did,
+                                            originalRef: ref.ref,
+                                        };
+                                        await db.put(newCacheItem);
+                                    }
                                 }
                             } catch (apiError) {
                                 console.error(`Failed to fetch expanded document for ${ref.ref}`, apiError);
