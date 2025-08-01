@@ -15,6 +15,7 @@ export function Feed({ feedId }: { feedId: string }) {
 
         const processPosts = (result: { ok: boolean; data?: any; error?: string }) => {
             if (result.ok && result.data) {
+                console.log("***Fetched posts:", JSON.stringify(result.data, null, 2));
                 setPosts(result.data);
             }
         };
@@ -22,14 +23,14 @@ export function Feed({ feedId }: { feedId: string }) {
         let subscriptionPromise: Promise<{ unsubscribe: () => void }> | undefined;
         if (feedId === "discover") {
             // disabled until read is optimized
-            //subscriptionPromise = read("posts", { global: false, expand: ["author"] }, processPosts);
+            subscriptionPromise = read("posts", { global: true, expand: ["author"] }, processPosts);
 
             // read posts once
-            readOnce<Post>("posts", { global: false, expand: ["author"] }).then((res) => {
-                if (res && res.docs) {
-                    setPosts(res.docs);
-                }
-            });
+            // readOnce<Post>("posts", { global: true, expand: ["author"] }).then((res) => {
+            //     if (res && res.docs) {
+            //         setPosts(res.docs);
+            //     }
+            // });
         }
 
         if (!subscriptionPromise) {

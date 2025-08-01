@@ -17,8 +17,7 @@
             let syncHandler = null;
             const subscriptions = new Map();
             const sharedListeners = new Map();
-            let isUpdatingState = false;
-            let messageQueue = [];
+            let dbOperationLock = Promise.resolve();
 
             // --- 1.2 Shared Worker Initialization ---
             let sharedWorker = null;
@@ -118,14 +117,7 @@
                     connectedApps.set(origin, { port: sourcePort, redirectUri });
 
                     // Listen for messages on the dedicated port
-                    sourcePort.onmessage = (event) => {
-                        if (isUpdatingState) {
-                            console.log("[HUB] State is updating, queueing message:", event.data.type);
-                            messageQueue.push(event);
-                            return;
-                        }
-                        processMessage(event);
-                    };
+                    sourcePort.onmessage = processMessage;
 
                     if (user) {
                         currentUser = user;
@@ -161,57 +153,50 @@
                 }
             }
 
-            function processQueue() {
-                console.log(`[HUB] Processing ${messageQueue.length} queued messages.`);
-                while (messageQueue.length > 0) {
-                    const event = messageQueue.shift();
-                    processMessage(event);
-                }
-            }
-
             async function updateUserSession(user, origin, forceUpdate = false) {
-                // If the user is the same and we're not forcing an update, do nothing.
-                console.log(`[HUB] Updating user session for origin: ${origin}`);
-                // Below code breaks the OneTapChip->Consent->Allow flow, so it's commented out.
-                // if (user && currentUser && user.id === currentUser.id && !forceUpdate) {
-                //     console.log("[HUB] User is the same, skipping session update.");
-                //     return;
-                // }
+                let releaseLock;
+                dbOperationLock = new Promise((resolve) => (releaseLock = resolve));
 
-                // 1. Stop any existing sync and clear local DB instance
-                if (syncHandler) {
-                    syncHandler.cancel();
-                    syncHandler = null;
-                }
-                if (db) {
-                    await db.close();
-                    db = null;
-                }
-                currentUser = user;
+                try {
+                    console.log(`[HUB] Updating user session for origin: ${origin}`);
 
-                // 2. If no user, just update permissions and broadcast.
-                if (!user) {
-                    console.log(`[HUB] User logged out. Clearing session for ${origin}`);
-                    const permissions = await getPermissions(origin);
+                    // 1. Stop any existing sync and clear local DB instance
+                    if (syncHandler) {
+                        syncHandler.cancel();
+                        syncHandler = null;
+                    }
+                    if (db) {
+                        await db.close();
+                        db = null;
+                    }
+                    currentUser = user;
+
+                    // 2. If no user, just update permissions and broadcast.
+                    if (!user) {
+                        console.log(`[HUB] User logged out. Clearing session for ${origin}`);
+                        const permissions = await getPermissions(origin);
+                        permissionsCache.set(origin, permissions);
+                        broadcastAuthStateChange();
+                        return;
+                    }
+
+                    // 3. Fetch new permissions and session info in parallel
+                    console.log(`[HUB] User set. Re-fetching permissions and session for ${origin}`);
+                    const [permissions, sessionInfo] = await Promise.all([getPermissions(origin), getDbSession()]);
+
+                    console.log(`[HUB] New permissions for ${origin}:`, permissions);
                     permissionsCache.set(origin, permissions);
+
+                    // 4. Start the new sync with the fetched session info
+                    await startSync(sessionInfo);
                     broadcastAuthStateChange();
-                    return;
+                } finally {
+                    releaseLock();
+                    console.log("[HUB] DB Operation lock released.");
                 }
-
-                // 3. Fetch new permissions and session info in parallel
-                console.log(`[HUB] User set. Re-fetching permissions and session for ${origin}`);
-                const [permissions, sessionInfo] = await Promise.all([getPermissions(origin), getDbSession()]);
-
-                console.log(`[HUB] New permissions for ${origin}:`, permissions);
-                permissionsCache.set(origin, permissions);
-
-                // 4. Start the new sync with the fetched session info
-                await startSync(sessionInfo);
-                broadcastAuthStateChange();
             }
 
             async function handleSetUser(event) {
-                isUpdatingState = true;
                 const { payload, nonce } = event.data;
                 const user = payload;
                 const origin = findOriginForPort(event.target);
@@ -219,21 +204,18 @@
 
                 if (!app) {
                     console.error("Could not determine origin or app for SET_USER message.");
-                    isUpdatingState = false;
-                    processQueue(); // Process queue even on failure
                     return;
                 }
 
-                try {
-                    await updateUserSession(user, origin);
-                    app.port.postMessage({ type: "SET_USER_ACK", success: true, nonce });
-                } catch (error) {
-                    console.error(`[HUB] Error during SET_USER for ${origin}:`, error);
-                    app.port.postMessage({ type: "SET_USER_ACK", success: false, error: error.message, nonce });
-                } finally {
-                    isUpdatingState = false;
-                    processQueue();
-                }
+                // The updateUserSession function now handles its own locking.
+                updateUserSession(user, origin)
+                    .then(() => {
+                        app.port.postMessage({ type: "SET_USER_ACK", success: true, nonce });
+                    })
+                    .catch((error) => {
+                        console.error(`[HUB] Error during SET_USER for ${origin}:`, error);
+                        app.port.postMessage({ type: "SET_USER_ACK", success: false, error: error.message, nonce });
+                    });
             }
 
             async function handleForceRefreshPermissions(event) {
@@ -412,6 +394,7 @@
             }
 
             async function performPouchDbOperation(type, collection, payload) {
+                await dbOperationLock; // Wait for any pending db re-initialization to complete
                 if (!db) {
                     throw new Error("Database not initialized");
                 }
@@ -632,17 +615,46 @@
                 };
 
                 ws.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
+                    const messageData = JSON.parse(event.data);
+                    const docRefs = messageData.docs || [];
                     const canonicalKey = `global:${collection}|${JSON.stringify(query)}`;
                     const sharedListener = sharedListeners.get(canonicalKey);
-                    if (sharedListener) {
+
+                    if (sharedListener && docRefs.length > 0) {
+                        // This logic mirrors the expansion in performGlobalQuery
+                        const tempDocsForExpansion = docRefs.map((doc) => ({ _id: doc._id, ref: doc.ref }));
+                        _expand(tempDocsForExpansion, ["ref"])
+                            .then((expandedDocRefs) => {
+                                const fullDocs = expandedDocRefs.map((doc) => doc.ref).filter(Boolean);
+                                const { expand } = query;
+                                if (expand) {
+                                    return _expand(fullDocs, expand);
+                                }
+                                return fullDocs;
+                            })
+                            .then((finalDocs) => {
+                                sharedListener.subscribers.forEach((subId) => {
+                                    const sub = subscriptions.get(subId);
+                                    if (sub) {
+                                        sub.port.postMessage({
+                                            type: "DB_UPDATE",
+                                            subscriptionId: subId,
+                                            data: finalDocs,
+                                        });
+                                    }
+                                });
+                            })
+                            .catch((err) => {
+                                console.error("[HUB] Error expanding documents from global subscription:", err);
+                            });
+                    } else if (sharedListener) {
                         sharedListener.subscribers.forEach((subId) => {
                             const sub = subscriptions.get(subId);
                             if (sub) {
                                 sub.port.postMessage({
                                     type: "DB_UPDATE",
                                     subscriptionId: subId,
-                                    data: data,
+                                    data: [],
                                 });
                             }
                         });

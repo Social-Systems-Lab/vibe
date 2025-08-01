@@ -360,7 +360,7 @@ export class VibeSDK {
         this.hubPort?.postMessage({ type, payload: { collection, query: filter }, subscriptionId });
 
         const initialData = await this.readOnce(collection, query);
-        callback({ ok: true, data: initialData });
+        callback({ ok: true, data: initialData.docs });
 
         return {
             unsubscribe: () => {
