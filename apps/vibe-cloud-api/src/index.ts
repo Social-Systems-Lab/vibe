@@ -12,6 +12,9 @@ import { getUserDbName } from "./lib/db";
 import { User } from "vibe-core";
 import nano from "nano";
 import { proxyRequest } from "./lib/proxy";
+import { GlobalFeedService } from "./services/global-feed";
+
+const globalFeedService = new GlobalFeedService();
 
 const identityService = new IdentityService({
     url: process.env.COUCHDB_URL!,
@@ -46,7 +49,8 @@ const dataService = new DataService(
         user: process.env.COUCHDB_USER!,
         pass: process.env.COUCHDB_PASSWORD!,
     },
-    identityService
+    identityService,
+    globalFeedService
 );
 
 const certsService = new CertsService(identityService, dataService);
@@ -56,6 +60,7 @@ try {
     await dataService.init();
     const couch = nano(process.env.COUCHDB_URL!);
     await couch.auth(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
+    await globalFeedService.init(process.env.COUCHDB_URL!, process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
 } catch (error) {
     console.error("Failed to start server:", error);
     process.exit(1);
@@ -107,6 +112,7 @@ const app = new Elysia()
     .decorate("storageService", storageService)
     .decorate("dataService", dataService)
     .decorate("certsService", certsService)
+    .decorate("globalFeedService", globalFeedService)
     .get("/health", () => ({
         status: identityService.isConnected ? "ok" : "error",
         service: "vibe-cloud-api",
@@ -795,54 +801,43 @@ const app = new Elysia()
             .ws("/global", {
                 async open(ws) {
                     console.log("Global WebSocket connection opened");
+                    (ws.data as any).id = Math.random().toString(36).substring(2);
                 },
                 async message(ws, message: { type: string; token?: string; query?: any }) {
                     if (message.type === "auth") {
+                        const { globalFeedService } = ws.data;
+                        const { id } = ws.data as any;
+
                         const profile = await ws.data.jwt.verify(message.token);
                         if (!profile) {
                             ws.close(4001, "Unauthorized");
                             return;
                         }
+
+                        const { collection } = message.query;
                         (ws.data as any).profile = profile;
-                        const { collection, ...query } = message.query;
-                        (ws.data as any).query = query;
                         (ws.data as any).collection = collection;
 
                         console.log(`Global WebSocket authenticated for collection: ${collection} by user ${profile.sub}`);
 
-                        const dbNames = await dataService.getAllUserDbNames();
-                        const changesFeeds: any[] = [];
+                        // Subscribe this websocket to the collection feed
+                        globalFeedService.subscribe(collection, id, (docRef) => {
+                            ws.send({ type: "update", data: docRef });
+                        });
 
-                        const processAndSend = async () => {
-                            const result = await dataService.readOnce(collection, { ...query, global: true }, profile as JwtPayload);
-                            ws.send(result);
-                        };
-
-                        await processAndSend();
-
-                        for (const dbName of dbNames) {
-                            try {
-                                const instanceId = dbName.replace("userdb-", "");
-                                const db = dataService.getDb(instanceId);
-                                const changes = db.changesReader.start({ since: "now", includeDocs: true });
-                                changes.on("change", async (change) => {
-                                    if (change.doc?.collection === collection) {
-                                        await processAndSend();
-                                    }
-                                });
-                                changesFeeds.push(changes);
-                            } catch (error) {
-                                console.error(`Error processing database ${dbName}:`, error);
-                            }
-                        }
-                        (ws.data as any).changes = changesFeeds;
+                        // Send initial data
+                        const result = await dataService.readOnce(collection, { ...message.query, global: true }, profile as JwtPayload);
+                        ws.send(result);
                     }
                 },
                 close(ws) {
-                    const { profile, changes, collection } = ws.data as any;
-                    if (changes) {
-                        changes.forEach((feed: any) => feed.stop());
+                    const { profile, collection, id } = ws.data as any;
+                    const { globalFeedService } = ws.data;
+
+                    if (collection) {
+                        globalFeedService.unsubscribe(collection, id);
                     }
+
                     if (profile) {
                         console.log(`Global WebSocket closed for collection: ${collection} by user ${profile.sub}`);
                     } else {

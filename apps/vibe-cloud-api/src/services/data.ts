@@ -3,6 +3,7 @@ import { getUserDbName } from "../lib/db";
 import { IdentityService } from "./identity";
 import { CachedDoc, DocRef, Certificate, Acl, AclPermission, AclRule, publicKeyHexToSpkiPem, Document, ReadOnceApiResponse } from "vibe-core";
 import * as jose from "jose";
+import { GlobalFeedService } from "./global-feed";
 
 export interface JwtPayload {
     sub: string; // This is the user's DID
@@ -26,12 +27,14 @@ export class DataService {
     private config: { url: string; user: string; pass: string };
     private identityService: IdentityService;
     private globalDb: DocumentScope<any>;
+    private globalFeedService: GlobalFeedService;
 
-    constructor(config: { url: string; user: string; pass: string }, identityService: IdentityService) {
+    constructor(config: { url: string; user: string; pass: string }, identityService: IdentityService, globalFeedService: GlobalFeedService) {
         this.config = config;
         this.couch = nano(config.url);
         this.identityService = identityService;
         this.globalDb = this.couch.use("global");
+        this.globalFeedService = globalFeedService;
     }
 
     async init() {
@@ -117,6 +120,7 @@ export class DataService {
                         if (e.statusCode !== 404) throw e;
                     }
                     await this.globalDb.insert(docRef as any);
+                    this.globalFeedService.publish(doc.collection, docRef.ref);
                 } else {
                     // If no global read access, try to remove it from the global DB
                     try {
@@ -309,6 +313,7 @@ export class DataService {
                         if (e.statusCode !== 404) throw e;
                     }
                     await this.globalDb.insert(docRef as any);
+                    this.globalFeedService.publish(doc.collection, docRef.ref);
                 } else {
                     try {
                         const existing = await this.globalDb.get(globalId);

@@ -603,6 +603,7 @@
             function createSharedGlobalListener(collection, query) {
                 const VIBE_WS_URL = window.location.origin.replace(/^http/, "ws");
                 const ws = new WebSocket(`${VIBE_WS_URL}/data/global`);
+                let cachedDocs = []; // Cache for the documents of this subscription
 
                 ws.onopen = async () => {
                     const token = await getAccessToken();
@@ -616,48 +617,60 @@
 
                 ws.onmessage = (event) => {
                     const messageData = JSON.parse(event.data);
-                    const docRefs = messageData.docs || [];
                     const canonicalKey = `global:${collection}|${JSON.stringify(query)}`;
                     const sharedListener = sharedListeners.get(canonicalKey);
 
-                    if (sharedListener && docRefs.length > 0) {
-                        // This logic mirrors the expansion in performGlobalQuery
-                        const tempDocsForExpansion = docRefs.map((doc) => ({ _id: doc._id, ref: doc.ref }));
-                        _expand(tempDocsForExpansion, ["ref"])
-                            .then((expandedDocRefs) => {
-                                const fullDocs = expandedDocRefs.map((doc) => doc.ref).filter(Boolean);
-                                const { expand } = query;
-                                if (expand) {
-                                    return _expand(fullDocs, expand);
-                                }
-                                return fullDocs;
-                            })
-                            .then((finalDocs) => {
-                                sharedListener.subscribers.forEach((subId) => {
-                                    const sub = subscriptions.get(subId);
-                                    if (sub) {
-                                        sub.port.postMessage({
-                                            type: "DB_UPDATE",
-                                            subscriptionId: subId,
-                                            data: finalDocs,
-                                        });
-                                    }
-                                });
-                            })
-                            .catch((err) => {
-                                console.error("[HUB] Error expanding documents from global subscription:", err);
-                            });
-                    } else if (sharedListener) {
+                    if (!sharedListener) return;
+
+                    const broadcastUpdate = (docs) => {
                         sharedListener.subscribers.forEach((subId) => {
                             const sub = subscriptions.get(subId);
                             if (sub) {
                                 sub.port.postMessage({
                                     type: "DB_UPDATE",
                                     subscriptionId: subId,
-                                    data: [],
+                                    data: docs,
                                 });
                             }
                         });
+                    };
+
+                    if (messageData.docs) {
+                        // Initial data load
+                        const docRefs = messageData.docs;
+                        const tempDocsForExpansion = docRefs.map((doc) => ({ _id: doc._id, ref: doc.ref }));
+                        _expand(tempDocsForExpansion, ["ref"])
+                            .then((expandedDocRefs) => {
+                                const fullDocs = expandedDocRefs.map((doc) => doc.ref).filter(Boolean);
+                                const { expand } = query;
+                                return expand ? _expand(fullDocs, expand) : fullDocs;
+                            })
+                            .then((finalDocs) => {
+                                cachedDocs = finalDocs;
+                                broadcastUpdate(cachedDocs);
+                            })
+                            .catch((err) => console.error("[HUB] Error expanding initial documents:", err));
+                    } else if (messageData.type === "update") {
+                        // Incremental update
+                        const newDocRef = messageData.data;
+                        const tempDocForExpansion = [{ _id: newDocRef.ref, ref: newDocRef }];
+                        _expand(tempDocForExpansion, ["ref"])
+                            .then((expandedDocs) => {
+                                const fullNewDoc = expandedDocs[0]?.ref;
+                                if (!fullNewDoc) return;
+                                const { expand } = query;
+                                return expand ? _expand([fullNewDoc], expand) : [fullNewDoc];
+                            })
+                            .then((finalNewDocs) => {
+                                if (!finalNewDocs || finalNewDocs.length === 0) return;
+                                const finalNewDoc = finalNewDocs[0];
+                                // Avoid duplicates and add to cache
+                                if (!cachedDocs.some((d) => d._id === finalNewDoc._id)) {
+                                    cachedDocs.unshift(finalNewDoc); // Add to the beginning
+                                    broadcastUpdate(cachedDocs);
+                                }
+                            })
+                            .catch((err) => console.error("[HUB] Error expanding incremental update:", err));
                     }
                 };
 
