@@ -595,8 +595,22 @@
                     }
 
                     const result = await response.json();
-                    console.log(`[HUB] Global query successful, received ${result.docs?.length || 0} docs.`);
-                    return result.docs;
+                    console.log(`[HUB] Global query successful, received ${result.docs?.length || 0} DocRefs.`);
+
+                    if (result.docs.length === 0) {
+                        return [];
+                    }
+
+                    // The API now returns DocRefs, so the hub is responsible for expanding them.
+                    const tempDocsForExpansion = result.docs.map((doc) => ({ _id: doc._id, ref: doc.ref }));
+                    let fullDocs = (await _expand(tempDocsForExpansion, ["ref"])).map((doc) => doc.ref);
+
+                    // Perform the second, explicit expansion if requested
+                    if (expand) {
+                        fullDocs = await _expand(fullDocs, expand);
+                    }
+
+                    return fullDocs;
                 } catch (error) {
                     console.error("[HUB] Error in performGlobalQuery:", error);
                     throw error;
