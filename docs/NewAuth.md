@@ -108,47 +108,7 @@ sequenceDiagram
 
 Based on the analysis of the current authentication flow, here are some potential areas for improvement and new features:
 
-### 1. Social Logins (OAuth/OIDC Federation)
-
--   **Description**: Allow users to sign up and log in using their existing accounts from popular providers like Google, GitHub, or Twitter.
--   **Benefits**:
-    -   Reduces friction for new users, potentially increasing conversion rates.
-    -   Users don't have to remember another password.
-    -   Leverages the security of established identity providers.
--   **Implementation Sketch**:
-    -   Integrate a library like `passport.js` or `elysia-auth` on the `vibe-cloud-api`.
-    -   Add buttons for social providers on the signup/login UI.
-    -   The backend would handle the OAuth/OIDC dance with the external provider.
-    -   On successful authentication, create a local Vibe user account and link it to the external provider's ID.
-
-### 2. Passwordless Authentication (Magic Links/WebAuthn)
-
--   **Description**: Implement passwordless login options.
-    -   **Magic Links**: Users enter their email, and a one-time login link is sent to them.
-    -   **WebAuthn**: Allow users to log in using biometrics (fingerprint, face ID) or hardware security keys (YubiKey).
--   **Benefits**:
-    -   **Enhanced Security**: Eliminates password-related risks like phishing, credential stuffing, and weak passwords. WebAuthn is phishing-resistant.
-    -   **Improved User Experience**: No passwords to create, remember, or reset.
--   **Implementation Sketch**:
-    -   **Magic Links**:
-        -   Create a new endpoint on the API to generate and email a single-use tokenized link.
-        -   The user clicks the link, and the client exchanges the token for a session.
-    -   **WebAuthn**:
-        -   Use a library like `simplewebauthn` on both the client and server.
-        -   The client-side code would interact with the browser's WebAuthn API.
-        -   The server would handle the registration and authentication ceremonies (challenge/response).
-
-### 3. Two-Factor Authentication (2FA)
-
--   **Description**: Add an extra layer of security by requiring a second factor of authentication, such as a code from an authenticator app (TOTP) or an SMS message.
--   **Benefits**:
-    -   Significantly increases account security, even if a user's password is compromised.
--   **Implementation Sketch**:
-    -   Integrate a library for TOTP (Time-based One-Time Password) generation and verification.
-    -   Add a 2FA setup process in the user's profile settings.
-    -   Modify the login flow to prompt for the 2FA code after password verification.
-
-### 4. Granular Permissions & Scopes
+### 1. Granular Permissions & Scopes
 
 -   **Description**: The current system seems to grant full access upon consent. The OAuth `scope` parameter could be used to implement more granular permissions. For example, an application could request `read:posts` and `write:comments` scopes.
 -   **Benefits**:
@@ -160,7 +120,7 @@ Based on the analysis of the current authentication flow, here are some potentia
     -   Store the granted scopes along with the user's consent.
     -   The API would then validate the access token's scopes before allowing access to a protected resource.
 
-### 5. Refresh Tokens
+### 2. Refresh Tokens
 
 -   **Description**: The current access tokens have a short lifespan (15 minutes). Implement refresh tokens to allow for longer-lived sessions without compromising security.
 -   **Benefits**:

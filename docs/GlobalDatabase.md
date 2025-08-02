@@ -35,7 +35,7 @@ The primary change is in the `vibe-cloud-api`'s data writing endpoint (e.g., `/d
 1.  A standard `write()` request is received for a user's personal database.
 2.  The document is written to the user's personal database as usual.
 3.  **After the write, the API inspects the document's ACL.**
-4.  **If the ACL permits global access**:
+4.  **If the ACL permits global access (if ACL is set basically)**:
     -   The API transforms the document's ID to prevent collisions (see Section 4.1).
     -   The API creates and writes a lean "pointer" document (a DocRef) to the `global` database (see Section 4.3).
 5.  **If an existing document's ACL is updated to remove global access**:

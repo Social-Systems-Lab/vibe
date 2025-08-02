@@ -436,9 +436,10 @@ export class IdentityService {
             const profileDoc = (await userDb.get("profiles/me")) as any;
             await userDb.insert({
                 ...profileDoc,
+                _rev: profileDoc._rev, // Ensure we have the latest revision
                 name: updatedUser.displayName,
                 pictureUrl: updatedUser.pictureUrl,
-            });
+            } as any);
         } catch (error: any) {
             if (error.statusCode === 404) {
                 // Profile doc doesn't exist, create it
