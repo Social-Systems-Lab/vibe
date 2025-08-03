@@ -214,6 +214,7 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
     const searchParams = useSearchParams();
     const queryString = searchParams.toString();
     const [isLoading, setIsLoading] = useState(false);
+    const isSettingsFlow = searchParams.get("flow") === "settings";
     const [preview, setPreview] = useState<string | null>(null);
     const [displayName, setDisplayName] = useState("");
 
@@ -280,8 +281,8 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
     return (
         <div className="w-full max-w-md space-y-6 z-30">
             <div className="text-center">
-                <h1 className="text-3xl font-bold font-heading">Complete Your Profile</h1>
-                <p className="mt-2 text-gray-600">Just a few more details to get you set up.</p>
+                <h1 className="text-3xl font-bold font-heading">{isSettingsFlow ? "Profile Settings" : "Complete Your Profile"}</h1>
+                <p className="mt-2 text-gray-600">{isSettingsFlow ? "Update your profile information." : "Just a few more details to get you set up."}</p>
             </div>
             <form className="space-y-6" onSubmit={handleSubmit} encType="multipart/form-data">
                 <div className="flex flex-col items-center space-y-4">
@@ -310,7 +311,7 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
                     />
                 </div>
                 <button type="submit" className="w-full px-4 py-2 text-white bg-green-500 rounded-lg hover:bg-green-600" disabled={isLoading}>
-                    {isLoading ? "Saving..." : "Save and Continue"}
+                    {isLoading ? "Saving..." : isSettingsFlow ? "Save Changes" : "Save and Continue"}
                 </button>
             </form>
         </div>
@@ -322,18 +323,9 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
     const queryString = searchParams.toString();
     const appName = searchParams.get("appName") || "your application";
     const [isLoading, setIsLoading] = useState(false);
-    const [hasConsented, setHasConsented] = useState(false);
-
-    useEffect(() => {
-        const fetchConsentStatus = async () => {
-            const response = await fetch(`/auth/consentStatus?${queryString}`);
-            if (response.ok) {
-                const data = await response.json();
-                setHasConsented(data.hasConsented);
-            }
-        };
-        fetchConsentStatus();
-    }, [queryString]);
+    const isSettingsFlow = searchParams.get("flow") === "settings";
+    const [hasConsented, setHasConsented] = useState(searchParams.get("hasConsented") === "true");
+    const [showDeniedMessage, setShowDeniedMessage] = useState(false);
 
     const handleSubmit = async (action: "approve" | "deny") => {
         setIsLoading(true);
@@ -346,8 +338,18 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
             body: JSON.stringify({ action }),
         });
 
-        if (response.ok && response.redirected) {
-            window.location.href = response.url;
+        if (response.ok) {
+            if (response.redirected) {
+                window.location.href = response.url;
+            } else {
+                if (isSettingsFlow) {
+                    setHasConsented(action === "approve");
+                    if (action === "deny") {
+                        setShowDeniedMessage(true);
+                    }
+                }
+                setIsLoading(false);
+            }
         } else {
             // Handle error
             setIsLoading(false);
@@ -357,8 +359,10 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
     return (
         <div className="w-full max-w-md space-y-6 z-30">
             <div className="text-center">
-                <h1 className="text-3xl font-bold font-heading">Almost there!</h1>
-                <p className="mt-2 text-gray-600">{appName} is requesting permission to access your Vibe account.</p>
+                <h1 className="text-3xl font-bold font-heading">{isSettingsFlow ? "App Settings" : "Almost there!"}</h1>
+                <p className="mt-2 text-gray-600">
+                    {isSettingsFlow ? `Manage permissions for ${appName}.` : `${appName} is requesting permission to access your Vibe account.`}
+                </p>
             </div>
             <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
                 <div className="bg-gray-100 rounded-lg">
@@ -370,22 +374,34 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
                         </ul>
                     </div>
                 </div>
-                <button
-                    onClick={() => handleSubmit("approve")}
-                    className={`w-full px-4 py-2 text-white rounded-lg ${hasConsented ? "bg-green-600 hover:bg-green-700" : "bg-blue-600 hover:bg-blue-700"}`}
-                    disabled={isLoading}
-                >
-                    {isLoading ? "Approving..." : hasConsented ? "Allowed" : "Approve"}
-                </button>
-                <button
-                    onClick={() => handleSubmit("deny")}
-                    className={`w-full px-4 py-2 rounded-lg ${
-                        !hasConsented ? "bg-red-600 text-white hover:bg-red-700" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                    }`}
-                    disabled={isLoading}
-                >
-                    Deny
-                </button>
+                {showDeniedMessage ? (
+                    <div className="text-center p-4 bg-yellow-100 rounded-lg">
+                        <p>App has now been denied access to your Vibe, you can now close this page.</p>
+                    </div>
+                ) : (
+                    <div className="flex space-x-4">
+                        <button
+                            onClick={() => handleSubmit("approve")}
+                            className={`flex-1 px-4 py-3 text-center font-semibold rounded-lg transition-all duration-200 ${
+                                hasConsented ? "bg-blue-600 text-white shadow-md scale-105" : "bg-gray-200 text-gray-800 hover:bg-gray-300"
+                            }`}
+                            disabled={isLoading}
+                        >
+                            Allow
+                        </button>
+                        <button
+                            onClick={() => handleSubmit("deny")}
+                            className={`flex-1 px-4 py-3 text-center font-semibold rounded-lg transition-all duration-200 ${
+                                !hasConsented && !showDeniedMessage
+                                    ? "bg-red-500 text-white shadow-md scale-105"
+                                    : "bg-gray-200 text-gray-800 hover:bg-gray-300"
+                            }`}
+                            disabled={isLoading}
+                        >
+                            Deny
+                        </button>
+                    </div>
+                )}
             </form>
         </div>
     );

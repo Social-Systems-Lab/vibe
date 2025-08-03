@@ -2,9 +2,10 @@ import { User } from "vibe-core";
 import { generatePkce } from "./strategies/standalone";
 
 export type SessionState = {
-    status: "LOGGED_IN" | "LOGGED_OUT" | "SILENT_LOGIN_SUCCESS" | "CONSENT_REQUIRED";
-    code?: string;
+    status: "LOGGED_IN" | "LOGGED_OUT";
+    code?: string | null;
     user?: User;
+    hasConsented?: boolean;
 };
 
 export class SessionManager {

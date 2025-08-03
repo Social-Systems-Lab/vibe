@@ -251,6 +251,8 @@ const app = new Elysia()
                         appShowcaseUrl: t.Optional(t.String()),
                         backgroundColor: t.Optional(t.String()),
                         buttonColor: t.Optional(t.String()),
+                        flow: t.Optional(t.String()), // "settings" or "consent"
+                        hasConsented: t.Optional(t.Boolean()), // For settings flow
                     }),
                 }
             )
@@ -296,8 +298,9 @@ const app = new Elysia()
                             displayName: user.displayName,
                         };
 
+                        let authCode: string | null = null;
                         if (hasConsented) {
-                            const authCode = await identityService.createAuthCode({
+                            authCode = await identityService.createAuthCode({
                                 userDid: user.did,
                                 clientId: client_id!,
                                 scope: "openid profile email",
@@ -305,14 +308,19 @@ const app = new Elysia()
                                 codeChallenge: query.code_challenge,
                                 codeChallengeMethod: query.code_challenge_method || "S256",
                             });
-                            return new Response(renderScript({ status: "SILENT_LOGIN_SUCCESS", code: authCode }), {
-                                headers: { "Content-Type": "text/html" },
-                            });
-                        } else {
-                            return new Response(renderScript({ status: "CONSENT_REQUIRED", user: sanitizedUser }), {
-                                headers: { "Content-Type": "text/html" },
-                            });
                         }
+
+                        return new Response(
+                            renderScript({
+                                status: "LOGGED_IN",
+                                user: sanitizedUser,
+                                code: authCode,
+                                hasConsented,
+                            }),
+                            {
+                                headers: { "Content-Type": "text/html" },
+                            }
+                        );
                     } catch (e) {
                         return new Response(renderScript({ status: "LOGGED_OUT" }), { headers: { "Content-Type": "text/html" } });
                     }
@@ -555,6 +563,15 @@ const app = new Elysia()
                     }
 
                     const params = new URLSearchParams(query as any);
+                    if (params.get("flow") === "settings") {
+                        if (action === "approve") {
+                            const redirectUri = params.get("redirect_uri");
+                            if (redirectUri) {
+                                return redirect(redirectUri);
+                            }
+                        }
+                        return { ok: true };
+                    }
                     return redirect(`/auth/authorize?${params.toString()}`);
                 },
                 {
@@ -610,54 +627,6 @@ const app = new Elysia()
                     pictureUrl: user.pictureUrl,
                 };
             })
-            .get(
-                "/consentStatus",
-                async ({ cookie, query, set, identityService, sessionJwt }) => {
-                    const sessionToken = cookie.vibe_session.value;
-                    if (!sessionToken) {
-                        set.status = 401;
-                        return { error: "Unauthorized" };
-                    }
-
-                    const session = await sessionJwt.verify(sessionToken);
-                    if (!session || !session.sessionId) {
-                        set.status = 401;
-                        return { error: "Invalid session" };
-                    }
-
-                    const hasConsented = await identityService.hasUserConsented(session.sessionId, query.client_id);
-                    return { hasConsented };
-                },
-                {
-                    query: t.Object({
-                        client_id: t.String(),
-                    }),
-                }
-            )
-            .get(
-                "/consentStatus",
-                async ({ cookie, query, set, identityService, sessionJwt }) => {
-                    const sessionToken = cookie.vibe_session.value;
-                    if (!sessionToken) {
-                        set.status = 401;
-                        return { error: "Unauthorized" };
-                    }
-
-                    const session = await sessionJwt.verify(sessionToken);
-                    if (!session || !session.sessionId) {
-                        set.status = 401;
-                        return { error: "Invalid session" };
-                    }
-
-                    const hasConsented = await identityService.hasUserConsented(session.sessionId, query.client_id);
-                    return { hasConsented };
-                },
-                {
-                    query: t.Object({
-                        client_id: t.String(),
-                    }),
-                }
-            )
     )
     .group("/users", (app) =>
         app

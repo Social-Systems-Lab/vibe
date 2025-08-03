@@ -15,7 +15,7 @@ export function Feed({ feedId }: { feedId: string }) {
 
         const processPosts = (result: { ok: boolean; data?: any; error?: string }) => {
             if (result.ok && result.data) {
-                console.log("***Fetched posts:", JSON.stringify(result.data, null, 2));
+                //console.log("***Fetched posts:", JSON.stringify(result.data, null, 2));
                 setPosts(result.data);
             }
         };

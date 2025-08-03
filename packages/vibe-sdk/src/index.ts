@@ -109,20 +109,22 @@ export class VibeSDK {
         const sessionState = await this.sessionManager.checkSession();
         console.log("VibeSDK: session state checked.", sessionState);
 
-        if (sessionState.status === "SILENT_LOGIN_SUCCESS" && sessionState.code) {
-            console.log("VibeSDK: Silent login success, exchanging code for token.");
-            try {
-                await this.exchangeCodeForToken(sessionState.code);
-            } catch (e) {
-                console.error("Silent login failed:", e);
-            }
-        } else if (sessionState.status === "LOGGED_IN") {
-            console.log("VibeSDK: User is logged in.", sessionState.user);
+        if (sessionState.status === "LOGGED_IN") {
             this.authManager.setUser(sessionState.user || null);
+            if (sessionState.hasConsented) {
+                if (sessionState.code) {
+                    console.log("VibeSDK: User has consented, exchanging code for token.");
+                    try {
+                        await this.exchangeCodeForToken(sessionState.code);
+                    } catch (e) {
+                        console.error("Token exchange failed:", e);
+                    }
+                }
+            } else {
+                console.log("VibeSDK: Consent is required.");
+                await this.redirectToAuthorize("login", true, "signup", "consent", false);
+            }
             this.authManager.notifyStateChange();
-        } else if (sessionState.status === "CONSENT_REQUIRED") {
-            console.log("VibeSDK: Consent is required.");
-            await this.redirectToAuthorize("login", true);
         }
 
         this.isInitializing = false;
@@ -227,11 +229,14 @@ export class VibeSDK {
     }
 
     async manageConsent(): Promise<void> {
-        await this.redirectToAuthorize("login", false, "settings", "consent");
+        // Since we get consent status on init, we can pass it here.
+        // The `user` object on the authManager should be populated by the time this is called.
+        const sessionState = await this.sessionManager.checkSession();
+        await this.redirectToAuthorize("login", false, "settings", "consent", sessionState.hasConsented);
     }
 
     async manageProfile(): Promise<void> {
-        await this.redirectToAuthorize("profile", false, "settings", "profile");
+        await this.redirectToAuthorize("profile", false, "settings", "profile", true);
     }
 
     async handleRedirectCallback(url: string): Promise<void> {
@@ -274,7 +279,8 @@ export class VibeSDK {
         formType: "login" | "signup" | "profile" = "signup",
         promptConsent = false,
         flow: "signup" | "settings" = "signup",
-        prompt?: "consent" | "profile" | "login"
+        prompt?: "consent" | "profile" | "login",
+        hasConsented?: boolean
     ): Promise<void> {
         const { generatePkce } = await import("./strategies/standalone");
         const pkce = await generatePkce();
@@ -290,16 +296,21 @@ export class VibeSDK {
             code_challenge: pkce.challenge,
             code_challenge_method: "S256",
             form_type: formType,
-            flow: flow,
         });
         if (flow === "settings") {
             params.set("redirect_uri", window.location.href);
+            params.set("flow", "settings");
         }
         if (promptConsent) {
             params.set("prompt", "consent");
         }
         if (prompt) {
             params.set("prompt", prompt);
+        }
+        if (hasConsented === true) {
+            params.set("hasConsented", "true");
+        } else if (hasConsented === false) {
+            params.set("hasConsented", "false");
         }
         if (this.config.appName) {
             params.set("appName", this.config.appName);
