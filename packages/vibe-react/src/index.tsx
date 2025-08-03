@@ -21,9 +21,13 @@ interface VibeContextType {
     issueCert: (targetDid: string, certType: DocRef, expires?: string) => Promise<any>;
     revokeCert: (certId: string) => Promise<any>;
     // Storage helpers exposed at top-level for app devs
+    // Match vibe-sdk signatures:
+    // - upload(file) -> always returns a storageKey string
+    // - presignPut(name, mime?, size?, sha256?)
+    // - presignGet(storageKey, expires?)
     upload: (file: File) => Promise<{ storageKey: string }>;
-    presignPut: (params: { storageKey: string; contentType?: string; metadata?: Record<string, string>; expiresInSeconds?: number }) => Promise<any>;
-    presignGet: (params: { storageKey: string; expiresInSeconds?: number }) => Promise<any>;
+    presignPut: (name: string, mime?: string, size?: number, sha256?: string) => Promise<any>;
+    presignGet: (storageKey: string, expires?: number) => Promise<any>;
 }
 
 const VibeContext = createContext<VibeContextType | undefined>(undefined);
@@ -100,11 +104,16 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
     const revokeCert = (certId: string) => sdk.revokeCert(certId);
 
     // Storage helpers delegating to SDK
-    const upload = (file: File) => sdk.storage.upload(file);
-    const presignPut = (storageKey: string, contentType?: string, metadata?: Record<string, string>, expiresInSeconds?: number) =>
-        sdk.storage.presignPut(storageKey, contentType, metadata, expiresInSeconds);
-    const presignGet = (storageKey: string, expiresInSeconds?: number) => sdk.storage.presignGet(storageKey, expiresInSeconds);
-
+    const upload = async (file: File): Promise<{ storageKey: string }> => {
+        const res = await sdk.storage.upload(file);
+        // Ensure type-safe return (normalize undefined -> throw for correctness)
+        if (!res || !res.storageKey) {
+            throw new Error("upload did not return a storageKey");
+        }
+        return { storageKey: res.storageKey as string };
+    };
+    const presignPut = (name: string, mime?: string, size?: number, sha256?: string) => sdk.storage.presignPut(name, mime, size, sha256);
+    const presignGet = (storageKey: string, expires?: number) => sdk.storage.presignGet(storageKey, expires);
     const LoadingComponent = loadingComponent || <DefaultLoadingComponent />;
 
     if (!isSessionChecked || isLoggingOut) {
