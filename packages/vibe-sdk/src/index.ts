@@ -83,6 +83,69 @@ export class VibeSDK {
     private api;
     private config: VibeManifest;
 
+    // Storage helper namespace
+    public storage = {
+        // High-level upload: uses presign when available, falls back to server upload
+        upload: async (file: File & { type?: string; name: string }) => {
+            if (!this.authManager.isLoggedIn()) throw new Error("Not authenticated");
+            // 1) Ask API for upload plan (presign or server-upload)
+            const { data: plan, error: planErr } = await this.api.storage["presign-put"].post(
+                { name: file.name, mime: (file as any).type || "" },
+                { headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` } as any }
+            );
+            if (planErr) throw new Error(`Failed to prepare upload: ${JSON.stringify(planErr)}`);
+
+            // 2) Execute plan
+            let storageKey: string | undefined;
+            if (plan && (plan as any).strategy === "presigned") {
+                const { url, headers, storageKey: key } = plan as any;
+                storageKey = key;
+                const putHeaders = new Headers(headers || {});
+                // Ensure content-type preserved if provided
+                if (!putHeaders.has("Content-Type") && (file as any).type) putHeaders.set("Content-Type", (file as any).type);
+                const putRes = await fetch(url, { method: "PUT", body: file, headers: putHeaders });
+                if (!putRes.ok) {
+                    throw new Error(`Presigned upload failed with ${putRes.status}`);
+                }
+            } else if (plan && (plan as any).strategy === "server-upload") {
+                const { uploadPath, storageKey: key } = plan as any;
+                storageKey = key;
+                const form = new FormData();
+                form.set("file", file);
+                const { data: upRes, error: upErr } = await this.api.storage.upload.post(
+                    { file: form.get("file") as any },
+                    { headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` } as any }
+                );
+                if (upErr) throw new Error(`Server upload failed: ${JSON.stringify(upErr)}`);
+                // For server-upload, storageKey came from plan; URL may be returned too but we rely on storageKey for metadata.
+            } else {
+                throw new Error("Invalid upload plan from server");
+            }
+
+            // 3) Return the storageKey for caller to persist metadata via /data
+            return { storageKey };
+        },
+
+        // Low-level helpers (kept internal-ish but available)
+        presignPut: async (params: { name: string; mime?: string; size?: number; sha256?: string }) => {
+            if (!this.authManager.isLoggedIn()) throw new Error("Not authenticated");
+            const { data, error } = await this.api.storage["presign-put"].post(params as any, {
+                headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` } as any,
+            });
+            if (error) throw new Error(`Failed to presign PUT: ${JSON.stringify(error)}`);
+            return data as any;
+        },
+
+        presignGet: async (params: { storageKey: string; expires?: number }) => {
+            if (!this.authManager.isLoggedIn()) throw new Error("Not authenticated");
+            const { data, error } = await this.api.storage["presign-get"].post(params as any, {
+                headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` } as any,
+            });
+            if (error) throw new Error(`Failed to presign GET: ${JSON.stringify(error)}`);
+            return data as any;
+        },
+    };
+
     constructor(config: VibeManifest) {
         this.config = config;
         this.hubUrl = config.hubUrl || `${config.apiUrl}/hub.html`;

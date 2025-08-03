@@ -801,40 +801,88 @@ const app = new Elysia()
                     }
                 },
             })
-            // Presign PUT (initial simple strategy: provide canonical storageKey and indicate server-upload fallback)
+            // Presign PUT: returns presigned URL on Scaleway, server-upload fallback on MinIO
             .post(
                 "/presign-put",
-                async ({ profile, body, set }) => {
-                    const { name } = body as any;
+                async ({ profile, body, set, storageService }) => {
+                    if (!profile) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    const { name, mime } = body as { name: string; mime?: string };
                     if (!name) {
                         set.status = 400;
                         return { error: "Missing name" };
                     }
                     const ext = name.includes(".") ? name.split(".").pop() : "";
                     const uuid = crypto.randomUUID();
-                    const yyyy = new Date().getUTCFullYear();
-                    const mm = String(new Date().getUTCMonth() + 1).padStart(2, "0");
+                    const now = new Date();
+                    const yyyy = now.getUTCFullYear();
+                    const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
                     const storageKey = `files/${yyyy}/${mm}/${uuid}${ext ? "." + ext : ""}`;
-                    // TODO: Implement true presign for S3 providers; for now, signal fallback
-                    return {
-                        strategy: "server-upload",
-                        storageKey,
-                        uploadPath: "/storage/upload",
-                    };
+                    const bucket = `user-${profile!.instanceId}`;
+
+                    try {
+                        const res = await storageService.presignPut(bucket, storageKey, mime, 300);
+                        if (res.strategy === "presigned") {
+                            return {
+                                strategy: "presigned",
+                                bucket: res.bucket,
+                                storageKey: res.key,
+                                url: res.url,
+                                headers: res.headers,
+                                expiresIn: 300,
+                            };
+                        }
+                        // Fallback for providers without presign support (e.g., MinIO)
+                        return {
+                            strategy: "server-upload",
+                            bucket,
+                            storageKey,
+                            uploadPath: "/storage/upload",
+                        };
+                    } catch (e: any) {
+                        console.error("presign-put error:", e);
+                        set.status = 500;
+                        return { error: "Failed to presign upload" };
+                    }
                 },
-                { body: t.Object({ name: t.String(), mime: t.Optional(t.String()), size: t.Optional(t.Number()), sha256: t.Optional(t.String()) }) }
+                {
+                    body: t.Object({
+                        name: t.String(),
+                        mime: t.Optional(t.String()),
+                        size: t.Optional(t.Number()),
+                        sha256: t.Optional(t.String()),
+                    }),
+                }
             )
-            // Presign GET placeholder; in future will verify ACL using a FileDoc looked up via /data
+            // Presign GET: presigned URL on Scaleway, public-or-server hint on MinIO
             .post(
                 "/presign-get",
-                async ({ body, set }) => {
-                    const { storageKey } = body as any;
+                async ({ profile, body, set, storageService }) => {
+                    if (!profile) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    const { storageKey, expires } = body as { storageKey: string; expires?: number };
                     if (!storageKey) {
                         set.status = 400;
                         return { error: "Missing storageKey" };
                     }
-                    // For now, no signing; clients can use public URL if public. Future: signed URL generation.
-                    return { strategy: "public-or-signed-later", storageKey };
+                    const bucket = `user-${profile!.instanceId}`;
+                    const ttl = Math.min(Math.max(expires ?? 300, 60), 3600); // clamp 1m..1h
+
+                    try {
+                        const res = await storageService.presignGet(bucket, storageKey, ttl);
+                        if (res.strategy === "presigned") {
+                            return { strategy: "presigned", url: res.url, expiresIn: ttl };
+                        }
+                        return { strategy: "public-or-server" };
+                    } catch (e: any) {
+                        console.error("presign-get error:", e);
+                        set.status = 500;
+                        return { error: "Failed to presign download" };
+                    }
                 },
                 { body: t.Object({ storageKey: t.String(), expires: t.Optional(t.Number()) }) }
             )
