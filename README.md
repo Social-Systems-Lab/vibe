@@ -11,6 +11,7 @@ This repository is structured as a monorepo and contains the following key proje
 -   **`apps/vibe-cloud-api`**: The central service that handles user identity, authentication, and data storage. It provides the backend for the Vibe ecosystem.
 -   **`apps/vibe-cloud-ui`**: Contains rich UI for auth flows.
 -   **`apps/vibe-feeds`**: A social media feeds client application used for testing and demonstrating the core features of the Vibe platform.
+-   **`apps/vibe-collections`**: A file storage client application used for testing and demonstrating the core features of the Vibe platform.
 
 ### Packages
 

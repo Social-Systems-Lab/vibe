@@ -333,7 +333,11 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
     const [hasConsented, setHasConsented] = useState<boolean | undefined>(initialConsent);
     const [showDeniedMessage, setShowDeniedMessage] = useState(false);
 
+    // Track which action is currently being submitted to show accurate loading labels
+    const [submittingAction, setSubmittingAction] = useState<"approve" | "deny" | null>(null);
+
     const handleSubmit = async (action: "approve" | "deny") => {
+        setSubmittingAction(action);
         setIsLoading(true);
 
         const response = await fetch(`/auth/consent?${queryString}`, {
@@ -392,10 +396,12 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
                     }
                 }
                 setIsLoading(false);
+                setSubmittingAction(null);
             }
         } else {
             // Handle error
             setIsLoading(false);
+            setSubmittingAction(null);
         }
     };
 
@@ -478,7 +484,7 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
                                 }`}
                                 disabled={isLoading}
                             >
-                                {isLoading && hasConsented === true ? "Allowing..." : "Allow"}
+                                {isLoading && submittingAction === "approve" ? "Allowing..." : "Allow"}
                             </button>
                             <button
                                 onClick={() => handleSubmit("deny")}
@@ -489,7 +495,7 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
                                 }`}
                                 disabled={isLoading}
                             >
-                                {isLoading && hasConsented === false ? "Denying..." : "Deny"}
+                                {isLoading && submittingAction === "deny" ? "Denying..." : "Deny"}
                             </button>
                         </div>
 
