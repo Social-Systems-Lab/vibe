@@ -3,7 +3,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Document } from "vibe-sdk";
-import { useVibe } from "vibe-react";
+import { ProfileMenu, useVibe } from "vibe-react";
+import { Home } from "lucide-react";
 
 type FileDoc = {
     _id?: string;
@@ -123,19 +124,19 @@ function CollectionsInner() {
     );
 
     return (
-        <div className="min-h-screen flex">
-            <LeftSidebar onFilesSelected={handleFilesUpload} />
+        <div className="flex bg-white">
             <div className="flex-1 flex flex-col">
-                <Header q={q} setQ={setQ} type={type} setType={setType} onRefresh={refresh} />
-                <main className="flex-1 p-4">
-                    <DragDropUploader
-                        onUploaded={async () => {
-                            await refresh();
-                        }}
-                        onFilesSelected={handleFilesUpload}
-                    />
-                    <FilesGrid files={files} presignGet={presignGet} />
-                </main>
+                <TopBar />
+                <div className="flex flex-1">
+                    <LeftSidebar onFilesSelected={handleFilesUpload} />
+                    <div className="flex-1 flex flex-col">
+                        <Header q={q} setQ={setQ} type={type} setType={setType} onRefresh={refresh} />
+                        <main className="flex-1 p-4">
+                            {/* Removed dashed picker per request; keep overlay + upload button in sidebar */}
+                            <FilesArea presignGet={presignGet} files={files} />
+                        </main>
+                    </div>
+                </div>
             </div>
 
             {dragActive && (
@@ -161,15 +162,16 @@ function Header({
     setType: (v: string) => void;
     onRefresh: () => void;
 }) {
+    const [view, setView] = useState<"grid" | "list">("grid");
     return (
-        <div className="border-b p-4 flex items-center gap-3">
+        <div className="px-4 py-3 flex items-center gap-3">
             <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search by name or tag"
                 className="border rounded-full px-4 py-2 text-sm w-96 bg-neutral-100"
             />
-            <select value={type} onChange={(e) => setType(e.target.value)} className="border rounded px-2 py-1 text-sm">
+            <select value={type} onChange={(e) => setType(e.target.value)} className="border rounded px-2 py-2 text-sm">
                 <option value="">All types</option>
                 <option value="image">Images</option>
                 <option value="video">Videos</option>
@@ -177,10 +179,48 @@ function Header({
                 <option value="audio">Audio</option>
                 <option value="other">Other</option>
             </select>
-            <button onClick={onRefresh} className="px-3 py-1 rounded bg-neutral-100 hover:bg-neutral-200 text-sm">
-                Refresh
-            </button>
+
+            <div className="ml-auto flex items-center gap-2">
+                <div className="inline-flex rounded-lg border overflow-hidden">
+                    <button
+                        className={`px-3 py-2 text-sm ${view === "grid" ? "bg-neutral-100" : "bg-white hover:bg-neutral-50"}`}
+                        onClick={() => setView("grid")}
+                        aria-label="Grid view"
+                        title="Grid view"
+                    >
+                        ⬚
+                    </button>
+                    <button
+                        className={`px-3 py-2 text-sm ${view === "list" ? "bg-neutral-100" : "bg-white hover:bg-neutral-50"}`}
+                        onClick={() => setView("list")}
+                        aria-label="List view"
+                        title="List view"
+                    >
+                        ≡
+                    </button>
+                </div>
+                <button onClick={onRefresh} className="px-3 py-2 rounded bg-neutral-100 hover:bg-neutral-200 text-sm">
+                    Refresh
+                </button>
+            </div>
         </div>
+    );
+}
+
+function TopBar() {
+    const imageAspectRatio = 717 / 161;
+    const height = 42;
+    const width = Math.round(height * imageAspectRatio);
+    return (
+        <header className="h-20 px-4 justify-center flex items-center gap-3">
+            <div className="flex items-center gap-2">
+                <Image src="/images/logotype.png" alt="Collections" height={height} width={width} />
+            </div>
+            <div className="ml-auto">
+                {/* Placeholder for profile menu – ensure centered vertically by flex container */}
+                <ProfileMenu />
+            </div>
+        </header>
     );
 }
 
@@ -211,6 +251,7 @@ function humanSize(bytes: number) {
 }
 
 function DragDropUploader({ onUploaded, onFilesSelected }: { onUploaded: () => void; onFilesSelected: (files: File[]) => Promise<void> }) {
+    // Component retained for input handling if we want inline picker later, but not rendered in UI.
     const [busy, setBusy] = useState(false);
 
     const onFiles = useCallback(
@@ -230,53 +271,48 @@ function DragDropUploader({ onUploaded, onFilesSelected }: { onUploaded: () => v
         [onFilesSelected, onUploaded]
     );
 
-    const onDrop = useCallback(
-        (e: React.DragEvent<HTMLDivElement>) => {
-            e.preventDefault();
-            onFiles(e.dataTransfer.files);
-        },
-        [onFiles]
-    );
-
-    return (
-        <div onDragOver={(e) => e.preventDefault()} onDrop={onDrop} className="border-2 border-dashed rounded p-6 mb-4 text-center">
-            <p className="text-sm text-neutral-600 mb-2">Drag & drop files here, or pick</p>
-            <input type="file" multiple onChange={(e) => onFiles(e.target.files)} disabled={busy} className="block mx-auto" />
-            {busy && <p className="text-xs text-neutral-500 mt-2">Uploading…</p>}
-        </div>
-    );
+    return null;
 }
 
 function LeftSidebar({ onFilesSelected }: { onFilesSelected: (files: File[]) => void }) {
     const inputRef = useRef<HTMLInputElement>(null);
-    const imageAspectRatio = 717 / 161;
-    const height = 42;
-    const width = Math.round(height * imageAspectRatio);
 
     return (
-        <aside className="w-86 p-6 space-y-4 h-screen">
-            <div className="mr-auto flex items-center gap-2">
-                <Image src="/images/logotype.png" alt="Collections" height={height} width={width} />
+        <aside className="w-80 h-[calc(100vh-80px)] sticky top-[80px] flex flex-col">
+            <div className="p-6">
+                <button
+                    className="w-full rounded-lg bg-blue-600 text-white py-2.5 font-medium hover:bg-blue-700 transition"
+                    onClick={() => inputRef.current?.click()}
+                >
+                    Upload
+                </button>
+                <input
+                    ref={inputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (files.length) onFilesSelected(files);
+                        e.currentTarget.value = "";
+                    }}
+                />
             </div>
-            <button
-                className="w-full rounded-lg bg-blue-600 text-white py-2.5 font-medium hover:bg-blue-700 transition"
-                onClick={() => inputRef.current?.click()}
-            >
-                Upload
-            </button>
-            <input
-                ref={inputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(e) => {
-                    const files = Array.from(e.target.files || []);
-                    if (files.length) onFilesSelected(files);
-                    e.currentTarget.value = "";
-                }}
-            />
-            <div className="text-sm text-neutral-600">Storage</div>
-            <UsageBar usedBytes={0} quotaBytes={100 * 1024 * 1024 * 1024} />
+
+            <nav className="px-6">
+                <ul className="space-y-1">
+                    <li className="h-12 flex flex-row px-3 py-2 rounded-md bg-neutral-100 font-medium text-neutral-900 items-center gap-2">
+                        <Home className="h-5 w-5" />
+                        <p>All</p>
+                    </li>
+                    {/* Future: collections list items go here */}
+                </ul>
+            </nav>
+
+            <div className="mt-auto p-4">
+                <div className="text-xs text-neutral-600 mb-2">Storage</div>
+                <UsageBar usedBytes={0} quotaBytes={100 * 1024 * 1024 * 1024} />
+            </div>
         </aside>
     );
 }
@@ -286,26 +322,63 @@ function UsageBar({ usedBytes, quotaBytes }: { usedBytes: number; quotaBytes: nu
     const pct = Math.round(ratio * 100);
     const fmt = (n: number) => humanSize(n);
     return (
-        <div className="mb-4">
-            <div className="flex justify-between text-xs text-neutral-600 mb-1">
-                <span>Storage</span>
-                <span>
-                    {fmt(usedBytes)} / {fmt(quotaBytes)} ({pct}%)
-                </span>
+        <div className="space-y-2">
+            <div className="flex justify-between text-xs text-neutral-600">
+                <span>{fmt(usedBytes)}</span>
+                <span>{fmt(quotaBytes)}</span>
             </div>
-            <div className="h-2 bg-neutral-200 rounded">
-                <div className="h-2 bg-blue-600 rounded" style={{ width: `${pct}%` }} />
+            <div className="h-2 bg-neutral-200 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-600" style={{ width: `${pct}%` }} />
             </div>
+            <div className="text-right text-[10px] text-neutral-500">{pct}%</div>
         </div>
     );
 }
 
 const presignCache = new Map<string, string>();
 
-function FilesGrid({ files, presignGet }: { files: FileDoc[]; presignGet: (key: string, expires?: number) => Promise<any> }) {
+function FilesArea({ files, presignGet }: { files: FileDoc[]; presignGet: (key: string, expires?: number) => Promise<any> }) {
+    const [view, setView] = useState<"grid" | "list">("grid");
+
+    // View is controlled by Header via CSS variable hack or global state in future; for now allow keyboard toggle
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key.toLowerCase() === "g") setView("grid");
+            if (e.key.toLowerCase() === "l") setView("list");
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, []);
+
     if (!files?.length) {
         return <div className="text-sm text-neutral-500">No files yet.</div>;
     }
+
+    if (view === "list") {
+        return (
+            <table className="w-full text-sm">
+                <thead>
+                    <tr className="text-left text-neutral-500">
+                        <th className="py-2 px-2">Name</th>
+                        <th className="py-2 px-2">Type</th>
+                        <th className="py-2 px-2">Size</th>
+                        <th className="py-2 px-2">Updated</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {files.map((f) => (
+                        <tr key={f._id} className="border-t hover:bg-neutral-50">
+                            <td className="py-2 px-2">{f.name}</td>
+                            <td className="py-2 px-2 uppercase text-neutral-500">{f.type}</td>
+                            <td className="py-2 px-2">{humanSize(f.size)}</td>
+                            <td className="py-2 px-2 text-neutral-500">{f.updatedAt ? new Date(f.updatedAt).toLocaleString() : "-"}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        );
+    }
+
     return (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {files.map((f) => (
@@ -321,12 +394,16 @@ function FileCard({ file, presignGet }: { file: FileDoc; presignGet: (key: strin
     useEffect(() => {
         let mounted = true;
         const load = async () => {
+            console.log("Loading image for file:", JSON.stringify(file, null, 2));
+
             if (file.mime?.startsWith("image/") && file.storageKey) {
                 if (presignCache.has(file.storageKey)) {
                     if (mounted) setImgUrl(presignCache.get(file.storageKey)!);
                     return;
                 }
                 const res = await presignGet(file.storageKey, 300);
+                console.log("Presigned URL response:", res);
+
                 if (res?.strategy === "presigned" && res.url) {
                     presignCache.set(file.storageKey, res.url);
                     if (mounted) setImgUrl(res.url);
@@ -340,7 +417,7 @@ function FileCard({ file, presignGet }: { file: FileDoc; presignGet: (key: strin
     }, [file, presignGet]);
 
     return (
-        <div className="border rounded-lg overflow-hidden bg-white shadow-sm">
+        <div className="border rounded-lg overflow-hidden bg-white shadow-sm hover:shadow-md transition-shadow">
             <div className="relative h-28 bg-neutral-100">
                 {imgUrl ? (
                     <Image src={imgUrl} alt={file.name} fill sizes="200px" className="object-cover" />
@@ -349,7 +426,7 @@ function FileCard({ file, presignGet }: { file: FileDoc; presignGet: (key: strin
                 )}
             </div>
             <div className="p-2">
-                <div className="text-xs text-neutral-500">{file.type?.toUpperCase()}</div>
+                <div className="text-[10px] tracking-wide text-neutral-500">{file.type?.toUpperCase()}</div>
                 <div className="font-medium truncate" title={file.name}>
                     {file.name}
                 </div>
