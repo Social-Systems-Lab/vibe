@@ -127,20 +127,26 @@ export class VibeSDK {
         },
 
         // Low-level helpers (kept internal-ish but available)
-        presignPut: async (params: { name: string; mime?: string; size?: number; sha256?: string }) => {
+        presignPut: async (name: string, mime?: string, size?: number, sha256?: string) => {
             if (!this.authManager.isLoggedIn()) throw new Error("Not authenticated");
-            const { data, error } = await this.api.storage["presign-put"].post(params as any, {
-                headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` } as any,
-            });
+            const { data, error } = await this.api.storage["presign-put"].post(
+                { name, mime, size, sha256 },
+                {
+                    headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` } as any,
+                }
+            );
             if (error) throw new Error(`Failed to presign PUT: ${JSON.stringify(error)}`);
             return data as any;
         },
 
-        presignGet: async (params: { storageKey: string; expires?: number }) => {
+        presignGet: async (storageKey: string, expires?: number) => {
             if (!this.authManager.isLoggedIn()) throw new Error("Not authenticated");
-            const { data, error } = await this.api.storage["presign-get"].post(params as any, {
-                headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` } as any,
-            });
+            const { data, error } = await this.api.storage["presign-get"].post(
+                { storageKey, expires },
+                {
+                    headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` } as any,
+                }
+            );
             if (error) throw new Error(`Failed to presign GET: ${JSON.stringify(error)}`);
             return data as any;
         },

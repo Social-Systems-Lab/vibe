@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
-import { VibeProvider } from "../../components/VibeProvider";
-import { createSdk, Document } from "vibe-sdk";
-import { appManifest } from "../../lib/manifest";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Document } from "vibe-sdk";
+import { useVibe } from "vibe-react";
 
 type FileDoc = {
     _id?: string;
@@ -22,84 +21,53 @@ type FileDoc = {
     updatedAt?: string;
 } & Document;
 
-const sdk = createSdk({
-    apiUrl: appManifest.apiUrl,
-    clientId: appManifest.clientId,
-    redirectUri: appManifest.redirectUri,
-    hubUrl: `${appManifest.apiUrl}/hub.html`,
-}) as any;
-
 export default function CollectionsPage() {
-    const [ready, setReady] = useState(false);
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    return <CollectionsInner />;
+}
+
+function CollectionsInner() {
+    // Consume the stable context API from vibe-react, mirroring vibe-feeds usage
+    const { readOnce, isLoggedIn, user, login, storage, write } = useVibe() as any;
     const [files, setFiles] = useState<FileDoc[]>([]);
     const [q, setQ] = useState("");
     const [type, setType] = useState<string>("");
 
-    useEffect(() => {
-        const unsub = sdk.onStateChange(({ isAuthenticated }: { isAuthenticated: boolean; user: any }) => {
-            setIsAuthenticated(isAuthenticated);
-        });
-        (async () => {
-            await sdk.init();
-            setReady(true);
-        })();
-        return () => {
-            unsub();
-        };
-    }, []);
+    // No manual subscriptions; rely on vibe context state
 
     const refresh = useCallback(async () => {
-        const res = await (sdk as any).readOnce("files", {
+        if (!isLoggedIn || !user) return;
+        const res = await readOnce("files", {
             selector: { collection: "files" },
             q: q || undefined,
             type: type || undefined,
         });
-        setFiles(res.docs || []);
-    }, [q, type]);
+        setFiles(res?.docs ?? []);
+    }, [isLoggedIn, user, q, type, readOnce]);
 
     useEffect(() => {
-        if (isAuthenticated) {
-            refresh();
+        if (!isLoggedIn || !user) {
+            setFiles([]);
+            return;
         }
-    }, [isAuthenticated, q, type, refresh]);
+        refresh();
+    }, [isLoggedIn, user, q, type, refresh]);
 
-    if (!ready) {
-        return (
-            <VibeProvider>
-                <div className="p-8 text-sm text-neutral-500">Initializing…</div>
-            </VibeProvider>
-        );
-    }
+    // No unauthenticated branch; layout ensures this page is only shown when signed in
 
-    if (!isAuthenticated) {
-        return (
-            <VibeProvider>
-                <div className="p-8">
-                    <h1 className="text-xl font-semibold mb-2">Collections</h1>
-                    <p className="text-sm text-neutral-600 mb-4">Please sign in to continue.</p>
-                    <button className="px-4 py-2 rounded bg-blue-600 text-white" onClick={() => sdk.login()}>
-                        Sign in
-                    </button>
-                </div>
-            </VibeProvider>
-        );
-    }
+    // Removed unauthenticated UI per routing guard
 
     return (
-        <VibeProvider>
-            <div className="min-h-screen flex flex-col">
-                <Header q={q} setQ={setQ} type={type} setType={setType} onRefresh={refresh} />
-                <main className="flex-1 p-4">
-                    <DragDropUploader
-                        onUploaded={async () => {
-                            await refresh();
-                        }}
-                    />
-                    <FilesGrid files={files} />
-                </main>
-            </div>
-        </VibeProvider>
+        <div className="min-h-screen flex flex-col">
+            <Header q={q} setQ={setQ} type={type} setType={setType} onRefresh={refresh} />
+            <main className="flex-1 p-4">
+                <DragDropUploader
+                    onUploaded={async () => {
+                        await refresh();
+                    }}
+                />
+                <FilesGrid files={files} />
+            </main>
+        </div>
     );
 }
 
@@ -162,6 +130,8 @@ function humanSize(bytes: number) {
 }
 
 function DragDropUploader({ onUploaded }: { onUploaded: () => void }) {
+    // Deconstruct for type-safety and to match vibe-feeds usage patterns
+    const { storage, write } = useVibe() as any;
     const [busy, setBusy] = useState(false);
     const onFiles = useCallback(
         async (files: FileList | null) => {
@@ -170,7 +140,8 @@ function DragDropUploader({ onUploaded }: { onUploaded: () => void }) {
             try {
                 const file = files[0];
                 // 1) Upload the blob via SDK
-                const { storageKey } = await (sdk as any).storage.upload(file as any);
+                if (!storage?.upload) throw new Error("storage.upload not available");
+                const { storageKey } = (await storage.upload(file as any)) as any;
                 // 2) Persist a FileDoc via /data
                 const now = new Date().toISOString();
                 const doc: FileDoc = {
@@ -187,7 +158,8 @@ function DragDropUploader({ onUploaded }: { onUploaded: () => void }) {
                     createdAt: now,
                     updatedAt: now,
                 };
-                await sdk.write("files", doc);
+                if (!write) throw new Error("write not available");
+                await write("files", doc);
                 onUploaded();
             } catch (e) {
                 console.error("Upload failed:", e);
@@ -196,7 +168,7 @@ function DragDropUploader({ onUploaded }: { onUploaded: () => void }) {
                 setBusy(false);
             }
         },
-        [onUploaded]
+        [onUploaded, storage, write]
     );
 
     const onDrop = useCallback(
@@ -212,6 +184,25 @@ function DragDropUploader({ onUploaded }: { onUploaded: () => void }) {
             <p className="text-sm text-neutral-600 mb-2">Drag & drop a file here, or pick one</p>
             <input type="file" onChange={(e) => onFiles(e.target.files)} disabled={busy} className="block mx-auto" />
             {busy && <p className="text-xs text-neutral-500 mt-2">Uploading…</p>}
+        </div>
+    );
+}
+
+function UsageBar({ usedBytes, quotaBytes }: { usedBytes: number; quotaBytes: number }) {
+    const ratio = Math.min(1, usedBytes / (quotaBytes || 1));
+    const pct = Math.round(ratio * 100);
+    const fmt = (n: number) => humanSize(n);
+    return (
+        <div className="mb-4">
+            <div className="flex justify-between text-xs text-neutral-600 mb-1">
+                <span>Storage</span>
+                <span>
+                    {fmt(usedBytes)} / {fmt(quotaBytes)} ({pct}%)
+                </span>
+            </div>
+            <div className="h-2 bg-neutral-200 rounded">
+                <div className="h-2 bg-blue-600 rounded" style={{ width: `${pct}%` }} />
+            </div>
         </div>
     );
 }

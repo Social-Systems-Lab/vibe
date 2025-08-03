@@ -20,6 +20,10 @@ interface VibeContextType {
     remove: (collection: string, data: any) => Promise<any>;
     issueCert: (targetDid: string, certType: DocRef, expires?: string) => Promise<any>;
     revokeCert: (certId: string) => Promise<any>;
+    // Storage helpers exposed at top-level for app devs
+    upload: (file: File) => Promise<{ storageKey: string }>;
+    presignPut: (params: { storageKey: string; contentType?: string; metadata?: Record<string, string>; expiresInSeconds?: number }) => Promise<any>;
+    presignGet: (params: { storageKey: string; expiresInSeconds?: number }) => Promise<any>;
 }
 
 const VibeContext = createContext<VibeContextType | undefined>(undefined);
@@ -95,6 +99,12 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
     const issueCert = (targetDid: string, certType: DocRef, expires?: string) => sdk.issueCert(targetDid, certType, expires);
     const revokeCert = (certId: string) => sdk.revokeCert(certId);
 
+    // Storage helpers delegating to SDK
+    const upload = (file: File) => sdk.storage.upload(file);
+    const presignPut = (storageKey: string, contentType?: string, metadata?: Record<string, string>, expiresInSeconds?: number) =>
+        sdk.storage.presignPut(storageKey, contentType, metadata, expiresInSeconds);
+    const presignGet = (storageKey: string, expiresInSeconds?: number) => sdk.storage.presignGet(storageKey, expiresInSeconds);
+
     const LoadingComponent = loadingComponent || <DefaultLoadingComponent />;
 
     if (!isSessionChecked || isLoggingOut) {
@@ -124,6 +134,9 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
                 revokeCert,
                 manageConsent,
                 manageProfile,
+                upload,
+                presignPut,
+                presignGet,
             }}
         >
             {children}
