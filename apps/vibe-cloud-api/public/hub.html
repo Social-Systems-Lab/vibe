@@ -437,7 +437,7 @@
 
                         console.log(`[HUB] Query successful, received ${findResult.docs?.length || 0} Docs.`);
 
-                        return findResult;
+                        return findResult.docs;
                     case "DB_REMOVE":
                         return await db.remove(payload);
                     default:
