@@ -408,10 +408,7 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
         <div className="w-full max-w-md space-y-6 z-30">
             <div className="text-center">
                 <div className="inline-flex items-center justify-center mb-2">
-                    {/* App logo if provided */}
-                    {searchParams.get("appLogoUrl") && (
-                        <img src={searchParams.get("appLogoUrl") as string} alt={`${appName} logo`} className="w-8 h-8 rounded mr-2" />
-                    )}
+                    {/* Keep header clean to avoid repeating app icon */}
                     <h1 className="text-2xl font-extrabold font-heading tracking-tight">{isSettingsFlow ? "App permissions" : "Almost there!"}</h1>
                 </div>
                 <p className="mt-1 text-gray-600 text-sm">
@@ -421,9 +418,10 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
             </div>
 
             <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
-                {/* App + Vibe identity row */}
-                <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-white border border-gray-200">
+                {/* App ↔ Vibe identity row (single app icon usage). Right shows user avatar if available, otherwise Vibe icon */}
+                <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-white border border-gray-200">
                     <div className="flex items-center gap-3">
+                        {/* Only show the app icon here to avoid repetition */}
                         {searchParams.get("appLogoUrl") ? (
                             <img src={searchParams.get("appLogoUrl") as string} className="w-8 h-8 rounded" alt={`${appName} logo`} />
                         ) : (
@@ -434,7 +432,14 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
                             <div className="text-gray-500">wants access to your Vibe</div>
                         </div>
                     </div>
-                    <img src="/icons/vibe.svg" alt="Vibe" className="w-6 h-6 opacity-80" />
+                    {/* Prefer user profile picture (from previous /auth/me usage in session), fallback to Vibe icon */}
+                    <Image
+                        src={(searchParams.get("userPictureUrl") as string) || "/images/vibe.png"}
+                        alt="Vibe user"
+                        width={32}
+                        height={32}
+                        className="w-8 h-8 rounded-full object-cover"
+                    />
                 </div>
 
                 {/* Permissions list */}
