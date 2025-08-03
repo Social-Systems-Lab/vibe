@@ -46,7 +46,10 @@ function CollectionsInner() {
 
         console.log("Files fetched:", res);
 
-        setFiles((res?.docs ?? []) as FileDoc[]);
+        const docs = (res?.docs ?? []) as FileDoc[];
+
+        // IMPORTANT: trust server metadata; do not override storageKey via client-side cache
+        setFiles(docs);
     }, [isLoggedIn, user, q, type, readOnce]);
 
     useEffect(() => {
@@ -100,7 +103,9 @@ function CollectionsInner() {
     const handleFilesUpload = useCallback(
         async (list: File[]) => {
             for (const file of list) {
+                // Upload and persist EXACT storageKey returned by server; never mutate or re-derive on client
                 const { storageKey } = await upload(file);
+
                 const now = new Date().toISOString();
                 const doc: FileDoc = {
                     _id: `files/${crypto.randomUUID()}`,
@@ -408,19 +413,27 @@ function FileCard({ file, presignGet }: { file: FileDoc; presignGet: (key: strin
     useEffect(() => {
         let mounted = true;
         const load = async () => {
-            if (file.mime?.startsWith("image/") && file.storageKey) {
-                if (presignCache.has(file.storageKey)) {
-                    if (mounted) setImgUrl(presignCache.get(file.storageKey)!);
-                    return;
-                }
+            // Strict guard: only attempt when we have a trustworthy storageKey
+            if (!file?.storageKey || !file?.mime?.startsWith("image/")) return;
 
-                const res = await presignGet(file.storageKey, 300);
-                if (res?.url) {
-                    // Also fix the double "files/" prefix here
-                    const finalUrl = res.url.replace("/files/files/", "/files/");
-                    presignCache.set(file.storageKey, finalUrl);
-                    if (mounted) setImgUrl(finalUrl);
+            // Never mutate key client-side; just use server metadata directly
+            const key = file.storageKey;
+
+            if (presignCache.has(key)) {
+                if (mounted) setImgUrl(presignCache.get(key)!);
+                return;
+            }
+
+            try {
+                const res = await presignGet(key, 300);
+                const cUrl = (res?.url || res?.presignedURL || res?.publicURL) as string | undefined;
+                if (cUrl) {
+                    presignCache.set(key, cUrl);
+                    if (mounted) setImgUrl(cUrl);
                 }
+            } catch (e) {
+                // Log the exact key to correlate with server logs
+                console.warn("presignGet failed for key:", key, e);
             }
         };
         load();

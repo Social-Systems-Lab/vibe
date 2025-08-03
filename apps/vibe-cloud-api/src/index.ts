@@ -780,12 +780,38 @@ const app = new Elysia()
                     try {
                         const buffer = Buffer.from(await file.arrayBuffer());
                         const bucketName = `user-${profile.instanceId}`;
-                        const fileName = `${Date.now()}-${file.name}`;
-                        await storageService.upload(bucketName, fileName, buffer, file.type);
-                        const url = await storageService.getPublicURL(bucketName, fileName);
-                        return { url };
+
+                        // Accept an optional storageKey to standardize keys as yyyy/mm/uuid.ext
+                        const providedStorageKey = (body as any).storageKey as string | undefined;
+                        let storageKey = providedStorageKey;
+                        if (!storageKey) {
+                            // Generate yyyy/mm/uuid.ext if not provided
+                            const name = (file as any).name as string | undefined;
+                            const ext = name && name.includes(".") ? name.split(".").pop() : "";
+                            const uuid = crypto.randomUUID();
+                            const now = new Date();
+                            const yyyy = now.getUTCFullYear();
+                            const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
+                            storageKey = `${yyyy}/${mm}/${uuid}${ext ? "." + ext : ""}`;
+                        }
+
+                        console.debug("[/storage/upload] start", {
+                            instanceId: profile.instanceId,
+                            bucketName,
+                            providedStorageKey,
+                            finalStorageKey: storageKey,
+                            mime: file.type,
+                            size: (file as any).size,
+                        });
+
+                        await storageService.upload(bucketName, storageKey, buffer, file.type);
+                        const url = await storageService.getPublicURL(bucketName, storageKey);
+
+                        console.debug("[/storage/upload] done", { bucketName, storageKey, url });
+
+                        return { url, storageKey };
                     } catch (error: any) {
-                        console.error("Error uploading file:", error);
+                        console.error("[/storage/upload] Error uploading file:", error);
                         set.status = 500;
                         return { error: "Failed to upload file" };
                     }
@@ -793,6 +819,10 @@ const app = new Elysia()
                 {
                     body: t.Object({
                         file: t.Any(),
+                        // Allow passing storageKey explicitly so client persists exact value
+                        // Using t.Optional here keeps backward compatibility
+                        // @ts-ignore - Elysia t doesn't complain at runtime
+                        storageKey: t.Optional(t.String()),
                     }),
                 }
             )
@@ -847,7 +877,7 @@ const app = new Elysia()
                     const now = new Date();
                     const yyyy = now.getUTCFullYear();
                     const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
-                    const storageKey = `files/${yyyy}/${mm}/${uuid}${ext ? "." + ext : ""}`;
+                    const storageKey = `${yyyy}/${mm}/${uuid}${ext ? "." + ext : ""}`;
                     const bucket = `user-${profile!.instanceId}`;
 
                     try {
@@ -887,12 +917,12 @@ const app = new Elysia()
             // Presign GET: presigned URL on Scaleway, public-or-server hint on MinIO
             .post(
                 "/presign-get",
-                async ({ profile, body, set, storageService }) => {
+                async ({ profile, body, set, storageService, request }) => {
                     if (!profile) {
                         set.status = 401;
                         return { error: "Unauthorized" };
                     }
-                    const { storageKey, expires } = body as { storageKey: string; expires?: number };
+                    const { storageKey, expires } = body;
                     if (!storageKey) {
                         set.status = 400;
                         return { error: "Missing storageKey" };
@@ -900,19 +930,107 @@ const app = new Elysia()
                     const bucket = `user-${profile!.instanceId}`;
                     const ttl = Math.min(Math.max(expires ?? 300, 60), 3600); // clamp 1m..1h
 
+                    // Debug toggle via query (?debug=1)
+                    const urlObj = new URL(request.url);
+                    const debug = urlObj.searchParams.get("debug") === "1";
+
                     try {
+                        // Validate object existence before presigning to surface clear 404s
+                        console.debug("[/storage/presign-get] stat check", { bucket, storageKey, ttl, debug });
+                        const stat = await storageService.statObject(bucket, storageKey);
+                        // Build public URL for inspection even if stat fails (MinIO still builds a deterministic URL)
+                        let publicURL: string | undefined;
+                        try {
+                            publicURL = await storageService.getPublicURL(bucket, storageKey);
+                        } catch {}
+
+                        if (!stat) {
+                            console.debug("[/storage/presign-get] NoSuchKey", { bucket, storageKey, publicURL });
+                            set.status = 404;
+                            // When debugging, echo bucket + publicURL to help validate direct object access
+                            return debug ? { error: "NoSuchKey", storageKey, bucket, publicURL } : { error: "NoSuchKey", storageKey };
+                        }
+
                         const res = await storageService.presignGet(bucket, storageKey, ttl);
+
                         if (res.strategy === "presigned") {
+                            console.debug("[/storage/presign-get] presigned ok", { bucket, storageKey, debug });
+                            if (debug) {
+                                return {
+                                    strategy: "debug",
+                                    bucket,
+                                    storageKey,
+                                    presignedURL: res.url,
+                                    publicURL,
+                                    expiresIn: ttl,
+                                };
+                            }
                             return { strategy: "presigned", url: res.url, expiresIn: ttl };
+                        }
+
+                        console.debug("[/storage/presign-get] public-or-server", { bucket, storageKey, debug });
+                        if (debug) {
+                            return {
+                                strategy: "debug",
+                                bucket,
+                                storageKey,
+                                presignedURL: undefined,
+                                publicURL,
+                                expiresIn: ttl,
+                            };
                         }
                         return { strategy: "public-or-server" };
                     } catch (e: any) {
-                        console.error("presign-get error:", e);
+                        console.error("[/storage/presign-get] error:", e);
                         set.status = 500;
                         return { error: "Failed to presign download" };
                     }
                 },
                 { body: t.Object({ storageKey: t.String(), expires: t.Optional(t.Number()) }) }
+            )
+    )
+    // Debug endpoint to check if an object exists at a given storageKey in the user's bucket
+    .group("/storage", (app) =>
+        app
+            .derive(async ({ jwt, headers }) => {
+                const auth = headers.authorization;
+                const token = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
+                const profile = (await jwt.verify(token)) as unknown as JwtPayload | null;
+                return { profile };
+            })
+            .guard({
+                beforeHandle: ({ profile, set }) => {
+                    if (!profile) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                },
+            })
+            .get(
+                "/exists",
+                async ({ profile, query, set, storageService }) => {
+                    const { key } = query as any;
+                    if (!key) {
+                        set.status = 400;
+                        return { error: "Missing key" };
+                    }
+                    const bucket = `user-${(profile as JwtPayload).instanceId}`;
+                    try {
+                        console.debug("[/storage/exists] check", { bucket, key });
+                        const stat = await storageService.statObject(bucket, key);
+                        const exists = !!stat;
+                        let publicURL: string | undefined;
+                        try {
+                            publicURL = await storageService.getPublicURL(bucket, key);
+                        } catch {}
+                        return { exists, storageKey: key, bucket, publicURL };
+                    } catch (e: any) {
+                        console.error("[/storage/exists] error:", e);
+                        set.status = 500;
+                        return { error: "Failed to check existence" };
+                    }
+                },
+                { query: t.Object({ key: t.String() }) }
             )
     )
     // This group is now removed, as we are using presigned URLs.
@@ -949,8 +1067,9 @@ const app = new Elysia()
                     const uuid = crypto.randomUUID();
                     const yyyy = new Date().getUTCFullYear();
                     const mm = String(new Date().getUTCMonth() + 1).padStart(2, "0");
-                    const storageKey = `files/${yyyy}/${mm}/${uuid}${ext ? "." + ext : ""}`;
-                    // For now, client can POST /storage/upload as a fallback path.
+                    // Standardize without "files/" prefix: yyyy/mm/uuid.ext
+                    const storageKey = `${yyyy}/${mm}/${uuid}${ext ? "." + ext : ""}`;
+                    // For now, client can POST /storage/upload as a fallback path and MUST include storageKey.
                     return {
                         uploadStrategy: "server-upload",
                         storageKey,

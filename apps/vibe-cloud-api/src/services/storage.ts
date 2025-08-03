@@ -21,6 +21,7 @@ export interface StorageProvider {
     presignPut?(bucket: string, key: string, contentType?: string, expiresSeconds?: number): Promise<PresignPutResult>;
     presignGet?(bucket: string, key: string, expiresSeconds?: number): Promise<PresignGetResult>;
     download(bucket: string, key: string): Promise<{ stream: ReadableStream<any>; contentType?: string; contentLength?: number }>;
+    statObject?(bucket: string, key: string): Promise<{ size?: number; contentType?: string } | null>;
 }
 
 // MinIO: no presign here (fallback to server-upload)
@@ -82,6 +83,15 @@ export class MinioStorageProvider implements StorageProvider {
             contentType: stat.metaData?.["content-type"],
             contentLength: stat.size,
         };
+    }
+
+    async statObject(bucket: string, key: string): Promise<{ size?: number; contentType?: string } | null> {
+        try {
+            const stat = await this.client.statObject(bucket, key);
+            return { size: stat.size, contentType: stat.metaData?.["content-type"] };
+        } catch {
+            return null;
+        }
     }
 }
 
@@ -197,5 +207,10 @@ export class StorageService {
 
     async download(bucket: string, key: string): Promise<{ stream: ReadableStream<any>; contentType?: string; contentLength?: number }> {
         return this.provider.download(bucket, key);
+    }
+
+    async statObject(bucket: string, key: string): Promise<{ size?: number; contentType?: string } | null> {
+        if (!this.provider.statObject) return null;
+        return this.provider.statObject(bucket, key);
     }
 }
