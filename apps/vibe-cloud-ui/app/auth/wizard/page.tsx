@@ -344,11 +344,44 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
             body: JSON.stringify({ action }),
         });
 
+        // If server used HTTP redirect (legacy), follow it
+        if (response.redirected) {
+            window.location.href = response.url;
+            return;
+        }
+
         if (response.ok) {
             // Prefer JSON contract: redirectTo for navigations, ok: true for handled in-place
+            // In signup/login flow the API returns { redirectTo: "/auth/authorize?..."}.
+            // That authorize should then redirect to the app's redirect_uri with ?code=...
             const data = await response.json();
-            if (data.redirectTo) {
-                window.location.href = data.redirectTo;
+
+            // Defensive: strip any accidental hasConsented=undefined in redirectTo
+            if (data?.redirectTo && typeof data.redirectTo === "string") {
+                try {
+                    const url = new URL(data.redirectTo, window.location.origin);
+                    if (url.searchParams.get("hasConsented") === "undefined") {
+                        url.searchParams.delete("hasConsented");
+                    }
+                    // Also remove UI-only params that shouldn't leak into OAuth endpoint
+                    url.searchParams.delete("appName");
+                    url.searchParams.delete("appTagline");
+                    url.searchParams.delete("appDescription");
+                    url.searchParams.delete("appLogoUrl");
+                    url.searchParams.delete("appLogotypeUrl");
+                    url.searchParams.delete("appShowcaseUrl");
+                    url.searchParams.delete("backgroundImageUrl");
+                    url.searchParams.delete("backgroundColor");
+                    url.searchParams.delete("fontColor");
+                    url.searchParams.delete("buttonColor");
+                    // Navigate
+                    window.location.href = url.toString();
+                    return;
+                } catch {
+                    // Fallback to raw redirect
+                    window.location.href = data.redirectTo;
+                    return;
+                }
             } else {
                 if (isSettingsFlow) {
                     // Update local UI to reflect result in settings flow
@@ -374,42 +407,93 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
     return (
         <div className="w-full max-w-md space-y-6 z-30">
             <div className="text-center">
-                <h1 className="text-3xl font-bold font-heading">{isSettingsFlow ? "App Settings" : "Almost there!"}</h1>
-                <p className="mt-2 text-gray-600">
-                    {isSettingsFlow ? `Manage permissions for ${appName}.` : `${appName} is requesting permission to access your Vibe account.`}
-                </p>
-            </div>
-            <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
-                <div className="bg-gray-100 rounded-lg">
-                    <h3 className="font-bold">Permissions requested:</h3>
-                    <div className="bg-gray-50 p-6 rounded-lg">
-                        <ul className="list-disc list-inside mt-2 text-gray-700">
-                            <li>Read your profile information</li>
-                            <li>Read your contacts</li>
-                        </ul>
-                    </div>
+                <div className="inline-flex items-center justify-center mb-2">
+                    {/* App logo if provided */}
+                    {searchParams.get("appLogoUrl") && (
+                        <img src={searchParams.get("appLogoUrl") as string} alt={`${appName} logo`} className="w-8 h-8 rounded mr-2" />
+                    )}
+                    <h1 className="text-2xl font-extrabold font-heading tracking-tight">{isSettingsFlow ? "App permissions" : "Almost there!"}</h1>
                 </div>
+                <p className="mt-1 text-gray-600 text-sm">
+                    {isSettingsFlow ? `Manage what ${appName} can access.` : `${appName} is requesting permission to access your Vibe account.`}
+                </p>
+                {!isSettingsFlow && <p className="mt-1 text-gray-500 text-xs">You’re in control. You can change this later in Settings.</p>}
+            </div>
+
+            <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
+                {/* App + Vibe identity row */}
+                <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-white border border-gray-200">
+                    <div className="flex items-center gap-3">
+                        {searchParams.get("appLogoUrl") ? (
+                            <img src={searchParams.get("appLogoUrl") as string} className="w-8 h-8 rounded" alt={`${appName} logo`} />
+                        ) : (
+                            <div className="w-8 h-8 rounded bg-gray-200" />
+                        )}
+                        <div className="text-sm">
+                            <div className="font-semibold text-gray-900">{appName}</div>
+                            <div className="text-gray-500">wants access to your Vibe</div>
+                        </div>
+                    </div>
+                    <img src="/icons/vibe.svg" alt="Vibe" className="w-6 h-6 opacity-80" />
+                </div>
+
+                {/* Permissions list */}
+                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                    <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                        <h3 className="font-semibold text-gray-900 text-sm">Permissions requested</h3>
+                    </div>
+                    <ul className="p-4 text-gray-700 text-sm space-y-2">
+                        <li className="flex items-start gap-2">
+                            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+                            Read your profile information
+                        </li>
+                        <li className="flex items-start gap-2">
+                            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+                            Read your contacts
+                        </li>
+                    </ul>
+                    <div className="px-4 pb-3 text-xs text-gray-500">Only with your consent. You can revoke access anytime in Settings.</div>
+                </div>
+
+                {/* Denied state */}
                 {showDeniedMessage ? (
-                    <div className="text-center p-4 bg-yellow-100 rounded-lg">
-                        <p>App has now been denied access to your Vibe, you can now close this page.</p>
+                    <div className="text-center p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-900">
+                        <p>Access for {appName} has been denied. You can safely close this page.</p>
                     </div>
                 ) : (
-                    <div className="flex space-x-4">
-                        <button
-                            onClick={() => handleSubmit("approve")}
-                            className={`flex-1 px-4 py-3 text-center font-semibold rounded-lg transition-all duration-200 ${allowClass}`}
-                            disabled={isLoading}
-                        >
-                            Allow
-                        </button>
-                        <button
-                            onClick={() => handleSubmit("deny")}
-                            className={`flex-1 px-4 py-3 text-center font-semibold rounded-lg transition-all duration-200 ${denyClass}`}
-                            disabled={isLoading}
-                        >
-                            Deny
-                        </button>
-                    </div>
+                    <>
+                        {/* CTA buttons */}
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => handleSubmit("approve")}
+                                className={`flex-1 px-4 py-3 text-center font-semibold rounded-lg transition-all duration-200 border ${
+                                    hasConsented === true
+                                        ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                                        : "bg-white text-gray-900 border-gray-300 hover:bg-gray-50"
+                                }`}
+                                disabled={isLoading}
+                            >
+                                {isLoading && hasConsented === true ? "Allowing..." : "Allow"}
+                            </button>
+                            <button
+                                onClick={() => handleSubmit("deny")}
+                                className={`flex-1 px-4 py-3 text-center font-semibold rounded-lg transition-all duration-200 border ${
+                                    hasConsented === false
+                                        ? "bg-red-600 text-white border-red-600 shadow-sm"
+                                        : "bg-white text-gray-900 border-gray-300 hover:bg-gray-50"
+                                }`}
+                                disabled={isLoading}
+                            >
+                                {isLoading && hasConsented === false ? "Denying..." : "Deny"}
+                            </button>
+                        </div>
+
+                        {/* Security + disclaimer */}
+                        <div className="text-[11px] leading-5 text-gray-500 text-center">
+                            By selecting Allow, you let {appName} use these permissions with your Vibe account. We will never share your credentials with the
+                            app.
+                        </div>
+                    </>
                 )}
             </form>
         </div>
