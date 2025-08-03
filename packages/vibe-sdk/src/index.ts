@@ -227,11 +227,11 @@ export class VibeSDK {
     }
 
     async manageConsent(): Promise<void> {
-        await this.redirectToAuthorize("login", true, "settings");
+        await this.redirectToAuthorize("login", false, "settings", "consent");
     }
 
     async manageProfile(): Promise<void> {
-        await this.redirectToAuthorize("profile", false, "settings");
+        await this.redirectToAuthorize("profile", false, "settings", "profile");
     }
 
     async handleRedirectCallback(url: string): Promise<void> {
@@ -273,7 +273,8 @@ export class VibeSDK {
     private async redirectToAuthorize(
         formType: "login" | "signup" | "profile" = "signup",
         promptConsent = false,
-        flow: "signup" | "settings" = "signup"
+        flow: "signup" | "settings" = "signup",
+        prompt?: "consent" | "profile" | "login"
     ): Promise<void> {
         const { generatePkce } = await import("./strategies/standalone");
         const pkce = await generatePkce();
@@ -296,6 +297,9 @@ export class VibeSDK {
         }
         if (promptConsent) {
             params.set("prompt", "consent");
+        }
+        if (prompt) {
+            params.set("prompt", prompt);
         }
         if (this.config.appName) {
             params.set("appName", this.config.appName);

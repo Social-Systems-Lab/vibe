@@ -168,6 +168,15 @@ const app = new Elysia()
                                 console.log("[authorize] User found:", user ? user.did : "No user found");
 
                                 if (user) {
+                                    // Handle prompt for settings
+                                    if (prompt === "profile" || prompt === "consent") {
+                                        const { form_type, ...rest } = query as any;
+                                        const params = new URLSearchParams(rest);
+                                        params.set("step", prompt);
+                                        const redirectPath = `/auth/wizard?${params.toString()}`;
+                                        return redirect(redirectPath);
+                                    }
+
                                     const hasConsented = await identityService.hasUserConsented(user.did, client_id!);
                                     console.log("[authorize] User has consented:", hasConsented);
 
