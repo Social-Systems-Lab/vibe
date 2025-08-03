@@ -169,7 +169,7 @@ function Header({
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search by name or tag"
-                className="border rounded-full px-4 py-2 text-sm w-96 bg-neutral-100"
+                className="w-full max-w-md h-12 rounded-full bg-gray-100 border-none pl-6 focus-visible:ring-offset-0 focus-visible:ring-2"
             />
             <select value={type} onChange={(e) => setType(e.target.value)} className="border rounded px-2 py-2 text-sm">
                 <option value="">All types</option>
@@ -309,9 +309,8 @@ function LeftSidebar({ onFilesSelected }: { onFilesSelected: (files: File[]) => 
                 </ul>
             </nav>
 
-            <div className="mt-auto p-4">
-                <div className="text-xs text-neutral-600 mb-2">Storage</div>
-                <UsageBar usedBytes={0} quotaBytes={100 * 1024 * 1024 * 1024} />
+            <div className="mt-auto p-6">
+                <UsageBar usedBytes={0.75 * 1024 * 1024 * 1024} quotaBytes={5 * 1024 * 1024 * 1024} />
             </div>
         </aside>
     );
@@ -319,18 +318,19 @@ function LeftSidebar({ onFilesSelected }: { onFilesSelected: (files: File[]) => 
 
 function UsageBar({ usedBytes, quotaBytes }: { usedBytes: number; quotaBytes: number }) {
     const ratio = Math.min(1, usedBytes / (quotaBytes || 1));
-    const pct = Math.round(ratio * 100);
+    const pct = Math.round(ratio * 100.0);
     const fmt = (n: number) => humanSize(n);
     return (
         <div className="space-y-2">
-            <div className="flex justify-between text-xs text-neutral-600">
-                <span>{fmt(usedBytes)}</span>
-                <span>{fmt(quotaBytes)}</span>
+            <div className="flex text-[16px] font-bold text-neutral-600">
+                <span>Storage</span>
             </div>
             <div className="h-2 bg-neutral-200 rounded-full overflow-hidden">
                 <div className="h-full bg-blue-600" style={{ width: `${pct}%` }} />
             </div>
-            <div className="text-right text-[10px] text-neutral-500">{pct}%</div>
+            <div className="text-center text-[16px] text-neutral-500">
+                {fmt(usedBytes)} of {fmt(quotaBytes)} used
+            </div>
         </div>
     );
 }
@@ -380,7 +380,7 @@ function FilesArea({ files, presignGet }: { files: FileDoc[]; presignGet: (key: 
     }
 
     return (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {files.map((f) => (
                 <FileCard key={f._id} file={f} presignGet={presignGet} />
             ))}
