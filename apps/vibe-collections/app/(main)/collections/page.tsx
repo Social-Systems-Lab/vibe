@@ -132,7 +132,14 @@ function CollectionsInner() {
                     <div className="flex-1 flex flex-col">
                         <Header q={q} setQ={setQ} type={type} setType={setType} onRefresh={refresh} />
                         <main className="flex-1 p-4">
-                            {/* Removed dashed picker per request; keep overlay + upload button in sidebar */}
+                            <div className="mb-3 flex items-center justify-between">
+                                <h2 className="text-lg font-semibold">All files</h2>
+                                {/* Filter/Sort placeholders to sit above list */}
+                                <div className="flex items-center gap-2 text-sm text-neutral-600">
+                                    <button className="px-3 py-1.5 rounded-full border bg-white hover:bg-neutral-50">Filter</button>
+                                    <button className="px-3 py-1.5 rounded-full border bg-white hover:bg-neutral-50">Sort</button>
+                                </div>
+                            </div>
                             <FilesArea presignGet={presignGet} files={files} />
                         </main>
                     </div>
@@ -165,21 +172,13 @@ function Header({
     const [view, setView] = useState<"grid" | "list">("grid");
     return (
         <div className="px-4 py-3 flex items-center gap-3">
+            {/* Search lives in header and aligns to content with same horizontal padding */}
             <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search by name or tag"
-                className="w-full max-w-md h-12 rounded-full bg-gray-100 border-none pl-6 focus-visible:ring-offset-0 focus-visible:ring-2"
+                className="w-full max-w-xl h-12 rounded-full bg-neutral-100 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <select value={type} onChange={(e) => setType(e.target.value)} className="border rounded px-2 py-2 text-sm">
-                <option value="">All types</option>
-                <option value="image">Images</option>
-                <option value="video">Videos</option>
-                <option value="doc">Documents</option>
-                <option value="audio">Audio</option>
-                <option value="other">Other</option>
-            </select>
-
             <div className="ml-auto flex items-center gap-2">
                 <div className="inline-flex rounded-lg border overflow-hidden">
                     <button
@@ -278,7 +277,7 @@ function LeftSidebar({ onFilesSelected }: { onFilesSelected: (files: File[]) => 
     const inputRef = useRef<HTMLInputElement>(null);
 
     return (
-        <aside className="w-80 h-[calc(100vh-80px)] sticky top-[80px] flex flex-col">
+        <aside className="flex w-80 h-[calc(100vh-80px)] sticky top-[80px] flex-col">
             <div className="p-6">
                 <button
                     className="w-full rounded-lg bg-blue-600 text-white py-2.5 font-medium hover:bg-blue-700 transition"
@@ -404,9 +403,17 @@ function FileCard({ file, presignGet }: { file: FileDoc; presignGet: (key: strin
                 const res = await presignGet(file.storageKey, 300);
                 console.log("Presigned URL response:", res);
 
-                if (res?.strategy === "presigned" && res.url) {
+                // Prefer explicit url
+                if (res?.url) {
                     presignCache.set(file.storageKey, res.url);
                     if (mounted) setImgUrl(res.url);
+                    return;
+                }
+                // Fallback when strategy is public-or-server
+                if (res?.strategy === "public-or-server") {
+                    const url = `/files/${encodeURIComponent(file.storageKey)}`;
+                    presignCache.set(file.storageKey, url);
+                    if (mounted) setImgUrl(url);
                 }
             }
         };
