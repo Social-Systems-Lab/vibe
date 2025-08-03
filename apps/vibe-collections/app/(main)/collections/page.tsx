@@ -27,7 +27,7 @@ export default function CollectionsPage() {
 
 function CollectionsInner() {
     // Consume the stable context API from vibe-react, mirroring vibe-feeds usage
-    const { readOnce, isLoggedIn, user, login, storage, write } = useVibe() as any;
+    const { readOnce, isLoggedIn, user, login, write } = useVibe();
     const [files, setFiles] = useState<FileDoc[]>([]);
     const [q, setQ] = useState("");
     const [type, setType] = useState<string>("");
@@ -36,12 +36,11 @@ function CollectionsInner() {
 
     const refresh = useCallback(async () => {
         if (!isLoggedIn || !user) return;
-        const res = await readOnce("files", {
-            selector: { collection: "files" },
-            q: q || undefined,
-            type: type || undefined,
-        });
-        setFiles(res?.docs ?? []);
+        const res = await readOnce("files");
+
+        console.log("Files fetched:", res);
+
+        setFiles((res?.docs ?? []) as FileDoc[]);
     }, [isLoggedIn, user, q, type, readOnce]);
 
     useEffect(() => {
@@ -140,7 +139,7 @@ function DragDropUploader({ onUploaded }: { onUploaded: () => void }) {
             try {
                 const file = files[0];
                 // 1) Upload the blob via SDK
-                const { storageKey } = (await upload(file as any)) as any;
+                const { storageKey } = await upload(file);
                 // 2) Persist a FileDoc via /data
                 const now = new Date().toISOString();
                 const doc: FileDoc = {
@@ -148,10 +147,10 @@ function DragDropUploader({ onUploaded }: { onUploaded: () => void }) {
                     collection: "files",
                     name: file.name,
                     ext: extFromName(file.name),
-                    mime: (file as any).type || "application/octet-stream",
+                    mime: file.type || "application/octet-stream",
                     size: file.size,
                     storageKey,
-                    type: inferType((file as any).type || ""),
+                    type: inferType(file.type || ""),
                     tags: [],
                     collections: [],
                     createdAt: now,

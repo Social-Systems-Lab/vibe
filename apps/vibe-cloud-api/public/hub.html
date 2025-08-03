@@ -426,6 +426,7 @@
                         return await db.get(payload.id);
                     case "DB_QUERY":
                         const { expand, maxCacheAge, ...selector } = payload;
+
                         const findResult = await db.find({
                             selector: { ...selector },
                         });
@@ -433,6 +434,8 @@
                         if (expand && expand.length > 0) {
                             return await _expand(findResult.docs, expand, maxCacheAge);
                         }
+
+                        console.log(`[HUB] Query successful, received ${findResult.docs?.length || 0} Docs.`);
 
                         return findResult;
                     case "DB_REMOVE":

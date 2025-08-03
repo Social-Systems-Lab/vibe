@@ -748,6 +748,20 @@ const app = new Elysia()
                     }
                 },
             })
+            .onAfterHandle(({ request, set }) => {
+                // Ensure CORS headers are present for storage endpoints responses
+                if (request.method === "OPTIONS") return; // Let CORS plugin handle preflight
+                const origin = request.headers.get("origin") ?? "";
+                if (allowedOrigins.includes(origin)) {
+                    set.headers["Access-Control-Allow-Origin"] = origin;
+                    set.headers["Access-Control-Allow-Credentials"] = "true";
+                    set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+                    set.headers["Access-Control-Allow-Headers"] = "*";
+                    set.headers["Access-Control-Max-Age"] = "86400";
+                    set.headers["Access-Control-Expose-Headers"] = "Content-Disposition";
+                    set.headers["Vary"] = "Origin";
+                }
+            })
             .post(
                 "/upload",
                 async ({ profile, body, set, storageService }) => {
@@ -800,6 +814,20 @@ const app = new Elysia()
                         return { error: "Unauthorized" };
                     }
                 },
+            })
+            .onAfterHandle(({ request, set }) => {
+                // Ensure CORS headers are present for storage presign endpoints
+                if (request.method === "OPTIONS") return; // Let CORS plugin handle preflight
+                const origin = request.headers.get("origin") ?? "";
+                if (allowedOrigins.includes(origin)) {
+                    set.headers["Access-Control-Allow-Origin"] = origin;
+                    set.headers["Access-Control-Allow-Credentials"] = "true";
+                    set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+                    set.headers["Access-Control-Allow-Headers"] = "*";
+                    set.headers["Access-Control-Max-Age"] = "86400";
+                    set.headers["Access-Control-Expose-Headers"] = "Content-Disposition";
+                    set.headers["Vary"] = "Origin";
+                }
             })
             // Presign PUT: returns presigned URL on Scaleway, server-upload fallback on MinIO
             .post(
