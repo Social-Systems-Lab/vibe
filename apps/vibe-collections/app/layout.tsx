@@ -15,8 +15,8 @@ const wix_madefor_display = Wix_Madefor_Display({
 });
 
 export const metadata: Metadata = {
-    title: "Vibe Feeds",
-    description: "A decentralized social media feed built with Vibe",
+    title: "Collections",
+    description: "A file storage client built with Vibe",
 };
 
 export default function RootLayout({
