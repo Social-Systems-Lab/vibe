@@ -130,15 +130,15 @@ function CollectionsInner() {
                 <div className="flex flex-1">
                     <LeftSidebar onFilesSelected={handleFilesUpload} />
                     <div className="flex-1 flex flex-col">
-                        <Header q={q} setQ={setQ} type={type} setType={setType} onRefresh={refresh} />
+                        {/* <Header q={q} setQ={setQ} type={type} setType={setType} onRefresh={refresh} /> */}
                         <main className="flex-1 p-4">
                             <div className="mb-3 flex items-center justify-between">
                                 <h2 className="text-lg font-semibold">All files</h2>
                                 {/* Filter/Sort placeholders to sit above list */}
-                                <div className="flex items-center gap-2 text-sm text-neutral-600">
+                                {/* <div className="flex items-center gap-2 text-sm text-neutral-600">
                                     <button className="px-3 py-1.5 rounded-full border bg-white hover:bg-neutral-50">Filter</button>
                                     <button className="px-3 py-1.5 rounded-full border bg-white hover:bg-neutral-50">Sort</button>
-                                </div>
+                                </div> */}
                             </div>
                             <FilesArea presignGet={presignGet} files={files} />
                         </main>
@@ -153,6 +153,25 @@ function CollectionsInner() {
                 </div>
             )}
         </div>
+    );
+}
+
+function SearchInTopBar() {
+    const [qLocal, setQLocal] = useState("");
+    // fire a custom event so CollectionsInner/Header can listen if needed later
+    useEffect(() => {
+        const id = setTimeout(() => {
+            window.dispatchEvent(new CustomEvent("collections:search", { detail: { q: qLocal } }));
+        }, 200);
+        return () => clearTimeout(id);
+    }, [qLocal]);
+    return (
+        <input
+            value={qLocal}
+            onChange={(e) => setQLocal(e.target.value)}
+            placeholder="Search by name or tag"
+            className="w-full max-w-xl h-12 rounded-full bg-neutral-100 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
     );
 }
 
@@ -172,13 +191,6 @@ function Header({
     const [view, setView] = useState<"grid" | "list">("grid");
     return (
         <div className="px-4 py-3 flex items-center gap-3">
-            {/* Search lives in header and aligns to content with same horizontal padding */}
-            <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search by name or tag"
-                className="w-full max-w-xl h-12 rounded-full bg-neutral-100 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
             <div className="ml-auto flex items-center gap-2">
                 <div className="inline-flex rounded-lg border overflow-hidden">
                     <button
@@ -211,12 +223,15 @@ function TopBar() {
     const height = 42;
     const width = Math.round(height * imageAspectRatio);
     return (
-        <header className="h-20 px-4 justify-center flex items-center gap-3">
-            <div className="flex items-center gap-2 pl-2">
-                <Image src="/images/logotype.png" alt="Collections" height={height} width={width} />
+        <header className="h-20 flex items-center">
+            <div className="flex items-center gap-2 pl-2 w-80">
+                <Image src="/images/logotype.png" alt="Collections" height={height} width={width} className="ml-4" />
+            </div>
+            {/* Search belongs in the top bar, aligned with main content by same horizontal padding */}
+            <div className="flex-1 pl-4">
+                <SearchInTopBar />
             </div>
             <div className="ml-auto">
-                {/* Placeholder for profile menu – ensure centered vertically by flex container */}
                 <ProfileMenu />
             </div>
         </header>
@@ -411,7 +426,15 @@ function FileCard({ file, presignGet }: { file: FileDoc; presignGet: (key: strin
                 }
                 // Fallback when strategy is public-or-server
                 if (res?.strategy === "public-or-server") {
-                    const url = `/files/${encodeURIComponent(file.storageKey)}`;
+                    // Avoid double-encoding: use the raw storageKey after first slash
+                    const url = `/files/${file.storageKey}`;
+                    presignCache.set(file.storageKey, url);
+                    if (mounted) setImgUrl(url);
+                    return;
+                }
+                // Last resort: try direct storageKey assuming it is already a path
+                if (typeof res === "object") {
+                    const url = `/files/${file.storageKey}`;
                     presignCache.set(file.storageKey, url);
                     if (mounted) setImgUrl(url);
                 }
