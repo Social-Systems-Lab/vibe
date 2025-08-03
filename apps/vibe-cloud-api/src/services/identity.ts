@@ -398,7 +398,7 @@ export class IdentityService {
         }
         return user.consents.includes(clientId);
     }
-    async revokeConsent(userDid: string, clientId: string) {
+    async revokeUserConsent(userDid: string, clientId: string) {
         await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");

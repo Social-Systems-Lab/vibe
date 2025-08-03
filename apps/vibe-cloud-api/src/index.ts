@@ -559,7 +559,7 @@ const app = new Elysia()
                     if (action === "approve") {
                         await identityService.storeUserConsent(session.sessionId, client_id);
                     } else {
-                        // Handle denial if necessary, for now, we'll just redirect
+                        await identityService.revokeUserConsent(session.sessionId, client_id);
                     }
 
                     const params = new URLSearchParams(query as any);
