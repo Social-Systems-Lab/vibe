@@ -586,6 +586,78 @@ const app = new Elysia()
                     }),
                 }
             )
+            .get("/me", async ({ cookie, set, identityService, sessionJwt }) => {
+                const sessionToken = cookie.vibe_session.value;
+                if (!sessionToken) {
+                    set.status = 401;
+                    return { error: "Unauthorized" };
+                }
+
+                const session = await sessionJwt.verify(sessionToken);
+                if (!session || !session.sessionId) {
+                    set.status = 401;
+                    return { error: "Invalid session" };
+                }
+
+                const user = await identityService.findByDid(session.sessionId);
+                if (!user) {
+                    set.status = 404;
+                    return { error: "User not found" };
+                }
+
+                return {
+                    displayName: user.displayName,
+                    pictureUrl: user.pictureUrl,
+                };
+            })
+            .get(
+                "/consentStatus",
+                async ({ cookie, query, set, identityService, sessionJwt }) => {
+                    const sessionToken = cookie.vibe_session.value;
+                    if (!sessionToken) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+
+                    const session = await sessionJwt.verify(sessionToken);
+                    if (!session || !session.sessionId) {
+                        set.status = 401;
+                        return { error: "Invalid session" };
+                    }
+
+                    const hasConsented = await identityService.hasUserConsented(session.sessionId, query.client_id);
+                    return { hasConsented };
+                },
+                {
+                    query: t.Object({
+                        client_id: t.String(),
+                    }),
+                }
+            )
+            .get(
+                "/consentStatus",
+                async ({ cookie, query, set, identityService, sessionJwt }) => {
+                    const sessionToken = cookie.vibe_session.value;
+                    if (!sessionToken) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+
+                    const session = await sessionJwt.verify(sessionToken);
+                    if (!session || !session.sessionId) {
+                        set.status = 401;
+                        return { error: "Invalid session" };
+                    }
+
+                    const hasConsented = await identityService.hasUserConsented(session.sessionId, query.client_id);
+                    return { hasConsented };
+                },
+                {
+                    query: t.Object({
+                        client_id: t.String(),
+                    }),
+                }
+            )
     )
     .group("/users", (app) =>
         app

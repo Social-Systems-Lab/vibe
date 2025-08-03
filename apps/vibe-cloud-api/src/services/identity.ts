@@ -447,8 +447,7 @@ export class IdentityService {
                     _id: "profiles/me",
                     name: updatedUser.displayName,
                     pictureUrl: updatedUser.pictureUrl,
-                    did: updatedUser.did,
-                });
+                } as any);
             } else {
                 console.error("Error updating profiles/me doc:", error);
                 // Don't throw, as the main user update succeeded

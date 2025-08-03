@@ -209,11 +209,25 @@ const LoginForm = ({ setStep }: { setStep: (step: string) => void }) => {
     );
 };
 
+import { useEffect } from "react";
 const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
     const searchParams = useSearchParams();
     const queryString = searchParams.toString();
     const [isLoading, setIsLoading] = useState(false);
     const [preview, setPreview] = useState<string | null>(null);
+    const [displayName, setDisplayName] = useState("");
+
+    useEffect(() => {
+        const fetchUserData = async () => {
+            const response = await fetch(`/auth/me?${queryString}`);
+            if (response.ok) {
+                const data = await response.json();
+                setDisplayName(data.displayName);
+                setPreview(data.pictureUrl);
+            }
+        };
+        fetchUserData();
+    }, [queryString]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -290,12 +304,10 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
                         placeholder="Your Name"
                         autoComplete="nickname"
                         required
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
                         className="w-full px-4 py-2 mt-1 border rounded-lg bg-white"
                     />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700">Bio (Optional)</label>
-                    <textarea name="bio" placeholder="Tell us a little about yourself..." className="w-full px-4 py-2 mt-1 border rounded-lg bg-white" />
                 </div>
                 <button type="submit" className="w-full px-4 py-2 text-white bg-green-500 rounded-lg hover:bg-green-600" disabled={isLoading}>
                     {isLoading ? "Saving..." : "Save and Continue"}
@@ -310,6 +322,18 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
     const queryString = searchParams.toString();
     const appName = searchParams.get("appName") || "your application";
     const [isLoading, setIsLoading] = useState(false);
+    const [hasConsented, setHasConsented] = useState(false);
+
+    useEffect(() => {
+        const fetchConsentStatus = async () => {
+            const response = await fetch(`/auth/consentStatus?${queryString}`);
+            if (response.ok) {
+                const data = await response.json();
+                setHasConsented(data.hasConsented);
+            }
+        };
+        fetchConsentStatus();
+    }, [queryString]);
 
     const handleSubmit = async (action: "approve" | "deny") => {
         setIsLoading(true);
@@ -348,14 +372,16 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
                 </div>
                 <button
                     onClick={() => handleSubmit("approve")}
-                    className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                    className={`w-full px-4 py-2 text-white rounded-lg ${hasConsented ? "bg-green-600 hover:bg-green-700" : "bg-blue-600 hover:bg-blue-700"}`}
                     disabled={isLoading}
                 >
-                    {isLoading ? "Approving..." : "Approve"}
+                    {isLoading ? "Approving..." : hasConsented ? "Allowed" : "Approve"}
                 </button>
                 <button
                     onClick={() => handleSubmit("deny")}
-                    className="w-full px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300"
+                    className={`w-full px-4 py-2 rounded-lg ${
+                        !hasConsented ? "bg-red-600 text-white hover:bg-red-700" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                    }`}
                     disabled={isLoading}
                 >
                     Deny
