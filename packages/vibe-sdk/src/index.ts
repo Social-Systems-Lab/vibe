@@ -108,21 +108,26 @@ export class VibeSDK {
                     throw new Error(`Presigned upload failed with ${putRes.status}`);
                 }
             } else if (plan && (plan as any).strategy === "server-upload") {
-                const { uploadPath, storageKey: key } = plan as any;
+                const { storageKey: key } = plan as any;
                 storageKey = key;
+                // Always include the authoritative storageKey when falling back to server-upload
                 const form = new FormData();
                 form.set("file", file);
                 const { data: upRes, error: upErr } = await this.api.storage.upload.post(
-                    { file: form.get("file") as any },
+                    { file: form.get("file") as any, storageKey },
                     { headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` } as any }
                 );
                 if (upErr) throw new Error(`Server upload failed: ${JSON.stringify(upErr)}`);
-                // For server-upload, storageKey came from plan; URL may be returned too but we rely on storageKey for metadata.
+                // If server echoes back a storageKey (in case it overridden), trust it
+                if (upRes && typeof upRes === "object" && "storageKey" in upRes && (upRes as any).storageKey) {
+                    storageKey = (upRes as any).storageKey as string;
+                }
             } else {
                 throw new Error("Invalid upload plan from server");
             }
 
             // 3) Return the storageKey for caller to persist metadata via /data
+            if (!storageKey) throw new Error("Upload did not yield a storageKey");
             return { storageKey };
         },
 
