@@ -131,7 +131,7 @@ function humanSize(bytes: number) {
 
 function DragDropUploader({ onUploaded }: { onUploaded: () => void }) {
     // Deconstruct for type-safety and to match vibe-feeds usage patterns
-    const { storage, write } = useVibe() as any;
+    const { upload, write } = useVibe();
     const [busy, setBusy] = useState(false);
     const onFiles = useCallback(
         async (files: FileList | null) => {
@@ -140,8 +140,7 @@ function DragDropUploader({ onUploaded }: { onUploaded: () => void }) {
             try {
                 const file = files[0];
                 // 1) Upload the blob via SDK
-                if (!storage?.upload) throw new Error("storage.upload not available");
-                const { storageKey } = (await storage.upload(file as any)) as any;
+                const { storageKey } = (await upload(file as any)) as any;
                 // 2) Persist a FileDoc via /data
                 const now = new Date().toISOString();
                 const doc: FileDoc = {
@@ -168,7 +167,7 @@ function DragDropUploader({ onUploaded }: { onUploaded: () => void }) {
                 setBusy(false);
             }
         },
-        [onUploaded, storage, write]
+        [onUploaded, upload, write]
     );
 
     const onDrop = useCallback(

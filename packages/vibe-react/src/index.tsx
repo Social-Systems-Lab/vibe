@@ -20,11 +20,6 @@ interface VibeContextType {
     remove: (collection: string, data: any) => Promise<any>;
     issueCert: (targetDid: string, certType: DocRef, expires?: string) => Promise<any>;
     revokeCert: (certId: string) => Promise<any>;
-    // Storage helpers exposed at top-level for app devs
-    // Match vibe-sdk signatures:
-    // - upload(file) -> always returns a storageKey string
-    // - presignPut(name, mime?, size?, sha256?)
-    // - presignGet(storageKey, expires?)
     upload: (file: File) => Promise<{ storageKey: string }>;
     presignPut: (name: string, mime?: string, size?: number, sha256?: string) => Promise<any>;
     presignGet: (storageKey: string, expires?: number) => Promise<any>;
