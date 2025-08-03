@@ -297,9 +297,9 @@ export class VibeSDK {
             code_challenge_method: "S256",
             form_type: formType,
         });
+        params.set("flow", flow);
         if (flow === "settings") {
             params.set("redirect_uri", window.location.href);
-            params.set("flow", "settings");
         }
         if (promptConsent) {
             params.set("prompt", "consent");

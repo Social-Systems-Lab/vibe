@@ -338,9 +338,13 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
             body: JSON.stringify({ action }),
         });
 
+        console.log("Consent action:", action, "Response status:", response.status);
+
         if (response.ok) {
-            if (response.redirected) {
-                window.location.href = response.url;
+            const data = await response.json();
+            console.log("Consent response:", data);
+            if (data.redirectTo) {
+                window.location.href = data.redirectTo;
             } else {
                 if (isSettingsFlow) {
                     setHasConsented(action === "approve");

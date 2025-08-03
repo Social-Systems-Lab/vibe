@@ -567,12 +567,18 @@ const app = new Elysia()
                         if (action === "approve") {
                             const redirectUri = params.get("redirect_uri");
                             if (redirectUri) {
-                                return redirect(redirectUri);
+                                console.log("[consent] Redirecting to:", redirectUri);
+                                return { redirectTo: redirectUri };
                             }
                         }
                         return { ok: true };
                     }
-                    return redirect(`/auth/authorize?${params.toString()}`);
+
+                    params.delete("prompt");
+                    params.delete("step");
+                    const redirectTo = `/auth/authorize?${params.toString()}`;
+                    console.log("[consent] Redirecting to:", redirectTo);
+                    return { redirectTo };
                 },
                 {
                     body: t.Object({
