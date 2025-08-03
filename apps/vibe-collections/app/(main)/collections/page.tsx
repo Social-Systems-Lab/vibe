@@ -213,7 +213,7 @@ function TopBar() {
     const width = Math.round(height * imageAspectRatio);
     return (
         <header className="h-20 px-4 justify-center flex items-center gap-3">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 pl-2">
                 <Image src="/images/logotype.png" alt="Collections" height={height} width={width} />
             </div>
             <div className="ml-auto">
