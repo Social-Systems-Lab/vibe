@@ -324,7 +324,13 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
     const appName = searchParams.get("appName") || "your application";
     const [isLoading, setIsLoading] = useState(false);
     const isSettingsFlow = searchParams.get("flow") === "settings";
-    const [hasConsented, setHasConsented] = useState(searchParams.get("hasConsented") === "true");
+
+    // Tri-state consent from URL: true | false | undefined (undecided)
+    const urlHasConsented = searchParams.get("hasConsented");
+    const initialConsent: boolean | undefined = urlHasConsented === "true" ? true : urlHasConsented === "false" ? false : undefined;
+
+    // Track current consent selection; undefined means undecided -> show both options equally
+    const [hasConsented, setHasConsented] = useState<boolean | undefined>(initialConsent);
     const [showDeniedMessage, setShowDeniedMessage] = useState(false);
 
     const handleSubmit = async (action: "approve" | "deny") => {
@@ -338,17 +344,17 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
             body: JSON.stringify({ action }),
         });
 
-        console.log("Consent action:", action, "Response status:", response.status);
-
         if (response.ok) {
+            // Prefer JSON contract: redirectTo for navigations, ok: true for handled in-place
             const data = await response.json();
-            console.log("Consent response:", data);
             if (data.redirectTo) {
                 window.location.href = data.redirectTo;
             } else {
                 if (isSettingsFlow) {
-                    setHasConsented(action === "approve");
-                    if (action === "deny") {
+                    // Update local UI to reflect result in settings flow
+                    const approved = action === "approve";
+                    setHasConsented(approved);
+                    if (!approved) {
                         setShowDeniedMessage(true);
                     }
                 }
@@ -359,6 +365,11 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
             setIsLoading(false);
         }
     };
+
+    // Decide button styles based on tri-state consent
+    const allowClass = hasConsented === true ? "bg-blue-600 text-white shadow-md scale-105" : "bg-gray-200 text-gray-800 hover:bg-gray-300";
+    const denyClass =
+        hasConsented === false && !showDeniedMessage ? "bg-red-500 text-white shadow-md scale-105" : "bg-gray-200 text-gray-800 hover:bg-gray-300";
 
     return (
         <div className="w-full max-w-md space-y-6 z-30">
@@ -386,20 +397,14 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
                     <div className="flex space-x-4">
                         <button
                             onClick={() => handleSubmit("approve")}
-                            className={`flex-1 px-4 py-3 text-center font-semibold rounded-lg transition-all duration-200 ${
-                                hasConsented ? "bg-blue-600 text-white shadow-md scale-105" : "bg-gray-200 text-gray-800 hover:bg-gray-300"
-                            }`}
+                            className={`flex-1 px-4 py-3 text-center font-semibold rounded-lg transition-all duration-200 ${allowClass}`}
                             disabled={isLoading}
                         >
                             Allow
                         </button>
                         <button
                             onClick={() => handleSubmit("deny")}
-                            className={`flex-1 px-4 py-3 text-center font-semibold rounded-lg transition-all duration-200 ${
-                                !hasConsented && !showDeniedMessage
-                                    ? "bg-red-500 text-white shadow-md scale-105"
-                                    : "bg-gray-200 text-gray-800 hover:bg-gray-300"
-                            }`}
+                            className={`flex-1 px-4 py-3 text-center font-semibold rounded-lg transition-all duration-200 ${denyClass}`}
                             disabled={isLoading}
                         >
                             Deny
