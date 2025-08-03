@@ -408,35 +408,18 @@ function FileCard({ file, presignGet }: { file: FileDoc; presignGet: (key: strin
     useEffect(() => {
         let mounted = true;
         const load = async () => {
-            console.log("Loading image for file:", JSON.stringify(file, null, 2));
-
             if (file.mime?.startsWith("image/") && file.storageKey) {
                 if (presignCache.has(file.storageKey)) {
                     if (mounted) setImgUrl(presignCache.get(file.storageKey)!);
                     return;
                 }
-                const res = await presignGet(file.storageKey, 300);
-                console.log("Presigned URL response:", res);
 
-                // Prefer explicit url
+                const res = await presignGet(file.storageKey, 300);
                 if (res?.url) {
-                    presignCache.set(file.storageKey, res.url);
-                    if (mounted) setImgUrl(res.url);
-                    return;
-                }
-                // Fallback when strategy is public-or-server
-                if (res?.strategy === "public-or-server") {
-                    // Avoid double-encoding: use the raw storageKey after first slash
-                    const url = `/files/${file.storageKey}`;
-                    presignCache.set(file.storageKey, url);
-                    if (mounted) setImgUrl(url);
-                    return;
-                }
-                // Last resort: try direct storageKey assuming it is already a path
-                if (typeof res === "object") {
-                    const url = `/files/${file.storageKey}`;
-                    presignCache.set(file.storageKey, url);
-                    if (mounted) setImgUrl(url);
+                    // Also fix the double "files/" prefix here
+                    const finalUrl = res.url.replace("/files/files/", "/files/");
+                    presignCache.set(file.storageKey, finalUrl);
+                    if (mounted) setImgUrl(finalUrl);
                 }
             }
         };

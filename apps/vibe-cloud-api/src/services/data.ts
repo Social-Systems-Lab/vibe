@@ -26,7 +26,7 @@ export class DataService {
     private couch: nano.ServerScope;
     private config: { url: string; user: string; pass: string };
     private identityService: IdentityService;
-    private globalDb: DocumentScope<any>;
+    public globalDb: DocumentScope<any>;
     private globalFeedService: GlobalFeedService;
 
     constructor(config: { url: string; user: string; pass: string }, identityService: IdentityService, globalFeedService: GlobalFeedService) {

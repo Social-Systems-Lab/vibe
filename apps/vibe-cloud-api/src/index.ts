@@ -915,6 +915,8 @@ const app = new Elysia()
                 { body: t.Object({ storageKey: t.String(), expires: t.Optional(t.Number()) }) }
             )
     )
+    // This group is now removed, as we are using presigned URLs.
+    // .group("/files", (app) => ... )
     .group("/files", (app) =>
         app
             .derive(async ({ jwt, headers }) => {

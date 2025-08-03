@@ -20,6 +20,7 @@ export interface StorageProvider {
     delete(bucket: string, key: string): Promise<void>;
     presignPut?(bucket: string, key: string, contentType?: string, expiresSeconds?: number): Promise<PresignPutResult>;
     presignGet?(bucket: string, key: string, expiresSeconds?: number): Promise<PresignGetResult>;
+    download(bucket: string, key: string): Promise<{ stream: ReadableStream<any>; contentType?: string; contentLength?: number }>;
 }
 
 // MinIO: no presign here (fallback to server-upload)
@@ -66,8 +67,21 @@ export class MinioStorageProvider implements StorageProvider {
         return { bucket, key, strategy: "server-upload" };
     }
 
-    async presignGet(bucket: string, key: string, _expiresSeconds?: number): Promise<PresignGetResult> {
-        return { strategy: "public-or-server" };
+    async presignGet(bucket: string, key: string, expiresSeconds = 300): Promise<PresignGetResult> {
+        // MinIO doesn't support presigning in the same way as S3, but it can generate public URLs.
+        // We will treat them as "presigned" for consistency.
+        const url = await this.client.presignedGetObject(bucket, key, expiresSeconds);
+        return { url, strategy: "presigned" };
+    }
+
+    async download(bucket: string, key: string): Promise<{ stream: ReadableStream<any>; contentType?: string; contentLength?: number }> {
+        const stat = await this.client.statObject(bucket, key);
+        const stream = await this.client.getObject(bucket, key);
+        return {
+            stream: stream as any, // Cast to bypass type mismatch
+            contentType: stat.metaData?.["content-type"],
+            contentLength: stat.size,
+        };
     }
 }
 
@@ -140,6 +154,16 @@ export class ScalewayStorageProvider implements StorageProvider {
             return { strategy: "public-or-server" };
         }
     }
+
+    async download(bucket: string, key: string): Promise<{ stream: ReadableStream<any>; contentType?: string; contentLength?: number }> {
+        const command = new GetObjectCommand({ Bucket: bucket, Key: key });
+        const response = await this.client.send(command);
+        return {
+            stream: response.Body as ReadableStream<any>,
+            contentType: response.ContentType,
+            contentLength: response.ContentLength,
+        };
+    }
 }
 
 export class StorageService {
@@ -169,5 +193,9 @@ export class StorageService {
     async presignGet(bucket: string, key: string, expiresSeconds?: number): Promise<PresignGetResult> {
         if (!this.provider.presignGet) return { strategy: "public-or-server" };
         return this.provider.presignGet(bucket, key, expiresSeconds);
+    }
+
+    async download(bucket: string, key: string): Promise<{ stream: ReadableStream<any>; contentType?: string; contentLength?: number }> {
+        return this.provider.download(bucket, key);
     }
 }
