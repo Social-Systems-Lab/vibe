@@ -236,7 +236,7 @@ function TopBar() {
             <div className="flex-1 pl-4">
                 <SearchInTopBar />
             </div>
-            <div className="ml-auto pr-4">
+            <div className="ml-auto pr-6">
                 <ProfileMenu />
             </div>
         </header>
