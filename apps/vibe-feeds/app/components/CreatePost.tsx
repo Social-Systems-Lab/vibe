@@ -62,35 +62,28 @@ export function CreatePost() {
             const files = Array.from(e.dataTransfer.files);
             for (const f of files) {
                 try {
-                    // 1) Upload file binary
-                    const { storageKey } = await upload(f as File);
-                    // 2) Create files document to get canonical id for DocRef
-                    // Note: we default file ACL to public (*) for now; can be edited later.
-                    const fileDoc = await write("files", {
-                        name: f.name,
-                        storageKey,
-                        mimeType: (f as any).type,
-                        size: f.size,
-                        acl: { read: { allow: ["*"] } },
-                        owner: { did: user?.did, ref: "profiles/me" },
-                    });
-                    const id = (fileDoc as any)?.id || (fileDoc as any)?._id || (fileDoc as any)?.docId || crypto.randomUUID();
+                    // 1) Upload file binary; SDK returns storageKey and may include created file doc
+                    const up = (await upload(f as File)) as { storageKey: string; file?: { id?: string; name?: string; mimeType?: string; size?: number } };
+                    const storageKey = up.storageKey;
 
-                    // Best-effort preview URL
+                    // 2) Best-effort preview URL
                     let url: string | undefined;
                     try {
                         const signed = await presignGet(storageKey, 300);
                         url = (signed as any)?.url || (signed as any);
                     } catch {}
 
+                    const created = up.file;
+                    const id = created?.id || crypto.randomUUID();
+
                     setAttachments((prev) => [
                         {
                             id,
-                            name: f.name,
+                            name: created?.name || f.name,
                             storageKey,
                             url,
-                            mimeType: (f as any).type,
-                            size: f.size,
+                            mimeType: created?.mimeType || (f as any).type,
+                            size: created?.size ?? f.size,
                         },
                         ...prev,
                     ]);

@@ -32,7 +32,7 @@ export function ImagePicker({
     title = "Choose files",
     allowUpload = true,
 }: ImagePickerProps) {
-    const { readOnce, upload, presignGet, write, user } = useVibe();
+    const { readOnce, upload, presignGet, user } = useVibe();
     const [tab, setTab] = useState<TabKey>(allowUpload ? "my-files" : "my-files");
     const [loading, setLoading] = useState(false);
     const [files, setFiles] = useState<FileItem[]>([]);
@@ -133,43 +133,32 @@ export function ImagePicker({
 
         for (const f of arr) {
             try {
-                // 1) Upload binary to storage
-                const { storageKey } = await upload(f as File);
+                // 1) Upload binary to storage (server may directly create file doc or require commit; SDK handles both)
+                const up = (await upload(f as File)) as { storageKey: string; file?: { id?: string; name?: string; mimeType?: string; size?: number } };
+                const storageKey = up.storageKey;
 
-                // 2) Create file metadata document to get a stable id
-                const fileDoc = await write("files", {
-                    name: f.name,
-                    storageKey,
-                    mimeType: (f as any).type,
-                    size: f.size,
-                    // Default ACL mirrors post default; can be changed later via Permission dialog
-                    acl: { read: { allow: ["*"] } },
-                    owner: { did: user?.did, ref: "profiles/me" },
-                });
-
-                const newId = fileDoc?.id || fileDoc?._id || fileDoc?.docId || crypto.randomUUID();
-
-                // 3) Derive a temporary viewing URL
+                // 2) Get a temporary viewing URL
                 let url: string | undefined;
                 try {
                     const signed = await presignGet(storageKey, 300);
                     url = (signed as any)?.url || (signed as any);
                 } catch {}
 
+                const created = up.file;
                 const item: FileItem = {
-                    id: newId,
-                    name: f.name,
+                    id: created?.id || crypto.randomUUID(),
+                    name: created?.name || f.name,
                     storageKey,
                     url,
-                    mimeType: (f as any).type,
-                    size: f.size,
+                    mimeType: created?.mimeType || (f as any).type,
+                    size: created?.size ?? f.size,
                     createdAt: Date.now(),
                 };
 
                 setFiles((prev) => [item, ...prev]);
                 setSelected((prev) => (selectionMode === "single" ? { [item.id]: item } : { ...prev, [item.id]: item }));
             } catch (e) {
-                console.error("Upload/write file doc failed", e);
+                console.error("Upload failed", e);
             } finally {
                 setLocalUploads((u) => u.filter((p) => !pending.find((x) => x.id === p.id)));
             }

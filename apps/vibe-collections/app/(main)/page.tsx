@@ -29,7 +29,7 @@ export default function CollectionsPage() {
 
 function CollectionsInner() {
     // Consume the stable context API from vibe-react, mirroring vibe-feeds usage
-    const { readOnce, isLoggedIn, user, write, upload, presignGet } = useVibe();
+    const { readOnce, isLoggedIn, user, upload, presignGet } = useVibe();
     const [files, setFiles] = useState<FileDoc[]>([]);
     const [q, setQ] = useState("");
     const [type, setType] = useState<string>("");
@@ -103,29 +103,16 @@ function CollectionsInner() {
     const handleFilesUpload = useCallback(
         async (list: File[]) => {
             for (const file of list) {
-                // Upload and persist EXACT storageKey returned by server; never mutate or re-derive on client
-                const { storageKey } = await upload(file);
+                // Use SDK upload which handles server doc creation and commit
+                const up = (await upload(file)) as { storageKey: string; file?: { id?: string; name?: string; mimeType?: string; size?: number } };
+                const storageKey = up.storageKey;
 
-                const now = new Date().toISOString();
-                const doc: FileDoc = {
-                    _id: `files/${crypto.randomUUID()}`,
-                    collection: "files",
-                    name: file.name,
-                    ext: extFromName(file.name),
-                    mime: file.type || "application/octet-stream",
-                    size: file.size,
-                    storageKey,
-                    type: inferType(file.type || ""),
-                    tags: [],
-                    collections: [],
-                    createdAt: now,
-                    updatedAt: now,
-                };
-                await write("files", doc);
+                // No client-side write("files", ...). The server owns files metadata.
+                // Optionally, we could push a transient item into UI; simplest is to refresh.
             }
             await refresh();
         },
-        [upload, write, refresh]
+        [upload, refresh]
     );
 
     return (

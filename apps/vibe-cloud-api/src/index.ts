@@ -852,6 +852,30 @@ const app = new Elysia()
                         const finalSize = stat?.size ?? coercePositiveNumber(Number((file as any).size));
                         const finalMime = stat?.contentType ?? ((file as any).type || undefined);
 
+                        // Idempotency: if a files doc already exists for this storageKey, return it instead of creating a new one
+                        const existing = await dataService.readOnce("files", { selector: { storageKey }, limit: 1 }, profile as JwtPayload);
+                        if (existing && Array.isArray((existing as any).docs) && (existing as any).docs.length > 0) {
+                            const doc = (existing as any).docs[0];
+                            const url = await storageService.getPublicURL(bucketName, storageKey);
+                            console.debug("[/storage/upload] done (idempotent hit)", {
+                                bucketName,
+                                storageKey,
+                                url,
+                                fileId: doc._id || doc.id,
+                            });
+                            return {
+                                url,
+                                storageKey,
+                                file: {
+                                    id: doc._id || doc.id,
+                                    name: doc.name ?? cleanName,
+                                    storageKey,
+                                    mimeType: doc.mimeType ?? finalMime,
+                                    size: doc.size ?? finalSize,
+                                },
+                            };
+                        }
+
                         const writeRes = await dataService.write(
                             "files",
                             {
@@ -1056,6 +1080,22 @@ const app = new Elysia()
                         // Override suspicious fields with provider stat when available
                         const finalSize = stat.size ?? coercePositiveNumber(size);
                         const finalMime = stat.contentType ?? (typeof mime === "string" ? mime : undefined);
+
+                        // Idempotency: if a files doc already exists for this storageKey, return it instead of creating a new one
+                        const existing = await dataService.readOnce("files", { selector: { storageKey }, limit: 1 }, profile as JwtPayload);
+                        if (existing && Array.isArray((existing as any).docs) && (existing as any).docs.length > 0) {
+                            const doc = (existing as any).docs[0];
+                            return {
+                                storageKey,
+                                file: {
+                                    id: doc._id || doc.id,
+                                    name: doc.name ?? cleanName,
+                                    storageKey,
+                                    mimeType: doc.mimeType ?? finalMime,
+                                    size: doc.size ?? finalSize,
+                                },
+                            };
+                        }
 
                         // Persist metadata document
                         const writeRes = await dataService.write(
