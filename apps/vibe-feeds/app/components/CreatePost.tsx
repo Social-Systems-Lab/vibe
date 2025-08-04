@@ -37,7 +37,7 @@ export function CreatePost() {
         try {
             // Store attachments as DocRefs to files, using existing structure: { ref, did }
             const attachmentRefs = attachments.map((f) => ({
-                ref: `files/${f.id}`,
+                ref: `${f.id}`,
                 did: user?.did,
             }));
             await write("posts", {

@@ -876,6 +876,22 @@ const app = new Elysia()
                             };
                         }
 
+                        // Build enriched metadata similar to legacy client shape
+                        const nowIso = new Date().toISOString();
+                        const ext = typeof cleanName === "string" && cleanName.includes(".") ? cleanName.split(".").pop() : undefined;
+                        const type = (finalMime || "").startsWith("image/")
+                            ? "image"
+                            : (finalMime || "").startsWith("video/")
+                            ? "video"
+                            : (finalMime || "").startsWith("audio/")
+                            ? "audio"
+                            : (finalMime || "").includes("pdf") ||
+                              (finalMime || "").includes("word") ||
+                              (finalMime || "").includes("excel") ||
+                              (finalMime || "").includes("text")
+                            ? "doc"
+                            : "other";
+
                         const writeRes = await dataService.write(
                             "files",
                             {
@@ -884,8 +900,15 @@ const app = new Elysia()
                                 mimeType: finalMime,
                                 size: finalSize,
                                 description: cleanDesc,
-                                tags: cleanTags,
+                                tags: cleanTags ?? [],
                                 acl: cleanAcl,
+                                // legacy/compat fields
+                                ext,
+                                mime: finalMime,
+                                type,
+                                collections: [],
+                                createdAt: nowIso,
+                                updatedAt: nowIso,
                             },
                             profile as JwtPayload
                         );
@@ -1097,7 +1120,22 @@ const app = new Elysia()
                             };
                         }
 
-                        // Persist metadata document
+                        // Persist metadata document with enriched fields (compat with earlier client-written docs)
+                        const nowIso = new Date().toISOString();
+                        const ext = typeof cleanName === "string" && cleanName.includes(".") ? cleanName.split(".").pop() : undefined;
+                        const type = (finalMime || "").startsWith("image/")
+                            ? "image"
+                            : (finalMime || "").startsWith("video/")
+                            ? "video"
+                            : (finalMime || "").startsWith("audio/")
+                            ? "audio"
+                            : (finalMime || "").includes("pdf") ||
+                              (finalMime || "").includes("word") ||
+                              (finalMime || "").includes("excel") ||
+                              (finalMime || "").includes("text")
+                            ? "doc"
+                            : "other";
+
                         const writeRes = await dataService.write(
                             "files",
                             {
@@ -1106,8 +1144,15 @@ const app = new Elysia()
                                 mimeType: finalMime,
                                 size: finalSize,
                                 description: cleanDesc,
-                                tags: cleanTags,
+                                tags: cleanTags ?? [],
                                 acl: cleanAcl,
+                                // legacy/compat fields
+                                ext,
+                                mime: finalMime,
+                                type,
+                                collections: [],
+                                createdAt: nowIso,
+                                updatedAt: nowIso,
                             },
                             profile as JwtPayload
                         );

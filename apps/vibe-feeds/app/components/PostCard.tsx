@@ -94,6 +94,7 @@ export function PostCard({ post }: PostCardProps) {
                     </div>
                     <div className="mt-2">
                         <p>{post.content}</p>
+                        <pre>{JSON.stringify(post, null, 2)}</pre>
                     </div>
                     <div className="flex justify-between items-center mt-4 text-gray-500">
                         <div className="flex space-x-4">
