@@ -856,20 +856,19 @@ const app = new Elysia()
                         set.status = 500;
                         return { error: "Failed to upload file" };
                     }
-                },
-                {
-                    body: t.Object({
-                        file: t.Any(),
-                        // Allow passing storageKey and metadata so client persists exact values
-                        storageKey: t.Optional(t.String()),
-                        name: t.Optional(t.String()),
-                        mime: t.Optional(t.String()),
-                        size: t.Optional(t.Number()),
-                        acl: t.Optional(t.Any()),
-                        description: t.Optional(t.String()),
-                        tags: t.Optional(t.Array(t.String())),
-                    }),
                 }
+                // {
+                //     body: t.Object({
+                //         file: t.Any(),
+                //         storageKey: t.Optional(t.String()),
+                //         name: t.Optional(t.String()),
+                //         mime: t.Optional(t.String()),
+                //         size: t.Optional(t.Number()),
+                //         acl: t.Optional(t.Any()),
+                //         description: t.Optional(t.String()),
+                //         tags: t.Optional(t.Array(t.String())),
+                //     }),
+                // }
             )
             // Presign PUT: include metadata echo to be sent back on /commit
             .post(
