@@ -733,6 +733,20 @@ const app = new Elysia()
     )
     .group("/storage", (app) =>
         app
+            // Dedicated OPTIONS handler to ensure preflight succeeds for all /storage routes
+            .options("/*", ({ set, request }) => {
+                const origin = request.headers.get("origin") ?? "";
+                if (!origin || allowedOrigins.includes(origin)) {
+                    set.headers["Access-Control-Allow-Origin"] = origin;
+                    set.headers["Access-Control-Allow-Credentials"] = "true";
+                    set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+                    set.headers["Access-Control-Allow-Headers"] = request.headers.get("Access-Control-Request-Headers") ?? "*";
+                    set.headers["Access-Control-Max-Age"] = "86400";
+                    set.headers["Vary"] = "Origin, Access-Control-Request-Headers";
+                }
+                set.status = 204;
+                return new Response(null, { status: 204 });
+            })
             .derive(async ({ jwt, headers }) => {
                 const auth = headers.authorization;
                 const token = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
@@ -749,24 +763,16 @@ const app = new Elysia()
                 },
             })
             .onAfterHandle(({ request, set }) => {
-                // onAfterHandle needed to get rid off CORS errors in /users/me endpoint
-                if (request.method === "OPTIONS") return; // Let CORS plugin handle preflight fully to avoid duplication
-
+                // Always reflect CORS for allowed origins, including non-preflight requests
                 const origin = request.headers.get("origin") ?? "";
-                console.log(`[onAfterHandle] Processing response | URL: ${request.url} | Method: ${request.method} | Origin: ${origin}`);
-
                 if (!origin || allowedOrigins.includes(origin)) {
-                    // Set headers without duplication (these will override if already set)
                     set.headers["Access-Control-Allow-Origin"] = origin;
                     set.headers["Access-Control-Allow-Credentials"] = "true";
                     set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-                    set.headers["Access-Control-Allow-Headers"] = "*"; // Wildcard to simplify; or request.headers.get("Access-Control-Request-Headers") ?? "*"
+                    set.headers["Access-Control-Allow-Headers"] = "*";
                     set.headers["Access-Control-Max-Age"] = "86400";
                     set.headers["Access-Control-Expose-Headers"] = "Content-Disposition";
                     set.headers["Vary"] = "Origin";
-                    console.log("[onAfterHandle] CORS headers added successfully");
-                } else {
-                    console.log(`[onAfterHandle] Origin not allowed: ${origin}`);
                 }
             })
             .post(
@@ -878,7 +884,8 @@ const app = new Elysia()
                 }
             )
     )
-    // Generic storage helpers for object upload/download (presign-based) with metadata commit flow
+    // Merge generic storage helpers into the same /storage group above:
+    // Keep this group but slim it to reuse same CORS handling; remove duplicate onAfterHandle.
     .group("/storage", (app) =>
         app
             .derive(async ({ jwt, headers }) => {
@@ -895,27 +902,6 @@ const app = new Elysia()
                         return { error: "Unauthorized" };
                     }
                 },
-            })
-            .onAfterHandle(({ request, set }) => {
-                // onAfterHandle needed to get rid off CORS errors in /users/me endpoint
-                if (request.method === "OPTIONS") return; // Let CORS plugin handle preflight fully to avoid duplication
-
-                const origin = request.headers.get("origin") ?? "";
-                console.log(`[onAfterHandle] Processing response | URL: ${request.url} | Method: ${request.method} | Origin: ${origin}`);
-
-                if (!origin || allowedOrigins.includes(origin)) {
-                    // Set headers without duplication (these will override if already set)
-                    set.headers["Access-Control-Allow-Origin"] = origin;
-                    set.headers["Access-Control-Allow-Credentials"] = "true";
-                    set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-                    set.headers["Access-Control-Allow-Headers"] = "*"; // Wildcard to simplify; or request.headers.get("Access-Control-Request-Headers") ?? "*"
-                    set.headers["Access-Control-Max-Age"] = "86400";
-                    set.headers["Access-Control-Expose-Headers"] = "Content-Disposition";
-                    set.headers["Vary"] = "Origin";
-                    console.log("[onAfterHandle] CORS headers added successfully");
-                } else {
-                    console.log(`[onAfterHandle] Origin not allowed: ${origin}`);
-                }
             })
             // Presign PUT: include metadata echo to be sent back on /commit
             .post(
