@@ -1,5 +1,6 @@
 "use client";
 
+import React, { useEffect, useState } from "react";
 import {
     Card,
     CardContent,
@@ -16,7 +17,7 @@ import {
     Squircle,
 } from "vibe-react";
 import { useVibe } from "vibe-react";
-import { MoreHorizontal, Heart, MessageCircle, Repeat, Bookmark } from "lucide-react";
+import { MoreHorizontal, Heart, MessageCircle, Repeat, Bookmark, ChevronLeft, ChevronRight } from "lucide-react";
 import { Post, Profile, Acl } from "vibe-sdk";
 
 interface PostCardProps {
@@ -52,7 +53,7 @@ function getPermissionFromAcl(acl: Acl, did?: string): string {
 }
 
 export function PostCard({ post }: PostCardProps) {
-    const { remove: removePost, user } = useVibe();
+    const { remove: removePost, user, presignGet } = useVibe();
 
     const handleRemove = async () => {
         try {
@@ -64,6 +65,53 @@ export function PostCard({ post }: PostCardProps) {
 
     const postDate = new Date(parseInt(post._id?.split("/")[1]?.split("-")[0]) * 1);
     const isOwnPost = post.author.did === user?.did;
+
+    // Normalize attachments: post.attachments can be an array of DocRefs or expanded file docs (after expand)
+    // Expect each expanded file doc to have storageKey or url; presign if necessary for display.
+    const [imageUrls, setImageUrls] = useState<string[]>([]);
+    const [currentIdx, setCurrentIdx] = useState(0);
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const atts = Array.isArray((post as any).attachments) ? (post as any).attachments : [];
+                // Only images
+                const files = atts
+                    .map((a: any) => {
+                        // If expansion occurred server/hub-side, a is the file doc; else it's a DocRef {did, ref}
+                        // We only handle already expanded docs here (contains storageKey/mime/mimeType)
+                        return a && (a.storageKey || a.url) ? a : null;
+                    })
+                    .filter(Boolean) as any[];
+
+                const urls: string[] = [];
+                for (const f of files) {
+                    if (f.url) {
+                        urls.push(f.url);
+                    } else if (f.storageKey) {
+                        try {
+                            const signed = await presignGet(f.storageKey, 300);
+                            urls.push((signed?.url || signed?.presignedURL || signed?.publicURL) as string);
+                        } catch {
+                            // push placeholder or skip
+                        }
+                    }
+                }
+                if (!cancelled) setImageUrls(urls);
+            } catch (e) {
+                console.warn("Failed to prepare attachment previews", e);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [post, presignGet]);
+
+    const hasImages = imageUrls.length > 0;
+
+    const goPrev = () => setCurrentIdx((i) => Math.max(0, i - 1));
+    const goNext = () => setCurrentIdx((i) => Math.min(imageUrls.length - 1, i + 1));
 
     return (
         <div className="bg-background p-4 border-b border-[#f3f3f3]">
@@ -94,8 +142,57 @@ export function PostCard({ post }: PostCardProps) {
                     </div>
                     <div className="mt-2">
                         <p>{post.content}</p>
-                        <pre>{JSON.stringify(post, null, 2)}</pre>
+                        {/* Debug: remove when verified */}
+                        {/* <pre>{JSON.stringify(post, null, 2)}</pre> */}
                     </div>
+
+                    {/* Image carousel */}
+                    {hasImages && (
+                        <div className="relative mt-3 w-full">
+                            <div className="h-64 w-full overflow-hidden rounded-lg bg-neutral-100">
+                                <img src={imageUrls[currentIdx]} alt={`image-${currentIdx + 1}`} className="h-64 w-full rounded-lg object-cover" />
+                            </div>
+
+                            {imageUrls.length > 1 && (
+                                <>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/40 text-white hover:bg-black/60"
+                                        onClick={goPrev}
+                                        disabled={currentIdx === 0}
+                                        aria-label="Previous"
+                                    >
+                                        <ChevronLeft className="w-5 h-5" />
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/40 text-white hover:bg-black/60"
+                                        onClick={goNext}
+                                        disabled={currentIdx === imageUrls.length - 1}
+                                        aria-label="Next"
+                                    >
+                                        <ChevronRight className="w-5 h-5" />
+                                    </Button>
+
+                                    <div className="absolute bottom-2 left-0 right-0 flex justify-center">
+                                        <div className="flex items-center">
+                                            {imageUrls.map((_, idx) => (
+                                                <button
+                                                    key={idx}
+                                                    onClick={() => setCurrentIdx(idx)}
+                                                    className={`mx-1 h-1.5 w-1.5 rounded-full ${idx === currentIdx ? "bg-blue-500" : "bg-gray-300"}`}
+                                                    aria-label={`Go to image ${idx + 1}`}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
+
                     <div className="flex justify-between items-center mt-4 text-gray-500">
                         <div className="flex space-x-4">
                             <Button variant="ghost" size="icon">
