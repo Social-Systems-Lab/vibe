@@ -15,13 +15,12 @@ export interface ImagePickerProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onSelect: (files: FileItem[]) => void;
-    accept?: string; // e.g., "image/*"
-    selectionMode?: SelectionMode; // default multiple
+    accept?: string;
+    selectionMode?: SelectionMode;
     title?: string;
-    allowUpload?: boolean; // default true
+    allowUpload?: boolean;
 }
 
-// Re-export component types for library consumers
 export type { FileItem } from "../lib/types";
 
 export function ImagePicker({
@@ -33,7 +32,7 @@ export function ImagePicker({
     title = "Choose files",
     allowUpload = true,
 }: ImagePickerProps) {
-    const { readOnce, upload, presignGet } = useVibe();
+    const { readOnce, upload, presignGet, write, user } = useVibe();
     const [tab, setTab] = useState<TabKey>(allowUpload ? "my-files" : "my-files");
     const [loading, setLoading] = useState(false);
     const [files, setFiles] = useState<FileItem[]>([]);
@@ -47,8 +46,6 @@ export function ImagePicker({
         (async () => {
             setLoading(true);
             try {
-                // Fetch user's files collection (schema-agnostic; platform's current shape).
-                // Default to collection "files". If schema provides storageKey only, derive viewing URL by presignGet.
                 const res = await readOnce<any>("files", {});
                 const docs = (res.docs || []) as any[];
                 const normalized: FileItem[] = await Promise.all(
@@ -67,14 +64,10 @@ export function ImagePicker({
                             try {
                                 const signed = await presignGet(d.storageKey, 300);
                                 item.url = signed?.url || signed;
-                            } catch {
-                                // ignore presign failure; item will render as non-image if url missing
-                            }
+                            } catch {}
                             item.storageKey = d.storageKey;
                         }
-                        if (d.thumbnailUrl) {
-                            item.thumbnailUrl = d.thumbnailUrl;
-                        }
+                        if (d.thumbnailUrl) item.thumbnailUrl = d.thumbnailUrl;
                         return item;
                     })
                 );
@@ -102,11 +95,8 @@ export function ImagePicker({
                 return { [file.id]: file };
             }
             const next = { ...prev };
-            if (next[file.id]) {
-                delete next[file.id];
-            } else {
-                next[file.id] = file;
-            }
+            if (next[file.id]) delete next[file.id];
+            else next[file.id] = file;
             return next;
         });
     }
@@ -115,7 +105,6 @@ export function ImagePicker({
         const out = Object.values(selected);
         onSelect(out);
         onOpenChange(false);
-        // keep selection for next open? Clear for safety:
         setSelected({});
     }
 
@@ -123,7 +112,6 @@ export function ImagePicker({
         const list = e.target.files;
         if (!list || list.length === 0) return;
         await handleUploadFiles(list);
-        // reset input value so the same file can be selected again
         e.currentTarget.value = "";
     }
 
@@ -145,17 +133,31 @@ export function ImagePicker({
 
         for (const f of arr) {
             try {
+                // 1) Upload binary to storage
                 const { storageKey } = await upload(f as File);
-                // derive a temporary viewing URL
+
+                // 2) Create file metadata document to get a stable id
+                const fileDoc = await write("files", {
+                    name: f.name,
+                    storageKey,
+                    mimeType: (f as any).type,
+                    size: f.size,
+                    // Default ACL mirrors post default; can be changed later via Permission dialog
+                    acl: { read: { allow: ["*"] } },
+                    owner: { did: user?.did, ref: "profiles/me" },
+                });
+
+                const newId = fileDoc?.id || fileDoc?._id || fileDoc?.docId || crypto.randomUUID();
+
+                // 3) Derive a temporary viewing URL
                 let url: string | undefined;
                 try {
                     const signed = await presignGet(storageKey, 300);
-                    url = signed?.url || signed;
-                } catch {
-                    // ignore presign failure
-                }
+                    url = (signed as any)?.url || (signed as any);
+                } catch {}
+
                 const item: FileItem = {
-                    id: crypto.randomUUID(),
+                    id: newId,
                     name: f.name,
                     storageKey,
                     url,
@@ -163,16 +165,11 @@ export function ImagePicker({
                     size: f.size,
                     createdAt: Date.now(),
                 };
+
                 setFiles((prev) => [item, ...prev]);
-                // auto-select newly uploaded in multi-select for convenience
-                setSelected((prev) => {
-                    if (selectionMode === "single") {
-                        return { [item.id]: item };
-                    }
-                    return { ...prev, [item.id]: item };
-                });
+                setSelected((prev) => (selectionMode === "single" ? { [item.id]: item } : { ...prev, [item.id]: item }));
             } catch (e) {
-                console.error("Upload failed", e);
+                console.error("Upload/write file doc failed", e);
             } finally {
                 setLocalUploads((u) => u.filter((p) => !pending.find((x) => x.id === p.id)));
             }

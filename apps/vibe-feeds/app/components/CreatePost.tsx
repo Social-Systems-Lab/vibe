@@ -33,18 +33,16 @@ export function CreatePost() {
     const [pickerOpen, setPickerOpen] = useState(false);
 
     const handlePost = async () => {
-        if (!content.trim()) return;
+        if (!content.trim() && attachments.length === 0) return;
         try {
+            // Store attachments as DocRefs to files, using existing structure: { ref, did }
+            const attachmentRefs = attachments.map((f) => ({
+                ref: `files/${f.id}`,
+                did: user?.did,
+            }));
             await write("posts", {
                 content,
-                attachments: attachments.map((f) => ({
-                    id: f.id,
-                    name: f.name,
-                    storageKey: f.storageKey,
-                    url: f.url,
-                    mimeType: f.mimeType,
-                    size: f.size,
-                })),
+                attachments: attachmentRefs,
                 author: { did: user?.did, ref: "profiles/me" },
                 acl,
             });
@@ -64,15 +62,30 @@ export function CreatePost() {
             const files = Array.from(e.dataTransfer.files);
             for (const f of files) {
                 try {
+                    // 1) Upload file binary
                     const { storageKey } = await upload(f as File);
+                    // 2) Create files document to get canonical id for DocRef
+                    // Note: we default file ACL to public (*) for now; can be edited later.
+                    const fileDoc = await write("files", {
+                        name: f.name,
+                        storageKey,
+                        mimeType: (f as any).type,
+                        size: f.size,
+                        acl: { read: { allow: ["*"] } },
+                        owner: { did: user?.did, ref: "profiles/me" },
+                    });
+                    const id = (fileDoc as any)?.id || (fileDoc as any)?._id || (fileDoc as any)?.docId || crypto.randomUUID();
+
+                    // Best-effort preview URL
                     let url: string | undefined;
                     try {
                         const signed = await presignGet(storageKey, 300);
                         url = (signed as any)?.url || (signed as any);
                     } catch {}
+
                     setAttachments((prev) => [
                         {
-                            id: crypto.randomUUID(),
+                            id,
                             name: f.name,
                             storageKey,
                             url,
@@ -86,7 +99,7 @@ export function CreatePost() {
                 }
             }
         },
-        [upload, presignGet]
+        [upload, presignGet, write, user?.did]
     );
 
     const onDragOver = (e: React.DragEvent) => {
