@@ -749,22 +749,29 @@ const app = new Elysia()
                 },
             })
             .onAfterHandle(({ request, set }) => {
-                // Ensure CORS headers are present for storage endpoints responses
-                if (request.method === "OPTIONS") return; // Let CORS plugin handle preflight
+                // onAfterHandle needed to get rid off CORS errors in /users/me endpoint
+                if (request.method === "OPTIONS") return; // Let CORS plugin handle preflight fully to avoid duplication
+
                 const origin = request.headers.get("origin") ?? "";
-                if (allowedOrigins.includes(origin)) {
+                console.log(`[onAfterHandle] Processing response | URL: ${request.url} | Method: ${request.method} | Origin: ${origin}`);
+
+                if (!origin || allowedOrigins.includes(origin)) {
+                    // Set headers without duplication (these will override if already set)
                     set.headers["Access-Control-Allow-Origin"] = origin;
                     set.headers["Access-Control-Allow-Credentials"] = "true";
                     set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-                    set.headers["Access-Control-Allow-Headers"] = "*";
+                    set.headers["Access-Control-Allow-Headers"] = "*"; // Wildcard to simplify; or request.headers.get("Access-Control-Request-Headers") ?? "*"
                     set.headers["Access-Control-Max-Age"] = "86400";
                     set.headers["Access-Control-Expose-Headers"] = "Content-Disposition";
                     set.headers["Vary"] = "Origin";
+                    console.log("[onAfterHandle] CORS headers added successfully");
+                } else {
+                    console.log(`[onAfterHandle] Origin not allowed: ${origin}`);
                 }
             })
             .post(
                 "/upload",
-                async ({ profile, body, set, storageService }) => {
+                async ({ profile, body, set, storageService, dataService }) => {
                     if (!profile) {
                         set.status = 401;
                         return { error: "Unauthorized" };
@@ -781,11 +788,10 @@ const app = new Elysia()
                         const buffer = Buffer.from(await file.arrayBuffer());
                         const bucketName = `user-${profile.instanceId}`;
 
-                        // Accept an optional storageKey to standardize keys as yyyy/mm/uuid.ext
+                        // Optional client-provided key; else yyyy/mm/uuid.ext
                         const providedStorageKey = (body as any).storageKey as string | undefined;
                         let storageKey = providedStorageKey;
                         if (!storageKey) {
-                            // Generate yyyy/mm/uuid.ext if not provided
                             const name = (file as any).name as string | undefined;
                             const ext = name && name.includes(".") ? name.split(".").pop() : "";
                             const uuid = crypto.randomUUID();
@@ -805,11 +811,52 @@ const app = new Elysia()
                         });
 
                         await storageService.upload(bucketName, storageKey, buffer, file.type);
+
+                        // Sanitize and persist metadata immediately (server-upload strategy)
+                        const { sanitizeText, sanitizeTags, validateAclShape, coercePositiveNumber } = await import("./services/storage");
+                        const nameFromClient = (body as any).name ?? (file as any).name ?? "file";
+                        const cleanName = sanitizeText(nameFromClient, 256) || String(nameFromClient).slice(0, 256);
+                        const cleanDesc = sanitizeText((body as any).description, 1024);
+                        const cleanTags = sanitizeTags((body as any).tags, 64, 64);
+                        const cleanAcl = validateAclShape((body as any).acl);
+
+                        const stat = await storageService.statObject(bucketName, storageKey);
+                        const finalSize = stat?.size ?? coercePositiveNumber((file as any).size);
+                        const finalMime = stat?.contentType ?? file.type;
+
+                        const writeRes = await dataService.write(
+                            "files",
+                            {
+                                name: cleanName,
+                                storageKey,
+                                mimeType: finalMime,
+                                size: finalSize,
+                                description: cleanDesc,
+                                tags: cleanTags,
+                                acl: cleanAcl,
+                            },
+                            profile as JwtPayload
+                        );
+                        const newId =
+                            Array.isArray(writeRes) && writeRes.length > 0
+                                ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId
+                                : undefined;
+
                         const url = await storageService.getPublicURL(bucketName, storageKey);
 
-                        console.debug("[/storage/upload] done", { bucketName, storageKey, url });
+                        console.debug("[/storage/upload] done", { bucketName, storageKey, url, fileId: newId });
 
-                        return { url, storageKey };
+                        return {
+                            url,
+                            storageKey,
+                            file: {
+                                id: newId,
+                                name: cleanName,
+                                storageKey,
+                                mimeType: finalMime,
+                                size: finalSize,
+                            },
+                        };
                     } catch (error: any) {
                         console.error("[/storage/upload] Error uploading file:", error);
                         set.status = 500;
@@ -819,10 +866,14 @@ const app = new Elysia()
                 {
                     body: t.Object({
                         file: t.Any(),
-                        // Allow passing storageKey explicitly so client persists exact value
-                        // Using t.Optional here keeps backward compatibility
-                        // @ts-ignore - Elysia t doesn't complain at runtime
+                        // Allow passing storageKey and metadata so client persists exact values
                         storageKey: t.Optional(t.String()),
+                        name: t.Optional(t.String()),
+                        mime: t.Optional(t.String()),
+                        size: t.Optional(t.Number()),
+                        acl: t.Optional(t.Any()),
+                        description: t.Optional(t.String()),
+                        tags: t.Optional(t.Array(t.String())),
                     }),
                 }
             )
@@ -846,16 +897,24 @@ const app = new Elysia()
                 },
             })
             .onAfterHandle(({ request, set }) => {
-                if (request.method === "OPTIONS") return;
+                // onAfterHandle needed to get rid off CORS errors in /users/me endpoint
+                if (request.method === "OPTIONS") return; // Let CORS plugin handle preflight fully to avoid duplication
+
                 const origin = request.headers.get("origin") ?? "";
-                if (allowedOrigins.includes(origin)) {
+                console.log(`[onAfterHandle] Processing response | URL: ${request.url} | Method: ${request.method} | Origin: ${origin}`);
+
+                if (!origin || allowedOrigins.includes(origin)) {
+                    // Set headers without duplication (these will override if already set)
                     set.headers["Access-Control-Allow-Origin"] = origin;
                     set.headers["Access-Control-Allow-Credentials"] = "true";
                     set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-                    set.headers["Access-Control-Allow-Headers"] = "*";
+                    set.headers["Access-Control-Allow-Headers"] = "*"; // Wildcard to simplify; or request.headers.get("Access-Control-Request-Headers") ?? "*"
                     set.headers["Access-Control-Max-Age"] = "86400";
                     set.headers["Access-Control-Expose-Headers"] = "Content-Disposition";
                     set.headers["Vary"] = "Origin";
+                    console.log("[onAfterHandle] CORS headers added successfully");
+                } else {
+                    console.log(`[onAfterHandle] Origin not allowed: ${origin}`);
                 }
             })
             // Presign PUT: include metadata echo to be sent back on /commit
@@ -977,7 +1036,7 @@ const app = new Elysia()
                 },
                 { body: t.Object({ storageKey: t.String(), expires: t.Optional(t.Number()) }) }
             )
-            // Commit endpoint: create files doc after presigned PUT
+            // Commit endpoint: create files doc after presigned PUT with server-side override of size/mime and sanitization
             .post(
                 "/commit",
                 async ({ profile, body, set, dataService, storageService }) => {
@@ -992,19 +1051,35 @@ const app = new Elysia()
                     }
                     const bucket = `user-${(profile as JwtPayload).instanceId}`;
                     try {
-                        await storageService.statObject(bucket, storageKey);
+                        // Verify object exists and stat it to override size/mime
+                        const stat = await storageService.statObject(bucket, storageKey);
+                        if (!stat) {
+                            set.status = 404;
+                            return { error: "Object not found for storageKey" };
+                        }
 
-                        // dataService.write returns an array of DocumentBulkResponse; extract the new id safely
+                        // Sanitize user-intent fields
+                        const { sanitizeText, sanitizeTags, validateAclShape, coercePositiveNumber } = await import("./services/storage");
+                        const cleanName = sanitizeText(name, 256) || name.slice(0, 256);
+                        const cleanDesc = sanitizeText(description, 1024);
+                        const cleanTags = sanitizeTags(tags, 64, 64);
+                        const cleanAcl = validateAclShape(acl); // undefined => private by default
+
+                        // Override suspicious fields with provider stat when available
+                        const finalSize = stat.size ?? coercePositiveNumber(size);
+                        const finalMime = stat.contentType ?? (typeof mime === "string" ? mime : undefined);
+
+                        // Persist metadata document
                         const writeRes = await dataService.write(
                             "files",
                             {
-                                name,
+                                name: cleanName,
                                 storageKey,
-                                mimeType: mime,
-                                size,
-                                description,
-                                tags,
-                                acl,
+                                mimeType: finalMime,
+                                size: finalSize,
+                                description: cleanDesc,
+                                tags: cleanTags,
+                                acl: cleanAcl,
                             },
                             profile as JwtPayload
                         );
@@ -1017,10 +1092,10 @@ const app = new Elysia()
                             storageKey,
                             file: {
                                 id: newId,
-                                name,
+                                name: cleanName,
                                 storageKey,
-                                mimeType: mime,
-                                size,
+                                mimeType: finalMime,
+                                size: finalSize,
                             },
                         };
                     } catch (e: any) {
@@ -1042,50 +1117,7 @@ const app = new Elysia()
                 }
             )
     )
-    // Debug endpoint to check if an object exists at a given storageKey in the user's bucket
-    .group("/storage", (app) =>
-        app
-            .derive(async ({ jwt, headers }) => {
-                const auth = headers.authorization;
-                const token = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
-                const profile = (await jwt.verify(token)) as unknown as JwtPayload | null;
-                return { profile };
-            })
-            .guard({
-                beforeHandle: ({ profile, set }) => {
-                    if (!profile) {
-                        set.status = 401;
-                        return { error: "Unauthorized" };
-                    }
-                },
-            })
-            .get(
-                "/exists",
-                async ({ profile, query, set, storageService }) => {
-                    const { key } = query as any;
-                    if (!key) {
-                        set.status = 400;
-                        return { error: "Missing key" };
-                    }
-                    const bucket = `user-${(profile as JwtPayload).instanceId}`;
-                    try {
-                        console.debug("[/storage/exists] check", { bucket, key });
-                        const stat = await storageService.statObject(bucket, key);
-                        const exists = !!stat;
-                        let publicURL: string | undefined;
-                        try {
-                            publicURL = await storageService.getPublicURL(bucket, key);
-                        } catch {}
-                        return { exists, storageKey: key, bucket, publicURL };
-                    } catch (e: any) {
-                        console.error("[/storage/exists] error:", e);
-                        set.status = 500;
-                        return { error: "Failed to check existence" };
-                    }
-                },
-                { query: t.Object({ key: t.String() }) }
-            )
-    )
+
     .group("/data", (app) =>
         app
             .derive(async ({ jwt, headers }) => {

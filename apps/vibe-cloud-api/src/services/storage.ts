@@ -36,6 +36,37 @@ export interface StorageProvider {
     statObject?(bucket: string, key: string): Promise<{ size?: number; contentType?: string } | null>;
 }
 
+// Minimal sanitizers/validators used server-side
+export function sanitizeText(input?: string, maxLen = 512): string | undefined {
+    if (!input) return undefined;
+    // Strip any HTML tags and trim
+    const stripped = input.replace(/<[^>]*>/g, "").trim();
+    if (!stripped) return undefined;
+    return stripped.slice(0, maxLen);
+}
+export function sanitizeTags(tags?: string[], maxTags = 32, maxLen = 64): string[] | undefined {
+    if (!tags || !Array.isArray(tags)) return undefined;
+    const out = [];
+    for (const t of tags) {
+        if (typeof t !== "string") continue;
+        const s = sanitizeText(t, maxLen);
+        if (s) out.push(s);
+        if (out.length >= maxTags) break;
+    }
+    return out.length ? out : undefined;
+}
+// Simple ACL shape validator: accept objects or arrays; default to undefined (private) if invalid
+export function validateAclShape(acl: any): any | undefined {
+    if (acl == null) return undefined;
+    if (typeof acl === "object") return acl;
+    return undefined;
+}
+
+export function coercePositiveNumber(n?: number): number | undefined {
+    if (typeof n !== "number" || !isFinite(n) || n < 0) return undefined;
+    return Math.floor(n);
+}
+
 // MinIO: no presign here (fallback to server-upload)
 export class MinioStorageProvider implements StorageProvider {
     private client: Minio.Client;
@@ -81,8 +112,7 @@ export class MinioStorageProvider implements StorageProvider {
     }
 
     async presignGet(bucket: string, key: string, expiresSeconds = 300): Promise<PresignGetResult> {
-        // MinIO doesn't support presigning in the same way as S3, but it can generate public URLs.
-        // We will treat them as "presigned" for consistency.
+        // MinIO can generate time-limited URLs; treat as presigned
         const url = await this.client.presignedGetObject(bucket, key, expiresSeconds);
         return { url, strategy: "presigned" };
     }
@@ -91,7 +121,7 @@ export class MinioStorageProvider implements StorageProvider {
         const stat = await this.client.statObject(bucket, key);
         const stream = await this.client.getObject(bucket, key);
         return {
-            stream: stream as any, // Cast to bypass type mismatch
+            stream: stream as any,
             contentType: stat.metaData?.["content-type"],
             contentLength: stat.size,
         };
@@ -129,7 +159,6 @@ export class ScalewayStorageProvider implements StorageProvider {
     }
 
     async getPublicURL(bucket: string, key: string): Promise<string> {
-        // prefer virtual-hosted style
         const endpoint = this.config.endpoint?.replace(/^https?:\/\//, "");
         return `https://${bucket}.${endpoint}/${key}`;
     }
@@ -157,7 +186,6 @@ export class ScalewayStorageProvider implements StorageProvider {
                 strategy: "presigned",
             };
         } catch {
-            // Fallback if presigner package not available at runtime
             return { bucket, key, strategy: "server-upload" };
         }
     }
@@ -234,7 +262,6 @@ export class StorageService {
         if (this.provider.statObject) {
             return this.provider.statObject(bucket, key);
         }
-        // Fallback: attempt to presign get; not a strong guarantee but better than nothing.
         try {
             await this.presignGet(bucket, key, 60);
             return {};
