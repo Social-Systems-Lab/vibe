@@ -106,9 +106,6 @@ function CollectionsInner() {
                 // Use SDK upload which handles server doc creation and commit
                 const up = (await upload(file)) as { storageKey: string; file?: { id?: string; name?: string; mimeType?: string; size?: number } };
                 const storageKey = up.storageKey;
-
-                // No client-side write("files", ...). The server owns files metadata.
-                // Optionally, we could push a transient item into UI; simplest is to refresh.
             }
             await refresh();
         },
