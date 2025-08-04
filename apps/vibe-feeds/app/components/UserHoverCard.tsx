@@ -20,7 +20,7 @@ type UserHoverCardProps = {
 
 export function UserHoverCard({ user }: UserHoverCardProps) {
     return (
-        <div className="w-72 overflow-hidden">
+        <div className="overflow-hidden">
             {/* Cover Image */}
             <div className="relative h-20 bg-gradient-to-r from-blue-400 to-purple-500">
                 <Image src={user.coverImage || "/placeholder.svg?width=288&height=80&query=cover"} alt="Cover" fill className="object-cover" />

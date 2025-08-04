@@ -22,8 +22,8 @@ type UserPreviewProps = {
 
 export function UserPreview({ user }: UserPreviewProps) {
     return (
-        <Card className="w-80 h-fit overflow-hidden">
-            <CardContent className="p-0">
+        <Card className="h-fit w-full overflow-hidden py-0">
+            <CardContent className="p-0 py-0!" style={{ paddingTop: 0 }}>
                 {/* Cover Image */}
                 <div className="relative h-32 bg-gradient-to-r from-blue-400 to-purple-500">
                     <Image src={user.coverImage || "/placeholder.svg?width=320&height=128&query=cover"} alt="Cover" fill className="object-cover" />

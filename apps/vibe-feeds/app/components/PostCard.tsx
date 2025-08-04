@@ -73,10 +73,11 @@ function getPermissionFromAcl(acl: Acl, did?: string): string {
 
 export function PostCard({ post }: PostCardProps) {
     const { remove: removePost, user, presignGet } = useVibe();
-    const { setSelectedUser } = useSelectedUser();
+    const { selectedUser, setSelectedUser } = useSelectedUser();
 
     const handleSelectUser = () => {
-        setSelectedUser(mockUser);
+        console.log("Setting selected user", mockUser);
+        setSelectedUser(selectedUser ? null : mockUser);
     };
 
     const handleRemove = async () => {
@@ -146,7 +147,7 @@ export function PostCard({ post }: PostCardProps) {
                             {(post.author as Profile)?.name?.substring(0, 2).toUpperCase()}
                         </Squircle>
                     </HoverCardTrigger>
-                    <HoverCardContent>
+                    <HoverCardContent className="w-96">
                         <UserHoverCard user={mockUser} />
                     </HoverCardContent>
                 </HoverCard>
@@ -157,7 +158,7 @@ export function PostCard({ post }: PostCardProps) {
                                 <HoverCardTrigger onClick={handleSelectUser}>
                                     <p className="font-semibold">{(post.author as Profile)?.name}</p>
                                 </HoverCardTrigger>
-                                <HoverCardContent>
+                                <HoverCardContent className="w-96">
                                     <UserHoverCard user={mockUser} />
                                 </HoverCardContent>
                             </HoverCard>
