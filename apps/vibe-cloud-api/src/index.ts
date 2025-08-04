@@ -733,20 +733,6 @@ const app = new Elysia()
     )
     .group("/storage", (app) =>
         app
-            // Dedicated OPTIONS handler to ensure preflight succeeds for all /storage routes
-            .options("/*", ({ set, request }) => {
-                const origin = request.headers.get("origin") ?? "";
-                if (!origin || allowedOrigins.includes(origin)) {
-                    set.headers["Access-Control-Allow-Origin"] = origin;
-                    set.headers["Access-Control-Allow-Credentials"] = "true";
-                    set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-                    set.headers["Access-Control-Allow-Headers"] = request.headers.get("Access-Control-Request-Headers") ?? "*";
-                    set.headers["Access-Control-Max-Age"] = "86400";
-                    set.headers["Vary"] = "Origin, Access-Control-Request-Headers";
-                }
-                set.status = 204;
-                return new Response(null, { status: 204 });
-            })
             .derive(async ({ jwt, headers }) => {
                 const auth = headers.authorization;
                 const token = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
@@ -763,9 +749,10 @@ const app = new Elysia()
                 },
             })
             .onAfterHandle(({ request, set }) => {
-                // Always reflect CORS for allowed origins, including non-preflight requests
+                // Ensure CORS headers are present for storage presign endpoints
+                if (request.method === "OPTIONS") return; // Let CORS plugin handle preflight
                 const origin = request.headers.get("origin") ?? "";
-                if (!origin || allowedOrigins.includes(origin)) {
+                if (allowedOrigins.includes(origin)) {
                     set.headers["Access-Control-Allow-Origin"] = origin;
                     set.headers["Access-Control-Allow-Credentials"] = "true";
                     set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
@@ -775,6 +762,7 @@ const app = new Elysia()
                     set.headers["Vary"] = "Origin";
                 }
             })
+            // Upload (server-upload) + immediate file doc creation
             .post(
                 "/upload",
                 async ({ profile, body, set, storageService, dataService }) => {
@@ -883,26 +871,6 @@ const app = new Elysia()
                     }),
                 }
             )
-    )
-    // Merge generic storage helpers into the same /storage group above:
-    // Keep this group but slim it to reuse same CORS handling; remove duplicate onAfterHandle.
-    .group("/storage", (app) =>
-        app
-            .derive(async ({ jwt, headers }) => {
-                const auth = headers.authorization;
-                const token = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
-                const verified = await jwt.verify(token);
-                const profile = (verified || null) as unknown as JwtPayload | null;
-                return { profile };
-            })
-            .guard({
-                beforeHandle: ({ profile, set }) => {
-                    if (!profile) {
-                        set.status = 401;
-                        return { error: "Unauthorized" };
-                    }
-                },
-            })
             // Presign PUT: include metadata echo to be sent back on /commit
             .post(
                 "/presign-put",
@@ -1103,7 +1071,6 @@ const app = new Elysia()
                 }
             )
     )
-
     .group("/data", (app) =>
         app
             .derive(async ({ jwt, headers }) => {
