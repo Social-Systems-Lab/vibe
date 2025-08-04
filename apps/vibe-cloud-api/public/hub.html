@@ -695,69 +695,93 @@
 
             async function _expand(docs, expand, maxCacheAge) {
                 await dbOperationLock; // Wait for the db to be ready.
+
+                const expandOneRef = async (ref) => {
+                    if (!ref || !ref.did || !ref.ref) return undefined;
+
+                    // Local-first path
+                    if (db && currentUser && ref.did === currentUser.did) {
+                        try {
+                            return await db.get(ref.ref);
+                        } catch (error) {
+                            if (error.name !== "not_found") {
+                                console.error(`Error fetching local document from PouchDB: ${ref.ref}`, error);
+                            }
+                        }
+                    }
+
+                    // Remote with cache
+                    const cacheId = `cache/${ref.did}/${ref.ref}`;
+                    let existingCacheItem = null;
+                    if (db) {
+                        try {
+                            existingCacheItem = await db.get(cacheId);
+                        } catch (error) {
+                            // Ignore not_found errors
+                        }
+                    }
+
+                    const isCacheFresh = () => {
+                        if (!existingCacheItem) return false;
+                        if (maxCacheAge === 0) return false; // Force refresh
+                        if (maxCacheAge === undefined) return true; // Always fresh if no age specified
+                        const age = (Date.now() - existingCacheItem.cachedAt) / 1000;
+                        return age <= maxCacheAge;
+                    };
+
+                    if (isCacheFresh()) {
+                        return existingCacheItem.data;
+                    }
+
+                    try {
+                        const response = await fetch(`/data/expand?did=${ref.did}&ref=${ref.ref}`);
+                        if (response.ok) {
+                            const remoteDoc = await response.json();
+
+                            if (db) {
+                                const newCacheItem = {
+                                    _id: cacheId,
+                                    _rev: existingCacheItem?._rev,
+                                    type: "cache",
+                                    data: remoteDoc,
+                                    cachedAt: Date.now(),
+                                    originalDid: ref.did,
+                                    originalRef: ref.ref,
+                                };
+                                await db.put(newCacheItem);
+                            }
+                            return remoteDoc;
+                        }
+                    } catch (apiError) {
+                        console.error(`Failed to fetch expanded document for ${ref.ref}`, apiError);
+                    }
+                    return undefined;
+                };
+
                 const promises = docs.map(async (doc) => {
                     const expandedDoc = { ...doc };
                     for (const field of expand) {
-                        const ref = doc[field];
-                        if (!ref || !ref.did || !ref.ref) continue;
+                        const value = doc[field];
 
-                        // If the db is available and the doc belongs to the current user, try to get it locally first.
-                        if (db && currentUser && ref.did === currentUser.did) {
-                            try {
-                                const localDoc = await db.get(ref.ref);
-                                expandedDoc[field] = localDoc;
-                                continue; // Skip to the next field if found locally
-                            } catch (error) {
-                                if (error.name !== "not_found") {
-                                    console.error(`Error fetching local document from PouchDB: ${ref.ref}`, error);
-                                }
-                            }
+                        // Single DocRef
+                        if (value && typeof value === "object" && "ref" in value && "did" in value) {
+                            const expanded = await expandOneRef(value);
+                            if (expanded) expandedDoc[field] = expanded;
+                            continue;
                         }
 
-                        // Handle remote refs with caching
-                        const cacheId = `cache/${ref.did}/${ref.ref}`;
-                        let existingCacheItem = null;
-                        if (db) {
-                            try {
-                                existingCacheItem = await db.get(cacheId);
-                            } catch (error) {
-                                // Ignore not_found errors
-                            }
-                        }
-
-                        const isCacheFresh = () => {
-                            if (!existingCacheItem) return false;
-                            if (maxCacheAge === 0) return false; // Force refresh
-                            if (maxCacheAge === undefined) return true; // Always fresh if no age specified
-                            const age = (Date.now() - existingCacheItem.cachedAt) / 1000;
-                            return age <= maxCacheAge;
-                        };
-
-                        if (isCacheFresh()) {
-                            expandedDoc[field] = existingCacheItem.data;
-                        } else {
-                            try {
-                                const response = await fetch(`/data/expand?did=${ref.did}&ref=${ref.ref}`);
-                                if (response.ok) {
-                                    const remoteDoc = await response.json();
-                                    expandedDoc[field] = remoteDoc;
-
-                                    if (db) {
-                                        const newCacheItem = {
-                                            _id: cacheId,
-                                            _rev: existingCacheItem?._rev,
-                                            type: "cache",
-                                            data: remoteDoc,
-                                            cachedAt: Date.now(),
-                                            originalDid: ref.did,
-                                            originalRef: ref.ref,
-                                        };
-                                        await db.put(newCacheItem);
-                                    }
+                        // Array of DocRefs
+                        if (Array.isArray(value)) {
+                            const expandedArray = [];
+                            for (const entry of value) {
+                                if (entry && typeof entry === "object" && "ref" in entry && "did" in entry) {
+                                    const expanded = await expandOneRef(entry);
+                                    expandedArray.push(expanded || entry);
+                                } else {
+                                    expandedArray.push(entry);
                                 }
-                            } catch (apiError) {
-                                console.error(`Failed to fetch expanded document for ${ref.ref}`, apiError);
                             }
+                            expandedDoc[field] = expandedArray;
                         }
                     }
                     return expandedDoc;

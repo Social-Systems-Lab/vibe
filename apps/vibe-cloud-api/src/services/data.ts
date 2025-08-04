@@ -198,65 +198,98 @@ export class DataService {
     private async _expand(docs: any[], expand: string[], currentUser: JwtPayload, maxCacheAge?: number) {
         const currentUserDb = this.getDb(currentUser.instanceId);
 
+        const expandOneRef = async (ref: DocRef): Promise<any | undefined> => {
+            if (!ref || !ref.did || !ref.ref) return undefined;
+
+            // Local user fast path
+            if (ref.did === currentUser.sub) {
+                try {
+                    return await currentUserDb.get(ref.ref);
+                } catch (error) {
+                    console.error(`Failed to expand local ref ${ref.ref}`, error);
+                    return undefined;
+                }
+            }
+
+            // Remote with cache
+            const cacheId = `cache/${ref.did}/${ref.ref}`;
+            let existingCacheItem: CachedDoc<any> | null = null;
+            try {
+                existingCacheItem = (await currentUserDb.get(cacheId)) as CachedDoc<any>;
+            } catch (error: any) {
+                if (error.statusCode !== 404) console.error("Error reading from cache:", error);
+            }
+
+            const isCacheFresh = () => {
+                if (!existingCacheItem) return false;
+                if (maxCacheAge === 0) return false;
+                if (maxCacheAge === undefined) return true;
+                const age = (Date.now() - existingCacheItem.cachedAt) / 1000;
+                return age <= maxCacheAge;
+            };
+
+            if (isCacheFresh()) {
+                return existingCacheItem!.data;
+            }
+
+            const remoteUser = await this.identityService.findByDid(ref.did);
+            if (remoteUser) {
+                const remoteDb = this.getDb(remoteUser.instanceId);
+                try {
+                    const freshDoc = await remoteDb.get(ref.ref);
+
+                    const newCacheItem: CachedDoc<any> = {
+                        _id: cacheId,
+                        _rev: existingCacheItem?._rev,
+                        type: "cache",
+                        data: freshDoc,
+                        cachedAt: Date.now(),
+                        originalDid: ref.did,
+                        originalRef: ref.ref,
+                    };
+                    await currentUserDb.insert(newCacheItem as any);
+                    return freshDoc;
+                } catch (error) {
+                    console.error(`Failed to expand remote ref ${ref.ref}`, error);
+                }
+            }
+            return undefined;
+        };
+
         const promises = docs.map(async (doc) => {
             const expandedDoc = { ...doc };
             for (const field of expand) {
-                const ref = doc[field] as DocRef;
-                if (!ref || !ref.did || !ref.ref) continue;
+                const value = doc[field];
 
-                if (ref.did === currentUser.sub) {
-                    try {
-                        expandedDoc[field] = await currentUserDb.get(ref.ref);
-                    } catch (error) {
-                        console.error(`Failed to expand local ref ${field} for doc ${doc._id}`, error);
-                    }
+                // Case 1: Single DocRef
+                if (value && typeof value === "object" && "ref" in value && "did" in value) {
+                    const expanded = await expandOneRef(value as DocRef);
+                    if (expanded) expandedDoc[field] = expanded;
                     continue;
                 }
 
-                const cacheId = `cache/${ref.did}/${ref.ref}`;
-                let existingCacheItem: CachedDoc<any> | null = null;
-                try {
-                    existingCacheItem = (await currentUserDb.get(cacheId)) as CachedDoc<any>;
-                } catch (error: any) {
-                    if (error.statusCode !== 404) console.error("Error reading from cache:", error);
-                }
-
-                const isCacheFresh = () => {
-                    if (!existingCacheItem) return false;
-                    if (maxCacheAge === 0) return false;
-                    if (maxCacheAge === undefined) return true;
-                    const age = (Date.now() - existingCacheItem.cachedAt) / 1000;
-                    return age <= maxCacheAge;
-                };
-
-                if (isCacheFresh()) {
-                    expandedDoc[field] = existingCacheItem!.data;
-                } else {
-                    const remoteUser = await this.identityService.findByDid(ref.did);
-                    if (remoteUser) {
-                        const remoteDb = this.getDb(remoteUser.instanceId);
-                        try {
-                            const freshDoc = await remoteDb.get(ref.ref);
-                            expandedDoc[field] = freshDoc;
-
-                            const newCacheItem: CachedDoc<any> = {
-                                _id: cacheId,
-                                _rev: existingCacheItem?._rev,
-                                type: "cache",
-                                data: freshDoc,
-                                cachedAt: Date.now(),
-                                originalDid: ref.did,
-                                originalRef: ref.ref,
-                            };
-                            await currentUserDb.insert(newCacheItem as any);
-                        } catch (error) {
-                            console.error(`Failed to expand remote ref ${field} for doc ${doc._id}`, error);
+                // Case 2: Array of DocRefs
+                if (Array.isArray(value)) {
+                    const expandedArray: any[] = [];
+                    for (const entry of value) {
+                        if (entry && typeof entry === "object" && "ref" in entry && "did" in entry) {
+                            const expanded = await expandOneRef(entry as DocRef);
+                            if (expanded) {
+                                expandedArray.push(expanded);
+                            } else {
+                                // Preserve placeholder if expansion fails; UI may still derive previews
+                                expandedArray.push(entry);
+                            }
+                        } else {
+                            expandedArray.push(entry);
                         }
                     }
+                    expandedDoc[field] = expandedArray;
                 }
             }
             return expandedDoc;
         });
+
         return Promise.all(promises);
     }
 
