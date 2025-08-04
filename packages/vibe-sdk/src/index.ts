@@ -91,67 +91,63 @@ export class VibeSDK {
          */
         upload: async (
             file: File & { type?: string; name: string },
-            opts?: { acl?: any; description?: string; tags?: string[] }
+            opts?: { acl?: unknown; description?: string; tags?: string[] }
         ): Promise<{ storageKey: string; file?: { id?: string; name?: string; storageKey: string; mimeType?: string; size?: number } }> => {
             if (!this.authManager.isLoggedIn()) throw new Error("Not authenticated");
-            const headers = { Authorization: `Bearer ${this.authManager.getAccessToken()}` } as any;
+            const headers = { Authorization: `Bearer ${this.authManager.getAccessToken()}` };
 
             // 1) Ask API for upload plan (presign or server-upload), forwarding metadata
-            const { data: plan, error: planErr } = await this.api.storage["presign-put"].post(
-                { name: file.name, mime: (file as any).type || "", size: (file as any).size, ...opts },
-                { headers }
-            );
+            const presignBody = {
+                name: file.name,
+                mime: file.type || "",
+                size: (file as any).size as number,
+                ...(opts || {}),
+            };
+            const { data: plan, error: planErr } = await this.api.storage["presign-put"].post(presignBody, { headers });
             if (planErr) throw new Error(`Failed to prepare upload: ${JSON.stringify(planErr)}`);
 
             // 2) Execute plan
             let storageKey: string | undefined;
             let createdFile: { id?: string; name?: string; storageKey: string; mimeType?: string; size?: number } | undefined;
 
-            if (plan && (plan as any).strategy === "presigned") {
-                const { url, headers: putHdrs, storageKey: key, metadata } = plan as any;
-                storageKey = key;
-                const putHeaders = new Headers(putHdrs || {});
-                if (!putHeaders.has("Content-Type") && (file as any).type) putHeaders.set("Content-Type", (file as any).type);
-                const putRes = await fetch(url, { method: "PUT", body: file, headers: putHeaders });
+            if (plan && plan.strategy === "presigned") {
+                const putHeaders = new Headers(plan.headers || {});
+                if (!putHeaders.has("Content-Type") && file.type) putHeaders.set("Content-Type", file.type);
+                const putRes = await fetch(plan.url!, { method: "PUT", body: file, headers: putHeaders });
                 if (!putRes.ok) throw new Error(`Presigned upload failed with ${putRes.status}`);
+                storageKey = plan.storageKey;
 
                 // 3) Commit metadata to create files doc
-                // Eden treaty flattens route names with dashes/segments; commit lives under ["commit"]
-                const { data: commitRes, error: commitErr } = await (this.api as any).storage["commit"].post(
-                    {
-                        storageKey,
-                        name: file.name,
-                        mime: (file as any).type || metadata?.mime,
-                        size: (file as any).size || metadata?.size,
-                        ...(opts || {}),
-                    } as any,
-                    { headers }
-                );
+                const commitBody = {
+                    storageKey,
+                    name: file.name,
+                    mime: file.type || plan.metadata?.mime,
+                    size: (file as any).size || plan.metadata?.size,
+                    ...(opts || {}),
+                };
+                const { data: commitRes, error: commitErr } = await this.api.storage["commit"].post(commitBody, { headers });
                 if (commitErr) {
                     console.warn("Commit metadata failed; continuing without file doc", commitErr);
                 } else if (commitRes && typeof commitRes === "object" && "file" in commitRes) {
-                    createdFile = (commitRes as any).file;
+                    createdFile = commitRes.file as typeof createdFile;
                 }
-            } else if (plan && (plan as any).strategy === "server-upload") {
-                const { storageKey: key, metadata } = plan as any;
-                storageKey = key;
-                const form = new FormData();
-                form.set("file", file);
-                const { data: upRes, error: upErr } = await this.api.storage.upload.post(
-                    {
-                        file: form.get("file") as any,
-                        storageKey,
-                        name: file.name,
-                        mime: (file as any).type || metadata?.mime,
-                        size: (file as any).size || metadata?.size,
-                        ...(opts || {}),
-                    } as any,
-                    { headers }
-                );
+            } else if (plan && plan.strategy === "server-upload") {
+                storageKey = plan.storageKey;
+
+                // Use edenTreaty typed multipart posting: pass a File directly; treaty detects multipart and encodes it.
+                const uploadBody = {
+                    file,
+                    storageKey,
+                    name: file.name,
+                    mime: file.type || plan.metadata?.mime,
+                    size: (file as any).size || plan.metadata?.size,
+                    ...(opts || {}),
+                };
+                const { data: upRes, error: upErr } = await this.api.storage.upload.post(uploadBody as any, { headers });
                 if (upErr) throw new Error(`Server upload failed: ${JSON.stringify(upErr)}`);
                 if (upRes && typeof upRes === "object") {
                     if ("storageKey" in upRes && (upRes as any).storageKey) storageKey = (upRes as any).storageKey as string;
-                    if ("file" in upRes) createdFile = (upRes as any).file as any;
+                    if ("file" in upRes) createdFile = upRes.file as typeof createdFile;
                 }
             } else {
                 throw new Error("Invalid upload plan from server");
@@ -167,11 +163,11 @@ export class VibeSDK {
             const { data, error } = await this.api.storage["presign-put"].post(
                 { name, mime, size, sha256 },
                 {
-                    headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` } as any,
+                    headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
                 }
             );
             if (error) throw new Error(`Failed to presign PUT: ${JSON.stringify(error)}`);
-            return data as any;
+            return data;
         },
 
         presignGet: async (storageKey: string, expires?: number) => {
@@ -179,11 +175,11 @@ export class VibeSDK {
             const { data, error } = await this.api.storage["presign-get"].post(
                 { storageKey, expires },
                 {
-                    headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` } as any,
+                    headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
                 }
             );
             if (error) throw new Error(`Failed to presign GET: ${JSON.stringify(error)}`);
-            return data as any;
+            return data;
         },
     };
 

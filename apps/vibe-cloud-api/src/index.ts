@@ -748,18 +748,29 @@ const app = new Elysia()
                     }
                 },
             })
+            // Add robust CORS handling for both success and error paths
             .onAfterHandle(({ request, set }) => {
-                // Ensure CORS headers are present for storage presign endpoints
-                if (request.method === "OPTIONS") return; // Let CORS plugin handle preflight
                 const origin = request.headers.get("origin") ?? "";
                 if (allowedOrigins.includes(origin)) {
                     set.headers["Access-Control-Allow-Origin"] = origin;
                     set.headers["Access-Control-Allow-Credentials"] = "true";
                     set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-                    set.headers["Access-Control-Allow-Headers"] = "*";
+                    set.headers["Access-Control-Allow-Headers"] = request.headers.get("Access-Control-Request-Headers") ?? "*";
                     set.headers["Access-Control-Max-Age"] = "86400";
                     set.headers["Access-Control-Expose-Headers"] = "Content-Disposition";
-                    set.headers["Vary"] = "Origin";
+                    set.headers["Vary"] = "Origin, Access-Control-Request-Headers";
+                }
+            })
+            .onError(({ request, set }) => {
+                const origin = request.headers.get("origin") ?? "";
+                if (allowedOrigins.includes(origin)) {
+                    set.headers["Access-Control-Allow-Origin"] = origin;
+                    set.headers["Access-Control-Allow-Credentials"] = "true";
+                    set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+                    set.headers["Access-Control-Allow-Headers"] = request.headers.get("Access-Control-Request-Headers") ?? "*";
+                    set.headers["Access-Control-Max-Age"] = "86400";
+                    set.headers["Access-Control-Expose-Headers"] = "Content-Disposition";
+                    set.headers["Vary"] = "Origin, Access-Control-Request-Headers";
                 }
             })
             // Upload (server-upload) + immediate file doc creation
@@ -771,11 +782,10 @@ const app = new Elysia()
                         return { error: "Unauthorized" };
                     }
 
-                    const { file } = body as { file: File };
-
-                    if (!file || !(file instanceof Blob)) {
-                        set.status = 400;
-                        return { error: "Invalid file upload" };
+                    const file = (body as any)?.file as File | undefined;
+                    if (!file || typeof (file as any).arrayBuffer !== "function") {
+                        set.status = 422;
+                        return { error: "Invalid multipart form-data: missing 'file' field" };
                     }
 
                     try {
@@ -786,8 +796,8 @@ const app = new Elysia()
                         const providedStorageKey = (body as any).storageKey as string | undefined;
                         let storageKey = providedStorageKey;
                         if (!storageKey) {
-                            const name = (file as any).name as string | undefined;
-                            const ext = name && name.includes(".") ? name.split(".").pop() : "";
+                            const fname = (body as any).name ?? (file as any).name ?? "file";
+                            const ext = typeof fname === "string" && fname.includes(".") ? fname.split(".").pop() : "";
                             const uuid = crypto.randomUUID();
                             const now = new Date();
                             const yyyy = now.getUTCFullYear();
@@ -800,23 +810,47 @@ const app = new Elysia()
                             bucketName,
                             providedStorageKey,
                             finalStorageKey: storageKey,
-                            mime: file.type,
+                            mime: (file as any).type,
                             size: (file as any).size,
                         });
 
-                        await storageService.upload(bucketName, storageKey, buffer, file.type);
+                        await storageService.upload(bucketName, storageKey, buffer, (file as any).type || "application/octet-stream");
 
                         // Sanitize and persist metadata immediately (server-upload strategy)
                         const { sanitizeText, sanitizeTags, validateAclShape, coercePositiveNumber } = await import("./services/storage");
                         const nameFromClient = (body as any).name ?? (file as any).name ?? "file";
-                        const cleanName = sanitizeText(nameFromClient, 256) || String(nameFromClient).slice(0, 256);
+                        const cleanName = sanitizeText(typeof nameFromClient === "string" ? nameFromClient : String(nameFromClient), 256) || "file";
                         const cleanDesc = sanitizeText((body as any).description, 1024);
-                        const cleanTags = sanitizeTags((body as any).tags, 64, 64);
-                        const cleanAcl = validateAclShape((body as any).acl);
+
+                        // tags: allow "a,b" or JSON '["a","b"]' or array of strings
+                        let tagsRaw = (body as any).tags as any;
+                        if (typeof tagsRaw === "string") {
+                            try {
+                                const parsed = JSON.parse(tagsRaw);
+                                tagsRaw = parsed;
+                            } catch {
+                                tagsRaw = tagsRaw
+                                    .split(",")
+                                    .map((s: string) => s.trim())
+                                    .filter(Boolean);
+                            }
+                        }
+                        const cleanTags = sanitizeTags(Array.isArray(tagsRaw) ? tagsRaw : undefined, 64, 64);
+
+                        // acl: allow JSON string or object
+                        let aclRaw = (body as any).acl as any;
+                        if (typeof aclRaw === "string") {
+                            try {
+                                aclRaw = JSON.parse(aclRaw);
+                            } catch {
+                                aclRaw = undefined;
+                            }
+                        }
+                        const cleanAcl = validateAclShape(aclRaw);
 
                         const stat = await storageService.statObject(bucketName, storageKey);
-                        const finalSize = stat?.size ?? coercePositiveNumber((file as any).size);
-                        const finalMime = stat?.contentType ?? file.type;
+                        const finalSize = stat?.size ?? coercePositiveNumber(Number((file as any).size));
+                        const finalMime = stat?.contentType ?? ((file as any).type || undefined);
 
                         const writeRes = await dataService.write(
                             "files",
@@ -856,19 +890,20 @@ const app = new Elysia()
                         set.status = 500;
                         return { error: "Failed to upload file" };
                     }
+                },
+                {
+                    // Accept multipart form-data with proper types to avoid validator-caused 422 without CORS headers
+                    body: t.Object({
+                        file: t.File(),
+                        storageKey: t.Optional(t.String()),
+                        name: t.Optional(t.String()),
+                        mime: t.Optional(t.String()),
+                        size: t.Optional(t.Union([t.Number(), t.String()])),
+                        acl: t.Optional(t.String()),
+                        description: t.Optional(t.String()),
+                        tags: t.Optional(t.Union([t.Array(t.String()), t.String()])),
+                    }),
                 }
-                // {
-                //     body: t.Object({
-                //         file: t.Any(),
-                //         storageKey: t.Optional(t.String()),
-                //         name: t.Optional(t.String()),
-                //         mime: t.Optional(t.String()),
-                //         size: t.Optional(t.Number()),
-                //         acl: t.Optional(t.Any()),
-                //         description: t.Optional(t.String()),
-                //         tags: t.Optional(t.Array(t.String())),
-                //     }),
-                // }
             )
             // Presign PUT: include metadata echo to be sent back on /commit
             .post(
