@@ -15,10 +15,29 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
     Squircle,
+    HoverCard,
+    HoverCardContent,
+    HoverCardTrigger,
 } from "vibe-react";
 import { useVibe } from "vibe-react";
 import { MoreHorizontal, Heart, MessageCircle, Repeat, Bookmark, ChevronLeft, ChevronRight } from "lucide-react";
 import { Post, Profile, Acl } from "vibe-sdk";
+import { UserHoverCard } from "./UserHoverCard";
+import { useSelectedUser } from "../context/SelectedUserContext";
+
+const mockUser = {
+    name: "John Doe",
+    handle: "johndoe",
+    avatar: "https://github.com/shadcn.png",
+    coverImage: "/images/showcase.png",
+    bio: "Building in public and sharing my journey. Follow for updates on my projects and thoughts on web development.",
+    location: "San Francisco, CA",
+    joinedDate: "April 2021",
+    website: "https://johndoe.com",
+    followers: 1200,
+    following: 300,
+    posts: 150,
+};
 
 interface PostCardProps {
     post: Post;
@@ -54,6 +73,11 @@ function getPermissionFromAcl(acl: Acl, did?: string): string {
 
 export function PostCard({ post }: PostCardProps) {
     const { remove: removePost, user, presignGet } = useVibe();
+    const { setSelectedUser } = useSelectedUser();
+
+    const handleSelectUser = () => {
+        setSelectedUser(mockUser);
+    };
 
     const handleRemove = async () => {
         try {
@@ -116,13 +140,27 @@ export function PostCard({ post }: PostCardProps) {
     return (
         <div className="bg-background p-4 border-b border-[#f3f3f3]">
             <div className="flex space-x-4">
-                <Squircle imageUrl={(post.author as Profile)?.pictureUrl} size={38}>
-                    {(post.author as Profile)?.name?.substring(0, 2).toUpperCase()}
-                </Squircle>
+                <HoverCard>
+                    <HoverCardTrigger onClick={handleSelectUser}>
+                        <Squircle imageUrl={(post.author as Profile)?.pictureUrl} size={38}>
+                            {(post.author as Profile)?.name?.substring(0, 2).toUpperCase()}
+                        </Squircle>
+                    </HoverCardTrigger>
+                    <HoverCardContent>
+                        <UserHoverCard user={mockUser} />
+                    </HoverCardContent>
+                </HoverCard>
                 <div className="w-full">
                     <div className="flex justify-between">
                         <div>
-                            <p className="font-semibold">{(post.author as Profile)?.name}</p>
+                            <HoverCard>
+                                <HoverCardTrigger onClick={handleSelectUser}>
+                                    <p className="font-semibold">{(post.author as Profile)?.name}</p>
+                                </HoverCardTrigger>
+                                <HoverCardContent>
+                                    <UserHoverCard user={mockUser} />
+                                </HoverCardContent>
+                            </HoverCard>
                             <p className="text-sm text-gray-500">{postDate.toLocaleDateString()}</p>
                         </div>
                         {isOwnPost && (
