@@ -181,7 +181,7 @@ export function ImagePicker({
     const myFilesView = (
         <div className="space-y-3">
             <Input placeholder="Search files..." value={query} onChange={(e) => setQuery(e.target.value)} />
-            <div className={cn("grid gap-3", "grid-cols-3 sm:grid-cols-4")}>
+            <div className={cn("grid gap-3", "grid-cols-3")}>
                 {loading && <div className="text-sm text-muted-foreground col-span-full">Loading...</div>}
                 {!loading && filtered.length === 0 && <div className="text-sm text-muted-foreground col-span-full">No files found</div>}
                 {filtered.map((f) => (

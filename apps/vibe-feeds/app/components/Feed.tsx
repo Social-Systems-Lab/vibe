@@ -59,9 +59,11 @@ export function Feed({ feedId }: { feedId: string }) {
             <div className="mb-2 mr-[80px] lg:mr-0">
                 <CreatePost />
             </div>
-            {posts.map((post) => (
-                <PostCard key={post._id} post={post} />
-            ))}
+            {posts
+                .filter((x) => x._id)
+                .map((post) => (
+                    <PostCard key={post._id} post={post} />
+                ))}
         </div>
     );
 }

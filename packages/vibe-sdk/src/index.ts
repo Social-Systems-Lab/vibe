@@ -222,7 +222,7 @@ export class VibeSDK {
                 }
             } else {
                 console.log("VibeSDK: Consent is required.");
-                await this.redirectToAuthorize("login", true, "signup", "consent", false);
+                await this.redirectToAuthorize("login", true, "signup", "consent", sessionState.hasConsented);
             }
             this.authManager.notifyStateChange();
         }
