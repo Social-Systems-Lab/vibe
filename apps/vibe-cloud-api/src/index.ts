@@ -827,7 +827,7 @@ const app = new Elysia()
                 }
             )
     )
-    // Generic storage helpers for object upload/download (presign-based)
+    // Generic storage helpers for object upload/download (presign-based) with metadata commit flow
     .group("/storage", (app) =>
         app
             .derive(async ({ jwt, headers }) => {
@@ -846,8 +846,7 @@ const app = new Elysia()
                 },
             })
             .onAfterHandle(({ request, set }) => {
-                // Ensure CORS headers are present for storage presign endpoints
-                if (request.method === "OPTIONS") return; // Let CORS plugin handle preflight
+                if (request.method === "OPTIONS") return;
                 const origin = request.headers.get("origin") ?? "";
                 if (allowedOrigins.includes(origin)) {
                     set.headers["Access-Control-Allow-Origin"] = origin;
@@ -859,7 +858,7 @@ const app = new Elysia()
                     set.headers["Vary"] = "Origin";
                 }
             })
-            // Presign PUT: returns presigned URL on Scaleway, server-upload fallback on MinIO
+            // Presign PUT: include metadata echo to be sent back on /commit
             .post(
                 "/presign-put",
                 async ({ profile, body, set, storageService }) => {
@@ -867,7 +866,14 @@ const app = new Elysia()
                         set.status = 401;
                         return { error: "Unauthorized" };
                     }
-                    const { name, mime } = body as { name: string; mime?: string };
+                    const { name, mime, size, acl, description, tags } = body as {
+                        name: string;
+                        mime?: string;
+                        size?: number;
+                        acl?: any;
+                        description?: string;
+                        tags?: string[];
+                    };
                     if (!name) {
                         set.status = 400;
                         return { error: "Missing name" };
@@ -890,6 +896,7 @@ const app = new Elysia()
                                 url: res.url,
                                 headers: res.headers,
                                 expiresIn: 300,
+                                metadata: { name, mime, size, acl, description, tags },
                             };
                         }
                         // Fallback for providers without presign support (e.g., MinIO)
@@ -898,6 +905,7 @@ const app = new Elysia()
                             bucket,
                             storageKey,
                             uploadPath: "/storage/upload",
+                            metadata: { name, mime, size, acl, description, tags },
                         };
                     } catch (e: any) {
                         console.error("presign-put error:", e);
@@ -911,10 +919,13 @@ const app = new Elysia()
                         mime: t.Optional(t.String()),
                         size: t.Optional(t.Number()),
                         sha256: t.Optional(t.String()),
+                        acl: t.Optional(t.Any()),
+                        description: t.Optional(t.String()),
+                        tags: t.Optional(t.Array(t.String())),
                     }),
                 }
             )
-            // Presign GET: presigned URL on Scaleway, public-or-server hint on MinIO
+            // Presign GET unchanged (kept above)
             .post(
                 "/presign-get",
                 async ({ profile, body, set, storageService, request }) => {
@@ -928,56 +939,34 @@ const app = new Elysia()
                         return { error: "Missing storageKey" };
                     }
                     const bucket = `user-${profile!.instanceId}`;
-                    const ttl = Math.min(Math.max(expires ?? 300, 60), 3600); // clamp 1m..1h
+                    const ttl = Math.min(Math.max(expires ?? 300, 60), 3600);
 
-                    // Debug toggle via query (?debug=1)
                     const urlObj = new URL(request.url);
                     const debug = urlObj.searchParams.get("debug") === "1";
 
                     try {
-                        // Validate object existence before presigning to surface clear 404s
-                        console.debug("[/storage/presign-get] stat check", { bucket, storageKey, ttl, debug });
                         const stat = await storageService.statObject(bucket, storageKey);
-                        // Build public URL for inspection even if stat fails (MinIO still builds a deterministic URL)
                         let publicURL: string | undefined;
                         try {
                             publicURL = await storageService.getPublicURL(bucket, storageKey);
                         } catch {}
 
                         if (!stat) {
-                            console.debug("[/storage/presign-get] NoSuchKey", { bucket, storageKey, publicURL });
                             set.status = 404;
-                            // When debugging, echo bucket + publicURL to help validate direct object access
                             return debug ? { error: "NoSuchKey", storageKey, bucket, publicURL } : { error: "NoSuchKey", storageKey };
                         }
 
                         const res = await storageService.presignGet(bucket, storageKey, ttl);
 
                         if (res.strategy === "presigned") {
-                            console.debug("[/storage/presign-get] presigned ok", { bucket, storageKey, debug });
                             if (debug) {
-                                return {
-                                    strategy: "debug",
-                                    bucket,
-                                    storageKey,
-                                    presignedURL: res.url,
-                                    publicURL,
-                                    expiresIn: ttl,
-                                };
+                                return { strategy: "debug", bucket, storageKey, presignedURL: res.url, publicURL, expiresIn: ttl };
                             }
                             return { strategy: "presigned", url: res.url, expiresIn: ttl };
                         }
 
-                        console.debug("[/storage/presign-get] public-or-server", { bucket, storageKey, debug });
                         if (debug) {
-                            return {
-                                strategy: "debug",
-                                bucket,
-                                storageKey,
-                                presignedURL: undefined,
-                                publicURL,
-                                expiresIn: ttl,
-                            };
+                            return { strategy: "debug", bucket, storageKey, presignedURL: undefined, publicURL, expiresIn: ttl };
                         }
                         return { strategy: "public-or-server" };
                     } catch (e: any) {
@@ -987,6 +976,70 @@ const app = new Elysia()
                     }
                 },
                 { body: t.Object({ storageKey: t.String(), expires: t.Optional(t.Number()) }) }
+            )
+            // Commit endpoint: create files doc after presigned PUT
+            .post(
+                "/commit",
+                async ({ profile, body, set, dataService, storageService }) => {
+                    if (!profile) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    const { storageKey, name, mime, size, acl, description, tags } = body as any;
+                    if (!storageKey || !name) {
+                        set.status = 400;
+                        return { error: "Missing storageKey or name" };
+                    }
+                    const bucket = `user-${(profile as JwtPayload).instanceId}`;
+                    try {
+                        await storageService.statObject(bucket, storageKey);
+
+                        // dataService.write returns an array of DocumentBulkResponse; extract the new id safely
+                        const writeRes = await dataService.write(
+                            "files",
+                            {
+                                name,
+                                storageKey,
+                                mimeType: mime,
+                                size,
+                                description,
+                                tags,
+                                acl,
+                            },
+                            profile as JwtPayload
+                        );
+                        const newId =
+                            Array.isArray(writeRes) && writeRes.length > 0
+                                ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId
+                                : undefined;
+
+                        return {
+                            storageKey,
+                            file: {
+                                id: newId,
+                                name,
+                                storageKey,
+                                mimeType: mime,
+                                size,
+                            },
+                        };
+                    } catch (e: any) {
+                        console.error("[/storage/commit] error:", e);
+                        set.status = 500;
+                        return { error: "Failed to commit file metadata" };
+                    }
+                },
+                {
+                    body: t.Object({
+                        storageKey: t.String(),
+                        name: t.String(),
+                        mime: t.Optional(t.String()),
+                        size: t.Optional(t.Number()),
+                        acl: t.Optional(t.Any()),
+                        description: t.Optional(t.String()),
+                        tags: t.Optional(t.Array(t.String())),
+                    }),
+                }
             )
     )
     // Debug endpoint to check if an object exists at a given storageKey in the user's bucket
@@ -1031,315 +1084,6 @@ const app = new Elysia()
                     }
                 },
                 { query: t.Object({ key: t.String() }) }
-            )
-    )
-    // This group is now removed, as we are using presigned URLs.
-    // .group("/files", (app) => ... )
-    .group("/files", (app) =>
-        app
-            .derive(async ({ jwt, headers }) => {
-                const auth = headers.authorization;
-                const token = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
-                const verified = await jwt.verify(token);
-                // Coerce to JwtPayload; guards below ensure presence
-                const profile = (verified || null) as unknown as JwtPayload | null;
-                return { profile };
-            })
-            .guard({
-                beforeHandle: ({ profile, set }) => {
-                    if (!profile) {
-                        set.status = 401;
-                        return { error: "Unauthorized" };
-                    }
-                },
-            })
-            // Presign upload (client will PUT to storage)
-            .post(
-                "/presign",
-                async ({ profile, body, set }) => {
-                    // Placeholder: until presign is implemented in providers, fall back to server upload route hints
-                    const { name, mime, size } = body as any;
-                    if (!name || !mime || !size) {
-                        set.status = 400;
-                        return { error: "Missing name, mime or size" };
-                    }
-                    const ext = name.includes(".") ? name.split(".").pop() : "";
-                    const uuid = crypto.randomUUID();
-                    const yyyy = new Date().getUTCFullYear();
-                    const mm = String(new Date().getUTCMonth() + 1).padStart(2, "0");
-                    // Standardize without "files/" prefix: yyyy/mm/uuid.ext
-                    const storageKey = `${yyyy}/${mm}/${uuid}${ext ? "." + ext : ""}`;
-                    // For now, client can POST /storage/upload as a fallback path and MUST include storageKey.
-                    return {
-                        uploadStrategy: "server-upload",
-                        storageKey,
-                        hint: { path: "/storage/upload" },
-                    };
-                },
-                {
-                    body: t.Object({
-                        name: t.String(),
-                        mime: t.String(),
-                        size: t.Number(),
-                        sha256: t.Optional(t.String()),
-                    }),
-                }
-            )
-            // Create file metadata
-            .post(
-                "/",
-                async ({ profile, body, set, dataService }) => {
-                    try {
-                        const p = profile as JwtPayload;
-                        const now = new Date().toISOString();
-                        const doc = {
-                            _id: `files/${crypto.randomUUID()}`,
-                            collection: "files",
-                            ownerDid: p.sub,
-                            instanceId: p.instanceId,
-                            name: (body as any).name,
-                            ext: (body as any).ext,
-                            mime: (body as any).mime,
-                            size: (body as any).size,
-                            sha256: (body as any).sha256,
-                            storageKey: (body as any).storageKey,
-                            previewKey: (body as any).previewKey,
-                            type: (body as any).type,
-                            tags: (body as any).tags || [],
-                            collections: (body as any).collections || [],
-                            acl: (body as any).acl || {},
-                            createdAt: now,
-                            updatedAt: now,
-                        };
-                        const result = await dataService.write("files", doc, p);
-                        return { success: true, ...result, doc };
-                    } catch (error: any) {
-                        set.status = 500;
-                        return { error: error.message };
-                    }
-                },
-                {
-                    body: t.Object({
-                        name: t.String(),
-                        ext: t.Optional(t.String()),
-                        mime: t.String(),
-                        size: t.Number(),
-                        sha256: t.Optional(t.String()),
-                        storageKey: t.String(),
-                        previewKey: t.Optional(t.String()),
-                        type: t.Optional(t.String()),
-                        tags: t.Optional(t.Array(t.String())),
-                        collections: t.Optional(t.Array(t.String())),
-                        acl: t.Optional(t.Any()),
-                    }),
-                }
-            )
-            // List/search files
-            .get(
-                "/",
-                async ({ profile, query, set, dataService }) => {
-                    try {
-                        const p = profile as JwtPayload;
-                        const { q, type, collectionId } = query as any;
-                        const selector: any = { collection: "files", ownerDid: p.sub };
-                        if (type) selector.type = type;
-                        if (collectionId) selector.collections = { $elemMatch: { $eq: collectionId } };
-                        // Basic filename filter
-                        const result = await dataService.readOnce("files", { selector, q }, profile as JwtPayload);
-                        return result;
-                    } catch (error: any) {
-                        set.status = 500;
-                        return { error: error.message };
-                    }
-                },
-                {
-                    query: t.Object({
-                        q: t.Optional(t.String()),
-                        type: t.Optional(t.String()),
-                        collectionId: t.Optional(t.String()),
-                    }),
-                }
-            )
-            // Update file
-            .patch(
-                "/:id",
-                async ({ profile, params, body, set, dataService }) => {
-                    try {
-                        const update = { ...(body as any), updatedAt: new Date().toISOString(), _id: params.id };
-                        const result = await dataService.update("files", update, profile as JwtPayload);
-                        return { success: true, ...result };
-                    } catch (error: any) {
-                        set.status = 500;
-                        return { error: error.message };
-                    }
-                },
-                {
-                    params: t.Object({ id: t.String() }),
-                    body: t.Object({
-                        name: t.Optional(t.String()),
-                        tags: t.Optional(t.Array(t.String())),
-                        acl: t.Optional(t.Any()),
-                        collections: t.Optional(t.Array(t.String())),
-                    }),
-                }
-            )
-            // Delete file (metadata only for now; later also delete object)
-            .delete(
-                "/:id",
-                async ({ profile, params, set, dataService }) => {
-                    try {
-                        const result = await dataService.update("files", { _id: params.id, _deleted: true }, profile as JwtPayload);
-                        return { success: true, ...result };
-                    } catch (error: any) {
-                        set.status = 500;
-                        return { error: error.message };
-                    }
-                },
-                { params: t.Object({ id: t.String() }) }
-            )
-            // Usage summary (basic)
-            .get("/usage", async ({ profile, dataService }) => {
-                const p = profile as JwtPayload;
-                // Initial placeholder: sum from FileDocs sizes
-                const result: any = await dataService.readOnce("files", { selector: { collection: "files", ownerDid: p.sub } }, p);
-                const items = Array.isArray(result?.rows) ? result.rows : result?.items || [];
-                const usedBytes = items.reduce((acc: number, d: any) => acc + (d.size || 0), 0);
-                const quotaBytes = Number(process.env.DEFAULT_QUOTA_BYTES || 100 * 1024 * 1024 * 1024);
-                return { usedBytes, quotaBytes };
-            })
-    )
-    // Collections API (MVP) - basic CRUD and membership
-    .group("/collections", (app) =>
-        app
-            .derive(async ({ jwt, headers }) => {
-                const auth = headers.authorization;
-                const token = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
-                const verified = await jwt.verify(token);
-                const profile = verified as unknown as JwtPayload | null;
-                return { profile };
-            })
-            .guard({
-                beforeHandle: ({ profile, set }) => {
-                    if (!profile) {
-                        set.status = 401;
-                        return { error: "Unauthorized" };
-                    }
-                },
-            })
-            .post(
-                "/",
-                async ({ profile, body, set, dataService }) => {
-                    try {
-                        const p = profile as JwtPayload;
-                        const now = new Date().toISOString();
-                        const doc = {
-                            _id: `collections/${crypto.randomUUID()}`,
-                            collection: "collections",
-                            ownerDid: p.sub,
-                            instanceId: p.instanceId,
-                            name: (body as any).name,
-                            description: (body as any).description,
-                            coverFileId: (body as any).coverFileId,
-                            fileIds: [],
-                            acl: (body as any).acl || {},
-                            createdAt: now,
-                            updatedAt: now,
-                        };
-                        const result = await dataService.write("collections", doc, p);
-                        return { success: true, ...result, doc };
-                    } catch (error: any) {
-                        set.status = 500;
-                        return { error: error.message };
-                    }
-                },
-                {
-                    body: t.Object({
-                        name: t.String(),
-                        description: t.Optional(t.String()),
-                        coverFileId: t.Optional(t.String()),
-                        acl: t.Optional(t.Any()),
-                    }),
-                }
-            )
-            .get("/", async ({ profile, dataService, set }) => {
-                try {
-                    const p = profile as JwtPayload;
-                    const result = await dataService.readOnce("collections", { selector: { collection: "collections", ownerDid: p.sub } }, p);
-                    return result;
-                } catch (error: any) {
-                    set.status = 500;
-                    return { error: error.message };
-                }
-            })
-            .patch(
-                "/:id",
-                async ({ profile, params, body, dataService, set }) => {
-                    try {
-                        const update = { ...(body as any), updatedAt: new Date().toISOString(), _id: params.id };
-                        const result = await dataService.update("collections", update, profile as JwtPayload);
-                        return { success: true, ...result };
-                    } catch (error: any) {
-                        set.status = 500;
-                        return { error: error.message };
-                    }
-                },
-                {
-                    params: t.Object({ id: t.String() }),
-                    body: t.Object({
-                        name: t.Optional(t.String()),
-                        description: t.Optional(t.String()),
-                        coverFileId: t.Optional(t.String()),
-                        acl: t.Optional(t.Any()),
-                    }),
-                }
-            )
-            .delete(
-                "/:id",
-                async ({ profile, params, dataService, set }) => {
-                    try {
-                        const result = await dataService.update("collections", { _id: params.id, _deleted: true }, profile as JwtPayload);
-                        return { success: true, ...result };
-                    } catch (error: any) {
-                        set.status = 500;
-                        return { error: error.message };
-                    }
-                },
-                { params: t.Object({ id: t.String() }) }
-            )
-            .post(
-                "/:id/files/:fileId",
-                async ({ profile, params, dataService, set }) => {
-                    try {
-                        // Add membership by updating file collections array and collection fileIds
-                        const now = new Date().toISOString();
-                        await dataService.update("files", { _id: params.fileId, $addToSet: { collections: params.id }, updatedAt: now }, profile as JwtPayload);
-                        await dataService.update(
-                            "collections",
-                            { _id: params.id, $addToSet: { fileIds: params.fileId }, updatedAt: now },
-                            profile as JwtPayload
-                        );
-                        return { success: true };
-                    } catch (error: any) {
-                        set.status = 500;
-                        return { error: error.message };
-                    }
-                },
-                { params: t.Object({ id: t.String(), fileId: t.String() }) }
-            )
-            .delete(
-                "/:id/files/:fileId",
-                async ({ profile, params, dataService, set }) => {
-                    try {
-                        const now = new Date().toISOString();
-                        await dataService.update("files", { _id: params.fileId, $pull: { collections: params.id }, updatedAt: now }, profile as JwtPayload);
-                        await dataService.update("collections", { _id: params.id, $pull: { fileIds: params.fileId }, updatedAt: now }, profile as JwtPayload);
-                        return { success: true };
-                    } catch (error: any) {
-                        set.status = 500;
-                        return { error: error.message };
-                    }
-                },
-                { params: t.Object({ id: t.String(), fileId: t.String() }) }
             )
     )
     .group("/data", (app) =>

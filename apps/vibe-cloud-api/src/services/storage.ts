@@ -1,6 +1,18 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import * as Minio from "minio";
 
+/**
+ * Metadata passed alongside upload planning/commit.
+ */
+export type UploadMeta = {
+    name?: string;
+    mime?: string;
+    size?: number;
+    acl?: any | undefined;
+    description?: string;
+    tags?: string[] | undefined;
+};
+
 export interface PresignPutResult {
     bucket: string;
     key: string;
@@ -212,5 +224,22 @@ export class StorageService {
     async statObject(bucket: string, key: string): Promise<{ size?: number; contentType?: string } | null> {
         if (!this.provider.statObject) return null;
         return this.provider.statObject(bucket, key);
+    }
+
+    /**
+     * Verify that the object exists in storage by using statObject or attempting presignGet.
+     * Returns a minimal info object if available.
+     */
+    async verifyObjectExists(bucket: string, key: string): Promise<{ size?: number; contentType?: string } | null> {
+        if (this.provider.statObject) {
+            return this.provider.statObject(bucket, key);
+        }
+        // Fallback: attempt to presign get; not a strong guarantee but better than nothing.
+        try {
+            await this.presignGet(bucket, key, 60);
+            return {};
+        } catch {
+            return null;
+        }
     }
 }

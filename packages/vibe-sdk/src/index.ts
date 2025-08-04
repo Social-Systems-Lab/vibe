@@ -85,50 +85,80 @@ export class VibeSDK {
 
     // Storage helper namespace
     public storage = {
-        // High-level upload: uses presign when available, falls back to server upload
-        upload: async (file: File & { type?: string; name: string }) => {
+        /**
+         * High-level upload that returns both storageKey and created file metadata (server-created).
+         * Accepts optional metadata { acl?, description?, tags? } which will be used when creating the file document.
+         */
+        upload: async (
+            file: File & { type?: string; name: string },
+            opts?: { acl?: any; description?: string; tags?: string[] }
+        ): Promise<{ storageKey: string; file?: { id?: string; name?: string; storageKey: string; mimeType?: string; size?: number } }> => {
             if (!this.authManager.isLoggedIn()) throw new Error("Not authenticated");
-            // 1) Ask API for upload plan (presign or server-upload)
+            const headers = { Authorization: `Bearer ${this.authManager.getAccessToken()}` } as any;
+
+            // 1) Ask API for upload plan (presign or server-upload), forwarding metadata
             const { data: plan, error: planErr } = await this.api.storage["presign-put"].post(
-                { name: file.name, mime: (file as any).type || "" },
-                { headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` } as any }
+                { name: file.name, mime: (file as any).type || "", size: (file as any).size, ...opts },
+                { headers }
             );
             if (planErr) throw new Error(`Failed to prepare upload: ${JSON.stringify(planErr)}`);
 
             // 2) Execute plan
             let storageKey: string | undefined;
+            let createdFile: { id?: string; name?: string; storageKey: string; mimeType?: string; size?: number } | undefined;
+
             if (plan && (plan as any).strategy === "presigned") {
-                const { url, headers, storageKey: key } = plan as any;
+                const { url, headers: putHdrs, storageKey: key, metadata } = plan as any;
                 storageKey = key;
-                const putHeaders = new Headers(headers || {});
-                // Ensure content-type preserved if provided
+                const putHeaders = new Headers(putHdrs || {});
                 if (!putHeaders.has("Content-Type") && (file as any).type) putHeaders.set("Content-Type", (file as any).type);
                 const putRes = await fetch(url, { method: "PUT", body: file, headers: putHeaders });
-                if (!putRes.ok) {
-                    throw new Error(`Presigned upload failed with ${putRes.status}`);
+                if (!putRes.ok) throw new Error(`Presigned upload failed with ${putRes.status}`);
+
+                // 3) Commit metadata to create files doc
+                // Eden treaty flattens route names with dashes/segments; commit lives under ["commit"]
+                const { data: commitRes, error: commitErr } = await (this.api as any).storage["commit"].post(
+                    {
+                        storageKey,
+                        name: file.name,
+                        mime: (file as any).type || metadata?.mime,
+                        size: (file as any).size || metadata?.size,
+                        ...(opts || {}),
+                    } as any,
+                    { headers }
+                );
+                if (commitErr) {
+                    console.warn("Commit metadata failed; continuing without file doc", commitErr);
+                } else if (commitRes && typeof commitRes === "object" && "file" in commitRes) {
+                    createdFile = (commitRes as any).file;
                 }
             } else if (plan && (plan as any).strategy === "server-upload") {
-                const { storageKey: key } = plan as any;
+                const { storageKey: key, metadata } = plan as any;
                 storageKey = key;
-                // Always include the authoritative storageKey when falling back to server-upload
                 const form = new FormData();
                 form.set("file", file);
                 const { data: upRes, error: upErr } = await this.api.storage.upload.post(
-                    { file: form.get("file") as any, storageKey },
-                    { headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` } as any }
+                    {
+                        file: form.get("file") as any,
+                        storageKey,
+                        name: file.name,
+                        mime: (file as any).type || metadata?.mime,
+                        size: (file as any).size || metadata?.size,
+                        ...(opts || {}),
+                    } as any,
+                    { headers }
                 );
                 if (upErr) throw new Error(`Server upload failed: ${JSON.stringify(upErr)}`);
-                // If server echoes back a storageKey (in case it overridden), trust it
-                if (upRes && typeof upRes === "object" && "storageKey" in upRes && (upRes as any).storageKey) {
-                    storageKey = (upRes as any).storageKey as string;
+                if (upRes && typeof upRes === "object") {
+                    if ("storageKey" in upRes && (upRes as any).storageKey) storageKey = (upRes as any).storageKey as string;
+                    if ("file" in upRes) createdFile = (upRes as any).file as any;
                 }
             } else {
                 throw new Error("Invalid upload plan from server");
             }
 
-            // 3) Return the storageKey for caller to persist metadata via /data
             if (!storageKey) throw new Error("Upload did not yield a storageKey");
-            return { storageKey };
+            return { storageKey, file: createdFile };
         },
 
         // Low-level helpers (kept internal-ish but available)
