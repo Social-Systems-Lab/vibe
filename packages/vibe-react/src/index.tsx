@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
-import { VibeSDK, User, ReadCallback, Subscription, createSdk, DocRef, CertType, VibeManifest, SessionState, Document, ReadOnceResponse } from "vibe-sdk";
+import { VibeSDK, User, ReadCallback, Subscription, createSdk, DocRef, VibeManifest, SessionState, Document, ReadOnceResponse } from "vibe-sdk";
 import LoadingAnimation from "./components/LoadingAnimation";
 
 interface VibeContextType {
@@ -101,7 +101,6 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
     // Storage helpers delegating to SDK
     const upload = async (file: File): Promise<{ storageKey: string }> => {
         const res = await sdk.storage.upload(file);
-        // Ensure type-safe return (normalize undefined -> throw for correctness)
         if (!res || !res.storageKey) {
             throw new Error("upload did not return a storageKey");
         }
@@ -116,8 +115,6 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
     }
 
     if (!isLoggedIn) {
-        // Don't render children, but don't show a loading spinner
-        // This allows the signup/consent flow to happen
         return null;
     }
 
@@ -159,6 +156,8 @@ export const useVibe = () => {
 export * from "./components/ProfileMenu";
 export * from "./components/PermissionSelector";
 export * from "./components/PermissionPickerDialog";
+export { default as FilePreview } from "./components/FilePreview";
+export { ImagePicker } from "./components/ImagePicker";
 export * from "./components/ui/avatar";
 export * from "./components/ui/button";
 export * from "./components/ui/card";
