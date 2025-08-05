@@ -1,8 +1,8 @@
-import { ProfileMenu } from "vibe-react";
-import { VibeProvider } from "vibe-react";
+import { ProfileMenu, Header, Layout, Content, VibeProvider } from "vibe-react";
 import { appManifest } from "../lib/manifest";
 import "vibe-react/dist/vibe-react.css";
 import { SelectedUserProvider } from "../context/SelectedUserContext";
+import { LeftSidebar } from "../components/LeftSidebar";
 
 export default function MainLayout({
     children,
@@ -12,13 +12,22 @@ export default function MainLayout({
     return (
         <VibeProvider config={appManifest}>
             <SelectedUserProvider>
-                <header className="fixed top-0 left-0 right-0 z-10 flex items-center justify-between p-2 pointer-events-none">
-                    <div></div>
-                    <div className="flex items-center space-x-4 mr-6 pointer-events-auto">
-                        <ProfileMenu />
-                    </div>
-                </header>
-                <main>{children}</main>
+                <Layout>
+                    <Header
+                        left={<div />}
+                        center={null}
+                        right={
+                            <div className="flex items-center space-x-4 mr-2">
+                                <ProfileMenu />
+                            </div>
+                        }
+                        border
+                        height={56}
+                    />
+                    <Content left={<LeftSidebar />} topOffset={56}>
+                        {children}
+                    </Content>
+                </Layout>
             </SelectedUserProvider>
         </VibeProvider>
     );

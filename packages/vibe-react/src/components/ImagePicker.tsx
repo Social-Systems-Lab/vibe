@@ -23,15 +23,7 @@ export interface ImagePickerProps {
 
 export type { FileItem } from "../lib/types";
 
-export function ImagePicker({
-    open,
-    onOpenChange,
-    onSelect,
-    accept = "image/*",
-    selectionMode = "multiple",
-    title = "Choose files",
-    allowUpload = true,
-}: ImagePickerProps) {
+export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", selectionMode = "multiple", title = "Choose files", allowUpload = true }: ImagePickerProps) {
     const { readOnce, upload, presignGet, user } = useVibe();
     const [tab, setTab] = useState<TabKey>(allowUpload ? "my-files" : "my-files");
     const [loading, setLoading] = useState(false);
@@ -192,13 +184,7 @@ export function ImagePicker({
     );
 
     const uploadView = (
-        <div
-            className="rounded-md border border-dashed p-6 text-center"
-            onDrop={handleDrop}
-            onDragOver={preventDefaults}
-            onDragEnter={preventDefaults}
-            onDragLeave={preventDefaults}
-        >
+        <div className="rounded-md border border-dashed p-6 text-center" onDrop={handleDrop} onDragOver={preventDefaults} onDragEnter={preventDefaults} onDragLeave={preventDefaults}>
             <p className="mb-3 text-sm text-muted-foreground">Drag and drop files here, or click to select</p>
             <label className="inline-block">
                 <Input type="file" multiple accept={accept} onChange={handleFileInputChange} className="hidden" />
