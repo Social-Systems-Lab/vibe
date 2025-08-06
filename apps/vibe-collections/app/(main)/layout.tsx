@@ -47,7 +47,7 @@ export default function MainLayout({
 
 function CollectionsLeftNav() {
     return (
-        <div className="space-y-6 pr-4">
+        <div className="space-y-6 pr-4 h-full flex flex-col">
             <div className="p-2">
                 <UploadButton />
             </div>
@@ -61,7 +61,7 @@ function CollectionsLeftNav() {
                     </li>
                 </ul>
             </nav>
-            <div className="pt-4 px-2">
+            <div className="pt-4 px-2 mt-auto pb-4">
                 <StorageUsage />
             </div>
         </div>
