@@ -2,12 +2,11 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../lib/utils";
+import { useVibe } from "../components/VibeProvider";
 
 type AppGridMenuProps = {
     /**
-     * Path on the API origin that proxies to the cloud-ui grid page.
-     * Using /auth/app-grid would be ideal if proxied; for now we use /app-grid which exists in cloud-ui and
-     * will be reachable via the API proxy domain (same origin as cookies).
+     * Optional override for the full iframe URL. If not set, uses `${config.apiUrl}/app-grid`.
      */
     src?: string;
     /**
@@ -29,10 +28,23 @@ type AppGridMenuProps = {
     height?: number;
 };
 
-export function AppGridMenu({ src = "/app-grid", buttonLabel, className, panelClassName, width = 420, height = 480 }: AppGridMenuProps) {
+export function AppGridMenu({ src, buttonLabel, className, panelClassName, width = 420, height = 480 }: AppGridMenuProps) {
+    const { sdk } = useVibe();
     const [open, setOpen] = useState(false);
     const panelRef = useRef<HTMLDivElement>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
+
+    // Build default src from manifest config.apiUrl when not provided
+    const resolvedSrc = useMemo(() => {
+        try {
+            const apiUrl = (sdk as any)?.config?.apiUrl || (sdk as any)?.config?.apiBaseUrl || "";
+            const base = apiUrl?.replace(/\/+$/, "");
+            const path = "/app-grid";
+            return src || (base ? `${base}${path}` : path);
+        } catch {
+            return src || "/app-grid";
+        }
+    }, [sdk, src]);
 
     useEffect(() => {
         const onDocClick = (e: MouseEvent) => {
@@ -91,10 +103,13 @@ export function AppGridMenu({ src = "/app-grid", buttonLabel, className, panelCl
                 >
                     <iframe
                         ref={iframeRef}
-                        src={src}
+                        src={resolvedSrc}
                         title="Your Apps"
                         style={{ width: "100%", height: "100%", border: "none", background: "transparent" }}
-                        sandbox="allow-scripts allow-same-origin allow-popups"
+                        // We need allow-forms so wizard/login inside proxied cloud-ui can submit
+                        // We keep allow-same-origin to preserve cookie semantics via API-origin proxy,
+                        // and allow-popups for opening apps in new tabs.
+                        sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
                     />
                 </div>
             )}

@@ -142,6 +142,8 @@ const app = new Elysia()
     .get("/_next/*", ({ request }) => {
         return proxyRequest(request);
     })
+    // Proxy the App Grid UI just like the wizard
+    .get("/app-grid", ({ request }) => proxyRequest(request))
     .group("/auth", (app) =>
         app
             .get(
@@ -217,11 +219,16 @@ const app = new Elysia()
                     }
 
                     // If not logged in, or consent is required, redirect to the UI wizard
+                    // Sanitize UI-only params (avoid literal "undefined" strings)
                     const { form_type, ...rest } = query as any;
-                    const params = new URLSearchParams(rest);
+                    const params = new URLSearchParams();
+                    for (const [k, v] of Object.entries(rest)) {
+                        if (v === undefined || v === null || v === "undefined") continue;
+                        params.set(k, String(v));
+                    }
                     if (form_type) {
                         params.set("step", form_type);
-                    } else {
+                    } else if (!params.get("step")) {
                         params.set("step", "signup");
                     }
                     const redirectPath = `/auth/wizard?${params.toString()}`;
@@ -581,7 +588,12 @@ const app = new Elysia()
                         await identityService.revokeUserConsent(session.sessionId, client_id);
                     }
 
-                    const params = new URLSearchParams(query as any);
+                    // Rebuild query without "undefined" string values or UI-only noise that breaks flows
+                    const params = new URLSearchParams();
+                    for (const [k, v] of Object.entries(query as any)) {
+                        if (v === undefined || v === null || v === "undefined") continue;
+                        params.set(k, String(v));
+                    }
                     if (params.get("flow") === "settings") {
                         if (action === "approve") {
                             const redirectUri = params.get("redirect_uri");
@@ -595,6 +607,17 @@ const app = new Elysia()
 
                     params.delete("prompt");
                     params.delete("step");
+                    // UI-only params should not leak into authorize roundtrip
+                    params.delete("appName");
+                    params.delete("appTagline");
+                    params.delete("appDescription");
+                    params.delete("appLogoUrl");
+                    params.delete("appLogotypeUrl");
+                    params.delete("appShowcaseUrl");
+                    params.delete("backgroundImageUrl");
+                    params.delete("backgroundColor");
+                    params.delete("fontColor");
+                    params.delete("buttonColor");
                     const redirectTo = `/auth/authorize?${params.toString()}`;
                     console.log("[consent] Redirecting to:", redirectTo);
                     return { redirectTo };
