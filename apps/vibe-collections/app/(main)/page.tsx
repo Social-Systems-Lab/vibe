@@ -114,25 +114,14 @@ function CollectionsInner() {
 
     return (
         <div className="flex bg-white">
+            {/* Layout is now provided by the shared app layout; this page should only render main content */}
             <div className="flex-1 flex flex-col">
-                <TopBar />
-                <div className="flex flex-1">
-                    <LeftSidebar onFilesSelected={handleFilesUpload} />
-                    <div className="flex-1 flex flex-col">
-                        {/* <Header q={q} setQ={setQ} type={type} setType={setType} onRefresh={refresh} /> */}
-                        <main className="flex-1 p-4">
-                            <div className="mb-3 flex items-center justify-between">
-                                <h2 className="text-lg font-semibold">All files</h2>
-                                {/* Filter/Sort placeholders to sit above list */}
-                                {/* <div className="flex items-center gap-2 text-sm text-neutral-600">
-                                    <button className="px-3 py-1.5 rounded-full border bg-white hover:bg-neutral-50">Filter</button>
-                                    <button className="px-3 py-1.5 rounded-full border bg-white hover:bg-neutral-50">Sort</button>
-                                </div> */}
-                            </div>
-                            <FilesArea presignGet={presignGet} files={files} />
-                        </main>
+                <main className="flex-1 p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                        <h2 className="text-lg font-semibold">All files</h2>
                     </div>
-                </div>
+                    <FilesArea presignGet={presignGet} files={files} />
+                </main>
             </div>
 
             {dragActive && (
@@ -164,19 +153,7 @@ function SearchInTopBar() {
     );
 }
 
-function Header({
-    q,
-    setQ,
-    type,
-    setType,
-    onRefresh,
-}: {
-    q: string;
-    setQ: (v: string) => void;
-    type: string;
-    setType: (v: string) => void;
-    onRefresh: () => void;
-}) {
+function Header({ q, setQ, type, setType, onRefresh }: { q: string; setQ: (v: string) => void; type: string; setType: (v: string) => void; onRefresh: () => void }) {
     const [view, setView] = useState<"grid" | "list">("grid");
     return (
         <div className="px-4 py-3 flex items-center gap-3">
@@ -207,25 +184,7 @@ function Header({
     );
 }
 
-function TopBar() {
-    const imageAspectRatio = 717 / 161;
-    const height = 42;
-    const width = Math.round(height * imageAspectRatio);
-    return (
-        <header className="h-20 flex items-center">
-            <div className="flex items-center gap-2 pl-2 w-80">
-                <Image src="/images/logotype.png" alt="Collections" height={height} width={width} className="ml-4" />
-            </div>
-            {/* Search belongs in the top bar, aligned with main content by same horizontal padding */}
-            <div className="flex-1 pl-4">
-                <SearchInTopBar />
-            </div>
-            <div className="ml-auto pr-6">
-                <ProfileMenu />
-            </div>
-        </header>
-    );
-}
+/* TopBar removed; logo and search are handled by shared Header in layout */
 
 function inferType(mime: string): string {
     if (mime.startsWith("image/")) return "image";
@@ -277,47 +236,7 @@ function DragDropUploader({ onUploaded, onFilesSelected }: { onUploaded: () => v
     return null;
 }
 
-function LeftSidebar({ onFilesSelected }: { onFilesSelected: (files: File[]) => void }) {
-    const inputRef = useRef<HTMLInputElement>(null);
-
-    return (
-        <aside className="flex w-80 h-[calc(100vh-80px)] sticky top-[80px] flex-col">
-            <div className="p-6">
-                <button
-                    className="w-full rounded-lg bg-blue-600 text-white py-2.5 font-medium hover:bg-blue-700 transition"
-                    onClick={() => inputRef.current?.click()}
-                >
-                    Upload
-                </button>
-                <input
-                    ref={inputRef}
-                    type="file"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => {
-                        const files = Array.from(e.target.files || []);
-                        if (files.length) onFilesSelected(files);
-                        e.currentTarget.value = "";
-                    }}
-                />
-            </div>
-
-            <nav className="px-6">
-                <ul className="space-y-1">
-                    <li className="h-12 flex flex-row px-3 py-2 rounded-md bg-neutral-100 font-medium text-neutral-900 items-center gap-2">
-                        <Home className="h-5 w-5" />
-                        <p>All</p>
-                    </li>
-                    {/* Future: collections list items go here */}
-                </ul>
-            </nav>
-
-            <div className="mt-auto p-6">
-                <UsageBar usedBytes={0.75 * 1024 * 1024 * 1024} quotaBytes={5 * 1024 * 1024 * 1024} />
-            </div>
-        </aside>
-    );
-}
+/* LeftSidebar removed from page; the sidebar is provided by the shared Content.left in layout */
 
 function UsageBar({ usedBytes, quotaBytes }: { usedBytes: number; quotaBytes: number }) {
     const ratio = Math.min(1, usedBytes / (quotaBytes || 1));

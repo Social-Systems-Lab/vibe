@@ -16,7 +16,7 @@ export type ContentProps = {
     topOffset?: number;
 };
 
-export function Content({ left, right, children, className, leftWidth = "260px", rightWidth = "320px", gap = "24px", stickyLeft = true, stickyRight = true, topOffset = 56 }: ContentProps) {
+export function Content({ left, right, children, className, leftWidth = "260px", rightWidth = "320px", gap = "0px", stickyLeft = true, stickyRight = true, topOffset = 56 }: ContentProps) {
     return (
         <div className={cn("w-full", className)}>
             <div

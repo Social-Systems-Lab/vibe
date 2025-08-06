@@ -1,6 +1,4 @@
 import { Feed } from "@/app/components/Feed";
-import { LeftSidebar } from "@/app/components/LeftSidebar";
-import { RightSidebar } from "@/app/components/RightSidebar";
 
 type PageProps = {
     params: Promise<{ feedId: string }>;
@@ -10,15 +8,7 @@ type PageProps = {
 export default async function FeedPage(props: PageProps) {
     // Await the params to get the feedId
     const params = await props.params;
-    return (
-        <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] lg:grid-cols-[240px_1fr_300px] max-w-7xl mx-auto">
-            <LeftSidebar />
-            <div className="w-full">
-                <Feed feedId={params.feedId} />
-            </div>
-            <div>
-                <RightSidebar />
-            </div>
-        </div>
-    );
+    // The shared Layout + Content already provides the left (and optional right) panels.
+    // This page should only render its main content.
+    return <Feed feedId={params.feedId} />;
 }
