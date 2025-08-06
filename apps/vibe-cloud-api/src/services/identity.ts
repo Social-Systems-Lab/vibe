@@ -295,14 +295,7 @@ export class IdentityService {
 
         await this.usersDb.insert(user);
     }
-    async createAuthCode(data: {
-        userDid: string;
-        clientId: string;
-        redirectUri: string;
-        codeChallenge: string;
-        codeChallengeMethod: string;
-        scope: string;
-    }): Promise<string> {
+    async createAuthCode(data: { userDid: string; clientId: string; redirectUri: string; codeChallenge: string; codeChallengeMethod: string; scope: string }): Promise<string> {
         await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
@@ -369,7 +362,30 @@ export class IdentityService {
 
         return doc.userDid;
     }
-    async storeUserConsent(userDid: string, clientId: string) {
+    /**
+     * Store/Upsert a user's consent for an app with full inline manifest.
+     * Replaces legacy string[] consents with structured entries.
+     */
+    async storeUserConsent(
+        userDid: string,
+        consent: {
+            clientId: string;
+            origin: string;
+            manifest: {
+                appName?: string;
+                appDescription?: string;
+                appTagline?: string;
+                appLogoUrl?: string;
+                appLogotypeUrl?: string;
+                appShowcaseUrl?: string;
+                backgroundImageUrl?: string;
+                backgroundColor?: string;
+                buttonColor?: string;
+                themeColor?: string;
+            };
+            addedAt?: string;
+        }
+    ) {
         await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
@@ -378,27 +394,54 @@ export class IdentityService {
         if (!user) {
             throw new Error("User not found");
         }
-        const consents = user.consents || [];
-        if (!consents.includes(clientId)) {
-            await this.usersDb.insert({
-                ...user,
-                consents: [...consents, clientId],
-            });
+
+        const nowIso = new Date().toISOString();
+        const newEntry = {
+            clientId: consent.clientId,
+            origin: consent.origin,
+            manifest: consent.manifest || {},
+            addedAt: consent.addedAt || nowIso,
+        };
+
+        // Normalize consents to structured array
+        let consents: any[] = Array.isArray(user.consents) ? user.consents : [];
+
+        // Remove any legacy string entries equal to clientId
+        consents = consents.filter((c: any) => typeof c !== "string" || c !== consent.clientId);
+
+        // Upsert by clientId (unique identifier)
+        const idx = consents.findIndex((c: any) => c && typeof c === "object" && c.clientId === consent.clientId);
+        if (idx >= 0) {
+            consents[idx] = { ...consents[idx], ...newEntry, addedAt: consents[idx].addedAt || newEntry.addedAt };
+        } else {
+            consents.push(newEntry);
         }
+
+        await this.usersDb.insert({
+            ...user,
+            consents,
+        });
     }
 
-    async hasUserConsented(userDid: string, clientId: string): Promise<boolean> {
+    async hasUserConsented(userDid: string, clientIdOrOrigin: string): Promise<boolean> {
         await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
         }
         const user = await this.findByDid(userDid);
-        if (!user || !user.consents) {
-            return false;
+        if (!user || !user.consents) return false;
+
+        // Accept either clientId or origin
+        for (const c of user.consents as any[]) {
+            if (typeof c === "string") {
+                if (c === clientIdOrOrigin) return true;
+            } else if (c && typeof c === "object") {
+                if (c.clientId === clientIdOrOrigin || c.origin === clientIdOrOrigin) return true;
+            }
         }
-        return user.consents.includes(clientId);
+        return false;
     }
-    async revokeUserConsent(userDid: string, clientId: string) {
+    async revokeUserConsent(userDid: string, clientIdOrOrigin: string) {
         await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
@@ -407,13 +450,20 @@ export class IdentityService {
         if (!user) {
             throw new Error("User not found");
         }
-        const consents = user.consents || [];
-        if (consents.includes(clientId)) {
-            await this.usersDb.insert({
-                ...user,
-                consents: consents.filter((c: string) => c !== clientId),
-            });
-        }
+        const consents = (user.consents || []) as any[];
+
+        const filtered = consents.filter((c: any) => {
+            if (typeof c === "string") return c !== clientIdOrOrigin;
+            if (c && typeof c === "object") {
+                return c.clientId !== clientIdOrOrigin && c.origin !== clientIdOrOrigin;
+            }
+            return false;
+        });
+
+        await this.usersDb.insert({
+            ...user,
+            consents: filtered,
+        });
     }
     async updateUser(did: string, data: { displayName?: string; pictureUrl?: string }) {
         await this.reauthenticate();
@@ -490,5 +540,42 @@ export class IdentityService {
             username: dbUser,
             password: dbPass,
         };
+    }
+
+    /**
+     * Return structured consents list or [].
+     */
+    async listUserConsents(userDid: string): Promise<
+        Array<{
+            clientId: string;
+            origin: string;
+            manifest: any;
+            addedAt: string;
+        }>
+    > {
+        await this.reauthenticate();
+        if (!this.usersDb || !this.isConnected) {
+            throw new Error("Database not connected");
+        }
+        const user = await this.findByDid(userDid);
+        if (!user) return [];
+        const consents = Array.isArray(user.consents) ? user.consents : [];
+        // Normalize legacy string entries into structured minimal shape
+        return consents.map((c: any) => {
+            if (typeof c === "string") {
+                return {
+                    clientId: c,
+                    origin: c,
+                    manifest: {},
+                    addedAt: new Date(0).toISOString(),
+                };
+            }
+            return {
+                clientId: c.clientId,
+                origin: c.origin ?? c.clientId,
+                manifest: c.manifest ?? {},
+                addedAt: c.addedAt ?? new Date(0).toISOString(),
+            };
+        });
     }
 }

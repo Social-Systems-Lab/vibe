@@ -3,6 +3,7 @@
 import React from "react";
 import { cn } from "../../lib/utils";
 import { ProfileMenu } from "../../index";
+import { AppGridMenu } from "../AppGridMenu";
 
 export type HeaderProps = {
     left?: React.ReactNode;
@@ -48,6 +49,7 @@ export function Header({
 
     const defaultRight = (
         <div className="flex items-center space-x-4 mr-2">
+            <AppGridMenu />
             <ProfileMenu />
         </div>
     );

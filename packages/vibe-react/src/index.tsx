@@ -26,5 +26,8 @@ export * from "./components/layout/Layout";
 export * from "./components/layout/Content";
 export * from "./components/layout/LeftPanel";
 
+// App grid menu (iframe-based)
+export * from "./components/AppGridMenu";
+
 // Provider and hook (single source of truth)
 export { VibeProvider, useVibe } from "./components/VibeProvider";

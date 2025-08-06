@@ -68,9 +68,7 @@ try {
 
 const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(",")
-    : "http://localhost:3000,http://localhost:3001,http://localhost:4000,http://localhost:5050,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:4000,http://127.0.0.1:5050".split(
-          ","
-      );
+    : "http://localhost:3000,http://localhost:3001,http://localhost:4000,http://localhost:5050,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:4000,http://127.0.0.1:5050".split(",");
 console.log("Cors Origin:", allowedOrigins);
 
 const app = new Elysia()
@@ -557,7 +555,28 @@ const app = new Elysia()
                     }
 
                     if (action === "approve") {
-                        await identityService.storeUserConsent(session.sessionId, client_id);
+                        // Build consent object from existing authorize query params
+                        const redirectUri = (query as any).redirect_uri as string | undefined;
+                        const origin = redirectUri ? new URL(redirectUri).origin : (query as any).origin || client_id;
+
+                        const manifest = {
+                            appName: (query as any).appName,
+                            appDescription: (query as any).appDescription,
+                            appTagline: (query as any).appTagline,
+                            appLogoUrl: (query as any).appLogoUrl,
+                            appLogotypeUrl: (query as any).appLogotypeUrl,
+                            appShowcaseUrl: (query as any).appShowcaseUrl,
+                            backgroundImageUrl: (query as any).backgroundImageUrl,
+                            backgroundColor: (query as any).backgroundColor,
+                            buttonColor: (query as any).buttonColor,
+                            themeColor: (query as any).themeColor,
+                        };
+
+                        await identityService.storeUserConsent(session.sessionId, {
+                            clientId: client_id,
+                            origin: origin!,
+                            manifest,
+                        });
                     } else {
                         await identityService.revokeUserConsent(session.sessionId, client_id);
                     }
@@ -632,6 +651,23 @@ const app = new Elysia()
                     displayName: user.displayName,
                     pictureUrl: user.pictureUrl,
                 };
+            })
+            // Return structured consents for the logged-in user (for cloud-ui iframe)
+            .get("/me/consents", async ({ cookie, set, identityService, sessionJwt, request }) => {
+                const sessionToken = cookie.vibe_session.value;
+                if (!sessionToken) {
+                    set.status = 401;
+                    return { error: "Unauthorized" };
+                }
+
+                const session = await sessionJwt.verify(sessionToken);
+                if (!session || !session.sessionId) {
+                    set.status = 401;
+                    return { error: "Invalid session" };
+                }
+
+                const consents = await identityService.listUserConsents(session.sessionId);
+                return { consents };
             })
     )
     .group("/users", (app) =>
@@ -885,10 +921,7 @@ const app = new Elysia()
                             ? "video"
                             : (finalMime || "").startsWith("audio/")
                             ? "audio"
-                            : (finalMime || "").includes("pdf") ||
-                              (finalMime || "").includes("word") ||
-                              (finalMime || "").includes("excel") ||
-                              (finalMime || "").includes("text")
+                            : (finalMime || "").includes("pdf") || (finalMime || "").includes("word") || (finalMime || "").includes("excel") || (finalMime || "").includes("text")
                             ? "doc"
                             : "other";
 
@@ -912,10 +945,7 @@ const app = new Elysia()
                             },
                             profile as JwtPayload
                         );
-                        const newId =
-                            Array.isArray(writeRes) && writeRes.length > 0
-                                ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId
-                                : undefined;
+                        const newId = Array.isArray(writeRes) && writeRes.length > 0 ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId : undefined;
 
                         const url = await storageService.getPublicURL(bucketName, storageKey);
 
@@ -1129,10 +1159,7 @@ const app = new Elysia()
                             ? "video"
                             : (finalMime || "").startsWith("audio/")
                             ? "audio"
-                            : (finalMime || "").includes("pdf") ||
-                              (finalMime || "").includes("word") ||
-                              (finalMime || "").includes("excel") ||
-                              (finalMime || "").includes("text")
+                            : (finalMime || "").includes("pdf") || (finalMime || "").includes("word") || (finalMime || "").includes("excel") || (finalMime || "").includes("text")
                             ? "doc"
                             : "other";
 
@@ -1156,10 +1183,7 @@ const app = new Elysia()
                             },
                             profile as JwtPayload
                         );
-                        const newId =
-                            Array.isArray(writeRes) && writeRes.length > 0
-                                ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId
-                                : undefined;
+                        const newId = Array.isArray(writeRes) && writeRes.length > 0 ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId : undefined;
 
                         return {
                             storageKey,
