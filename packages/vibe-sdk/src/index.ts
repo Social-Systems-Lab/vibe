@@ -251,11 +251,9 @@ export class VibeSDK {
                     return reject(new Error("Hub iframe failed to load."));
                 }
                 const targetOrigin = new URL(this.hubUrl).origin;
-                this.hubFrame.contentWindow.postMessage(
-                    { type: "INIT", payload: { origin: window.location.origin, user: this.user, redirectUri: this.config.redirectUri } },
-                    targetOrigin,
-                    [channel.port2]
-                );
+                this.hubFrame.contentWindow.postMessage({ type: "INIT", payload: { origin: window.location.origin, user: this.user, redirectUri: this.config.redirectUri } }, targetOrigin, [
+                    channel.port2,
+                ]);
             };
 
             this.hubPort.onmessage = (event) => {
@@ -446,7 +444,7 @@ export class VibeSDK {
             params.set("fontColor", this.config.fontColor);
         }
         const url = `${this.config.apiUrl}/auth/authorize?${params.toString()}`;
-        window.location.href = url;
+        window.top!.location.href = url;
     }
 
     async getUser(): Promise<User | null> {

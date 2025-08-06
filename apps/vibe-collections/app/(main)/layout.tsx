@@ -12,19 +12,9 @@ export default function MainLayout({
         <VibeProvider>
             <Layout>
                 <Header
-                    left={
-                        <div className="flex items-center space-x-2 px-3">
-                            <img src="/images/logotype.png" alt="Collections" className="h-8" />
-                        </div>
-                    }
                     center={
                         <div className="w-full max-w-[800px] px-2">
                             <input type="text" placeholder="Search by name or tag" className="w-full h-10 rounded-full bg-neutral-100 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                        </div>
-                    }
-                    right={
-                        <div className="flex items-center space-x-4 mr-2">
-                            <ProfileMenu />
                         </div>
                     }
                     border

@@ -35,6 +35,7 @@ export class SessionManager {
 
             const iframe = document.createElement("iframe");
             iframe.style.display = "none";
+            iframe.sandbox.add("allow-scripts", "allow-same-origin", "allow-forms");
             iframe.src = `${this.config.apiUrl}/auth/session-check?${params.toString()}`;
             document.body.appendChild(iframe);
             console.log("SessionManager: Iframe created and added to body.", iframe.src);
