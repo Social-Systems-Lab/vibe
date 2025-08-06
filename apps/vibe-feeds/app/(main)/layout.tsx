@@ -14,23 +14,14 @@ export default function MainLayout({
             <SelectedUserProvider>
                 <Layout>
                     <Header
-                        left={
-                            <div className="flex items-center space-x-2 px-3">
-                                <img src="/images/logotype.png" alt="Feeds" className="h-8" />
-                            </div>
-                        }
+                        // left/right have sensible defaults now (logo + ProfileMenu)
+                        // keep only center override when needed
                         center={
                             <div className="w-full max-w-[700px] px-2">
                                 <input type="text" placeholder="What's on your mind?" className="w-full h-10 rounded-full bg-neutral-100 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                             </div>
                         }
-                        right={
-                            <div className="flex items-center space-x-4 mr-2">
-                                <ProfileMenu />
-                            </div>
-                        }
                         border
-                        height={56}
                     />
                     <Content left={<LeftSidebar />} topOffset={56}>
                         {children}
