@@ -29,6 +29,7 @@ export function AppGridMenu({ src, className, panelClassName, width = 360, heigh
     const { sdk } = useVibe();
     const [open, setOpen] = useState(false);
     const panelRef = useRef<HTMLDivElement>(null);
+    const buttonRef = useRef<HTMLButtonElement>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
 
     // Build default src from manifest config.apiUrl when not provided
@@ -45,9 +46,12 @@ export function AppGridMenu({ src, className, panelClassName, width = 360, heigh
 
     useEffect(() => {
         const onDocClick = (e: MouseEvent) => {
-            if (!panelRef.current) return;
-            if (panelRef.current.contains(e.target as Node)) return;
-            setOpen(false);
+            if (buttonRef.current?.contains(e.target as Node)) {
+                return;
+            }
+            if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+                setOpen(false);
+            }
         };
         document.addEventListener("mousedown", onDocClick);
         return () => document.removeEventListener("mousedown", onDocClick);
@@ -70,6 +74,7 @@ export function AppGridMenu({ src, className, panelClassName, width = 360, heigh
     const button = useMemo(
         () => (
             <button
+                ref={buttonRef}
                 type="button"
                 className={cn("inline-flex items-center justify-center rounded-md p-2 hover:bg-gray-100", className)}
                 onClick={() => setOpen((v) => !v)}
@@ -85,23 +90,21 @@ export function AppGridMenu({ src, className, panelClassName, width = 360, heigh
     return (
         <div className="relative inline-block">
             {button}
-            {open && (
-                <div
-                    ref={panelRef}
-                    className={cn("absolute right-0 mt-2 rounded-lg border border-gray-200 bg-white shadow-xl z-[1000] overflow-hidden", panelClassName)}
-                    style={{ width, height }}
-                    role="dialog"
-                    aria-modal="false"
-                >
-                    <iframe
-                        ref={iframeRef}
-                        src={resolvedSrc}
-                        title="Your Apps"
-                        style={{ width: "100%", height: "100%", border: "none", background: "transparent" }}
-                        sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-                    />
-                </div>
-            )}
+            <div
+                ref={panelRef}
+                className={cn("absolute right-0 mt-2 rounded-lg border border-gray-200 bg-white shadow-xl z-[1000] overflow-hidden", open ? "visible" : "hidden", panelClassName)}
+                style={{ width, height }}
+                role="dialog"
+                aria-modal="false"
+            >
+                <iframe
+                    ref={iframeRef}
+                    src={resolvedSrc}
+                    title="Your Apps"
+                    style={{ width: "100%", height: "100%", border: "none", background: "transparent" }}
+                    sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+                />
+            </div>
         </div>
     );
 }
