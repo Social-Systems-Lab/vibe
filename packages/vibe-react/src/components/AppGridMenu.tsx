@@ -3,16 +3,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { useVibe } from "../components/VibeProvider";
+import { LayoutGrid } from "lucide-react";
 
 type AppGridMenuProps = {
     /**
      * Optional override for the full iframe URL. If not set, uses `${config.apiUrl}/app-grid`.
      */
     src?: string;
-    /**
-     * Button content override
-     */
-    buttonLabel?: React.ReactNode;
     /**
      * Optional className overrides
      */
@@ -28,7 +25,7 @@ type AppGridMenuProps = {
     height?: number;
 };
 
-export function AppGridMenu({ src, buttonLabel, className, panelClassName, width = 420, height = 480 }: AppGridMenuProps) {
+export function AppGridMenu({ src, className, panelClassName, width = 420, height = 480 }: AppGridMenuProps) {
     const { sdk } = useVibe();
     const [open, setOpen] = useState(false);
     const panelRef = useRef<HTMLDivElement>(null);
@@ -74,20 +71,15 @@ export function AppGridMenu({ src, buttonLabel, className, panelClassName, width
         () => (
             <button
                 type="button"
-                className={cn("inline-flex items-center justify-center rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium shadow-sm hover:bg-gray-50", className)}
+                className={cn("inline-flex items-center justify-center rounded-md p-2 hover:bg-gray-100", className)}
                 onClick={() => setOpen((v) => !v)}
                 aria-expanded={open}
                 aria-haspopup="dialog"
             >
-                {buttonLabel ?? (
-                    <span className="flex items-center gap-2">
-                        <span style={{ fontSize: 16 }}>▦</span>
-                        <span>Apps</span>
-                    </span>
-                )}
+                <LayoutGrid className="h-5 w-5" />
             </button>
         ),
-        [buttonLabel, className, open]
+        [className, open]
     );
 
     return (
@@ -106,9 +98,6 @@ export function AppGridMenu({ src, buttonLabel, className, panelClassName, width
                         src={resolvedSrc}
                         title="Your Apps"
                         style={{ width: "100%", height: "100%", border: "none", background: "transparent" }}
-                        // We need allow-forms so wizard/login inside proxied cloud-ui can submit
-                        // We keep allow-same-origin to preserve cookie semantics via API-origin proxy,
-                        // and allow-popups for opening apps in new tabs.
                         sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
                     />
                 </div>
