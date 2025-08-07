@@ -54,120 +54,34 @@ export default function AppGridPage() {
     };
 
     return (
-        <div
-            style={{
-                minHeight: "100vh",
-                background: "transparent",
-                padding: 16,
-                boxSizing: "border-box",
-                fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
-                color: "var(--foreground, #111)",
-            }}
-        >
-            <div
-                style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    marginBottom: 12,
-                }}
-            >
-                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Your Apps</h2>
+        <div className="min-h-screen bg-transparent p-4 box-border font-sans text-gray-800">
+            <div className="flex items-center justify-between mb-3">
+                <h2 className="m-0 text-lg font-semibold">Your Apps</h2>
             </div>
 
-            {error && (
-                <div
-                    style={{
-                        padding: 12,
-                        border: "1px solid #fca5a5",
-                        background: "#fee2e2",
-                        color: "#991b1b",
-                        borderRadius: 8,
-                        marginBottom: 12,
-                    }}
-                >
-                    {error}
-                </div>
-            )}
+            {error && <div className="p-3 border border-red-300 bg-red-100 text-red-800 rounded-lg mb-3">{error}</div>}
 
-            {!consents && !error && <div style={{ padding: 8, opacity: 0.7 }}>Loading...</div>}
+            {!consents && !error && <div className="p-2 opacity-70">Loading...</div>}
 
-            {consents && consents.length === 0 && <div style={{ padding: 8, opacity: 0.7 }}>No apps yet. Approve consent in an app to see it here.</div>}
+            {consents && consents.length === 0 && <div className="p-2 opacity-70">No apps yet. Approve consent in an app to see it here.</div>}
 
             {consents && consents.length > 0 && (
-                <div
-                    style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-                        gap: 12,
-                    }}
-                >
+                <div className="grid grid-cols-fill-160 gap-3">
                     {consents.map((c) => {
                         const title = c.manifest?.appName || new URL(c.origin).hostname.replace(/^www\./, "");
-                        const icon = c.manifest?.appLogoUrl || c.manifest?.appLogotypeUrl;
-                        const bg = c.manifest?.backgroundColor || "white";
-                        const border = "1px solid rgba(0,0,0,0.08)";
+                        const icon = c.manifest?.appLogoUrl;
 
                         return (
                             <button
                                 key={`${c.clientId}:${c.origin}`}
                                 onClick={() => openApp(c)}
-                                style={{
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    gap: 10,
-                                    padding: 16,
-                                    background: bg,
-                                    border,
-                                    borderRadius: 12,
-                                    cursor: "pointer",
-                                    transition: "box-shadow 120ms ease",
-                                }}
-                                onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 2px 10px rgba(0,0,0,0.08)")}
-                                onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "none")}
+                                className="flex flex-col items-center justify-center gap-2.5 p-4 bg-white border border-gray-200 rounded-lg cursor-pointer transition-shadow duration-150 ease-in-out hover:shadow-md"
                                 title={title}
                             >
-                                <div
-                                    style={{
-                                        width: 56,
-                                        height: 56,
-                                        borderRadius: 12,
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        background: "rgba(0,0,0,0.04)",
-                                        overflow: "hidden",
-                                    }}
-                                >
-                                    {icon ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img src={icon} alt={title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                                    ) : (
-                                        <span style={{ fontSize: 28 }}>🟦</span>
-                                    )}
+                                <div className="w-14 h-14 rounded-lg flex items-center justify-center bg-gray-100 overflow-hidden">
+                                    {icon ? <img src={icon} alt={title} className="w-full h-full object-cover" /> : <span className="text-3xl">🟦</span>}
                                 </div>
-                                <div
-                                    style={{
-                                        fontSize: 14,
-                                        fontWeight: 600,
-                                        textAlign: "center",
-                                        lineHeight: 1.2,
-                                        color: "inherit",
-                                    }}
-                                >
-                                    {title}
-                                </div>
-                                <div
-                                    style={{
-                                        fontSize: 11,
-                                        opacity: 0.7,
-                                        textAlign: "center",
-                                    }}
-                                >
-                                    {new URL(c.origin).hostname}
-                                </div>
+                                <div className="text-sm font-semibold text-center leading-tight">{title}</div>
                             </button>
                         );
                     })}
