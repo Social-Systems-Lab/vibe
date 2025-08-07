@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { Squircle } from "vibe-react";
 
 type ConsentEntry = {
     clientId: string;
@@ -47,7 +48,7 @@ export default function AppGridPage() {
     }, []);
 
     const openApp = (c: ConsentEntry) => {
-        const url = c.manifest?.appShowcaseUrl || c.manifest?.appLogoUrl || c.origin;
+        const url = c.origin;
         try {
             window.open(url, "_blank", "noopener,noreferrer");
         } catch {}
@@ -55,10 +56,6 @@ export default function AppGridPage() {
 
     return (
         <div className="min-h-screen bg-transparent p-4 box-border font-sans text-gray-800">
-            <div className="flex items-center justify-between mb-3">
-                <h2 className="m-0 text-lg font-semibold">Your Apps</h2>
-            </div>
-
             {error && <div className="p-3 border border-red-300 bg-red-100 text-red-800 rounded-lg mb-3">{error}</div>}
 
             {!consents && !error && <div className="p-2 opacity-70">Loading...</div>}
@@ -75,12 +72,12 @@ export default function AppGridPage() {
                             <button
                                 key={`${c.clientId}:${c.origin}`}
                                 onClick={() => openApp(c)}
-                                className="flex flex-col items-center justify-center gap-2.5 p-4 bg-white border border-gray-200 rounded-lg cursor-pointer transition-shadow duration-150 ease-in-out hover:shadow-md"
+                                className="flex flex-col items-center justify-center gap-2.5 p-4 rounded-lg cursor-pointer"
                                 title={title}
                             >
-                                <div className="w-14 h-14 rounded-lg flex items-center justify-center bg-gray-100 overflow-hidden">
-                                    {icon ? <img src={icon} alt={title} className="w-full h-full object-cover" /> : <span className="text-3xl">🟦</span>}
-                                </div>
+                                <Squircle imageUrl={icon} size={56}>
+                                    <span className="text-3xl">🟦</span>
+                                </Squircle>
                                 <div className="text-sm font-semibold text-center leading-tight">{title}</div>
                             </button>
                         );
