@@ -55,7 +55,7 @@ export default function AppGridPage() {
     };
 
     return (
-        <div className="min-h-screen bg-transparent p-4 box-border font-sans text-gray-800">
+        <div className="min-h-screen bg-transparent px-4 pt-5 pb-6 box-border font-sans text-gray-900">
             {error && <div className="p-3 border border-red-300 bg-red-100 text-red-800 rounded-lg mb-3">{error}</div>}
 
             {!consents && !error && <div className="p-2 opacity-70">Loading...</div>}
@@ -63,22 +63,15 @@ export default function AppGridPage() {
             {consents && consents.length === 0 && <div className="p-2 opacity-70">No apps yet. Approve consent in an app to see it here.</div>}
 
             {consents && consents.length > 0 && (
-                <div className="grid grid-cols-fill-160 gap-3">
+                <div className="grid grid-cols-4 gap-x-6 gap-y-6">
                     {consents.map((c) => {
                         const title = c.manifest?.appName || new URL(c.origin).hostname.replace(/^www\./, "");
                         const icon = c.manifest?.appLogoUrl;
 
                         return (
-                            <button
-                                key={`${c.clientId}:${c.origin}`}
-                                onClick={() => openApp(c)}
-                                className="flex flex-col items-center justify-center gap-2.5 p-4 rounded-lg cursor-pointer"
-                                title={title}
-                            >
-                                <Squircle imageUrl={icon} size={56}>
-                                    <span className="text-3xl">🟦</span>
-                                </Squircle>
-                                <div className="text-sm font-semibold text-center leading-tight">{title}</div>
+                            <button key={`${c.clientId}:${c.origin}`} onClick={() => openApp(c)} className="flex flex-col items-center justify-start gap-2 cursor-pointer select-none" title={title}>
+                                <Squircle imageUrl={icon} size={56} className="bg-gray-100" />
+                                <div className="text-[13px] font-medium text-center leading-snug line-clamp-2">{title}</div>
                             </button>
                         );
                     })}

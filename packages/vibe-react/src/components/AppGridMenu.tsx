@@ -25,7 +25,7 @@ type AppGridMenuProps = {
     height?: number;
 };
 
-export function AppGridMenu({ src, className, panelClassName, width = 420, height = 480 }: AppGridMenuProps) {
+export function AppGridMenu({ src, className, panelClassName, width = 360, height = 560 }: AppGridMenuProps) {
     const { sdk } = useVibe();
     const [open, setOpen] = useState(false);
     const panelRef = useRef<HTMLDivElement>(null);
