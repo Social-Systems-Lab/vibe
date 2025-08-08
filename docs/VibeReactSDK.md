@@ -37,8 +37,8 @@ To get started with Vibe, you need to wrap your application in the `VibeProvider
 Here is a typical setup in your main `App` or `Layout` component:
 
 ```jsx
-import React from 'react';
-import { VibeProvider } from 'vibe-react';
+import React from "react";
+import { VibeProvider } from "vibe-react";
 
 // Vibe SDK Configuration
 const config = {
@@ -53,10 +53,10 @@ const config = {
 
 function App() {
     return (
-        &lt;VibeProvider config={config}&gt;
+        <VibeProvider config={config}>
             {/* Your app components go here */}
-            &lt;YourAppComponent /&gt;
-        &lt;/VibeProvider&gt;
+            <YourAppComponent />
+        </VibeProvider>
     );
 }
 
@@ -91,67 +91,62 @@ While the underlying authentication mechanism is powerful, the developer experie
 
 ### The `useVibe` Hook
 
-Once your app is wrapped in `VibeProvider`, you can access the Vibe context in any component using the `useVibe` hook.
+The `VibeProvider` automatically handles the authentication state. When a user first visits your app, the provider checks if they have an active session. If not, it will automatically redirect them to the Vibe authentication portal. After logging in, they are sent back to your app, fully authenticated.
+
+You can access the user's authentication state and data using the `useVibe` hook.
 
 ```jsx
-import { useVibe } from 'vibe-react';
+import { useVibe } from "vibe-react";
 
-function MyComponent() {
-    const { user, isLoggedIn, login, logout, signup } = useVibe();
+function UserDisplay() {
+    const { user, isLoggedIn } = useVibe();
 
     if (!isLoggedIn) {
-        return (
-            &lt;div&gt;
-                &lt;button onClick={() => login()}&gt;Log In&lt;/button&gt;
-                &lt;button onClick={() => signup()}&gt;Sign Up&lt;/button&gt;
-            &lt;/div&gt;
-        );
+        // This content is shown while the initial session check is in progress
+        // or if the user explicitly logs out.
+        return <p>Loading user...</p>;
     }
 
-    return (
-        &lt;div&gt;
-            &lt;p&gt;Welcome, {user?.displayName || 'friend'}!&lt;/p&gt;
-            &lt;button onClick={() => logout()}&gt;Log Out&lt;/button&gt;
-        &lt;/div&gt;
-    );
+    return <p>Welcome, {user?.displayName || "friend"}!</p>;
 }
 ```
 
 ### Auth State
 
-The `useVibe` hook provides two important state variables:
-
--   `isLoggedIn` (boolean): Indicates whether the user is currently authenticated.
+-   `isLoggedIn` (boolean): `true` if the user is authenticated, otherwise `false`.
 -   `user` (object | null): Contains information about the logged-in user, such as their `did` (Decentralized Identifier) and `displayName`.
 
 ### Auth Methods
 
--   `login()`: Initiates the login flow.
+While the initial login and signup flows are handled automatically, the `useVibe` hook still provides methods for explicit actions:
+
 -   `logout()`: Logs the current user out.
--   `signup()`: Initiates the registration flow for new users.
+-   `login()` / `signup()`: Can be used to manually trigger the authentication flow if needed, though this is uncommon.
 
-### UI Components
+### UI and Layout Components
 
-For a quicker setup, `vibe-react` also includes pre-built UI components:
+`vibe-react` includes a set of pre-built components to help you structure your application quickly. The `Layout`, `Header`, and `Content` components provide a responsive application shell with sensible defaults.
 
--   `AuthWidget`: A complete widget that shows login/signup buttons or the user's profile if they are logged in.
--   `LoginButton`: A simple button that triggers the `login()` flow.
--   `SignupButton`: A simple button that triggers the `signup()` flow.
--   `ProfileMenu`: A dropdown menu for logged-in users, typically showing profile information and a logout button.
+The `Header` component will automatically display a logo and a `ProfileMenu` for logged-in users, which handles the `logout` functionality.
 
-**Example using `AuthWidget`:**
+**Example using `Layout`:**
 
 ```jsx
-import { AuthWidget } from 'vibe-react';
+import { VibeProvider, Layout, Header, Content } from "vibe-react";
+import { appManifest } from "./lib/manifest"; // Your app config
+import "vibe-react/dist/vibe-react.css";
 
-function Header() {
+function App() {
     return (
-        &lt;header&gt;
-            &lt;nav&gt;
-                {/* ... other nav items ... */}
-                &lt;AuthWidget /&gt;
-            &lt;/nav&gt;
-        &lt;/header&gt;
+        <VibeProvider config={appManifest}>
+            <Layout>
+                <Header border />
+                <Content>
+                    {/* Your page content goes here */}
+                    <h1>My Awesome App</h1>
+                </Content>
+            </Layout>
+        </VibeProvider>
     );
 }
 ```
@@ -169,8 +164,8 @@ For data that needs to be kept in sync in real-time, you can subscribe to a coll
 The method returns a promise that resolves to a `subscription` object, which you should use to `unsubscribe` when the component unmounts to prevent memory leaks.
 
 ```jsx
-import React, { useState, useEffect } from 'react';
-import { useVibe } from 'vibe-react';
+import React, { useState, useEffect } from "react";
+import { useVibe } from "vibe-react";
 
 function ContactsList() {
     const [contacts, setContacts] = useState([]);
@@ -192,7 +187,7 @@ function ContactsList() {
         const subscriptionPromise = read("contacts", {}, handleData);
 
         let subscription;
-        subscriptionPromise.then(sub => {
+        subscriptionPromise.then((sub) => {
             subscription = sub;
         });
 
@@ -205,14 +200,14 @@ function ContactsList() {
     }, [isLoggedIn, read]);
 
     return (
-        &lt;div&gt;
-            &lt;h2&gt;Your Contacts&lt;/h2&gt;
-            &lt;ul&gt;
-                {contacts.map(contact => (
-                    &lt;li key={contact._id}&gt;{contact.name}&lt;/li&gt;
+        <div>
+            <h2>Your Contacts</h2>
+            <ul>
+                {contacts.map((contact) => (
+                    <li key={contact._id}>{contact.name}</li>
                 ))}
-            &lt;/ul&gt;
-        &lt;/div&gt;
+            </ul>
+        </div>
     );
 }
 ```
@@ -222,8 +217,8 @@ function ContactsList() {
 If you only need to fetch data a single time without subscribing to updates, you can use the `readOnce()` method. It returns a promise that resolves with the query result.
 
 ```jsx
-import React, { useState } from 'react';
-import { useVibe } from 'vibe-react';
+import React, { useState } from "react";
+import { useVibe } from "vibe-react";
 
 function UserProfile({ userId }) {
     const [profile, setProfile] = useState(null);
@@ -242,10 +237,10 @@ function UserProfile({ userId }) {
     };
 
     return (
-        &lt;div&gt;
-            &lt;button onClick={fetchProfile}&gt;Load Profile&lt;/button&gt;
-            {profile && &lt;p&gt;{profile.name}&lt;/p&gt;}
-        &lt;/div&gt;
+        <div>
+            <button onClick={fetchProfile}>Load Profile</button>
+            {profile && <p>{profile.name}</p>}
+        </div>
     );
 }
 ```
@@ -259,8 +254,8 @@ To create or update data in Vibe's secure storage, use the `write()` method from
 The `write()` method takes the collection name and the data object you want to save. If the object has an `_id` property, Vibe will attempt to update the existing document; otherwise, it will create a new one.
 
 ```jsx
-import React, { useState } from 'react';
-import { useVibe } from 'vibe-react';
+import React, { useState } from "react";
+import { useVibe } from "vibe-react";
 
 function AddContactForm() {
     const [name, setName] = useState("");
@@ -274,7 +269,7 @@ function AddContactForm() {
             // Create a new contact document
             await write("contacts", {
                 name,
-                email
+                email,
             });
 
             // Clear the form
@@ -288,28 +283,18 @@ function AddContactForm() {
     }
 
     return (
-        &lt;form onSubmit={handleSubmit}&gt;
-            &lt;h2&gt;Add New Contact&lt;/h2&gt;
-            &lt;div&gt;
-                &lt;label&gt;Name:&lt;/label&gt;
-                &lt;input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                /&gt;
-            &lt;/div&gt;
-            &lt;div&gt;
-                &lt;label&gt;Email:&lt;/label&gt;
-                &lt;input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                /&gt;
-            &lt;/div&gt;
-            &lt;button type="submit"&gt;Add Contact&lt;/button&gt;
-        &lt;/form&gt;
+        <form onSubmit={handleSubmit}>
+            <h2>Add New Contact</h2>
+            <div>
+                <label>Name:</label>
+                <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
+            </div>
+            <div>
+                <label>Email:</label>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            </div>
+            <button type="submit">Add Contact</button>
+        </form>
     );
 }
 ```
@@ -423,7 +408,7 @@ For more advanced permission models using certificates, see the `Certs_and_ACLs.
 To remove a document from a collection, use the `remove()` method. You need to provide the collection name and an object specifying the `_id` of the document to be deleted.
 
 ```jsx
-import { useVibe } from 'vibe-react';
+import { useVibe } from "vibe-react";
 
 function ContactItem({ contact }) {
     const { remove } = useVibe();
@@ -441,10 +426,10 @@ function ContactItem({ contact }) {
     };
 
     return (
-        &lt;li&gt;
+        <li>
             {contact.name}
-            &lt;button onClick={handleDelete}&gt;Delete&lt;/button&gt;
-        &lt;/li&gt;
+            <button onClick={handleDelete}>Delete</button>
+        </li>
     );
 }
 ```
@@ -457,7 +442,7 @@ Vibe includes built-in support for secure file storage, handling everything from
 
 ### Uploading Files
 
-To upload a file, you use the `sdk.upload()` method, which is available on the `sdk` object from the `useVibe` hook. This method takes a `File` object (typically from an `<input type="file">` element) and optional metadata.
+To upload a file, you use the `upload()` method, which is available directly from the `useVibe` hook. This method takes a `File` object (typically from an `<input type="file">` element) and optional metadata.
 
 The SDK handles the entire upload process, which may involve getting a secure, one-time upload URL from the backend. Once the upload is complete, a new document is created in a special `files` collection containing metadata about the uploaded file.
 
@@ -466,15 +451,14 @@ import React from "react";
 import { useVibe } from "vibe-react";
 
 function FileUploader() {
-    const { sdk } = useVibe();
+    const { upload } = useVibe();
 
     const handleFileChange = async (event) => {
         const file = event.target.files?.[0];
-        if (!file || !sdk) return;
+        if (!file || !upload) return;
 
         try {
-            // The sdk object is needed for upload
-            const { fileRecord } = await sdk.upload(file, {
+            const { fileRecord } = await upload(file, {
                 description: "A photo from my vacation.",
                 tags: ["travel", "beach"],
                 // You can also set an ACL for the file metadata document
@@ -534,6 +518,7 @@ The `useVibe` hook provides access to the Vibe SDK's core functionality.
 | `readOnce()`      | `(collection, [query]) => Promise<ReadResult>`             | Fetches data from a collection a single time.                                                         |
 | `write()`         | `(collection, data) => Promise<any>`                       | Creates or updates a document in a collection.                                                        |
 | `remove()`        | `(collection, {_id}) => Promise<any>`                      | Deletes a document from a collection.                                                                 |
+| `upload()`        | `(file, [metadata]) => Promise<any>`                       | Uploads a file and creates a corresponding document in the `files` collection.                        |
 | `sdk`             | `VibeSDK`                                                  | The raw Vibe SDK instance for advanced use cases.                                                     |
 | `appName`         | `string`                                                   | The name of the application, as defined in the `VibeProvider` config.                                 |
 | `appImageUrl`     | `string`                                                   | The image URL for the application, as defined in the `VibeProvider` config.                           |
