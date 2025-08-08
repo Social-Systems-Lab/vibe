@@ -43,11 +43,12 @@ import { VibeProvider } from 'vibe-react';
 // Vibe SDK Configuration
 const config = {
     appName: "My Awesome App",
-    appImageUrl: "https://example.com/app-icon.png", // Optional
-    apiUrl: "http://localhost:5000", // Your Vibe backend endpoint
+    appLogoUrl: "https://example.com/logo.png", // Recommended
+    appTagline: "A brief, catchy tagline for your app.", // Optional
+    appDescription: "A longer description of what your app does.", // Optional
+    apiUrl: "http://localhost:5000", // Vibe backend endpoint
     clientId: "http://localhost:3000", // Your app's origin
     redirectUri: "http://localhost:3000/auth/callback", // Vibe callback URL
-    useHub: true, // Recommended for most web apps
 };
 
 function App() {
@@ -65,17 +66,28 @@ export default App;
 **Configuration Options:**
 
 -   `appName`: The name of your application.
--   `appImageUrl`: A URL to an icon for your application.
+-   `appLogoUrl`: A URL to a logo for your application. Displayed during the authentication flow.
+-   `appLogotypeUrl`: A URL to a logotype (text-based logo) for your application.
+-   `appImageUrl`: A URL to an icon for your application (legacy, prefer `appLogoUrl`).
+-   `appShowcaseUrl`: A URL to a showcase image for your app.
+-   `appTagline`: A brief, catchy tagline for your app.
+-   `appDescription`: A longer description of what your app does.
 -   `apiUrl`: The endpoint for the Vibe backend services.
 -   `clientId`: The origin URL of your application.
 -   `redirectUri`: The full URL where users are redirected after authentication. This must be registered in your Vibe application settings.
--   `useHub`: A boolean to enable the Vibe Hub, which facilitates cross-app communication and authentication.
+-   `themeColor`: A hex color code that sets the theme for the authentication UI.
+-   `backgroundColor`: A hex color code for the background of the auth UI.
+-   `buttonColor`: A hex color code for buttons in the auth UI.
+-   `fontColor`: A hex color code for text in the auth UI.
+-   `backgroundImageUrl`: A URL for a background image in the auth UI.
 
 ---
 
 ## Authentication
 
-Vibe provides a simple yet powerful way to manage user authentication. The `useVibe` hook is the primary way to interact with the authentication state and trigger authentication flows.
+Vibe provides a simple and secure way to manage user authentication using an industry-standard OAuth 2.0 flow with PKCE (Proof Key for Code Exchange). This modern approach ensures that authentication is robust and safe, especially for single-page applications.
+
+While the underlying authentication mechanism is powerful, the developer experience remains straightforward. The `useVibe` hook is the primary way to interact with the authentication state and trigger login or registration flows, abstracting away the complexity.
 
 ### The `useVibe` Hook
 
@@ -363,6 +375,47 @@ read("posts", query, (result) => {
 });
 ```
 
+### Global Queries
+
+Vibe allows you to query for data across all users, which is useful for creating public feeds, directories, or other social features. This is controlled by two key elements: Access Control Lists (ACLs) on documents and a `global` flag in your query.
+
+**1. Setting Access Control (ACLs)**
+
+To make a document visible in global queries, you must attach an `acl` (Access Control List) field to it when you write it. An `acl` specifies who can read or write the data. To make it publicly readable, you can set the `read` permission to allow everyone (`*`).
+
+```jsx
+// Make a post publicly readable
+await write("posts", {
+    content: "Hello, world!",
+    acl: {
+        read: {
+            allow: ["*"], // Anyone can read this document
+        },
+    },
+});
+```
+
+**2. Performing a Global Query**
+
+Once documents are made public with an ACL, you can query them from the special `global` database by adding `{ global: true }` to your query options.
+
+```jsx
+// Fetch all public posts from everyone
+const query = {
+    global: true,
+    sort: { createdAt: -1 },
+    limit: 20,
+};
+read("posts", query, (result) => {
+    if (result.ok) {
+        // result.data will contain public posts from all users
+        setGlobalPosts(result.data);
+    }
+});
+```
+
+For more advanced permission models using certificates, see the `Certs_and_ACLs.md` documentation.
+
 ---
 
 ## Deleting Data
@@ -398,6 +451,72 @@ function ContactItem({ contact }) {
 
 ---
 
+## File Storage
+
+Vibe includes built-in support for secure file storage, handling everything from uploads to access control. This is ideal for managing user-generated content like images, videos, or documents.
+
+### Uploading Files
+
+To upload a file, you use the `sdk.upload()` method, which is available on the `sdk` object from the `useVibe` hook. This method takes a `File` object (typically from an `<input type="file">` element) and optional metadata.
+
+The SDK handles the entire upload process, which may involve getting a secure, one-time upload URL from the backend. Once the upload is complete, a new document is created in a special `files` collection containing metadata about the uploaded file.
+
+```jsx
+import React from "react";
+import { useVibe } from "vibe-react";
+
+function FileUploader() {
+    const { sdk } = useVibe();
+
+    const handleFileChange = async (event) => {
+        const file = event.target.files?.[0];
+        if (!file || !sdk) return;
+
+        try {
+            // The sdk object is needed for upload
+            const { fileRecord } = await sdk.upload(file, {
+                description: "A photo from my vacation.",
+                tags: ["travel", "beach"],
+                // You can also set an ACL for the file metadata document
+                acl: { read: { allow: ["*"] } },
+            });
+
+            alert(`File uploaded successfully! File ID: ${fileRecord._id}`);
+        } catch (error) {
+            console.error("Upload failed:", error);
+            alert("Upload failed.");
+        }
+    };
+
+    return (
+        <div>
+            <label htmlFor="file-upload">Upload a File:</label>
+            <input id="file-upload" type="file" onChange={handleFileChange} />
+        </div>
+    );
+}
+```
+
+### Accessing Files
+
+After a file is uploaded, you can access it like any other data object by reading from the `files` collection. The document in the `files` collection contains metadata such as the filename, size, content type, and a URL to access the file's content.
+
+```jsx
+// Read metadata for a specific file
+const result = await readOnce("files", { _id: "some-file-id" });
+
+if (result.ok && result.data) {
+    const fileInfo = result.data[0];
+    console.log(fileInfo.name); // "my-vacation-photo.jpg"
+    console.log(fileInfo.url); // "https://your-storage-provider.com/path/to/file"
+
+    // You can then use this URL in an <img> tag or for downloads
+    // <img src={fileInfo.url} alt={fileInfo.description} />
+}
+```
+
+---
+
 ## API Reference: `useVibe()`
 
 The `useVibe` hook provides access to the Vibe SDK's core functionality.
@@ -418,9 +537,3 @@ The `useVibe` hook provides access to the Vibe SDK's core functionality.
 | `sdk`             | `VibeSDK`                                                  | The raw Vibe SDK instance for advanced use cases.                                                     |
 | `appName`         | `string`                                                   | The name of the application, as defined in the `VibeProvider` config.                                 |
 | `appImageUrl`     | `string`                                                   | The image URL for the application, as defined in the `VibeProvider` config.                           |
-
----
-
-## Next Steps
-
-Now that you've learned the basics, you're ready to start building with Vibe. Explore the official GitHub repository for more examples and to dive deeper into the source code.
