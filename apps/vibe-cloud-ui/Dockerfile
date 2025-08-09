@@ -40,13 +40,16 @@ RUN pnpm build
 FROM node:18-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+ENV HOSTNAME=0.0.0.0
+ENV PORT=4000
 
-# Copy the standalone output
-COPY --from=build /repo/apps/vibe-cloud-ui/.next/standalone .
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
 
-# Copy the public and static folders
+COPY --from=build /repo/apps/vibe-cloud-ui/.next/standalone ./
 COPY --from=build /repo/apps/vibe-cloud-ui/.next/static ./.next/static
 COPY --from=build /repo/apps/vibe-cloud-ui/public ./public
 
+USER nextjs
 EXPOSE 4000
-CMD [ "node", "server.js" ]
+CMD ["node", "apps/vibe-cloud-ui/server.js"]
