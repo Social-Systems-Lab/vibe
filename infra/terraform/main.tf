@@ -3,11 +3,14 @@ terraform {
     bucket                      = "vibe-terraform-state" # This bucket must be created manually
     key                         = "terraform.tfstate"
     region                      = "fr-par"
-    endpoint                    = "https://s3.fr-par.scw.cloud"
-    access_key                  = var.scw_access_key
-    secret_key                  = var.scw_secret_key
+    endpoints = {
+      s3 = "https://s3.fr-par.scw.cloud"
+    }
     skip_credentials_validation = true
     skip_region_validation      = true
+    skip_requesting_account_id  = true
+    skip_metadata_api_check     = true
+    use_path_style           = true
   }
   required_providers {
     scaleway = {
@@ -18,11 +21,8 @@ terraform {
 }
 
 provider "scaleway" {
-  access_key = var.scw_access_key
-  secret_key = var.scw_secret_key
-  project_id = var.scw_project_id
-  region     = var.scw_region
-  zone       = var.scw_zone
+  # Credentials will be provided by environment variables in the CI/CD pipeline
+  # SCW_ACCESS_KEY, SCW_SECRET_KEY, SCW_DEFAULT_PROJECT_ID, SCW_DEFAULT_REGION, SCW_DEFAULT_ZONE
 }
 
 # Private Network
