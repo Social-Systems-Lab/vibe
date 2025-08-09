@@ -1,14 +1,41 @@
+# Default values for vibe-cloud-ui.
 replicaCount: 1
 
 image:
-    repository: vibe/vibe-cloud-ui
+    repository: rg.fr-par.scw.cloud/vibe-registry/vibe-cloud-ui
     pullPolicy: IfNotPresent
-    tag: "latest"
+    tag: ""
 
 service:
     type: ClusterIP
-    port: 4000
+    port: 80
+    targetPort: 3000 # Default port for Next.js
 
-# We don't create an ingress for this service as it's only accessed via the API proxy.
+config:
+    nextPublicApiUrl: "https://api.vibepublic.com"
+
 ingress:
-    enabled: false
+    enabled: true
+    host: vibepublic.com
+    annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+
+# These sub-charts are dependencies from Chart.yaml.
+# We enable them here to ensure they are installed.
+ingress-nginx:
+    enabled: true
+    controller:
+        service:
+            annotations:
+                service.beta.kubernetes.io/scw-loadbalancer-type: "lb-s"
+                service.beta.kubernetes.io/scw-loadbalancer-inbound-ports: "80,443"
+
+cert-manager:
+    enabled: true
+
+# This configures the cert-manager ClusterIssuer resource.
+clusterIssuer:
+    email: admin@socialsystems.io

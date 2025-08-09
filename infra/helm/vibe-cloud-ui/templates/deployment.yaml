@@ -1,24 +1,46 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-vibe-cloud-ui
+  name: {{ .Release.Name }}-deployment
   labels:
-    app: vibe-cloud-ui
+    app: {{ .Release.Name }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: vibe-cloud-ui
+      app: {{ .Release.Name }}
   template:
     metadata:
       labels:
-        app: vibe-cloud-ui
+        app: {{ .Release.Name }}
     spec:
       containers:
-        - name: vibe-cloud-ui
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: 4000
+              containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: {{ .Values.config.nextPublicApiUrl | quote }}
