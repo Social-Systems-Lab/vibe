@@ -1,0 +1,68 @@
+# Local override for building and running vibe-cloud-api and vibe-cloud-ui
+# Usage:
+#   cd infra/selfhost
+#   docker-compose up -d --build
+#
+# Notes:
+# - This file injects local-only secrets and wiring between services.
+# - CouchDB and MinIO are for local development only.
+# - UI talks to API via internal Docker network hostname: http://vibe-cloud-api:5050
+
+services:
+    vibe-cloud-api:
+        environment:
+            # Core app secrets (local-only sample values)
+            - JWT_SECRET=dev-local-jwt-secret-change-me
+            - INSTANCE_ID_SECRET=dev-local-instance-secret-change-me
+
+            # CouchDB connectivity (service name from compose)
+            - COUCHDB_URL=http://couchdb:5984
+            - COUCHDB_USER=admin
+            - COUCHDB_PASSWORD=password
+
+            # MinIO/S3 (optional; include if the API integrates with object storage locally)
+            - S3_ENDPOINT=http://minio:9000
+            - S3_ACCESS_KEY=minioadmin
+            - S3_SECRET_KEY=minioadmin
+            - S3_BUCKET=vibe-local
+            - S3_REGION=us-east-1
+            - S3_FORCE_PATH_STYLE=true
+
+            # URL to the UI (reachable inside the Docker network)
+            - VIBE_CLOUD_UI_URL=http://vibe-cloud-ui:4000
+
+        # Optional: wait-for dependencies at runtime using simple healthcheck strategy
+        depends_on:
+            couchdb:
+                condition: service_started
+            couchdb-setup:
+                condition: service_completed_successfully
+            minio:
+                condition: service_started
+            vibe-cloud-ui:
+                condition: service_started
+
+    vibe-cloud-ui:
+        environment:
+            # UI needs to know how to reach the API. Inside Docker network use service name.
+            - NEXT_PUBLIC_API_URL=http://vibe-cloud-api:5050
+
+    # Optional: initialize a bucket in MinIO for local testing
+    minio:
+        environment:
+            - MINIO_ROOT_USER=minioadmin
+            - MINIO_ROOT_PASSWORD=minioadmin
+        # No change to ports here; inherited from base compose
+        # Add a command to auto-create a bucket after startup using mc (MinIO client)
+        # We'll attach a sidecar one-shot job for bucket creation.
+    minio-mc-setup:
+        image: minio/mc
+        depends_on:
+            - minio
+        entrypoint: ["/bin/sh", "-c"]
+        command:
+            - |
+                /usr/bin/mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null 2>&1 || true;
+                /usr/bin/mc mb --ignore-existing local/vibe-local >/dev/null 2>&1 || true;
+                echo 'MinIO setup complete: bucket vibe-local';
+        restart: "no"

@@ -1,7 +1,37 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { Squircle } from "vibe-react";
+import React, { useEffect, useState } from "react";
+
+/**
+ * Minimal local fallback for the missing `vibe-react` Squircle component.
+ * Keeps Docker/CI builds unblocked until packages/vibe-react is added.
+ */
+function Squircle(props: { imageUrl?: string; size?: number; className?: string }) {
+    const size = props.size ?? 56;
+    const radius = Math.round(size * 0.3);
+    return (
+        <div
+            className={props.className}
+            style={{
+                width: size,
+                height: size,
+                borderRadius: radius,
+                overflow: "hidden",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "#f3f4f6",
+            }}
+        >
+            {props.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={props.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            ) : (
+                <div style={{ width: "60%", height: "60%", backgroundColor: "#e5e7eb", borderRadius: 12 }} />
+            )}
+        </div>
+    );
+}
 
 type ConsentEntry = {
     clientId: string;
@@ -57,7 +87,6 @@ export default function AppGridPage() {
         <div className="min-h-screen bg-transparent px-4 pt-5 pb-6 box-border font-sans text-gray-900">
             {error && <div className="p-3 border border-red-300 bg-red-100 text-red-800 rounded-lg mb-3">{error}</div>}
 
-            {/* Remove explicit "Loading..." — show cache immediately; if no cache, render empty grid state */}
             {consents && consents.length === 0 && <div className="p-2 opacity-70">No apps.</div>}
 
             {consents && consents.length > 0 && (
