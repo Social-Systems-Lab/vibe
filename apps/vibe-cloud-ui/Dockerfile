@@ -36,16 +36,17 @@ RUN pnpm -w --filter "vibe-sdk..." build || true
 RUN pnpm -w --filter "vibe-react..." build || true
 RUN pnpm build
 
-# Next.js standalone output places server files in .next/standalone and static in .next/static
 # ---- Runtime image ----
 FROM node:18-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-# Copy production build artifacts (non-standalone)
-COPY --from=build /repo/apps/vibe-cloud-ui/.next ./.next
+
+# Copy the standalone output
+COPY --from=build /repo/apps/vibe-cloud-ui/.next/standalone .
+
+# Copy the public and static folders
+COPY --from=build /repo/apps/vibe-cloud-ui/.next/static ./.next/static
 COPY --from=build /repo/apps/vibe-cloud-ui/public ./public
-COPY --from=build /repo/apps/vibe-cloud-ui/package.json ./package.json
 
 EXPOSE 4000
-# Start Next.js using standard production build
-CMD [ "npx", "next", "start", "-p", "4000" ]
+CMD [ "node", "server.js" ]
