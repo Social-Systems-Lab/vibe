@@ -28,7 +28,7 @@ config:
     storageProvider: "scaleway"
     scalewayRegion: "fr-par"
     scalewayEndpoint: "s3.fr-par.scw.cloud"
-    corsOrigin: "http://127.0.0.1:3000" # This will be overridden by the production URL
+    corsOrigin: "https://vibepublic.com"
     port: "5050"
 
 # CouchDB sub-chart configuration
@@ -47,7 +47,7 @@ couchdbSetupJob:
 
 ingress:
     enabled: true
-    host: vibe-cloud-api.example.com # Replace with your domain
+    host: api.vibepublic.com
     annotations:
         cert-manager.io/cluster-issuer: letsencrypt-prod
         nginx.ingress.kubernetes.io/ssl-redirect: "true"
