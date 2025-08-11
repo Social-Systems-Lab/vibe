@@ -73,6 +73,7 @@ const allowedOrigins = process.env.CORS_ORIGIN
 allowedOrigins.push(process.env.VIBE_CLOUD_UI_URL || "http://vibe-cloud-ui-service:4000");
 allowedOrigins.push("https://vibe-feeds.vercel.app");
 allowedOrigins.push("https://api.vibepublic.com");
+allowedOrigins.push("http://api.vibepublic.com");
 
 console.log("Cors Origin:", allowedOrigins);
 
