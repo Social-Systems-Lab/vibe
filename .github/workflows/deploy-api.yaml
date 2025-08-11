@@ -96,7 +96,6 @@ jobs:
                     instanceIdSecret: "${{ secrets.INSTANCE_ID_SECRET }}"
                     scalewayAccessKey: "${{ secrets.SCALEWAY_ACCESS_KEY }}"
                     scalewaySecretKey: "${{ secrets.SCALEWAY_SECRET_KEY }}"
-                    corsOrigin: "${{ secrets.CORS_ORIGIN }},https://vibe-feeds.vercel.app"
                   couchdb:
                     auth:
                       username: "admin"
@@ -113,7 +112,7 @@ jobs:
                     --values ./infra/helm/vibe-cloud-api/secrets.yaml \
                     --set image.tag=${{ github.sha }} \
                     --set ingress.host=${{ secrets.INGRESS_HOST }} \
-                    --set config.corsOrigin=${{ secrets.CORS_ORIGIN }} \
+                    --set-string config.corsOrigin="${{ secrets.CORS_ORIGIN }},https://vibe-feeds.vercel.app,https://${{ secrets.INGRESS_HOST }},http://${{ secrets.INGRESS_HOST }}" \
                     --set clusterIssuer.email=${{ secrets.CLUSTER_ISSUER_EMAIL }} \
                     --set config.vibeCloudUiUrl=http://vibe-cloud-ui-service:4000
 
