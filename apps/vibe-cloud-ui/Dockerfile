@@ -1,3 +1,5 @@
+ARG APP_VERSION
+
 # ---- Base builder ----
 FROM node:18-alpine AS base
 WORKDIR /repo
