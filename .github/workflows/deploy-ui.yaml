@@ -30,15 +30,25 @@ jobs:
                   username: nologin
                   password: ${{ secrets.SCALEWAY_SECRET_KEY }}
 
+            - name: Extract version and SHA
+              id: vars
+              run: |
+                  VERSION=$(jq -r .version apps/vibe-cloud-ui/package.json)
+                  SHA=$(echo ${{ github.sha }} | cut -c1-7)
+                  echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+                  echo "SHA=${SHA}" >> $GITHUB_OUTPUT
+                  echo "TAG=rg.fr-par.scw.cloud/vibe-registry/vibe-cloud-ui:${VERSION}-${SHA}" >> $GITHUB_OUTPUT
+                  echo "APP_VERSION=${VERSION}-${SHA}" >> $GITHUB_OUTPUT
+
             - name: Build and push Docker image
               uses: docker/build-push-action@v4
               with:
                   context: .
                   file: ./apps/vibe-cloud-ui/Dockerfile
                   push: true
-                  tags: rg.fr-par.scw.cloud/vibe-registry/vibe-cloud-ui:${{ github.sha }}
+                  tags: ${{ steps.vars.outputs.TAG }}
                   build-args: |
-                      APP_VERSION=${{ github.sha }}
+                      APP_VERSION=${{ steps.vars.outputs.APP_VERSION }}
 
             - name: Setup Scaleway CLI
               uses: scaleway/action-scw@v0
@@ -69,7 +79,7 @@ jobs:
                   helm upgrade --install vibe-cloud-ui ./infra/helm/vibe-cloud-ui \
                     --namespace vibe --create-namespace \
                     --values ./infra/helm/vibe-cloud-ui/values.yaml \
-                    --set image.tag=${{ github.sha }}
+                    --set image.tag=${{ steps.vars.outputs.APP_VERSION }}
 
             - name: Wait for Certificate Readiness
               run: |
