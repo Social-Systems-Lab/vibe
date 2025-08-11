@@ -48,7 +48,10 @@ ENV APP_VERSION=$APP_VERSION
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
+COPY --from=build /repo/apps/vibe-cloud-ui/public ./public
 COPY --from=build --chown=nextjs:nodejs /repo/apps/vibe-cloud-ui/.next/standalone ./
+COPY --from=build --chown=nextjs:nodejs /repo/apps/vibe-cloud-ui/.next/static ./.next/static
+
 USER nextjs
 EXPOSE 4000
-CMD ["node", "apps/vibe-cloud-ui/server.js"]
+CMD ["node", "server.js"]
