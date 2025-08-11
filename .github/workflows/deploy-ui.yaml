@@ -39,6 +39,7 @@ jobs:
                   echo "TAG=rg.fr-par.scw.cloud/vibe-registry/vibe-cloud-ui:${EFFECTIVE_VERSION}" >> $GITHUB_OUTPUT
                   echo "APP_VERSION=${EFFECTIVE_VERSION}" >> $GITHUB_OUTPUT
                   echo "EFFECTIVE_APP_VERSION=${EFFECTIVE_VERSION}" >> $GITHUB_ENV
+                  echo "NEXT_PUBLIC_APP_VERSION=${EFFECTIVE_VERSION}" >> $GITHUB_ENV
 
             - name: Build and push Docker image
               uses: docker/build-push-action@v4
@@ -48,7 +49,7 @@ jobs:
                   push: true
                   tags: ${{ steps.vars.outputs.TAG }}
                   build-args: |
-                      APP_VERSION=${{ env.EFFECTIVE_APP_VERSION }}
+                      NEXT_PUBLIC_APP_VERSION=${{ env.EFFECTIVE_APP_VERSION }}
 
             - name: Setup Scaleway CLI
               uses: scaleway/action-scw@v0
