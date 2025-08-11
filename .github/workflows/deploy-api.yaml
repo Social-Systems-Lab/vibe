@@ -112,7 +112,7 @@ jobs:
                     --values ./infra/helm/vibe-cloud-api/secrets.yaml \
                     --set image.tag=${{ github.sha }} \
                     --set ingress.host=${{ secrets.INGRESS_HOST }} \
-                    --set config.corsOrigin=${{ secrets.CORS_ORIGIN }} \
+                    --set config.corsOrigin="${{ secrets.CORS_ORIGIN }},https://vibe-feeds.vercel.app" \
                     --set clusterIssuer.email=${{ secrets.CLUSTER_ISSUER_EMAIL }} \
                     --set config.vibeCloudUiUrl=http://vibe-cloud-ui-service:4000
 
