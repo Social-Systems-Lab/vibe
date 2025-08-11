@@ -49,9 +49,6 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 COPY --from=build --chown=nextjs:nodejs /repo/apps/vibe-cloud-ui/.next/standalone ./
-COPY --from=build --chown=nextjs:nodejs /repo/apps/vibe-cloud-ui/.next/static ./.next/static
-COPY --from=build --chown=nextjs:nodejs /repo/apps/vibe-cloud-ui/public ./public
-
 USER nextjs
 EXPOSE 4000
-CMD ["node", "server.js"]
+CMD ["node", "apps/vibe-cloud-ui/server.js"]
