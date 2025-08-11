@@ -68,7 +68,7 @@ try {
 
 const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(",")
-    : "http://localhost:3000,http://localhost:3001,http://localhost:4000,http://localhost:5050,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:4000,http://127.0.0.1:5050".split(",");
+    : "http://localhost:3000,http://localhost:3001,http://localhost:4000,http://localhost:5050".split(",");
 console.log("Cors Origin:", allowedOrigins);
 
 const app = new Elysia()
@@ -120,7 +120,9 @@ const app = new Elysia()
     .ws("/_next/webpack-hmr", {
         open(ws) {
             console.log("[WS] HMR client connected");
-            const serverWs = new WebSocket("ws://127.0.0.1:4000/_next/webpack-hmr");
+            const uiUrl = process.env.VIBE_CLOUD_UI_URL || "http://localhost:4000";
+            const wsUrl = uiUrl.replace(/^http/, "ws");
+            const serverWs = new WebSocket(`${wsUrl}/_next/webpack-hmr`);
             (ws.data as any).serverWs = serverWs;
 
             serverWs.onmessage = ({ data }) => ws.send(data);
@@ -944,7 +946,10 @@ const app = new Elysia()
                             ? "video"
                             : (finalMime || "").startsWith("audio/")
                             ? "audio"
-                            : (finalMime || "").includes("pdf") || (finalMime || "").includes("word") || (finalMime || "").includes("excel") || (finalMime || "").includes("text")
+                            : (finalMime || "").includes("pdf") ||
+                              (finalMime || "").includes("word") ||
+                              (finalMime || "").includes("excel") ||
+                              (finalMime || "").includes("text")
                             ? "doc"
                             : "other";
 
@@ -968,7 +973,10 @@ const app = new Elysia()
                             },
                             profile as JwtPayload
                         );
-                        const newId = Array.isArray(writeRes) && writeRes.length > 0 ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId : undefined;
+                        const newId =
+                            Array.isArray(writeRes) && writeRes.length > 0
+                                ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId
+                                : undefined;
 
                         const url = await storageService.getPublicURL(bucketName, storageKey);
 
@@ -1182,7 +1190,10 @@ const app = new Elysia()
                             ? "video"
                             : (finalMime || "").startsWith("audio/")
                             ? "audio"
-                            : (finalMime || "").includes("pdf") || (finalMime || "").includes("word") || (finalMime || "").includes("excel") || (finalMime || "").includes("text")
+                            : (finalMime || "").includes("pdf") ||
+                              (finalMime || "").includes("word") ||
+                              (finalMime || "").includes("excel") ||
+                              (finalMime || "").includes("text")
                             ? "doc"
                             : "other";
 
@@ -1206,7 +1217,10 @@ const app = new Elysia()
                             },
                             profile as JwtPayload
                         );
-                        const newId = Array.isArray(writeRes) && writeRes.length > 0 ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId : undefined;
+                        const newId =
+                            Array.isArray(writeRes) && writeRes.length > 0
+                                ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId
+                                : undefined;
 
                         return {
                             storageKey,

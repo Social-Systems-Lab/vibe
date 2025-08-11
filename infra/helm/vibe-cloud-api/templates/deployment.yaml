@@ -57,3 +57,7 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-couchdb
                   key: adminPassword
+            - name: VIBE_CLOUD_UI_URL
+              value: {{ .Values.config.vibeCloudUiUrl | quote }}
+            - name: CORS_ORIGIN
+              value: {{ .Values.config.corsOrigin | quote }}

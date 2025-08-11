@@ -113,7 +113,8 @@ jobs:
                     --set image.tag=${{ github.sha }} \
                     --set ingress.host=${{ secrets.INGRESS_HOST }} \
                     --set config.corsOrigin=${{ secrets.CORS_ORIGIN }} \
-                    --set clusterIssuer.email=${{ secrets.CLUSTER_ISSUER_EMAIL }}
+                    --set clusterIssuer.email=${{ secrets.CLUSTER_ISSUER_EMAIL }} \
+                    --set config.vibeCloudUiUrl=http://vibe-cloud-ui-service:4000
 
             - name: Wait for Certificate Readiness
               run: |
