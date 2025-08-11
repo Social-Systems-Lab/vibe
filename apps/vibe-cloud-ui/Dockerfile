@@ -42,6 +42,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=4000
+ARG APP_VERSION
+ENV APP_VERSION=$APP_VERSION
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs

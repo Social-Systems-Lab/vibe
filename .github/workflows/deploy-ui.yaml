@@ -37,6 +37,8 @@ jobs:
                   file: ./apps/vibe-cloud-ui/Dockerfile
                   push: true
                   tags: rg.fr-par.scw.cloud/vibe-registry/vibe-cloud-ui:${{ github.sha }}
+                  build-args: |
+                      APP_VERSION=${{ github.sha }}
 
             - name: Setup Scaleway CLI
               uses: scaleway/action-scw@v0
