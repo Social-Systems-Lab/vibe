@@ -176,6 +176,7 @@ export class ScalewayStorageProvider implements StorageProvider {
                 Bucket: bucket,
                 Key: key,
                 ContentType: contentType,
+                ACL: "public-read",
             });
             const signedUrl: string = await getSignedUrl(this.client as any, cmd as any, { expiresIn: expiresSeconds });
             return {
