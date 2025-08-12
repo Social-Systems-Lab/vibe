@@ -42,12 +42,6 @@ RUN adduser --system --uid 1001 nextjs
 # Copy the standalone output
 COPY --from=builder --chown=nextjs:nodejs /repo/apps/vibe-cloud-ui/.next/standalone ./
 
-# Copy the static assets
-COPY --from=builder --chown=nextjs:nodejs /repo/apps/vibe-cloud-ui/.next/static ./.next/static
-
-# Copy the public assets
-COPY --from=builder --chown=nextjs:nodejs /repo/apps/vibe-cloud-ui/public ./public
-
 USER nextjs
 EXPOSE 4000
 CMD ["node", "server.js"]
