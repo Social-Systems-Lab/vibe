@@ -68,10 +68,7 @@ try {
 
 const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",") : "http://localhost:3000,http://localhost:3001,http://localhost:4000,http://localhost:5050".split(",");
 
-allowedOrigins.push(process.env.VIBE_CLOUD_UI_URL || "http://vibe-cloud-ui-service:4000");
-allowedOrigins.push("https://vibe-feeds.vercel.app");
-allowedOrigins.push("https://api.vibepublic.com");
-allowedOrigins.push("http://api.vibepublic.com");
+//allowedOrigins.push(process.env.VIBE_CLOUD_UI_URL || "http://vibe-cloud-ui-service:4000");
 
 console.log("Cors Origin:", allowedOrigins);
 
