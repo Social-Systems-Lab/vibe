@@ -44,3 +44,7 @@ spec:
           env:
             - name: NEXT_PUBLIC_API_URL
               value: {{ .Values.config.nextPublicApiUrl | quote }}
+            - name: PORT
+              value: "4000"
+            - name: NEXT_PUBLIC_APP_VERSION
+              value: {{ .Values.image.tag | quote }}
