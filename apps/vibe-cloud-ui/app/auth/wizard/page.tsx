@@ -219,7 +219,44 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
         e.preventDefault();
         setIsLoading(true);
 
-        const formData = new FormData(e.currentTarget);
+        const fileInput = e.currentTarget.elements.namedItem("picture") as HTMLInputElement;
+        const file = fileInput?.files?.[0];
+        const formData = new FormData();
+        formData.append("displayName", displayName);
+
+        if (file) {
+            // 1. Get presigned URL from the server
+            const presignResponse = await fetch("/storage/presign-put", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: file.name, mime: file.type }),
+            });
+
+            if (!presignResponse.ok) {
+                console.error("Failed to get presigned URL");
+                setIsLoading(false);
+                return;
+            }
+
+            const presignData = await presignResponse.json();
+
+            // 2. Upload file directly to S3
+            const uploadResponse = await fetch(presignData.url, {
+                method: "PUT",
+                body: file,
+                headers: { "Content-Type": file.type },
+            });
+
+            if (!uploadResponse.ok) {
+                console.error("Upload to S3 failed");
+                setIsLoading(false);
+                return;
+            }
+
+            // 3. Send pictureUrl to the profile endpoint
+            formData.append("pictureUrl", presignData.url.split("?")[0]);
+        }
+
         const response = await fetch(`/auth/profile?${queryString}`, {
             method: "POST",
             body: formData,

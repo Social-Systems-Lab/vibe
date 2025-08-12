@@ -66,9 +66,7 @@ try {
     process.exit(1);
 }
 
-const allowedOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(",")
-    : "http://localhost:3000,http://localhost:3001,http://localhost:4000,http://localhost:5050".split(",");
+const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",") : "http://localhost:3000,http://localhost:3001,http://localhost:4000,http://localhost:5050".split(",");
 
 allowedOrigins.push(process.env.VIBE_CLOUD_UI_URL || "http://vibe-cloud-ui-service:4000");
 allowedOrigins.push("https://vibe-feeds.vercel.app");
@@ -493,11 +491,11 @@ const app = new Elysia()
                     }
 
                     const userDid = session.sessionId;
-                    const { displayName, bio, picture } = body;
+                    const { displayName, bio, picture, pictureUrl: bodyPictureUrl } = body;
 
-                    let pictureUrl: string | undefined = undefined;
+                    let pictureUrl: string | undefined = bodyPictureUrl;
 
-                    if (picture && picture.size > 0) {
+                    if (!pictureUrl && picture && picture.size > 0) {
                         try {
                             const user = await identityService.findByDid(userDid);
                             if (!user) {
@@ -548,6 +546,7 @@ const app = new Elysia()
                         displayName: t.String(),
                         bio: t.Optional(t.String()),
                         picture: t.Optional(t.File()),
+                        pictureUrl: t.Optional(t.String()),
                     }),
                 }
             )
@@ -952,10 +951,7 @@ const app = new Elysia()
                             ? "video"
                             : (finalMime || "").startsWith("audio/")
                             ? "audio"
-                            : (finalMime || "").includes("pdf") ||
-                              (finalMime || "").includes("word") ||
-                              (finalMime || "").includes("excel") ||
-                              (finalMime || "").includes("text")
+                            : (finalMime || "").includes("pdf") || (finalMime || "").includes("word") || (finalMime || "").includes("excel") || (finalMime || "").includes("text")
                             ? "doc"
                             : "other";
 
@@ -979,10 +975,7 @@ const app = new Elysia()
                             },
                             profile as JwtPayload
                         );
-                        const newId =
-                            Array.isArray(writeRes) && writeRes.length > 0
-                                ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId
-                                : undefined;
+                        const newId = Array.isArray(writeRes) && writeRes.length > 0 ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId : undefined;
 
                         const url = await storageService.getPublicURL(bucketName, storageKey);
 
@@ -1196,10 +1189,7 @@ const app = new Elysia()
                             ? "video"
                             : (finalMime || "").startsWith("audio/")
                             ? "audio"
-                            : (finalMime || "").includes("pdf") ||
-                              (finalMime || "").includes("word") ||
-                              (finalMime || "").includes("excel") ||
-                              (finalMime || "").includes("text")
+                            : (finalMime || "").includes("pdf") || (finalMime || "").includes("word") || (finalMime || "").includes("excel") || (finalMime || "").includes("text")
                             ? "doc"
                             : "other";
 
@@ -1223,10 +1213,7 @@ const app = new Elysia()
                             },
                             profile as JwtPayload
                         );
-                        const newId =
-                            Array.isArray(writeRes) && writeRes.length > 0
-                                ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId
-                                : undefined;
+                        const newId = Array.isArray(writeRes) && writeRes.length > 0 ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId : undefined;
 
                         return {
                             storageKey,

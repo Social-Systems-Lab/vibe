@@ -61,9 +61,9 @@ spec:
               value: {{ .Values.config.vibeCloudUiUrl | quote }}
             - name: CORS_ORIGIN
               value: {{ .Values.config.corsOrigin | quote }}
-           - name: STORAGE_PROVIDER
-             value: {{ .Values.config.storageProvider | quote }}
-           - name: SCALEWAY_REGION
-             value: {{ .Values.config.scalewayRegion | quote }}
-           - name: SCALEWAY_ENDPOINT
-             value: {{ .Values.config.scalewayEndpoint | quote }}
+            - name: STORAGE_PROVIDER
+              value: {{ .Values.config.storageProvider | quote }}
+            - name: SCALEWAY_REGION
+              value: {{ .Values.config.scalewayRegion | quote }}
+            - name: SCALEWAY_ENDPOINT
+              value: {{ .Values.config.scalewayEndpoint | quote }}
