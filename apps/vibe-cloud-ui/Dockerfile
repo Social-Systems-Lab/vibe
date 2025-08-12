@@ -44,6 +44,7 @@ RUN adduser --system --uid 1001 nextjs
 
 # Copy the standalone output from the builder stage
 COPY --from=builder --chown=nextjs:nodejs /repo/apps/vibe-cloud-ui/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /repo/apps/vibe-cloud-ui/.next/static ./.next/static
 
 USER nextjs
 EXPOSE 4000
