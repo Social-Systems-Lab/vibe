@@ -48,4 +48,4 @@ COPY --from=builder --chown=nextjs:nodejs /repo/apps/vibe-cloud-ui/.next/static 
 
 USER nextjs
 EXPOSE 4000
-CMD ["node", "apps/vibe-cloud-ui/server.js"]
+CMD ["node", "server.js"]
