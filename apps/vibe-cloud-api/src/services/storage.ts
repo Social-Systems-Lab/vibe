@@ -73,8 +73,20 @@ export class MinioStorageProvider implements StorageProvider {
     private config: Minio.ClientOptions;
 
     constructor(config: Minio.ClientOptions) {
-        this.client = new Minio.Client(config);
-        this.config = config;
+        const { endPoint, ...remaningConfig } = config;
+        const useSSL = endPoint.startsWith("https");
+        const port = config.port ?? (useSSL ? 443 : 80);
+        const endpointWithoutProtocol = endPoint.replace(/^https?:\/\//, "");
+
+        const newConfig = {
+            ...remaningConfig,
+            endPoint: endpointWithoutProtocol,
+            port,
+            useSSL,
+        };
+
+        this.client = new Minio.Client(newConfig);
+        this.config = newConfig;
     }
 
     async upload(bucket: string, key: string, body: Buffer, contentType: string): Promise<void> {
@@ -100,7 +112,8 @@ export class MinioStorageProvider implements StorageProvider {
     async getPublicURL(bucket: string, key: string): Promise<string> {
         const port = this.config.port === 80 || this.config.port === 443 ? "" : `:${this.config.port}`;
         const protocol = this.config.useSSL ? "https" : "http";
-        return `${protocol}://${this.config.endPoint}${port}/${bucket}/${key}`;
+        const endpoint = this.config.endPoint.replace(/^https?:\/\//, "");
+        return `${protocol}://${endpoint}${port}/${bucket}/${key}`;
     }
 
     async delete(bucket: string, key: string): Promise<void> {
@@ -143,8 +156,12 @@ export class ScalewayStorageProvider implements StorageProvider {
     private config: any;
 
     constructor(config: any) {
-        this.client = new S3Client(config);
-        this.config = config;
+        const newConfig = { ...config };
+        if (newConfig.endpoint && typeof newConfig.endpoint === "string" && !newConfig.endpoint.startsWith("http")) {
+            newConfig.endpoint = `https://${newConfig.endpoint}`;
+        }
+        this.client = new S3Client(newConfig);
+        this.config = newConfig;
     }
 
     async upload(bucket: string, key: string, body: Buffer, contentType: string): Promise<void> {
@@ -159,7 +176,7 @@ export class ScalewayStorageProvider implements StorageProvider {
     }
 
     async getPublicURL(bucket: string, key: string): Promise<string> {
-        const endpoint = this.config.endpoint?.replace(/^https?:\/\//, "");
+        const endpoint = (this.config.endpoint?.toString() || "").replace(/^https?:\/\//, "");
         return `https://${bucket}.${endpoint}/${key}`;
     }
 
