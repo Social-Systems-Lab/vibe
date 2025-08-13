@@ -196,11 +196,15 @@ export class ScalewayStorageProvider implements StorageProvider {
                 ACL: "public-read",
             });
             const signedUrl: string = await getSignedUrl(this.client as any, cmd as any, { expiresIn: expiresSeconds });
+            const headers: Record<string, string> = { "x-amz-acl": "public-read" };
+            if (contentType) {
+                headers["Content-Type"] = contentType;
+            }
             return {
                 bucket,
                 key,
                 url: signedUrl,
-                headers: contentType ? { "Content-Type": contentType } : undefined,
+                headers,
                 strategy: "presigned",
             };
         } catch {
