@@ -219,7 +219,87 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
         e.preventDefault();
         setIsLoading(true);
 
-        const formData = new FormData(e.currentTarget);
+        const fileInput = e.currentTarget.elements.namedItem("picture") as HTMLInputElement;
+        const file = fileInput?.files?.[0];
+        const formData = new FormData();
+        formData.append("displayName", displayName);
+
+        if (file) {
+            // 1. Get API token
+            const tokenResponse = await fetch("/hub/api-token");
+            if (!tokenResponse.ok) {
+                console.error("Failed to get API token");
+                setIsLoading(false);
+                return;
+            }
+            const { token } = await tokenResponse.json();
+            const authHeaders = {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+            };
+
+            // 2. Get upload plan from the server
+            const presignResponse = await fetch("/storage/presign-put", {
+                method: "POST",
+                headers: authHeaders,
+                body: JSON.stringify({ name: file.name, mime: file.type }),
+            });
+
+            if (!presignResponse.ok) {
+                console.error("Failed to get upload plan");
+                setIsLoading(false);
+                return;
+            }
+
+            const plan = await presignResponse.json();
+            let pictureUrlValue;
+
+            if (plan.strategy === "presigned") {
+                // 2a. Upload file directly to S3
+                const uploadResponse = await fetch(plan.url, {
+                    method: "PUT",
+                    body: file,
+                    headers: { "Content-Type": file.type, ...plan.headers },
+                });
+
+                if (!uploadResponse.ok) {
+                    console.error("Upload to S3 failed");
+                    setIsLoading(false);
+                    return;
+                }
+                pictureUrlValue = plan.url.split("?")[0];
+            } else if (plan.strategy === "server-upload") {
+                // 2b. Upload file to our server
+                const serverUploadFormData = new FormData();
+                serverUploadFormData.append("file", file);
+                serverUploadFormData.append("storageKey", plan.storageKey);
+
+                const serverUploadResponse = await fetch(plan.uploadPath, {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token}` },
+                    body: serverUploadFormData,
+                });
+
+                if (!serverUploadResponse.ok) {
+                    console.error("Server upload failed");
+                    setIsLoading(false);
+                    return;
+                }
+
+                const uploadResult = await serverUploadResponse.json();
+                pictureUrlValue = uploadResult.url;
+            } else {
+                console.error("Unknown upload strategy", plan.strategy);
+                setIsLoading(false);
+                return;
+            }
+
+            // 3. Send pictureUrl to the profile endpoint
+            if (pictureUrlValue) {
+                formData.append("pictureUrl", pictureUrlValue);
+            }
+        }
+
         const response = await fetch(`/auth/profile?${queryString}`, {
             method: "POST",
             body: formData,
