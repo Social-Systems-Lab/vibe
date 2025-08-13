@@ -473,13 +473,15 @@
                     await db.createIndex({
                         index: { fields: ["collection"] },
                     });
-                    const remoteDbUrl = new URL(`http://localhost:5984/${sessionInfo.dbName}`);
-                    remoteDbUrl.username = sessionInfo.username;
-                    remoteDbUrl.password = sessionInfo.password;
+                    const remoteDbUrl = `__COUCHDB_URL__/${sessionInfo.dbName}`;
+                    remoteDb = new PouchDB(remoteDbUrl, {
+                        auth: {
+                            username: sessionInfo.username,
+                            password: sessionInfo.password,
+                        },
+                    });
 
-                    remoteDb = new PouchDB(remoteDbUrl.toString());
-
-                    console.log(`[HUB] Starting sync with ${remoteDbUrl.origin}/${sessionInfo.dbName}`);
+                    console.log(`[HUB] Starting sync with ${remoteDbUrl}`);
 
                     syncHandler = db
                         .sync(remoteDb, {

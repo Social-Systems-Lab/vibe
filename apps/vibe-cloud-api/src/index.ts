@@ -84,6 +84,7 @@ const app = new Elysia()
         staticPlugin({
             assets: "public",
             prefix: "",
+            ignorePatterns: ["hub.html"],
         })
     )
     .use(
@@ -118,6 +119,14 @@ const app = new Elysia()
         version: process.env.APP_VERSION || "unknown",
         details: identityService.isConnected ? "All systems operational" : "Database connection failed",
     }))
+    .get("/hub.html", async () => {
+        const hubHtml = await Bun.file("public/hub.html").text();
+        const couchDbUrl = process.env.COUCHDB_URL!;
+        const replacedHtml = hubHtml.replace("__COUCHDB_URL__", couchDbUrl);
+        return new Response(replacedHtml, {
+            headers: { "Content-Type": "text/html" },
+        });
+    })
     .ws("/_next/webpack-hmr", {
         open(ws) {
             console.log("[WS] HMR client connected");
