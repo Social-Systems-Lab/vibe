@@ -24,6 +24,7 @@ jobs:
             AWS_SECRET_ACCESS_KEY: ${{ secrets.SCALEWAY_SECRET_KEY }}
             # For Terraform Variables
             TF_VAR_k8s_version: "1.31.2"
+            TF_VAR_scw_project_id: ${{ secrets.SCALEWAY_PROJECT_ID }}
         steps:
             - name: Checkout code
               uses: actions/checkout@v3

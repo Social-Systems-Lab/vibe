@@ -1,5 +1,15 @@
 
 
+variable "scw_project_id" {
+  description = "Scaleway project ID"
+  type        = string
+}
+
+variable "scw_project_id" {
+  description = "Scaleway project ID"
+  type        = string
+}
+
 variable "scw_region" {
   description = "Scaleway region"
   type        = string
