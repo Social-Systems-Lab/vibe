@@ -3,11 +3,14 @@ terraform {
     bucket                      = "vibe-terraform-state" # This bucket must be created manually
     key                         = "terraform.tfstate"
     region                      = "fr-par"
-    endpoint                    = "https://s3.fr-par.scw.cloud"
+    endpoints = {
+      s3 = "https://s3.fr-par.scw.cloud"
+    }
     skip_credentials_validation = true
     skip_region_validation      = true
     skip_metadata_api_check     = true
-    force_path_style            = true
+    use_path_style              = true
+    skip_requesting_account_id  = true
   }
   required_providers {
     scaleway = {
@@ -34,13 +37,13 @@ resource "scaleway_k8s_cluster" "vibe_cluster" {
   cni                         = "cilium"
   type                        = "kapsule"
   delete_additional_resources = true
-  private_network_id          = scaleway_vpc_private_network.vibe_pn.id
+  private_network_id          = "a20a26bb-d39d-41a3-9093-b3c811823944"
 }
 
 # Node Pool for the Cluster
 resource "scaleway_k8s_pool" "vibe_pool" {
   cluster_id = scaleway_k8s_cluster.vibe_cluster.id
-  name       = "vibe-pool"
+  name       = "vibe-pool-tf"
   node_type  = "DEV1-M"
   size       = 2
   autohealing = true
