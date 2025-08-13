@@ -426,7 +426,8 @@ const app = new Elysia()
                             httpOnly: true,
                             maxAge: 30 * 86400, // 30 days
                             path: "/",
-                            sameSite: "strict",
+                            sameSite: "none",
+                            secure: true,
                         });
 
                         const params = new URLSearchParams(query as any);
@@ -467,7 +468,8 @@ const app = new Elysia()
                         httpOnly: true,
                         maxAge: 30 * 86400, // 30 days
                         path: "/",
-                        sameSite: "strict",
+                        sameSite: "none",
+                        secure: true,
                     });
 
                     const params = new URLSearchParams(query as any);
@@ -651,7 +653,8 @@ const app = new Elysia()
                         maxAge: -1,
                         path: "/",
                         httpOnly: true,
-                        sameSite: "strict",
+                        sameSite: "none",
+                        secure: true,
                     });
                     console.log(`Cookie cleared. Set to ${cookie.vibe_session.value}`);
                     console.log("After logout, cookie should be cleared.");
