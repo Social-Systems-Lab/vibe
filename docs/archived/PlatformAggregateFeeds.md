@@ -77,7 +77,7 @@ import { VibeManifest } from "vibe-sdk";
 
 export const appManifest: VibeManifest = {
     // ...
-    apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:5050",
+    apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:5050",
     useHub: false, // This is the key to enabling Standalone Mode
     // ...
 };

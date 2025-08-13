@@ -4,7 +4,7 @@ const getBaseUrl = () => {
     if (typeof window !== "undefined") {
         return process.env.NEXT_PUBLIC_CLIENT_ID || window.location.origin;
     }
-    return process.env.NEXT_PUBLIC_CLIENT_ID || "http://127.0.0.1:3000";
+    return process.env.NEXT_PUBLIC_CLIENT_ID || "http://localhost:3000";
 };
 
 const baseUrl = getBaseUrl();
@@ -14,7 +14,7 @@ export const appManifest: VibeManifest = {
     backgroundImageUrl: `${baseUrl}/images/logo.png`,
     appTagline: "You control your feed.",
     appDescription: "Create custom feeds and share content on your terms.",
-    apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:5050",
+    apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:5050",
     clientId: baseUrl,
     redirectUri: `${baseUrl}/auth/callback`,
     themeColor: "#000000",

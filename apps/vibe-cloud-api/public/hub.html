@@ -355,11 +355,7 @@
                 console.log(`[HUB] Required permission: ${requiredPermission}`);
 
                 // Check for both the specific permission (e.g., "write:posts") and a wildcard (e.g., "write")
-                if (
-                    appPermissions &&
-                    appPermissions.scopes &&
-                    (appPermissions.scopes.includes(requiredPermission) || appPermissions.scopes.includes(getScopeForOperation(type)))
-                ) {
+                if (appPermissions && appPermissions.scopes && (appPermissions.scopes.includes(requiredPermission) || appPermissions.scopes.includes(getScopeForOperation(type)))) {
                     performPouchDbOperation(type, collection, payload)
                         .then((result) => {
                             sourcePort.postMessage({ type: `${type}_ACK`, success: true, data: result, nonce });
@@ -477,7 +473,7 @@
                     await db.createIndex({
                         index: { fields: ["collection"] },
                     });
-                    const remoteDbUrl = new URL(`http://127.0.0.1:5984/${sessionInfo.dbName}`);
+                    const remoteDbUrl = new URL(`http://localhost:5984/${sessionInfo.dbName}`);
                     remoteDbUrl.username = sessionInfo.username;
                     remoteDbUrl.password = sessionInfo.password;
 
