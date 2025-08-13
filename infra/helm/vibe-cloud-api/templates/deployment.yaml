@@ -69,3 +69,5 @@ spec:
               value: {{ .Values.config.scalewayRegion | quote }}
             - name: SCALEWAY_ENDPOINT
               value: {{ .Values.config.scalewayEndpoint | quote }}
+           - name: SCALEWAY_BUCKET_NAME
+             value: {{ .Values.config.scalewayBucketName | quote }}

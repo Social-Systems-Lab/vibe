@@ -29,6 +29,7 @@ config:
     storageProvider: "scaleway"
     scalewayRegion: "fr-par"
     scalewayEndpoint: "s3.fr-par.scw.cloud"
+    scalewayBucketName: "vibe-user-storage"
     corsOrigin: "https://vibepublic.com"
     port: "5050"
 

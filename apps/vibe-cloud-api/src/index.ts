@@ -511,7 +511,7 @@ const app = new Elysia()
                                 return { error: "User not found" };
                             }
                             const buffer = Buffer.from(await picture.arrayBuffer());
-                            const bucketName = `user-${user.instanceId}`;
+                            const bucketName = process.env.SCALEWAY_BUCKET_NAME!;
                             const fileName = `profile-${Date.now()}-${picture.name}`;
                             await storageService.upload(bucketName, fileName, buffer, picture.type);
                             pictureUrl = await storageService.getPublicURL(bucketName, fileName);
@@ -1047,7 +1047,7 @@ const app = new Elysia()
                     const yyyy = now.getUTCFullYear();
                     const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
                     const storageKey = `${yyyy}/${mm}/${uuid}${ext ? "." + ext : ""}`;
-                    const bucket = `user-${profile!.instanceId}`;
+                    const bucket = process.env.SCALEWAY_BUCKET_NAME!;
 
                     try {
                         const res = await storageService.presignPut(bucket, storageKey, mime, 300);
