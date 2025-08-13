@@ -24,4 +24,5 @@ export const appManifest: VibeManifest = {
     backgroundColor: "#000000",
     buttonColor: "#0000FF",
     fontColor: "#000000",
+    debug: true,
 };

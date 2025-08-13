@@ -17,16 +17,16 @@ spec:
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          imagePullPolicy: Always
           ports:
             - name: http
-              containerPort: {{ .Values.service.targetPort }}
+              containerPort: 4000
               protocol: TCP
           readinessProbe:
             httpGet:
               path: /
               port: http
-            initialDelaySeconds: 10
+            initialDelaySeconds: 30
             periodSeconds: 10
           livenessProbe:
             httpGet:
@@ -44,3 +44,7 @@ spec:
           env:
             - name: NEXT_PUBLIC_API_URL
               value: {{ .Values.config.nextPublicApiUrl | quote }}
+            - name: PORT
+              value: "4000"
+            - name: NEXT_PUBLIC_APP_VERSION
+              value: {{ .Values.image.tag | quote }}

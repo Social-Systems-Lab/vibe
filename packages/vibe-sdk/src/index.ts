@@ -62,6 +62,7 @@ export type VibeManifest = {
     backgroundColor?: string;
     buttonColor?: string;
     fontColor?: string;
+    debug?: boolean;
 };
 
 export class VibeSDK {
@@ -69,6 +70,7 @@ export class VibeSDK {
     public user: User | null = null;
     private isInitialized = false;
     private isInitializing = false;
+    private debug: boolean = false;
 
     // Properties from HubStrategy
     private hubUrl: string;
@@ -185,6 +187,7 @@ export class VibeSDK {
 
     constructor(config: VibeManifest) {
         this.config = config;
+        this.debug = !!config.debug;
         this.hubUrl = config.hubUrl || `${config.apiUrl}/hub.html`;
         this.api = edenTreaty<App>(config.apiUrl);
         this.sessionManager = new SessionManager(config);
@@ -198,16 +201,28 @@ export class VibeSDK {
         }
         this.isInitializing = true;
         console.log("VibeSDK: Initializing...");
+        if (this.debug) {
+            console.log("VibeSDK Manifest:", this.config);
+        }
 
         // Start Hub initialization and wait for it to be ready
-        await this.initHub();
+        try {
+            await this.initHub();
+        } catch (hubError) {
+            console.error("VibeSDK: Hub initialization failed.", hubError);
+            this.isInitializing = false;
+            // Optionally, re-throw or handle this as a fatal error for the consuming app
+            throw hubError;
+        }
 
         // Listen for auth state changes to sync with the Hub
         this.onStateChange(() => {});
 
         // Check the session state using Standalone's logic
         const sessionState = await this.sessionManager.checkSession();
-        console.log("VibeSDK: session state checked.", sessionState);
+        if (this.debug) {
+            console.log("VibeSDK: session state checked.", sessionState);
+        }
 
         if (sessionState.status === "LOGGED_IN") {
             this.authManager.setUser(sessionState.user || null);
@@ -235,29 +250,55 @@ export class VibeSDK {
 
     // --- Hub Methods (from HubStrategy) ---
     private initHub(): Promise<void> {
+        if (this.debug) {
+            console.log("VibeSDK: initHub started.");
+        }
         return new Promise((resolve, reject) => {
             this.hubFrame = document.createElement("iframe");
             this.hubFrame.style.display = "none";
             const cacheBustedUrl = new URL(this.hubUrl);
             cacheBustedUrl.searchParams.set("t", Date.now().toString());
             this.hubFrame.src = cacheBustedUrl.toString();
+            if (this.debug) {
+                console.log("VibeSDK: Hub iframe src:", this.hubFrame.src);
+            }
             document.body.appendChild(this.hubFrame);
 
             const channel = new MessageChannel();
             this.hubPort = channel.port1;
 
             this.hubFrame.onload = () => {
+                if (this.debug) {
+                    console.log("VibeSDK: Hub iframe onload event triggered.");
+                }
                 if (!this.hubFrame || !this.hubFrame.contentWindow) {
+                    if (this.debug) {
+                        console.error("VibeSDK: Hub iframe or contentWindow not available on load.");
+                    }
                     return reject(new Error("Hub iframe failed to load."));
                 }
                 const targetOrigin = new URL(this.hubUrl).origin;
+                if (this.debug) {
+                    console.log("VibeSDK: Posting INIT message to hub with target origin:", targetOrigin);
+                }
                 this.hubFrame.contentWindow.postMessage({ type: "INIT", payload: { origin: window.location.origin, user: this.user, redirectUri: this.config.redirectUri } }, targetOrigin, [
                     channel.port2,
                 ]);
             };
 
+            this.hubFrame.onerror = (error) => {
+                if (this.debug) {
+                    console.error("VibeSDK: Hub iframe onerror event triggered.", error);
+                }
+                reject(new Error("Hub iframe failed to load with an error."));
+            };
+
             this.hubPort.onmessage = (event) => {
                 const { type, nonce, success, data, error, subscriptionId } = event.data;
+
+                if (this.debug) {
+                    console.log("VibeSDK: Received message from hub:", event.data);
+                }
 
                 if (type === "INIT_ACK") {
                     console.log("Hub connection initialized successfully.");

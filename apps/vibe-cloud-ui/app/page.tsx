@@ -1,3 +1,5 @@
 export default function Page() {
-    return <h1 className="font-heading">Vibe Cloud UI</h1>;
+    const appVersion = process.env.NEXT_PUBLIC_APP_VERSION || "local";
+    console.log(`Rendering Vibe Cloud UI version: ${appVersion}`);
+    return <h1 className="font-heading">Vibe Cloud UI ({appVersion})</h1>;
 }

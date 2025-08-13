@@ -30,8 +30,8 @@ COPY packages/vibe-core/package.json ./packages/vibe-core/
 RUN pnpm install --frozen-lockfile --verbose
 COPY . .
 RUN pnpm --filter vibe-core build
-RUN pnpm --filter vibe-sdk build
 RUN pnpm --filter vibe-cloud-api build
+RUN pnpm --filter vibe-sdk build
 RUN pnpm --filter vibe-cloud-api deploy --legacy /prod
 
 # ---- Production ----

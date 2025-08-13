@@ -30,13 +30,26 @@ jobs:
                   username: nologin
                   password: ${{ secrets.SCALEWAY_SECRET_KEY }}
 
+            - name: Extract version and SHA
+              id: vars
+              run: |
+                  VERSION=$(jq -r .version apps/vibe-cloud-ui/package.json)
+                  SHA=$(echo ${{ github.sha }} | cut -c1-7)
+                  EFFECTIVE_VERSION="${VERSION}-${SHA}"
+                  echo "TAG=rg.fr-par.scw.cloud/vibe-registry/vibe-cloud-ui:${EFFECTIVE_VERSION}" >> $GITHUB_OUTPUT
+                  echo "APP_VERSION=${EFFECTIVE_VERSION}" >> $GITHUB_OUTPUT
+                  echo "EFFECTIVE_APP_VERSION=${EFFECTIVE_VERSION}" >> $GITHUB_ENV
+                  echo "NEXT_PUBLIC_APP_VERSION=${EFFECTIVE_VERSION}" >> $GITHUB_ENV
+
             - name: Build and push Docker image
               uses: docker/build-push-action@v4
               with:
                   context: .
                   file: ./apps/vibe-cloud-ui/Dockerfile
                   push: true
-                  tags: rg.fr-par.scw.cloud/vibe-registry/vibe-cloud-ui:${{ github.sha }}
+                  tags: ${{ steps.vars.outputs.TAG }}
+                  build-args: |
+                      NEXT_PUBLIC_APP_VERSION=${{ env.EFFECTIVE_APP_VERSION }}
 
             - name: Setup Scaleway CLI
               uses: scaleway/action-scw@v0
@@ -45,6 +58,7 @@ jobs:
                   access-key: ${{ secrets.SCALEWAY_ACCESS_KEY }}
                   secret-key: ${{ secrets.SCALEWAY_SECRET_KEY }}
                   export-config: true
+                  default-organization-id: ${{ secrets.SCALEWAY_ORGANIZATION_ID }}
                   default-project-id: ${{ secrets.SCALEWAY_PROJECT_ID }}
 
             - name: Generate Kubeconfig
@@ -65,7 +79,8 @@ jobs:
               run: |
                   helm upgrade --install vibe-cloud-ui ./infra/helm/vibe-cloud-ui \
                     --namespace vibe --create-namespace \
-                    --set image.tag=${{ github.sha }}
+                    --values ./infra/helm/vibe-cloud-ui/values.yaml \
+                    --set image.tag=${{ steps.vars.outputs.APP_VERSION }}
 
             - name: Wait for Certificate Readiness
               run: |

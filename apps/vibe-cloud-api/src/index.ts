@@ -66,9 +66,10 @@ try {
     process.exit(1);
 }
 
-const allowedOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(",")
-    : "http://localhost:3000,http://localhost:3001,http://localhost:4000,http://localhost:5050,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:4000,http://127.0.0.1:5050".split(",");
+const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",") : "http://localhost:3000,http://localhost:3001,http://localhost:4000,http://localhost:5050".split(",");
+
+//allowedOrigins.push(process.env.VIBE_CLOUD_UI_URL || "http://vibe-cloud-ui-service:4000");
+
 console.log("Cors Origin:", allowedOrigins);
 
 const app = new Elysia()
@@ -120,7 +121,9 @@ const app = new Elysia()
     .ws("/_next/webpack-hmr", {
         open(ws) {
             console.log("[WS] HMR client connected");
-            const serverWs = new WebSocket("ws://127.0.0.1:4000/_next/webpack-hmr");
+            const uiUrl = process.env.VIBE_CLOUD_UI_URL || "http://localhost:4000";
+            const wsUrl = uiUrl.replace(/^http/, "ws");
+            const serverWs = new WebSocket(`${wsUrl}/_next/webpack-hmr`);
             (ws.data as any).serverWs = serverWs;
 
             serverWs.onmessage = ({ data }) => ws.send(data);
@@ -339,27 +342,27 @@ const app = new Elysia()
                     }),
                 }
             )
-            .onAfterHandle(({ request, set }) => {
-                // onAfterHandle needed to get rid off CORS errors in /token endpoint
-                if (request.method === "OPTIONS") return; // Let CORS plugin handle preflight fully to avoid duplication
+            // .onAfterHandle(({ request, set }) => {
+            //     // onAfterHandle needed to get rid off CORS errors in /token endpoint
+            //     if (request.method === "OPTIONS") return; // Let CORS plugin handle preflight fully to avoid duplication
 
-                const origin = request.headers.get("origin") ?? "";
-                console.log(`[onAfterHandle] Processing response | URL: ${request.url} | Method: ${request.method} | Origin: ${origin}`);
+            //     const origin = request.headers.get("origin") ?? "";
+            //     console.log(`[onAfterHandle] Processing response | URL: ${request.url} | Method: ${request.method} | Origin: ${origin}`);
 
-                if (allowedOrigins.includes(origin)) {
-                    // Set headers without duplication (these will override if already set)
-                    set.headers["Access-Control-Allow-Origin"] = origin;
-                    set.headers["Access-Control-Allow-Credentials"] = "true";
-                    set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-                    set.headers["Access-Control-Allow-Headers"] = "*"; // Wildcard to simplify; or request.headers.get("Access-Control-Request-Headers") ?? "*"
-                    set.headers["Access-Control-Max-Age"] = "86400";
-                    set.headers["Access-Control-Expose-Headers"] = "Content-Disposition";
-                    set.headers["Vary"] = "Origin";
-                    console.log("[onAfterHandle] CORS headers added successfully");
-                } else {
-                    console.log(`[onAfterHandle] Origin not allowed: ${origin}`);
-                }
-            })
+            //     if (allowedOrigins.includes(origin)) {
+            //         // Set headers without duplication (these will override if already set)
+            //         set.headers["Access-Control-Allow-Origin"] = origin;
+            //         set.headers["Access-Control-Allow-Credentials"] = "true";
+            //         set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+            //         set.headers["Access-Control-Allow-Headers"] = "*"; // Wildcard to simplify; or request.headers.get("Access-Control-Request-Headers") ?? "*"
+            //         set.headers["Access-Control-Max-Age"] = "86400";
+            //         set.headers["Access-Control-Expose-Headers"] = "Content-Disposition";
+            //         set.headers["Vary"] = "Origin";
+            //         console.log("[onAfterHandle] CORS headers added successfully");
+            //     } else {
+            //         console.log(`[onAfterHandle] Origin not allowed: ${origin}`);
+            //     }
+            // })
             .post(
                 "/token",
                 async ({ body, identityService, jwt }) => {
@@ -485,11 +488,11 @@ const app = new Elysia()
                     }
 
                     const userDid = session.sessionId;
-                    const { displayName, bio, picture } = body;
+                    const { displayName, bio, picture, pictureUrl: bodyPictureUrl } = body;
 
-                    let pictureUrl: string | undefined = undefined;
+                    let pictureUrl: string | undefined = bodyPictureUrl;
 
-                    if (picture && picture.size > 0) {
+                    if (!pictureUrl && picture && picture.size > 0) {
                         try {
                             const user = await identityService.findByDid(userDid);
                             if (!user) {
@@ -540,6 +543,7 @@ const app = new Elysia()
                         displayName: t.String(),
                         bio: t.Optional(t.String()),
                         picture: t.Optional(t.File()),
+                        pictureUrl: t.Optional(t.String()),
                     }),
                 }
             )
@@ -709,27 +713,27 @@ const app = new Elysia()
                     }
                 },
             })
-            .onAfterHandle(({ request, set }) => {
-                // onAfterHandle needed to get rid off CORS errors in /users/me endpoint
-                if (request.method === "OPTIONS") return; // Let CORS plugin handle preflight fully to avoid duplication
+            // .onAfterHandle(({ request, set }) => {
+            //     // onAfterHandle needed to get rid off CORS errors in /users/me endpoint
+            //     if (request.method === "OPTIONS") return; // Let CORS plugin handle preflight fully to avoid duplication
 
-                const origin = request.headers.get("origin") ?? "";
-                console.log(`[onAfterHandle] Processing response | URL: ${request.url} | Method: ${request.method} | Origin: ${origin}`);
+            //     const origin = request.headers.get("origin") ?? "";
+            //     console.log(`[onAfterHandle] Processing response | URL: ${request.url} | Method: ${request.method} | Origin: ${origin}`);
 
-                if (!origin || allowedOrigins.includes(origin)) {
-                    // Set headers without duplication (these will override if already set)
-                    set.headers["Access-Control-Allow-Origin"] = origin;
-                    set.headers["Access-Control-Allow-Credentials"] = "true";
-                    set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-                    set.headers["Access-Control-Allow-Headers"] = "*"; // Wildcard to simplify; or request.headers.get("Access-Control-Request-Headers") ?? "*"
-                    set.headers["Access-Control-Max-Age"] = "86400";
-                    set.headers["Access-Control-Expose-Headers"] = "Content-Disposition";
-                    set.headers["Vary"] = "Origin";
-                    console.log("[onAfterHandle] CORS headers added successfully");
-                } else {
-                    console.log(`[onAfterHandle] Origin not allowed: ${origin}`);
-                }
-            })
+            //     if (!origin || allowedOrigins.includes(origin)) {
+            //         // Set headers without duplication (these will override if already set)
+            //         set.headers["Access-Control-Allow-Origin"] = origin;
+            //         set.headers["Access-Control-Allow-Credentials"] = "true";
+            //         set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+            //         set.headers["Access-Control-Allow-Headers"] = "*"; // Wildcard to simplify; or request.headers.get("Access-Control-Request-Headers") ?? "*"
+            //         set.headers["Access-Control-Max-Age"] = "86400";
+            //         set.headers["Access-Control-Expose-Headers"] = "Content-Disposition";
+            //         set.headers["Vary"] = "Origin";
+            //         console.log("[onAfterHandle] CORS headers added successfully");
+            //     } else {
+            //         console.log(`[onAfterHandle] Origin not allowed: ${origin}`);
+            //     }
+            // })
             .get("/me", async ({ profile, set, identityService }) => {
                 if (!profile) {
                     set.status = 401;
