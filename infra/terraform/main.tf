@@ -55,6 +55,13 @@ resource "scaleway_k8s_pool" "vibe_pool" {
 # Object Storage Bucket
 resource "scaleway_object_bucket" "vibe_bucket" {
   name = "vibe-user-storage"
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["GET", "HEAD", "POST", "PUT", "DELETE"]
+    allowed_origins = ["https://*.vibepublic.com", "https://*.vibe-feeds.vercel.app"]
+    max_age_seconds = 3000
+    expose_headers  = ["Etag"]
+  }
 }
 
 resource "scaleway_object_bucket_acl" "vibe_bucket_acl" {
