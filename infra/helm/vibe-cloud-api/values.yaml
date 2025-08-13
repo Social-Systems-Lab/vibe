@@ -25,6 +25,7 @@ config:
 
     # Non-sensitive values
     couchdbUrl: "http://{{ .Release.Name }}-couchdb:5984"
+    couchdbPublicUrl: "https://db.vibepublic.com"
     storageProvider: "scaleway"
     scalewayRegion: "fr-par"
     scalewayEndpoint: "s3.fr-par.scw.cloud"

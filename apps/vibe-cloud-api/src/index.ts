@@ -121,7 +121,7 @@ const app = new Elysia()
     }))
     .get("/hub.html", async () => {
         const hubHtml = await Bun.file("public/hub.html").text();
-        const couchDbUrl = process.env.COUCHDB_URL!;
+        const couchDbUrl = process.env.COUCHDB_PUBLIC_URL!;
         const replacedHtml = hubHtml.replace("__COUCHDB_URL__", couchDbUrl);
         return new Response(replacedHtml, {
             headers: { "Content-Type": "text/html" },

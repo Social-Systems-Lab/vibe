@@ -62,6 +62,68 @@ The workflow dynamically creates a `secrets.yaml` file for the Helm deployment u
 
 To trigger the deployment, simply commit and push your changes to the `main` branch.
 
+### Step 5: Post-Deployment Configuration
+
+After the Helm chart is successfully deployed, a few manual steps are required to make the system fully operational.
+
+#### DNS Configuration
+
+The deployment exposes two services to the public internet via an Ingress controller, each requiring a DNS record:
+
+1.  **Vibe Cloud API**: The main API for your application.
+2.  **CouchDB**: The database, which must be accessible to clients for PouchDB synchronization.
+
+Both services are served by the same Ingress controller, which has a single external IP address. You must configure your DNS provider to point the hostnames for both services to this IP.
+
+1.  **Find the Ingress IP**: Get the external IP address of your NGINX Ingress Controller's load balancer:
+
+    ```bash
+    kubectl get svc -n ingress-nginx
+    ```
+
+    Look for the `EXTERNAL-IP` of the `ingress-nginx-controller` service.
+
+2.  **Create DNS A Records**: In your DNS provider's dashboard, create three A records:
+
+    -   An A record for `<yourdomain>.com` pointing to the external IP address.
+    -   An A record for `api.<yourdomain>.com` pointing to the same external IP address.
+    -   An A record for `db.<yourdomain>.com` pointing to the same external IP address.
+
+    _(Note: These hostnames are defined in `infra/helm/vibe-cloud-api/values.yaml` and can be customized.)_
+
+#### CouchDB CORS Configuration
+
+For security, CouchDB by default does not allow web pages from other domains to connect to it. Since the `hub.html` page is served from the API's domain (`api.<yourdomain>.com`), you must explicitly tell CouchDB to allow requests from this origin.
+
+1.  **Connect to the CouchDB Pod**:
+
+    ```bash
+    kubectl exec -it <your-couchdb-pod-name> -- /bin/bash
+    ```
+
+2.  **Enable CORS**: Use `curl` to update the CouchDB configuration.
+
+    ```bash
+    curl -X PUT http://localhost:5984/_node/nonode@nohost/_config/httpd/enable_cors -d '"true"' -u admin:YOUR_PASSWORD
+    ```
+
+3.  **Set Allowed Origins**: Specify which domains are allowed to connect.
+
+    ```bash
+    curl -X PUT http://localhost:5984/_node/nonode@nohost/_config/cors/origins -d '"https://api.vibepublic.com"' -u admin:YOUR_PASSWORD
+    ```
+
+    _(Replace `YOUR_PASSWORD` with the one defined in your GitHub secrets. Replace the URL if you have customized the API's hostname.)_
+
+4.  **Set Required Headers and Methods**:
+    ```bash
+    curl -X PUT http://localhost:5984/_node/nonode@nohost/_config/cors/credentials -d '"true"' -u admin:YOUR_PASSWORD
+    curl -X PUT http://localhost:5984/_node/nonode@nohost/_config/cors/methods -d '"GET, PUT, POST, HEAD, DELETE"' -u admin:YOUR_PASSWORD
+    curl -X PUT http://localhost:5984/_node/nonode@nohost/_config/cors/headers -d '"accept, authorization, content-type, origin, referer, x-csrf-token"' -u admin:YOUR_PASSWORD
+    ```
+
+After completing these steps, your Vibe Cloud instance will be correctly configured and ready to use.
+
 ---
 
 ## Self-Hosting with Docker Compose

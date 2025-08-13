@@ -59,6 +59,8 @@ spec:
                   key: adminPassword
             - name: VIBE_CLOUD_UI_URL
               value: {{ .Values.config.vibeCloudUiUrl | quote }}
+            - name: COUCHDB_PUBLIC_URL
+              value: {{ .Values.config.couchdbPublicUrl | quote }}
             - name: CORS_ORIGIN
               value: {{ .Values.config.corsOrigin | quote }}
             - name: STORAGE_PROVIDER
