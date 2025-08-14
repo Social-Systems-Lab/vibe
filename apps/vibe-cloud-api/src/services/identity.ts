@@ -322,14 +322,26 @@ export class IdentityService {
             throw new Error("Database not connected");
         }
 
+        const maxRetries = 3;
+        const delay = 100; // ms
         let doc;
-        try {
-            doc = await this.usersDb.get(`auth_code:${code}`);
-        } catch (error: any) {
-            if (error.statusCode === 404) {
-                throw new Error("Invalid or expired authorization code.");
+
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                doc = await this.usersDb.get(`auth_code:${code}`);
+                break; // Success
+            } catch (error: any) {
+                if (error.statusCode === 404) {
+                    throw new Error("Invalid or expired authorization code.");
+                }
+                // Retry on other errors, e.g., auth issues
+                if (i === maxRetries - 1) throw error;
+                await new Promise((res) => setTimeout(res, delay * Math.pow(2, i)));
             }
-            throw error;
+        }
+
+        if (!doc) {
+            throw new Error("Failed to retrieve authorization code after retries.");
         }
 
         // Delete the code immediately to prevent reuse

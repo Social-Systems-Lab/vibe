@@ -52,19 +52,19 @@ function Wizard() {
             >
                 <div className="max-w-md z-30">
                     <div className="flex flex-row items-center mb-4">
-                        {appLogotypeUrl ? (
+                        {appLogotypeUrl && appLogotypeUrl !== "undefined" ? (
                             <img src={appLogotypeUrl} alt={`${appName} logotype`} className="h-12" />
                         ) : (
                             <div className="flex items-center">
                                 {appLogoUrl && <img src={appLogoUrl} alt={`${appName} logo`} className="w-12 h-12 mr-4" />}
 
-                                <h1 className="text-3xl font-bold font-heading">{appName}</h1>
+                                <div className="text-2xl font-bold font-heading">{appName}</div>
                             </div>
                         )}
                     </div>
                     {appTagline && <p className="text-5xl font-bold mb-6">{appTagline}</p>}
                     {appDescription && <p className="text-lg opacity-80 mb-8">{appDescription}</p>}
-                    {appShowcaseUrl && <img src={appShowcaseUrl} alt={`${appName} showcase`} className="w-full " />}
+                    {appShowcaseUrl && appShowcaseUrl !== "undefined" && <img src={appShowcaseUrl} alt={`${appName} showcase`} className="w-full " />}
                 </div>
                 <div className="text-center absolute bottom-4">
                     <p className="text-sm opacity-70">Powered by Vibe. Your everything.</p>
