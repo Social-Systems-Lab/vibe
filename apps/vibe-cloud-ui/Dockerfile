@@ -1,59 +1,62 @@
-# 1. Base Stage: Modern Node.js and pnpm via corepack
-FROM node:18-alpine AS base
+# 1. Base Stage: use Node 20 to satisfy engines >=20 <22
+FROM node:20-alpine AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 WORKDIR /app
 RUN apk add --no-cache libc6-compat
-# Enable pnpm
 RUN corepack enable
 
-# 2. Builder Stage: Build the application and its dependencies
+# 2. Builder
 FROM base AS builder
 WORKDIR /app
-# Copy only the necessary package manifests to leverage caching
+
+# Leverage caching
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY apps/vibe-cloud-ui/package.json apps/vibe-cloud-ui/
 COPY packages/vibe-core/package.json packages/vibe-core/
 COPY packages/vibe-sdk/package.json packages/vibe-sdk/
 COPY packages/vibe-react/package.json packages/vibe-react/
 
-# Install all dependencies (dev included) to build the app
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile && pnpm approve-builds --all && pnpm rebuild -r
+# Install deps (dev included). No interactive approve-builds in CI.
+# Make sure you've configured onlyBuiltDependencies or dangerouslyAllowAllBuilds in pnpm-workspace.yaml
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile && pnpm rebuild -r
 
-# Copy the full source code
+# Copy the source
 COPY . .
 
-# Build workspace packages first so their dist/ exists
-RUN pnpm --filter "vibe-core" build && pnpm --filter "vibe-sdk" build && pnpm --filter "vibe-react" build
+# Build workspace packages first
+RUN pnpm --filter "vibe-core" build \
+ && pnpm --filter "vibe-sdk" build \
+ && pnpm --filter "vibe-react" build
 
-# Build the target application
+# Build the target app
 RUN pnpm --filter "vibe-cloud-ui" build
 
-# 3. Production Dependencies Stage: Create a clean, flattened node_modules
+# 3. Production Dependencies
 FROM builder AS prod-deps
 WORKDIR /app
-# Use pnpm deploy to create a production-only node_modules
 RUN pnpm deploy --prod --legacy --filter "vibe-cloud-ui" /prod-deps
 
-# 4. Runner Stage: The final, minimal production image
+# 4. Runner
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=4000
 
-# Create a non-root user
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser --system --uid 1001 nextjs
 
-# Copy the standalone output from the builder
+# Copy the Next.js standalone server output
 COPY --from=builder --chown=nextjs:nodejs /app/apps/vibe-cloud-ui/.next/standalone/apps/vibe-cloud-ui ./
 
-# Copy the clean, production-only node_modules from the prod-deps stage
+# Copy prod node_modules
 COPY --from=prod-deps --chown=nextjs:nodejs /prod-deps/node_modules ./node_modules
 
-# Copy static and public assets
+# Static assets
 COPY --from=builder --chown=nextjs:nodejs /app/apps/vibe-cloud-ui/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/apps/vibe-cloud-ui/publi[c] ./public
+COPY --from=builder --chown=nextjs:nodejs /app/apps/vibe-cloud-ui/public ./public
 
 USER nextjs
 EXPOSE 4000
