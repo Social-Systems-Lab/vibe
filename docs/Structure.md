@@ -84,11 +84,11 @@ This is the main user interface for Vibe Cloud.
 ```json
 {
     "name": "vibe-cloud-ui",
-    "version": "0.1.1",
+    "version": "0.1.5",
     "private": true,
     "scripts": {
         "dev": "next dev -p 4000 --turbopack",
-        "build": "next build --turbopack",
+        "build": "next build",
         "start": "next start",
         "lint": "next lint"
     },
@@ -153,7 +153,7 @@ This is the backend API for Vibe Cloud.
 ```json
 {
     "name": "vibe-cloud-api",
-    "version": "0.0.3",
+    "version": "0.0.11",
     "private": true,
     "main": "./dist/index.mjs",
     "types": "./dist/index.d.mts",
