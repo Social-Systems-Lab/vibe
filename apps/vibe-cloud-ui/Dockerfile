@@ -18,10 +18,13 @@ COPY packages/vibe-sdk/package.json packages/vibe-sdk/
 COPY packages/vibe-react/package.json packages/vibe-react/
 
 # Install all dependencies (dev included) to build the app
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile && pnpm approve-builds --all && pnpm rebuild -r
 
 # Copy the full source code
 COPY . .
+
+# Build workspace packages first so their dist/ exists
+RUN pnpm --filter "vibe-core" build && pnpm --filter "vibe-sdk" build && pnpm --filter "vibe-react" build
 
 # Build the target application
 RUN pnpm --filter "vibe-cloud-ui" build
