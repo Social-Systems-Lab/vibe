@@ -30,8 +30,8 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 COPY . .
 
 # Build order matters: build API first so its d.ts exists, then SDK, then the rest
-RUN pnpm --filter "vibe-cloud-api" build \
- && pnpm --filter "vibe-core" build \
+RUN pnpm --filter "vibe-core" build \
+ && pnpm --filter "vibe-cloud-api" build \
  && pnpm --filter "vibe-sdk" build \
  && pnpm --filter "vibe-react" build \
  && pnpm --filter "vibe-cloud-ui" build
