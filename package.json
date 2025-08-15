@@ -7,8 +7,11 @@
         "infra"
     ],
     "scripts": {
-        "build": "pnpm -r build",
-        "dev": "pnpm -r --parallel dev"
+        "dev": "pnpm -r --parallel dev",
+        "clean:next": "node scripts/clean-next.cjs",
+        "build:apps:seq": "pnpm -r --workspace-concurrency=1 build",
+        "build:clean-seq": "pnpm run clean:next && pnpm run build:apps:seq",
+        "build": "pnpm run build:clean-seq"
     },
     "dependencies": {
         "undici": "^7.10.0"
@@ -16,5 +19,13 @@
     "devDependencies": {
         "concurrently": "^9.2.0",
         "@types/varint": "^6.0.0"
+    },
+    "engines": {
+        "node": ">=20 <22"
+    },
+    "pnpm": {
+        "overrides": {
+            "next": "15.4.3"
+        }
     }
 }
