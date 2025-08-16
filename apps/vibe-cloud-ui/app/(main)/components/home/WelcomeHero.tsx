@@ -7,7 +7,7 @@ export default function WelcomeHero() {
 
     return (
         <section className="w-full">
-            <div className="mx-auto max-w-5xl px-4 md:px-6 py-10 md:py-14">
+            <div className="max-w-5xl">
                 <div className="flex flex-col items-start gap-6">
                     <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs text-foreground/70 backdrop-blur">
                         <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />

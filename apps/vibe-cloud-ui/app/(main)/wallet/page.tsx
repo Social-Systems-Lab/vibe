@@ -66,7 +66,7 @@ export default function WalletPage() {
 
     return (
         <main className="w-full">
-            <section className="mx-auto max-w-5xl px-4 md:px-6 py-6 md:py-8">
+            <section className="max-w-5xl">
                 <h1 className="text-2xl font-heading mb-4">Wallet</h1>
 
                 {error && <div className="rounded-md border border-red-300 bg-red-50 text-red-800 p-3 text-sm mb-3">{error}</div>}

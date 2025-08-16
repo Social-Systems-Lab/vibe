@@ -60,15 +60,13 @@ export default function DevelopmentPage() {
 
     return (
         <main className="w-full">
-            <section className="mx-auto max-w-5xl px-4 md:px-6 py-6 md:py-8">
+            <section className="max-w-5xl">
                 <h1 className="text-2xl font-heading mb-4">Development</h1>
 
                 {error && <div className="rounded-md border border-red-300 bg-red-50 text-red-800 p-3 text-sm mb-3">{error}</div>}
 
                 <div className="rounded-lg border border-border/60 bg-background/40 p-4 backdrop-blur">
-                    <div className="text-sm text-foreground/70 mb-3">
-                        Use these credentials and tokens for local development. Treat them as secrets.
-                    </div>
+                    <div className="text-sm text-foreground/70 mb-3">Use these credentials and tokens for local development. Treat them as secrets.</div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                         <div className="rounded-md border border-border/60 bg-background p-3">
@@ -83,9 +81,7 @@ export default function DevelopmentPage() {
                                     Copy
                                 </button>
                             </div>
-                            <div className="mt-2 text-[11px] text-foreground/60">
-                                Use as Authorization: Bearer <token> with {apiBase}/data/* endpoints.
-                            </div>
+                            <div className="mt-2 text-[11px] text-foreground/60">Use as Authorization: Bearer token with {apiBase}/data/* endpoints.</div>
                         </div>
 
                         <div className="rounded-md border border-border/60 bg-background p-3">
@@ -138,16 +134,12 @@ export default function DevelopmentPage() {
                                     Copy
                                 </button>
                             </div>
-                            <div className="mt-2 text-[11px] text-foreground/60">
-                                Use for direct CouchDB access if needed. Prefer the API where possible.
-                            </div>
+                            <div className="mt-2 text-[11px] text-foreground/60">Use for direct CouchDB access if needed. Prefer the API where possible.</div>
                         </div>
                     </div>
                 </div>
 
-                <div className="mt-4 text-xs text-foreground/60">
-                    More dev helpers (webhook tester, SSE viewer, schema browser) will be added here.
-                </div>
+                <div className="mt-4 text-xs text-foreground/60">More dev helpers (webhook tester, SSE viewer, schema browser) will be added here.</div>
             </section>
         </main>
     );

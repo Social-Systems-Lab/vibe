@@ -70,7 +70,7 @@ export default function MessagesPage() {
 
     return (
         <main className="w-full">
-            <section className="mx-auto max-w-6xl px-4 md:px-6 py-6 md:py-8">
+            <section className="max-w-6xl">
                 <div className="flex items-center justify-between mb-4">
                     <h1 className="text-2xl font-heading">Messages</h1>
                     <div className="text-xs text-foreground/60">Encrypted channels and delivery details coming soon</div>

@@ -3,7 +3,7 @@ import Link from "next/link";
 export default function DeveloperPortalPromo() {
     return (
         <section className="w-full">
-            <div className="mx-auto max-w-5xl px-4 md:px-6 py-8 md:py-10">
+            <div className="max-w-5xl">
                 <div className="rounded-xl border border-border/60 bg-background/40 p-6 md:p-8 backdrop-blur">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <div>

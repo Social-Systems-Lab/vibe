@@ -3,7 +3,7 @@ import Link from "next/link";
 export default function DevelopersPage() {
     return (
         <main className="w-full">
-            <section className="mx-auto max-w-5xl px-4 md:px-6 py-10 md:py-14">
+            <section className="max-w-5xl">
                 <div className="flex flex-col gap-4">
                     <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs text-foreground/70 backdrop-blur">
                         <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
@@ -32,7 +32,7 @@ export default function DevelopersPage() {
                 </div>
             </section>
 
-            <section className="mx-auto max-w-5xl px-4 md:px-6 pb-12">
+            <section className="max-w-5xl">
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-sm">
                     <a
                         className="rounded-lg border border-border/60 bg-background/40 p-4 hover:bg-accent/10 transition backdrop-blur"

@@ -45,7 +45,7 @@ export function Content({
     const wrapperStyle: React.CSSProperties = {
         gridTemplateColumns: `${left ? leftWidth : "0px"} minmax(0, 1fr) ${right ? rightWidth : "0px"}`,
         gap,
-        paddingTop: topOffset + 16,
+        paddingTop: topOffset,
         ...(fixed ? { maxWidth } : {}),
     };
 
@@ -56,7 +56,7 @@ export function Content({
                 {left ? (
                     <aside
                         className={cn("hidden md:block", stickyLeft ? "sticky self-start" : "")}
-                        style={stickyLeft ? { top: topOffset + 8, height: `calc(100vh - ${topOffset + 16}px)` } : undefined}
+                        style={stickyLeft ? { top: topOffset + 8, height: `calc(100vh - ${topOffset}px)` } : undefined}
                     >
                         {left}
                     </aside>

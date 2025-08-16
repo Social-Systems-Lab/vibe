@@ -64,7 +64,7 @@ export default function DiscoverAppsGrid() {
 
     return (
         <section className="w-full">
-            <div className="mx-auto max-w-5xl px-4 md:px-6 py-6 md:py-8">
+            <div className="max-w-5xl">
                 <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl md:text-2xl font-heading">Discover apps</h2>
                     <Link href="/app-grid" className="text-xs text-foreground/70 hover:text-primary">
