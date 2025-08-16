@@ -26,7 +26,7 @@ export default function ConsoleNav() {
     const pathname = usePathname() || "";
 
     return (
-        <nav className="flex flex-col gap-2">
+        <nav className="flex flex-col gap-2 h-full border-r bg-[#fbfbfb]">
             <div className="rounded-xl p-3">
                 {items.map((it) => {
                     const active = it.match(pathname);
@@ -37,8 +37,10 @@ export default function ConsoleNav() {
                             href={it.href}
                             className={[
                                 "inline-flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-[1.15rem] transition",
-                                active ? "bg-accent/20 ring-1 ring-border text-foreground" : "hover:bg-accent/10 text-foreground/90",
+                                active ? "bg-[#ffac747d] text-foreground" : "hover:bg-accent/10 text-foreground/90",
                             ].join(" ")}
+                            // #ffac747d
+                            // #88909f4d
                             aria-current={active ? "page" : undefined}
                         >
                             <Icon size={20} className={active ? "text-foreground" : "text-foreground/80"} />
