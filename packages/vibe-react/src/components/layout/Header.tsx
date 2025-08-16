@@ -36,6 +36,11 @@ export type HeaderProps = {
      * - "console": full-bleed (no centering / maxWidth)
      */
     variant?: "default" | "console";
+    /**
+     * Optional override for header background styling.
+     * If provided, replaces the default bg/backdrop classes.
+     */
+    backgroundClass?: string;
 };
 
 export function Header({
@@ -53,6 +58,7 @@ export function Header({
     logotypeAlt = "App",
     logotypeHref = "/",
     variant = "default",
+    backgroundClass,
 }: HeaderProps) {
     const defaultLeft = (
         <div className="flex items-center space-x-2 px-3">
@@ -74,7 +80,7 @@ export function Header({
             className={cn(
                 "z-10 flex items-center justify-between w-full",
                 sticky ? "fixed top-0 left-0 right-0" : "",
-                border ? "border-b border-border bg-background/80 backdrop-blur" : "bg-background/80 backdrop-blur",
+                backgroundClass ?? (border ? "border-b border-border bg-background/80 backdrop-blur" : "bg-background/80 backdrop-blur"),
                 className
             )}
             style={{

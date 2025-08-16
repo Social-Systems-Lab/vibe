@@ -26,8 +26,8 @@ export default function ConsoleNav() {
     const pathname = usePathname() || "";
 
     return (
-        <nav className="flex flex-col gap-2 h-full border-r bg-[#fbfbfb]">
-            <div className="rounded-xl p-3">
+        <nav className="flex flex-col gap-2 h-full bg-[#fbfbfb]">
+            <div className="p-3">
                 {items.map((it) => {
                     const active = it.match(pathname);
                     const Icon = it.icon;
