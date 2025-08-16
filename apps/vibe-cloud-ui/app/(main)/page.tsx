@@ -1,5 +1,19 @@
+import WelcomeHero from "./components/home/WelcomeHero";
+import CommunityPulse from "./components/home/CommunityPulse";
+import WhatsNewFeed from "./components/home/WhatsNewFeed";
+import DiscoverAppsGrid from "./components/home/DiscoverAppsGrid";
+import YourActivityPanel from "./components/home/YourActivityPanel";
+import DeveloperPortalPromo from "./components/home/DeveloperPortalPromo";
+
 export default function Page() {
-    const appVersion = process.env.NEXT_PUBLIC_APP_VERSION || "local";
-    console.log(`Rendering Vibe Cloud UI version: ${appVersion}`);
-    return <h1 className="font-heading">Vibe Cloud UI ({appVersion})</h1>;
+    return (
+        <main className="flex flex-col gap-2">
+            <WelcomeHero />
+            <CommunityPulse />
+            <WhatsNewFeed />
+            <DiscoverAppsGrid />
+            <YourActivityPanel />
+            <DeveloperPortalPromo />
+        </main>
+    );
 }
