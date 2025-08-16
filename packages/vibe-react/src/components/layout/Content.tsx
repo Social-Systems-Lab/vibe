@@ -14,20 +14,44 @@ export type ContentProps = {
     stickyLeft?: boolean;
     stickyRight?: boolean;
     topOffset?: number;
+    /**
+     * Container behavior for the grid track wrapper.
+     * - "fixed": center with maxWidth (default, previous behavior)
+     * - "fluid": full-bleed (no centering, no maxWidth)
+     */
+    container?: "fixed" | "fluid";
+    /**
+     * Max width used when container="fixed"
+     */
+    maxWidth?: string;
 };
 
-export function Content({ left, right, children, className, leftWidth = "260px", rightWidth = "320px", gap = "0px", stickyLeft = true, stickyRight = true, topOffset = 56 }: ContentProps) {
+export function Content({
+    left,
+    right,
+    children,
+    className,
+    leftWidth = "260px",
+    rightWidth = "320px",
+    gap = "0px",
+    stickyLeft = true,
+    stickyRight = true,
+    topOffset = 56,
+    container = "fixed",
+    maxWidth = "1200px",
+}: ContentProps) {
+    const fixed = container === "fixed";
+    const wrapperClass = cn("w-full grid", fixed ? "mx-auto" : "");
+    const wrapperStyle: React.CSSProperties = {
+        gridTemplateColumns: `${left ? leftWidth : "0px"} minmax(0, 1fr) ${right ? rightWidth : "0px"}`,
+        gap,
+        paddingTop: topOffset + 16,
+        ...(fixed ? { maxWidth } : {}),
+    };
+
     return (
         <div className={cn("w-full", className)}>
-            <div
-                className="mx-auto w-full grid"
-                style={{
-                    gridTemplateColumns: `${left ? leftWidth : "0px"} minmax(0, 1fr) ${right ? rightWidth : "0px"}`,
-                    gap,
-                    maxWidth: "1200px",
-                    paddingTop: topOffset + 16,
-                }}
-            >
+            <div className={wrapperClass} style={wrapperStyle}>
                 {/* Left column */}
                 {left ? (
                     <aside

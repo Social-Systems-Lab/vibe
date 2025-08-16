@@ -30,6 +30,12 @@ export type HeaderProps = {
      * Defaults to "/" to return to the main page.
      */
     logotypeHref?: string;
+    /**
+     * Layout variant for header container behavior.
+     * - "default": content centered with maxWidth
+     * - "console": full-bleed (no centering / maxWidth)
+     */
+    variant?: "default" | "console";
 };
 
 export function Header({
@@ -46,6 +52,7 @@ export function Header({
     logotypeSrc = "/images/logotype.png",
     logotypeAlt = "App",
     logotypeHref = "/",
+    variant = "default",
 }: HeaderProps) {
     const defaultLeft = (
         <div className="flex items-center space-x-2 px-3">
@@ -75,7 +82,10 @@ export function Header({
                 padding: `${paddingY} ${paddingX}`,
             }}
         >
-            <div className="w-full flex items-center justify-between pointer-events-none" style={{ maxWidth, margin: "0 auto" }}>
+            <div
+                className="w-full flex items-center justify-between pointer-events-none"
+                style={{ maxWidth: variant === "default" ? maxWidth : "none", margin: variant === "default" ? "0 auto" : "0" }}
+            >
                 <div className="pointer-events-auto flex items-center min-w-[120px]">{left ?? defaultLeft}</div>
                 <div className="pointer-events-auto flex-1 flex items-center justify-center">{center ?? null}</div>
                 <div className="pointer-events-auto flex items-center justify-end min-w-[120px] gap-2">{right ?? defaultRight}</div>

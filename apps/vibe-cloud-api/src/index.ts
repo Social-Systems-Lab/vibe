@@ -66,7 +66,9 @@ try {
     process.exit(1);
 }
 
-const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",") : "http://localhost:3000,http://localhost:3001,http://localhost:4000,http://localhost:5050".split(",");
+const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(",")
+    : "http://localhost:3000,http://localhost:3001,http://localhost:4000,http://localhost:5050".split(",");
 
 //allowedOrigins.push(process.env.VIBE_CLOUD_UI_URL || "http://vibe-cloud-ui-service:4000");
 
@@ -960,7 +962,10 @@ const app = new Elysia()
                             ? "video"
                             : (finalMime || "").startsWith("audio/")
                             ? "audio"
-                            : (finalMime || "").includes("pdf") || (finalMime || "").includes("word") || (finalMime || "").includes("excel") || (finalMime || "").includes("text")
+                            : (finalMime || "").includes("pdf") ||
+                              (finalMime || "").includes("word") ||
+                              (finalMime || "").includes("excel") ||
+                              (finalMime || "").includes("text")
                             ? "doc"
                             : "other";
 
@@ -984,7 +989,10 @@ const app = new Elysia()
                             },
                             profile as JwtPayload
                         );
-                        const newId = Array.isArray(writeRes) && writeRes.length > 0 ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId : undefined;
+                        const newId =
+                            Array.isArray(writeRes) && writeRes.length > 0
+                                ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId
+                                : undefined;
 
                         const url = await storageService.getPublicURL(bucketName, storageKey);
 
@@ -1198,7 +1206,10 @@ const app = new Elysia()
                             ? "video"
                             : (finalMime || "").startsWith("audio/")
                             ? "audio"
-                            : (finalMime || "").includes("pdf") || (finalMime || "").includes("word") || (finalMime || "").includes("excel") || (finalMime || "").includes("text")
+                            : (finalMime || "").includes("pdf") ||
+                              (finalMime || "").includes("word") ||
+                              (finalMime || "").includes("excel") ||
+                              (finalMime || "").includes("text")
                             ? "doc"
                             : "other";
 
@@ -1222,7 +1233,10 @@ const app = new Elysia()
                             },
                             profile as JwtPayload
                         );
-                        const newId = Array.isArray(writeRes) && writeRes.length > 0 ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId : undefined;
+                        const newId =
+                            Array.isArray(writeRes) && writeRes.length > 0
+                                ? (writeRes[0] as any).id || (writeRes[0] as any)._id || (writeRes[0] as any).docId
+                                : undefined;
 
                         return {
                             storageKey,
@@ -1268,6 +1282,32 @@ const app = new Elysia()
                     return { profile: null };
                 }
             })
+            .get(
+                "/collections",
+                async ({ profile, set, query, dataService }) => {
+                    if (!profile) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    const limit = Math.min(Math.max(Number(query.limit) || 2000, 1), 20000);
+                    try {
+                        const db = dataService.getDb(profile.instanceId);
+                        const result = await (db as any).list({ include_docs: true, limit });
+                        const setCols = new Set<string>();
+                        for (const row of (result?.rows as any[]) || []) {
+                            const d = (row as any)?.doc;
+                            if (d && typeof d.collection === "string") {
+                                setCols.add(d.collection);
+                            }
+                        }
+                        return { collections: Array.from(setCols).sort() };
+                    } catch (e: any) {
+                        set.status = 500;
+                        return { error: "Failed to list collections" };
+                    }
+                },
+                { query: t.Object({ limit: t.Optional(t.String()) }) }
+            )
             .post(
                 "/:collection",
                 async ({ profile, params, body, set, dataService }) => {
