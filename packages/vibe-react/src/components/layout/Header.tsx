@@ -25,6 +25,11 @@ export type HeaderProps = {
      * Alt text for the default logotype
      */
     logotypeAlt?: string;
+    /**
+     * Href to navigate when clicking the default logotype.
+     * Defaults to "/" to return to the main page.
+     */
+    logotypeHref?: string;
 };
 
 export function Header({
@@ -40,10 +45,13 @@ export function Header({
     border = false,
     logotypeSrc = "/images/logotype.png",
     logotypeAlt = "App",
+    logotypeHref = "/",
 }: HeaderProps) {
     const defaultLeft = (
         <div className="flex items-center space-x-2 px-3">
-            <img src={logotypeSrc} alt={logotypeAlt} className="h-8" />
+            <a href={logotypeHref} aria-label="Home">
+                <img src={logotypeSrc} alt={logotypeAlt} className="h-8" />
+            </a>
         </div>
     );
 

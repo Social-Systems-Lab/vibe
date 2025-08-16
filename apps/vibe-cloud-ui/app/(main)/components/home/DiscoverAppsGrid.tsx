@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 
 type AppCard = {
     id: string;
@@ -57,6 +60,8 @@ function Pill({ children }: { children: React.ReactNode }) {
 }
 
 export default function DiscoverAppsGrid() {
+    const [followed, setFollowed] = useState<Record<string, boolean>>({});
+
     return (
         <section className="w-full">
             <div className="mx-auto max-w-5xl px-4 md:px-6 py-6 md:py-8">
@@ -66,20 +71,43 @@ export default function DiscoverAppsGrid() {
                         See all →
                     </Link>
                 </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                    {apps.map((app) => (
-                        <Link
-                            key={app.id}
-                            href={app.href}
-                            className="group rounded-lg border border-border/60 bg-background/40 p-4 hover:bg-accent/10 transition backdrop-blur"
-                        >
-                            <div className="flex items-center justify-between mb-2">
-                                <div className="text-base font-medium">{app.name}</div>
-                                {app.badge ? <Pill>{app.badge}</Pill> : null}
+                    {apps.map((app) => {
+                        const isFollowed = !!followed[app.id];
+                        return (
+                            <div
+                                key={app.id}
+                                className="group rounded-lg border border-border/60 bg-background/40 p-4 backdrop-blur hover:bg-accent/10 transition"
+                            >
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="text-base font-medium line-clamp-1">{app.name}</div>
+                                    {app.badge ? <Pill>{app.badge}</Pill> : null}
+                                </div>
+                                <p className="text-sm text-foreground/70 line-clamp-2">{app.description}</p>
+
+                                <div className="mt-3 flex items-center gap-2">
+                                    <button
+                                        onClick={() => setFollowed((s) => ({ ...s, [app.id]: !isFollowed }))}
+                                        className={`inline-flex items-center rounded-md border px-3 py-1 text-xs transition ${
+                                            isFollowed
+                                                ? "bg-primary text-primary-foreground border-transparent"
+                                                : "border-border bg-background hover:bg-accent/20"
+                                        }`}
+                                        aria-pressed={isFollowed}
+                                    >
+                                        {isFollowed ? "Following" : "Follow"}
+                                    </button>
+                                    <Link
+                                        href={app.href}
+                                        className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent/20 transition"
+                                    >
+                                        Learn more
+                                    </Link>
+                                </div>
                             </div>
-                            <p className="text-sm text-foreground/70">{app.description}</p>
-                        </Link>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
         </section>
