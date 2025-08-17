@@ -10,7 +10,7 @@ const getBaseUrl = () => {
 const baseUrl = getBaseUrl();
 
 export const appManifest: VibeManifest = {
-    appName: "Vibe Home",
+    appName: "Vibe Cloud",
     backgroundImageUrl: `${baseUrl}/images/logo.png`,
     appTagline: "Your everything.",
     appDescription: "Your profile, content and connections, under your control—portable across apps.",
