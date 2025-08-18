@@ -159,7 +159,7 @@ Vibe offers two primary methods for reading data: real-time subscriptions with `
 
 ### Real-time Subscriptions with `read()`
 
-For data that needs to be kept in sync in real-time, you can subscribe to a collection. The `read()` method takes a collection name, an optional query object, and a callback function that will be invoked whenever the data changes.
+For data that needs to be kept in sync in real-time, you can subscribe to a type. The `read()` method takes a type name, an optional query object, and a callback function that will be invoked whenever the data changes.
 
 The method returns a promise that resolves to a `subscription` object, which you should use to `unsubscribe` when the component unmounts to prevent memory leaks.
 
@@ -183,7 +183,7 @@ function ContactsList() {
             }
         };
 
-        // Subscribe to the 'contacts' collection
+        // Subscribe to the 'contacts' type
         const subscriptionPromise = read("contacts", {}, handleData);
 
         let subscription;
@@ -251,7 +251,7 @@ function UserProfile({ userId }) {
 
 To create or update data in Vibe's secure storage, use the `write()` method from the `useVibe` hook.
 
-The `write()` method takes the collection name and the data object you want to save. If the object has an `_id` property, Vibe will attempt to update the existing document; otherwise, it will create a new one.
+The `write()` method takes the type name and the data object you want to save. If the object has an `_id` property, Vibe will attempt to update the existing document; otherwise, it will create a new one.
 
 ```jsx
 import React, { useState } from "react";
@@ -341,7 +341,7 @@ read("posts", query, handleData);
 
 ### Expanding Relations
 
-If your data contains references to other documents (e.g., a post has an `author` field that is a reference to a document in the `profiles` collection), you can use the `expand` parameter to automatically fetch the related data.
+If your data contains references to other documents (e.g., a post has an `author` field that is a reference to a document in the `profiles` type), you can use the `expand` parameter to automatically fetch the related data.
 
 ```jsx
 // In this example, the 'author' field in a 'post' document looks like:
@@ -382,7 +382,7 @@ await write("posts", {
 
 **2. Performing a Global Query**
 
-Once documents are made public with an ACL, you can query them from the special `global` database by adding `{ global: true }` to your query options.
+Once documents are made public with an ACL, you can query them from the special global database by adding `{ global: true }` to your query options.
 
 ```jsx
 // Fetch all public posts from everyone
@@ -405,7 +405,7 @@ For more advanced permission models using certificates, see the `Certs_and_ACLs.
 
 ## Deleting Data
 
-To remove a document from a collection, use the `remove()` method. You need to provide the collection name and an object specifying the `_id` of the document to be deleted.
+To remove a document of a given type, use the `remove()` method. You need to provide the type name and an object specifying the `_id` of the document to be deleted.
 
 ```jsx
 import { useVibe } from "vibe-react";
@@ -444,7 +444,7 @@ Vibe includes built-in support for secure file storage, handling everything from
 
 To upload a file, you use the `upload()` method, which is available directly from the `useVibe` hook. This method takes a `File` object (typically from an `<input type="file">` element) and optional metadata.
 
-The SDK handles the entire upload process, which may involve getting a secure, one-time upload URL from the backend. Once the upload is complete, a new document is created in a special `files` collection containing metadata about the uploaded file.
+The SDK handles the entire upload process, which may involve getting a secure, one-time upload URL from the backend. Once the upload is complete, a new document is created in a special `files` type containing metadata about the uploaded file.
 
 ```jsx
 import React from "react";
@@ -483,7 +483,7 @@ function FileUploader() {
 
 ### Accessing Files
 
-After a file is uploaded, you can access it like any other data object by reading from the `files` collection. The document in the `files` collection contains metadata such as the filename, size, content type, and a URL to access the file's content.
+After a file is uploaded, you can access it like any other data object by reading from the `files` type. The document in the `files` type contains metadata such as the filename, size, content type, and a URL to access the file's content.
 
 ```jsx
 // Read metadata for a specific file
@@ -505,20 +505,33 @@ if (result.ok && result.data) {
 
 The `useVibe` hook provides access to the Vibe SDK's core functionality.
 
-| Property          | Type                                                       | Description                                                                                           |
-| ----------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `user`            | `User \| null`                                             | An object containing the current user's data (`did`, `displayName`, etc.) or `null` if not logged in. |
-| `isLoggedIn`      | `boolean`                                                  | `true` if the user is authenticated, otherwise `false`.                                               |
-| `login()`         | `() => Promise<void>`                                      | Initiates the user login flow.                                                                        |
-| `logout()`        | `() => Promise<void>`                                      | Logs the current user out.                                                                            |
-| `signup()`        | `() => Promise<void>`                                      | Initiates the user signup flow.                                                                       |
-| `manageConsent()` | `() => Promise<void>`                                      | Opens the consent management view for the user.                                                       |
-| `manageProfile()` | `() => Promise<void>`                                      | Opens the profile management view for the user.                                                       |
-| `read()`          | `(collection, [query], callback) => Promise<Subscription>` | Subscribes to real-time updates for a collection.                                                     |
-| `readOnce()`      | `(collection, [query]) => Promise<ReadResult>`             | Fetches data from a collection a single time.                                                         |
-| `write()`         | `(collection, data) => Promise<any>`                       | Creates or updates a document in a collection.                                                        |
-| `remove()`        | `(collection, {_id}) => Promise<any>`                      | Deletes a document from a collection.                                                                 |
-| `upload()`        | `(file, [metadata]) => Promise<any>`                       | Uploads a file and creates a corresponding document in the `files` collection.                        |
-| `sdk`             | `VibeSDK`                                                  | The raw Vibe SDK instance for advanced use cases.                                                     |
-| `appName`         | `string`                                                   | The name of the application, as defined in the `VibeProvider` config.                                 |
-| `appImageUrl`     | `string`                                                   | The image URL for the application, as defined in the `VibeProvider` config.                           |
+| Property          | Type                                                 | Description                                                                                           |
+| ----------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `user`            | `User \| null`                                       | An object containing the current user's data (`did`, `displayName`, etc.) or `null` if not logged in. |
+| `isLoggedIn`      | `boolean`                                            | `true` if the user is authenticated, otherwise `false`.                                               |
+| `login()`         | `() => Promise<void>`                                | Initiates the user login flow.                                                                        |
+| `logout()`        | `() => Promise<void>`                                | Logs the current user out.                                                                            |
+| `signup()`        | `() => Promise<void>`                                | Initiates the user signup flow.                                                                       |
+| `manageConsent()` | `() => Promise<void>`                                | Opens the consent management view for the user.                                                       |
+| `manageProfile()` | `() => Promise<void>`                                | Opens the profile management view for the user.                                                       |
+| `read()`          | `(type, [query], callback) => Promise<Subscription>` | Subscribes to real-time updates for a type.                                                           |
+| `readOnce()`      | `(type, [query]) => Promise<ReadResult>`             | Fetches data for a type a single time.                                                                |
+| `write()`         | `(type, data) => Promise<any>`                       | Creates or updates a document for a type.                                                             |
+| `remove()`        | `(type, {_id}) => Promise<any>`                      | Deletes a document for a type.                                                                        |
+| `upload()`        | `(file, [metadata]) => Promise<any>`                 | Uploads a file and creates a corresponding document in the `files` type.                              |
+| `sdk`             | `VibeSDK`                                            | The raw Vibe SDK instance for advanced use cases.                                                     |
+| `appName`         | `string`                                             | The name of the application, as defined in the `VibeProvider` config.                                 |
+| `appImageUrl`     | `string`                                             | The image URL for the application, as defined in the `VibeProvider` config.                           |
+
+---
+
+## HTTP and WebSocket Endpoints (for reference)
+
+-   Types listing:
+    -   GET `/data/types`
+-   Type data:
+    -   POST `/data/types/:type`
+    -   POST `/data/types/:type/query`
+-   WebSockets:
+    -   WS `/data/types/:type` (per-type live updates)
+    -   WS `/data/global` (global feed; requires auth message with `query.type`)

@@ -31,14 +31,14 @@ sequenceDiagram
 
     App->>SDK: sdk.readOnce('posts', { global: true })
     SDK->>HubStrategy: readOnce('posts', { global: true })
-    HubStrategy->>Hub: postMessage({ type: 'DB_GLOBAL_QUERY' })
+    HubStrategy->>Hub: postMessage({ action: 'DB_GLOBAL_QUERY' })
     Hub->>Hub: performGlobalQuery()
     Hub->>API: GET /hub/api-token
     API-->>Hub: Returns JWT Access Token
-    Hub->>API: POST /data/posts/query?global=true
+    Hub->>API: POST /data/types/posts/query?global=true
     API->>API: Fetches docs from all user DBs
     API-->>Hub: Returns aggregated posts
-    Hub-->>HubStrategy: postMessage({ type: 'DB_GLOBAL_QUERY_ACK', data: posts })
+    Hub-->>HubStrategy: postMessage({ action: 'DB_GLOBAL_QUERY_ACK', data: posts })
     HubStrategy-->>SDK: Returns { docs: posts }
     SDK-->>App: Returns { docs: posts }
 ```
@@ -51,7 +51,7 @@ sequenceDiagram
 4.  **Hub Receives Message**: `hub.html`'s message listener receives the event and calls its internal `performGlobalQuery` function.
 5.  **Hub Auth**: The hub first calls the `/hub/api-token` endpoint on the `vibe-cloud-api` to get a short-lived JWT access token. This is necessary to authenticate the subsequent data request.
 6.  **Hub to API**: The hub then makes a `POST` request to the `/data/posts/query?global=true` endpoint on the API, including the access token in the `Authorization` header. The body of the request contains the query selector.
-7.  **API Aggregation**: The API's `/data/:collection/query` handler detects the `global=true` parameter. It then iterates through all user databases, executes the query against each one, and aggregates the results into a single array of documents.
+7.  The API's `/data/types/:type/query` handler with `global=true` queries the central `global` database by `_id` prefix for the requested type and returns DocRefs (pointer records). The hub expands these DocRefs to full documents as needed.
 8.  **API to Hub**: The API responds to the hub with the aggregated list of post documents.
 9.  **Hub to Strategy**: `hub.html` receives the response. It then sends a `postMessage` back to the `HubStrategy` with the type `DB_GLOBAL_QUERY_ACK`, the original `nonce`, and the array of posts as the `data`.
 10. **Strategy to SDK**: The `HubStrategy`'s message handler finds the pending request matching the `nonce`. It resolves the promise, returning the data to the `VibeSDK`.
@@ -71,17 +71,17 @@ sequenceDiagram
 
     App->>SDK: sdk.read('posts', { global: true }, callback)
     SDK->>HubStrategy: read('posts', { global: true }, callback)
-    HubStrategy->>Hub: postMessage({ type: 'DB_GLOBAL_SUBSCRIBE' })
+    HubStrategy->>Hub: postMessage({ action: 'DB_GLOBAL_SUBSCRIBE' })
     Hub->>Hub: createSharedGlobalListener()
     Hub->>API: GET /hub/api-token
     API-->>Hub: Returns JWT Access Token
     Hub->>API: ws.connect('/data/global')
     API-->>Hub: WebSocket connection established
-    Hub->>API: ws.send({ type: 'auth', token: jwt, query: ... })
+    Hub->>API: ws.send({ action: 'auth', token: jwt, query: ... })
 
     loop Real-time Updates
         API-->>Hub: ws.send(updated_posts)
-        Hub->>HubStrategy: postMessage({ type: 'DB_UPDATE', data: updated_posts })
+        Hub->>HubStrategy: postMessage({ action: 'DB_UPDATE', data: updated_posts })
         HubStrategy->>SDK: callback({ data: updated_posts })
         SDK->>App: callback({ data: updated_posts })
     end
@@ -109,10 +109,10 @@ sequenceDiagram
 
     App->>SDK: sdk.readOnce('posts', { author: 'did:...' })
     SDK->>HubStrategy: readOnce('posts', { author: 'did:...' })
-    HubStrategy->>Hub: postMessage({ type: 'DB_QUERY' })
+    HubStrategy->>Hub: postMessage({ action: 'DB_QUERY' })
     Hub->>Hub: performPouchDbOperation('DB_QUERY')
     Hub->>Hub: db.find({ selector: ... })
-    Hub-->>HubStrategy: postMessage({ type: 'DB_QUERY_ACK', data: posts })
+    Hub-->>HubStrategy: postMessage({ action: 'DB_QUERY_ACK', data: posts })
     HubStrategy-->>SDK: Returns { docs: posts }
     SDK-->>App: Returns { docs: posts }
 ```
@@ -137,7 +137,7 @@ sequenceDiagram
 
     App->>SDK: sdk.readOnce('posts', { expand: ['author'] })
     SDK->>HubStrategy: readOnce('posts', { expand: ['author'] })
-    HubStrategy->>Hub: postMessage({ type: 'DB_QUERY' })
+    HubStrategy->>Hub: postMessage({ action: 'DB_QUERY' })
     Hub->>Hub: performPouchDbOperation('DB_QUERY')
     Hub->>Hub: db.find({ selector: ... })
     Hub->>Hub: _expand(docs)
@@ -148,7 +148,7 @@ sequenceDiagram
         Hub->>Hub: db.put(cached_profile)
     end
 
-    Hub-->>HubStrategy: postMessage({ type: 'DB_QUERY_ACK', data: posts_with_authors })
+    Hub-->>HubStrategy: postMessage({ action: 'DB_QUERY_ACK', data: posts_with_authors })
     HubStrategy-->>SDK: Returns { docs: posts_with_authors }
     SDK-->>App: Returns { docs: posts_with_authors }
 ```
@@ -178,10 +178,10 @@ sequenceDiagram
 
     App->>SDK: sdk.write('posts', { content: 'Hello!' })
     SDK->>HubStrategy: write('posts', { content: 'Hello!' })
-    HubStrategy->>Hub: postMessage({ type: 'DB_WRITE' })
+    HubStrategy->>Hub: postMessage({ action: 'DB_WRITE' })
     Hub->>Hub: performPouchDbOperation('DB_WRITE')
     Hub->>Hub: db.put({ ... })
-    Hub-->>HubStrategy: postMessage({ type: 'DB_WRITE_ACK' })
+    Hub-->>HubStrategy: postMessage({ action: 'DB_WRITE_ACK' })
     HubStrategy-->>SDK: Returns success
     SDK-->>App: Returns success
 

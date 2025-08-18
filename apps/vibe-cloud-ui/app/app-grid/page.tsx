@@ -67,7 +67,7 @@ export default function AppGridPage() {
                 setConsents(data.consents || []);
                 // Notify host the grid is ready
                 try {
-                    window.parent?.postMessage({ type: "appGridReady" }, "*");
+                    window.parent?.postMessage({ action: "appGridReady" }, "*");
                 } catch {}
             } catch (e: any) {
                 setError(e.message || "Failed to load");
@@ -96,7 +96,12 @@ export default function AppGridPage() {
                         const icon = c.manifest?.appLogoUrl;
 
                         return (
-                            <button key={`${c.clientId}:${c.origin}`} onClick={() => openApp(c)} className="flex flex-col items-center justify-start gap-2 cursor-pointer select-none" title={title}>
+                            <button
+                                key={`${c.clientId}:${c.origin}`}
+                                onClick={() => openApp(c)}
+                                className="flex flex-col items-center justify-start gap-2 cursor-pointer select-none"
+                                title={title}
+                            >
                                 <Squircle imageUrl={icon} size={56} className="bg-gray-100" />
                                 <div className="text-[13px] font-medium text-center leading-snug line-clamp-2">{title}</div>
                             </button>

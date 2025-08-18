@@ -9,7 +9,7 @@ export default function DatabasePage() {
     const [apiBase] = useState(() => (appManifest.apiUrl || "").replace(/\/$/, ""));
     const [token, setToken] = useState<string | null>(null);
 
-    // Namespaces (collections)
+    // Namespaces (types)
     const [namespaces, setNamespaces] = useState<string[] | null>(null);
     const [nsLoading, setNsLoading] = useState(false);
     const [namespace, setNamespace] = useState<string>("");
@@ -36,14 +36,14 @@ export default function DatabasePage() {
         fetchToken();
     }, [apiBase]);
 
-    // Load namespaces (collections) once token is available
+    // Load namespaces (types) once token is available
     useEffect(() => {
         const run = async () => {
             if (!token) return;
             setNsLoading(true);
             setError(null);
             try {
-                const res = await fetch(`${apiBase}/data/collections?limit=5000`, {
+                const res = await fetch(`${apiBase}/data/types?limit=5000`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
                 if (!res.ok) {
@@ -51,7 +51,7 @@ export default function DatabasePage() {
                     throw new Error(data?.error || `Failed to list namespaces (${res.status})`);
                 }
                 const data = await res.json();
-                const cols: string[] = Array.isArray(data?.collections) ? data.collections : [];
+                const cols: string[] = Array.isArray(data?.types) ? data.types : [];
                 setNamespaces(cols);
                 // Choose a sensible default (files first, else first collection)
                 const defaultNs = cols.includes("files") ? "files" : cols[0] || "";
@@ -90,7 +90,7 @@ export default function DatabasePage() {
         setError(null);
         setSelected(null);
         try {
-            const res = await fetch(`${apiBase}/data/${encodeURIComponent(targetNs)}/query`, {
+            const res = await fetch(`${apiBase}/data/types/${encodeURIComponent(targetNs)}/query`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -206,7 +206,7 @@ export default function DatabasePage() {
                                                     <div className="flex items-center justify-between gap-3">
                                                         <div className="min-w-0">
                                                             <div className="text-sm font-medium truncate">{d._id || d.id}</div>
-                                                            <div className="text-xs text-foreground/60 truncate">{d.collection}</div>
+                                                            <div className="text-xs text-foreground/60 truncate">{d.type}</div>
                                                         </div>
                                                         <button
                                                             onClick={() => setSelected(d)}

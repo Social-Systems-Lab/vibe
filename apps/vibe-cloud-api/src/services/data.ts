@@ -59,7 +59,19 @@ export class DataService {
         return this.couch.use(dbName);
     }
 
-    async write(collection: string, data: any, user: JwtPayload) {
+    private async ensureTypeIndex(db: DocumentScope<any>) {
+        try {
+            await (db as any).createIndex({
+                index: { fields: ["type"] },
+                name: "idx_type",
+                type: "json",
+            });
+        } catch (e) {
+            // Ignore errors (e.g., index already exists or driver without createIndex)
+        }
+    }
+
+    async write(type: string, data: any, user: JwtPayload) {
         await this.reauthenticate();
         const db = this.getDb(user.instanceId);
         const dbName = getUserDbName(user.instanceId);
@@ -68,7 +80,7 @@ export class DataService {
         const docs = await Promise.all(
             itemsToProcess.map(async (doc) => {
                 if (!doc._id) {
-                    doc._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                    doc._id = `${type}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
                 } else {
                     try {
                         const existingDoc = await db.get(doc._id);
@@ -82,7 +94,7 @@ export class DataService {
                         }
                     }
                 }
-                doc.collection = collection;
+                doc.type = type;
                 return doc;
             })
         );
@@ -98,7 +110,8 @@ export class DataService {
                 }
                 const doc = itemsToProcess[index];
                 const acl = doc.acl as Acl;
-                const globalId = `${doc.collection}/${user.sub}/${doc._id.split("/")[1]}`;
+                const type = doc.type;
+                const globalId = `${type}/${user.sub}/${doc._id.split("/")[1]}`;
 
                 // Any ACL makes a document globally accessible, so it must be indexed.
                 const isGloballyAccessible = acl && Object.keys(acl).length > 0;
@@ -120,7 +133,7 @@ export class DataService {
                         if (e.statusCode !== 404) throw e;
                     }
                     await this.globalDb.insert(docRef as any);
-                    this.globalFeedService.publish(doc.collection, docRef.ref);
+                    this.globalFeedService.publish(type, docRef.ref);
                 } else {
                     // If no global read access, try to remove it from the global DB
                     try {
@@ -144,21 +157,21 @@ export class DataService {
         return allDbs.filter((db) => db.startsWith("userdb-"));
     }
 
-    async readOnce<T extends Document>(collection: string, query: any, user: JwtPayload): Promise<ReadOnceApiResponse<T>> {
+    async readOnce<T extends Document>(type: string, query: any, user: JwtPayload): Promise<ReadOnceApiResponse<T>> {
         await this.reauthenticate();
         const { expand, maxCacheAge, global, ...selector } = query;
 
         if (global) {
-            console.log(`[data.ts] Performing global query for collection '${collection}' with selector:`, selector);
+            console.log(`[data.ts] Performing global query for type '${type}' with selector:`, selector);
             const dbQuery = {
                 selector: {
                     _id: {
-                        $gte: `${collection}/`,
-                        $lt: `${collection}/\ufff0`,
+                        $gte: `${type}/`,
+                        $lt: `${type}/\ufff0`,
                     },
                     // Do not include the rest of the selector, as it may contain fields
-                    // like 'collection' which do not exist on the DocRef documents in the global DB.
-                    // The _id prefix is the sole filter for collections.
+                    // like 'type' which do not exist on the DocRef documents in the global DB.
+                    // The _id prefix is the sole filter for types.
                 },
             };
             console.log("[data.ts] Executing global DB query:", JSON.stringify(dbQuery, null, 2));
@@ -174,9 +187,10 @@ export class DataService {
             const dbQuery = {
                 selector: {
                     ...selector,
-                    collection: collection,
+                    type: type,
                 },
             };
+            await this.ensureTypeIndex(db);
             const result = await db.find(dbQuery);
 
             const accessibleDocs: T[] = [];
@@ -293,7 +307,7 @@ export class DataService {
         return Promise.all(promises);
     }
 
-    async update(collection: string, data: any, user: JwtPayload) {
+    async update(type: string, data: any, user: JwtPayload) {
         await this.reauthenticate();
         const db = this.getDb(user.instanceId);
         const dbName = getUserDbName(user.instanceId);
@@ -309,7 +323,7 @@ export class DataService {
                     throw new Error(`User ${user.sub} does not have write access to ${doc._id}`);
                 }
                 doc._rev = existing._rev;
-                doc.collection = collection;
+                doc.type = type;
                 return doc;
             })
         );
@@ -325,7 +339,8 @@ export class DataService {
                 }
                 const doc = itemsToProcess[index];
                 const acl = doc.acl as Acl;
-                const globalId = `${doc.collection}/${user.sub}/${doc._id.split("/")[1]}`;
+                const type = doc.type;
+                const globalId = `${type}/${user.sub}/${doc._id.split("/")[1]}`;
 
                 // Any ACL makes a document globally accessible, so it must be indexed.
                 const isGloballyAccessible = acl && Object.keys(acl).length > 0;
@@ -346,7 +361,7 @@ export class DataService {
                         if (e.statusCode !== 404) throw e;
                     }
                     await this.globalDb.insert(docRef as any);
-                    this.globalFeedService.publish(doc.collection, docRef.ref);
+                    this.globalFeedService.publish(type, docRef.ref);
                 } else {
                     try {
                         const existing = await this.globalDb.get(globalId);
@@ -396,7 +411,8 @@ export class DataService {
     private async getUserCertificates(instanceId: string): Promise<Certificate[]> {
         try {
             const db = this.getDb(instanceId);
-            const result = await db.find({ selector: { collection: "certs" } });
+            await this.ensureTypeIndex(db);
+            const result = await db.find({ selector: { type: "certs" } });
             return result.docs as any[];
         } catch (e) {
             console.error("Could not fetch user certificates", e);

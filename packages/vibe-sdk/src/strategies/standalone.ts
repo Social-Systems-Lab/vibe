@@ -339,7 +339,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
     }
 
     // --- Vibe DB Methods (unchanged) ---
-    async readOnce<T extends Document>(collection: string, query: any = {}): Promise<ReadOnceApiResponse<T>> {
+    async readOnce<T extends Document>(type: string, query: any = {}): Promise<ReadOnceApiResponse<T>> {
         if (!this.authManager.isLoggedIn()) {
             throw new Error("User is not authenticated.");
         }
@@ -353,7 +353,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
             apiQuery.global = "true";
         }
 
-        const { data, error } = await (this.api.data as any)[collection].query.post(selector, {
+        const { data, error } = await (this.api.data as any).types[type].query.post(selector, {
             headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
             query: apiQuery,
         });
@@ -365,11 +365,11 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         return data as ReadOnceApiResponse<T>;
     }
 
-    async write(collection: string, doc: any): Promise<any> {
+    async write(type: string, doc: any): Promise<any> {
         if (!this.authManager.isLoggedIn()) {
             throw new Error("User is not authenticated.");
         }
-        const { data, error } = await (this.api.data as any)[collection].post(doc, {
+        const { data, error } = await (this.api.data as any).types[type].post(doc, {
             headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
         });
         if (error) {
@@ -379,13 +379,13 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         return data;
     }
 
-    async remove(collection: string, data: any): Promise<any> {
+    async remove(type: string, data: any): Promise<any> {
         const itemsToProcess = Array.isArray(data) ? data : [data];
         const docsToDelete = itemsToProcess.map((doc) => ({ ...doc, _deleted: true }));
-        return this.write(collection, docsToDelete);
+        return this.write(type, docsToDelete);
     }
 
-    async read(collection: string, query: any, callback: ReadCallback): Promise<Subscription> {
+    async read(type: string, query: any, callback: ReadCallback): Promise<Subscription> {
         if (!this.authManager.isLoggedIn()) {
             throw new Error("User is not authenticated.");
         }
@@ -394,26 +394,25 @@ export class StandaloneStrategy implements VibeTransportStrategy {
         const VIBE_WS_URL = this.config.apiUrl.replace(/^http/, "ws");
         const wsApi = edenTreaty<App>(VIBE_WS_URL);
 
-        const endpoint = global ? "global" : collection;
-        const ws = (wsApi.data as any)[endpoint].subscribe();
+        const ws = global ? (wsApi.data as any).global.subscribe() : (wsApi.data as any).types[type].subscribe();
 
         ws.on("open", () => {
             const authMessage = {
                 type: "auth",
                 token: this.authManager.getAccessToken(),
-                query: { ...restQuery, collection: global ? collection : undefined },
+                query: { ...restQuery, type: global ? type : undefined },
             };
             ws.send(JSON.stringify(authMessage));
         });
 
         ws.on("message", async (message: any) => {
-            if (message.data.type === "error" && message.data.message === "Token expired") {
+            if (message.data.action === "error" && message.data.message === "Token expired") {
                 try {
                     await this.getUser(); // This will trigger a token refresh if needed
                     const authMessage = {
                         type: "auth",
                         token: this.authManager.getAccessToken(),
-                        query: { ...restQuery, collection: global ? collection : undefined },
+                        query: { ...restQuery, type: global ? type : undefined },
                     };
                     ws.send(JSON.stringify(authMessage));
                 } catch (e) {
@@ -533,13 +532,13 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                     return;
                 }
 
-                if (event.data.type === "vibe_password_submission") {
+                if (event.data.action === "vibe_password_submission") {
                     const { password } = event.data;
                     try {
                         const encryptionKey = await deriveEncryptionKey(password, Buffer.from(encryptedPrivateKey.salt, "hex"));
                         const privateKeyHex = await decryptData(encryptedPrivateKey, encryptionKey);
 
-                        popup?.postMessage({ type: "vibe_password_accepted" }, this.config.apiUrl);
+                        popup?.postMessage({ action: "vibe_password_accepted" }, this.config.apiUrl);
 
                         clearInterval(interval);
                         window.removeEventListener("message", messageListener);
@@ -547,7 +546,7 @@ export class StandaloneStrategy implements VibeTransportStrategy {
                         resolve(privateKeyHex);
                     } catch (e) {
                         console.error("issueCert Error: Decryption failed, likely incorrect password.", e);
-                        popup?.postMessage({ type: "vibe_password_invalid", error: "Incorrect password. Please try again." }, this.config.apiUrl);
+                        popup?.postMessage({ action: "vibe_password_invalid", error: "Incorrect password. Please try again." }, this.config.apiUrl);
                     }
                 }
             };

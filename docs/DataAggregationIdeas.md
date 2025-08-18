@@ -75,7 +75,7 @@ PouchDB provides a local, offline-capable database that syncs with remote CouchD
     sharedWorker.port.onmessage = (event) => { /* Forward to app ports */ };
 
     // In handleDataOperation: Forward to worker
-    sharedWorker.port.postMessage({ type: 'DB_OPERATION', details: /* ... */ });
+    sharedWorker.port.postMessage({ action: 'DB_OPERATION', details: /* ... */ });
     ```
 
     **shared-pouch-worker.js**:

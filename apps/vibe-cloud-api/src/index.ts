@@ -825,31 +825,6 @@ const app = new Elysia()
                     }
                 },
             })
-            // Add robust CORS handling for both success and error paths
-            .onAfterHandle(({ request, set }) => {
-                const origin = request.headers.get("origin") ?? "";
-                if (allowedOrigins.includes(origin)) {
-                    set.headers["Access-Control-Allow-Origin"] = origin;
-                    set.headers["Access-Control-Allow-Credentials"] = "true";
-                    set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-                    set.headers["Access-Control-Allow-Headers"] = request.headers.get("Access-Control-Request-Headers") ?? "*";
-                    set.headers["Access-Control-Max-Age"] = "86400";
-                    set.headers["Access-Control-Expose-Headers"] = "Content-Disposition";
-                    set.headers["Vary"] = "Origin, Access-Control-Request-Headers";
-                }
-            })
-            .onError(({ request, set }) => {
-                const origin = request.headers.get("origin") ?? "";
-                if (allowedOrigins.includes(origin)) {
-                    set.headers["Access-Control-Allow-Origin"] = origin;
-                    set.headers["Access-Control-Allow-Credentials"] = "true";
-                    set.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-                    set.headers["Access-Control-Allow-Headers"] = request.headers.get("Access-Control-Request-Headers") ?? "*";
-                    set.headers["Access-Control-Max-Age"] = "86400";
-                    set.headers["Access-Control-Expose-Headers"] = "Content-Disposition";
-                    set.headers["Vary"] = "Origin, Access-Control-Request-Headers";
-                }
-            })
             // Upload (server-upload) + immediate file doc creation
             .post(
                 "/upload",
@@ -1283,7 +1258,7 @@ const app = new Elysia()
                 }
             })
             .get(
-                "/collections",
+                "/types",
                 async ({ profile, set, query, dataService }) => {
                     if (!profile) {
                         set.status = 401;
@@ -1293,26 +1268,26 @@ const app = new Elysia()
                     try {
                         const db = dataService.getDb(profile.instanceId);
                         const result = await (db as any).list({ include_docs: true, limit });
-                        const setCols = new Set<string>();
+                        const setTypes = new Set<string>();
                         for (const row of (result?.rows as any[]) || []) {
                             const d = (row as any)?.doc;
-                            if (d && typeof d.collection === "string") {
-                                setCols.add(d.collection);
+                            if (d && typeof d.type === "string") {
+                                setTypes.add(d.type);
                             }
                         }
-                        return { collections: Array.from(setCols).sort() };
+                        return { types: Array.from(setTypes).sort() };
                     } catch (e: any) {
                         set.status = 500;
-                        return { error: "Failed to list collections" };
+                        return { error: "Failed to list types" };
                     }
                 },
                 { query: t.Object({ limit: t.Optional(t.String()) }) }
             )
             .post(
-                "/:collection",
+                "/types/:type",
                 async ({ profile, params, body, set, dataService }) => {
                     try {
-                        const result = await dataService.write(params.collection, body, profile as JwtPayload);
+                        const result = await dataService.write(params.type, body, profile as JwtPayload);
                         return { success: true, ...result };
                     } catch (error: any) {
                         set.status = 500;
@@ -1320,7 +1295,7 @@ const app = new Elysia()
                     }
                 },
                 {
-                    params: t.Object({ collection: t.String() }),
+                    params: t.Object({ type: t.String() }),
                     beforeHandle: ({ profile, set }) => {
                         if (!profile) {
                             set.status = 401;
@@ -1330,7 +1305,7 @@ const app = new Elysia()
                 }
             )
             .post(
-                "/:collection/query",
+                "/types/:type/query",
                 async ({ profile, params, body, set, query, dataService }) => {
                     try {
                         const fullQuery = {
@@ -1338,7 +1313,7 @@ const app = new Elysia()
                             expand: query.expand ? query.expand.split(",") : undefined,
                             global: query.global === "true",
                         };
-                        const result = await dataService.readOnce(params.collection, fullQuery, profile as JwtPayload);
+                        const result = await dataService.readOnce(params.type, fullQuery, profile as JwtPayload);
                         return result;
                     } catch (error: any) {
                         set.status = 500;
@@ -1346,7 +1321,7 @@ const app = new Elysia()
                     }
                 },
                 {
-                    params: t.Object({ collection: t.String() }),
+                    params: t.Object({ type: t.String() }),
                     query: t.Object({
                         expand: t.Optional(t.String()),
                         global: t.Optional(t.String()),
@@ -1359,14 +1334,14 @@ const app = new Elysia()
                     },
                 }
             )
-            .ws("/:collection", {
+            .ws("/types/:type", {
                 async open(ws) {
-                    console.log("WebSocket connection opened");
+                    console.log("WebSocket connection opened (types)");
                 },
-                async message(ws, message: { type: string; token?: string; query?: any }) {
-                    const { collection } = ws.data.params;
+                async message(ws, message: { action: string; token?: string; query?: any }) {
+                    const { type } = ws.data.params;
 
-                    if (message.type === "auth") {
+                    if (message.action === "auth") {
                         try {
                             const profile = await ws.data.jwt.verify(message.token);
                             if (!profile) {
@@ -1374,10 +1349,10 @@ const app = new Elysia()
                                 return;
                             }
                             (ws.data as any).profile = profile;
-                            console.log(`WebSocket authenticated for collection: ${collection} by user ${profile.sub}`);
+                            console.log(`WebSocket authenticated for type: ${type} by user ${profile.sub}`);
 
                             const processAndSend = async () => {
-                                const result = await dataService.readOnce(collection, message.query || {}, profile as JwtPayload);
+                                const result = await dataService.readOnce(type, message.query || {}, profile as JwtPayload);
                                 ws.send(result);
                             };
 
@@ -1388,17 +1363,18 @@ const app = new Elysia()
                             (ws.data as any).changes = changes;
 
                             changes.on("change", async (change) => {
-                                if (change.doc?.collection === collection) {
+                                const matches = change.doc && (change.doc as any).type === type;
+                                if (matches) {
                                     await processAndSend();
                                 }
                             });
                         } catch (e) {
-                            ws.send({ type: "error", message: "Token expired" });
+                            ws.send({ action: "error", message: "Token expired" });
                         }
                     }
                 },
                 close(ws) {
-                    const { collection } = ws.data.params;
+                    const { type } = ws.data.params;
                     const { profile, changes } = ws.data as any;
 
                     if (changes) {
@@ -1406,9 +1382,9 @@ const app = new Elysia()
                     }
 
                     if (profile) {
-                        console.log(`WebSocket closed for collection: ${collection} by user ${profile.sub}`);
+                        console.log(`WebSocket closed for type: ${type} by user ${profile.sub}`);
                     } else {
-                        console.log(`WebSocket closed for collection: ${collection}`);
+                        console.log(`WebSocket closed for type: ${type}`);
                     }
                 },
             })
@@ -1417,8 +1393,8 @@ const app = new Elysia()
                     console.log("Global WebSocket connection opened");
                     (ws.data as any).id = Math.random().toString(36).substring(2);
                 },
-                async message(ws, message: { type: string; token?: string; query?: any }) {
-                    if (message.type === "auth") {
+                async message(ws, message: { action: string; token?: string; query?: any }) {
+                    if (message.action === "auth") {
                         const { globalFeedService } = ws.data;
                         const { id } = ws.data as any;
 
@@ -1428,34 +1404,40 @@ const app = new Elysia()
                             return;
                         }
 
-                        const { collection } = message.query;
+                        const { type } = message.query as any;
+                        if (!type || typeof type !== "string") {
+                            ws.send({ action: "error", message: "Missing 'type' in query. Use /data/types/:type" });
+                            ws.close(4002, "Missing type");
+                            return;
+                        }
+
                         (ws.data as any).profile = profile;
-                        (ws.data as any).collection = collection;
+                        (ws.data as any).type = type;
 
-                        console.log(`Global WebSocket authenticated for collection: ${collection} by user ${profile.sub}`);
+                        console.log(`Global WebSocket authenticated for type: ${type} by user ${profile.sub}`);
 
-                        // Subscribe this websocket to the collection feed
-                        globalFeedService.subscribe(collection, id, (docRef) => {
-                            ws.send({ type: "update", data: docRef });
+                        // Subscribe this websocket to the type feed
+                        globalFeedService.subscribe(type, id, (docRef) => {
+                            ws.send({ action: "update", data: docRef });
                         });
 
                         // Send initial data
-                        const result = await dataService.readOnce(collection, { ...message.query, global: true }, profile as JwtPayload);
+                        const result = await dataService.readOnce(type, { ...message.query, global: true }, profile as JwtPayload);
                         ws.send(result);
                     }
                 },
                 close(ws) {
-                    const { profile, collection, id } = ws.data as any;
+                    const { profile, type, id } = ws.data as any;
                     const { globalFeedService } = ws.data;
 
-                    if (collection) {
-                        globalFeedService.unsubscribe(collection, id);
+                    if (type) {
+                        globalFeedService.unsubscribe(type, id);
                     }
 
                     if (profile) {
-                        console.log(`Global WebSocket closed for collection: ${collection} by user ${profile.sub}`);
+                        console.log(`Global WebSocket closed for type: ${type} by user ${profile.sub}`);
                     } else {
-                        console.log(`Global WebSocket closed for collection: ${collection}`);
+                        console.log(`Global WebSocket closed for type: ${type}`);
                     }
                 },
             })

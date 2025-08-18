@@ -30,7 +30,7 @@ A new, central CouchDB database, named `global` (CouchDB reserves the `_` prefix
 
 ### 3.1. Modified `write()` Operation
 
-The primary change is in the `vibe-cloud-api`'s data writing endpoint (e.g., `/data/:collection`).
+The primary change is in the `vibe-cloud-api`'s data writing endpoint (e.g., `/data/types/:type`).
 
 1.  A standard `write()` request is received for a user's personal database.
 2.  The document is written to the user's personal database as usual.
@@ -61,8 +61,8 @@ sequenceDiagram
     participant GlobalDB as global DB
 
     App->>SDK: sdk.write('posts', {..., acl: {global: true}})
-    SDK->>Hub: postMessage({ type: 'DB_WRITE', ... })
-    Hub->>API: POST /data/posts
+    SDK->>Hub: postMessage({ action: 'DB_WRITE', ... })
+    Hub->>API: POST /data/types/posts
 
     API->>UserDB: Writes original document
     UserDB-->>API: Success
@@ -83,31 +83,31 @@ sequenceDiagram
 
 **Problem**: Documents from different users might have the same `_id`, which would cause conflicts in the `global` database.
 
-**Solution**: We will enforce unique and queryable IDs in the `global` database by creating a composite key that preserves the collection prefix.
+**Solution**: We will enforce unique and queryable IDs in the `global` database by creating a composite key that preserves the type prefix.
 
 -   **Original `_id`**: `posts/1753556109407-4da7b627643df8`
 -   **Owner's DID**: `did:vibe:zDxUwpkymXAzDwiKMvwWeYtWS6r7JdxvCWX5fEaK1enUsbTrU`
 -   **Global DB `_id`**: `posts/did:vibe:zDxUwpkymXAzDwiKMvwWeYtWS6r7JdxvCWX5fEaK1enUsbTrU/1753556109407-4da7b627643df8`
 
-This format guarantees uniqueness and allows for efficient range queries on the `_id` field to retrieve all documents for a specific collection (e.g., using `startkey="posts/"`).
+This format guarantees uniqueness and allows for efficient range queries on the `_id` field to retrieve all documents for a specific type (e.g., using `startkey="posts/"`).
 
 ### 4.2. Sequencing and Fetching Changes
 
 **Problem**: A common and critical operation will be for clients to fetch only what's new since their last query.
 
-**Solution**: We will leverage CouchDB's native **filtered `_changes` feed**. This allows clients to subscribe to changes for only the collections they are interested in.
+**Solution**: We will leverage CouchDB's native **filtered `_changes` feed**. This allows clients to subscribe to changes for only the types they are interested in.
 
-1.  **Design Document**: A design document will be created in the `global` database with a filter function that matches documents based on their collection prefix.
+1.  **Design Document**: A design document will be created in the `global` database with a filter function that matches documents based on their type prefix.
     ```javascript
     // In _design/app
     {
       "filters": {
-        "by_collection": "function(doc, req) { return doc._id.startsWith(req.query.collection + '/'); }"
+        "by_type": "function(doc, req) { return doc._id.startsWith(req.query.type + '/'); }"
       }
     }
     ```
-2.  **Client Request**: The client can then request a changes feed for a specific collection.
-    `GET /global/_changes?filter=app/by_collection&collection=posts`
+2.  **Client Request**: The client can then request a changes feed for a specific type.
+    `GET /global/_changes?filter=app/by_type&type=posts`
 3.  **Sequencing**: This feed provides a `last_seq` value, allowing the client to resume listening from that point using the `since` parameter, ensuring no updates are missed.
 
 ### 4.3. Global Document Structure (DocRefs)

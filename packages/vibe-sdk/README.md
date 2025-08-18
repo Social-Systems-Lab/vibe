@@ -7,7 +7,7 @@ The Vibe SDK is a client-side library for interacting with the Vibe platform. It
 -   **Authentication:** Implements the OAuth 2.0 Authorization Code Flow with PKCE for secure user authentication.
 -   **Session Management:** Handles user sessions, including seamless sign-on (silent & one-tap login) and logout.
 -   **Consent Management:** Provides methods for applications to request and manage user consent for data access.
--   **Data Access:** Offers APIs for reading, writing, and subscribing to data collections in the user's personal Vibe Cloud.
+-   **Data Access:** Offers APIs for reading, writing, and subscribing to document types (type) in the user's personal Vibe Cloud.
 
 ## How it Fits into the Vibe Ecosystem
 

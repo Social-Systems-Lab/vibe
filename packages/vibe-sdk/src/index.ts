@@ -281,9 +281,11 @@ export class VibeSDK {
                 if (this.debug) {
                     console.log("VibeSDK: Posting INIT message to hub with target origin:", targetOrigin);
                 }
-                this.hubFrame.contentWindow.postMessage({ type: "INIT", payload: { origin: window.location.origin, user: this.user, redirectUri: this.config.redirectUri } }, targetOrigin, [
-                    channel.port2,
-                ]);
+                this.hubFrame.contentWindow.postMessage(
+                    { action: "INIT", payload: { origin: window.location.origin, user: this.user, redirectUri: this.config.redirectUri } },
+                    targetOrigin,
+                    [channel.port2]
+                );
             };
 
             this.hubFrame.onerror = (error) => {
@@ -294,29 +296,29 @@ export class VibeSDK {
             };
 
             this.hubPort.onmessage = (event) => {
-                const { type, nonce, success, data, error, subscriptionId } = event.data;
+                const { action, nonce, success, data, error, subscriptionId } = event.data;
 
                 if (this.debug) {
                     console.log("VibeSDK: Received message from hub:", event.data);
                 }
 
-                if (type === "INIT_ACK") {
+                if (action === "INIT_ACK") {
                     console.log("Hub connection initialized successfully.");
                     resolve();
                     return;
                 }
-                if (type === "INIT_FAIL") {
+                if (action === "INIT_FAIL") {
                     reject(new Error(`Hub initialization failed: ${error}`));
                     return;
                 }
-                if (type === "DB_UPDATE") {
+                if (action === "DB_UPDATE") {
                     const callback = this.subscriptions.get(subscriptionId);
                     if (callback) {
                         callback({ ok: true, data });
                     }
                     return;
                 }
-                if (type.endsWith("_ACK")) {
+                if (action.endsWith("_ACK")) {
                     const pending = this.pendingRequests.get(nonce);
                     if (pending) {
                         if (success) {
@@ -508,43 +510,43 @@ export class VibeSDK {
     }
 
     // --- Data Methods (from HubStrategy, now using postToHub) ---
-    async read(collection: string, query: any, callback: ReadCallback): Promise<Subscription> {
+    async read(type: string, query: any, callback: ReadCallback): Promise<Subscription> {
         const subscriptionId = this.generateNonce(); // Re-use nonce generation for sub ids
         this.subscriptions.set(subscriptionId, callback);
 
         const { global, ...filter } = query;
-        const type = global ? "DB_GLOBAL_SUBSCRIBE" : "DB_SUBSCRIBE";
+        const action = global ? "DB_GLOBAL_SUBSCRIBE" : "DB_SUBSCRIBE";
 
-        this.hubPort?.postMessage({ type, payload: { collection, query: filter }, subscriptionId });
+        this.hubPort?.postMessage({ action, type, payload: { query: filter }, subscriptionId });
 
-        const initialData = await this.readOnce(collection, query);
+        const initialData = await this.readOnce(type, query);
         callback({ ok: true, data: initialData.docs });
 
         return {
             unsubscribe: () => {
                 this.subscriptions.delete(subscriptionId);
                 const unsubscribeType = global ? "DB_GLOBAL_UNSUBSCRIBE" : "DB_UNSUBSCRIBE";
-                this.hubPort?.postMessage({ type: unsubscribeType, payload: { subscriptionId } });
+                this.hubPort?.postMessage({ action: unsubscribeType, payload: { subscriptionId } });
             },
         };
     }
 
-    async readOnce<T extends Document>(collection: string, query: any = {}): Promise<ReadOnceResponse<T>> {
+    async readOnce<T extends Document>(type: string, query: any = {}): Promise<ReadOnceResponse<T>> {
         const { global, ...filter } = query;
-        const type = global ? "DB_GLOBAL_QUERY" : "DB_QUERY";
-        const result = await this.postToHub({ type, collection, payload: { ...filter, collection } });
+        const action = global ? "DB_GLOBAL_QUERY" : "DB_QUERY";
+        const result = await this.postToHub({ action, type, payload: { ...filter } });
         return {
             docs: result,
             doc: result?.[0],
         };
     }
 
-    async write(collection: string, data: any): Promise<any> {
-        return this.postToHub({ type: "DB_WRITE", collection, payload: data });
+    async write(type: string, data: any): Promise<any> {
+        return this.postToHub({ action: "DB_WRITE", type, payload: data });
     }
 
-    async remove(collection: string, data: any): Promise<any> {
-        return this.postToHub({ type: "DB_REMOVE", collection, payload: data });
+    async remove(type: string, data: any): Promise<any> {
+        return this.postToHub({ action: "DB_REMOVE", type, payload: data });
     }
 
     // --- Cert Methods (from StandaloneStrategy) ---
@@ -573,7 +575,7 @@ export class VibeSDK {
 
             // Inform the hub about the user change
             if (this.hubPort) {
-                this.postToHub({ type: "SET_USER", payload: this.user });
+                this.postToHub({ action: "SET_USER", payload: this.user });
             }
 
             this.isAuthenticated = state.isLoggedIn;

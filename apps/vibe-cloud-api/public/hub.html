@@ -38,7 +38,7 @@
                 sharedWorker.port.start();
 
                 // Test message to see if the connection is working
-                sharedWorker.port.postMessage({ type: "HUB_INIT" });
+                sharedWorker.port.postMessage({ action: "HUB_INIT" });
             } else {
                 console.warn("[HUB] Shared Worker is not supported in this browser.");
             }
@@ -51,7 +51,7 @@
                     if (connectedApps && connectedApps.values) {
                         for (const app of connectedApps.values()) {
                             app.port.postMessage({
-                                type: "HUB_LOG",
+                                action: "HUB_LOG",
                                 data: {
                                     level,
                                     // Ensure args are serializable
@@ -80,13 +80,13 @@
             window.addEventListener("message", (event) => {
                 // In a real implementation, we would strictly validate event.origin against a list of known apps.
                 // For the PoC, we trust the origin that the SDK provides.
-                const { type, payload, nonce, origin } = event.data;
+                const { action, payload, nonce, origin } = event.data;
 
-                if (type === "INIT") {
+                if (action === "INIT") {
                     handleInit(event);
-                } else if (type === "GET_USER") {
+                } else if (action === "GET_USER") {
                     handleGetUser(event);
-                } else if (type && type.startsWith("DB_")) {
+                } else if (action && action.startsWith("DB_")) {
                     handleDataOperation(event);
                 }
             });
@@ -125,30 +125,30 @@
                         broadcastAuthStateChange();
                     }
 
-                    sourcePort.postMessage({ type: "INIT_ACK" });
+                    sourcePort.postMessage({ action: "INIT_ACK" });
                     console.log(`Successfully initialized connection for origin: ${origin}`);
                 } catch (error) {
                     console.error(`Failed to initialize connection for origin: ${origin}`, error);
-                    sourcePort.postMessage({ type: "INIT_FAIL", error: "Initialization failed." });
+                    sourcePort.postMessage({ action: "INIT_FAIL", error: "Initialization failed." });
                 }
             }
 
             function handleGetUser(event) {
                 const app = connectedApps.get(event.origin);
                 if (app) {
-                    app.port.postMessage({ type: "GET_USER_ACK", success: true, data: currentUser });
+                    app.port.postMessage({ action: "GET_USER_ACK", success: true, data: currentUser });
                 }
             }
 
             function processMessage(event) {
-                const { type } = event.data;
-                if (type === "GET_USER") {
+                const { action } = event.data;
+                if (action === "GET_USER") {
                     handleGetUser(event);
-                } else if (type === "SET_USER") {
+                } else if (action === "SET_USER") {
                     handleSetUser(event);
-                } else if (type === "FORCE_REFRESH_PERMISSIONS") {
+                } else if (action === "FORCE_REFRESH_PERMISSIONS") {
                     handleForceRefreshPermissions(event);
-                } else if (type && type.startsWith("DB_")) {
+                } else if (action && action.startsWith("DB_")) {
                     handleDataOperation(event);
                 }
             }
@@ -210,11 +210,11 @@
                 // The updateUserSession function now handles its own locking.
                 updateUserSession(user, origin)
                     .then(() => {
-                        app.port.postMessage({ type: "SET_USER_ACK", success: true, nonce });
+                        app.port.postMessage({ action: "SET_USER_ACK", success: true, nonce });
                     })
                     .catch((error) => {
                         console.error(`[HUB] Error during SET_USER for ${origin}:`, error);
-                        app.port.postMessage({ type: "SET_USER_ACK", success: false, error: error.message, nonce });
+                        app.port.postMessage({ action: "SET_USER_ACK", success: false, error: error.message, nonce });
                     });
             }
 
@@ -229,7 +229,7 @@
 
             async function handleDataOperation(event) {
                 await dbOperationLock; // Ensure DB is ready before any data ops
-                const { type, collection, payload, nonce, subscriptionId } = event.data;
+                const { action, type, payload, nonce, subscriptionId } = event.data;
                 const origin = event.target.origin || findOriginForPort(event.target);
 
                 if (!origin) {
@@ -244,9 +244,9 @@
                 }
                 const sourcePort = app.port;
 
-                if (type === "DB_SUBSCRIBE") {
-                    const { collection, query } = payload;
-                    const canonicalKey = `${collection}|${JSON.stringify(query || {})}`;
+                if (action === "DB_SUBSCRIBE") {
+                    const { query } = payload;
+                    const canonicalKey = `${type}|${JSON.stringify(query || {})}`;
                     console.log(`[HUB] Subscription request for ${subscriptionId} from ${origin} with key ${canonicalKey}`);
 
                     subscriptions.set(subscriptionId, {
@@ -257,7 +257,7 @@
 
                     if (!sharedListeners.has(canonicalKey)) {
                         console.log(`[HUB] Creating new shared listener for ${canonicalKey}`);
-                        const listener = createSharedListener(collection, query || {});
+                        const listener = createSharedListener(type, query || {});
                         if (listener) {
                             console.log(`[HUB] Shared listener created successfully for ${canonicalKey}`);
                             sharedListeners.set(canonicalKey, {
@@ -274,7 +274,7 @@
                     return;
                 }
 
-                if (type === "DB_UNSUBSCRIBE") {
+                if (action === "DB_UNSUBSCRIBE") {
                     const { subscriptionId } = payload;
                     console.log(`[HUB] Unsubscribe request for ${subscriptionId} from ${origin}`);
                     const sub = subscriptions.get(subscriptionId);
@@ -293,23 +293,23 @@
                     return;
                 }
 
-                if (type === "DB_GLOBAL_QUERY") {
-                    console.log(`[HUB] Received DB_GLOBAL_QUERY for collection: ${collection}`, payload);
-                    performGlobalQuery(type, collection, payload)
+                if (action === "DB_GLOBAL_QUERY") {
+                    console.log(`[HUB] Received DB_GLOBAL_QUERY for type: ${type}`, payload);
+                    performGlobalQuery(action, type, payload)
                         .then((result) => {
                             console.log(`[HUB] DB_GLOBAL_QUERY successful, returning ${result.length} docs.`);
-                            sourcePort.postMessage({ type: "DB_GLOBAL_QUERY_ACK", success: true, data: result, nonce });
+                            sourcePort.postMessage({ action: "DB_GLOBAL_QUERY_ACK", success: true, data: result, nonce });
                         })
                         .catch((dbError) => {
                             console.error(`[HUB] DB_GLOBAL_QUERY failed:`, dbError);
-                            sourcePort.postMessage({ type: "DB_GLOBAL_QUERY_ACK", success: false, error: dbError.message, nonce });
+                            sourcePort.postMessage({ action: "DB_GLOBAL_QUERY_ACK", success: false, error: dbError.message, nonce });
                         });
                     return;
                 }
 
-                if (type === "DB_GLOBAL_SUBSCRIBE") {
-                    const { collection, query } = payload;
-                    const canonicalKey = `global:${collection}|${JSON.stringify(query || {})}`;
+                if (action === "DB_GLOBAL_SUBSCRIBE") {
+                    const { query } = payload;
+                    const canonicalKey = `global:${type}|${JSON.stringify(query || {})}`;
                     console.log(`[HUB] Global subscription request for ${subscriptionId} from ${origin} with key ${canonicalKey}`);
 
                     subscriptions.set(subscriptionId, {
@@ -319,7 +319,7 @@
 
                     if (!sharedListeners.has(canonicalKey)) {
                         console.log(`[HUB] Creating new shared global listener for ${canonicalKey}`);
-                        const listener = createSharedGlobalListener(collection, query || {});
+                        const listener = createSharedGlobalListener(type, query || {});
                         sharedListeners.set(canonicalKey, {
                             listener,
                             subscribers: new Set([subscriptionId]),
@@ -331,7 +331,7 @@
                     return;
                 }
 
-                if (type === "DB_GLOBAL_UNSUBSCRIBE") {
+                if (action === "DB_GLOBAL_UNSUBSCRIBE") {
                     const { subscriptionId } = payload;
                     console.log(`[HUB] Global unsubscribe request for ${subscriptionId} from ${origin}`);
                     const sub = subscriptions.get(subscriptionId);
@@ -349,23 +349,27 @@
                     }
                     return;
                 }
-                const requiredPermission = `${getScopeForOperation(type)}:${collection}`;
+                const requiredPermission = `${getScopeForOperation(action)}:${type}`;
                 const appPermissions = permissionsCache.get(origin);
 
                 console.log(`[HUB] Required permission: ${requiredPermission}`);
 
                 // Check for both the specific permission (e.g., "write:posts") and a wildcard (e.g., "write")
-                if (appPermissions && appPermissions.scopes && (appPermissions.scopes.includes(requiredPermission) || appPermissions.scopes.includes(getScopeForOperation(type)))) {
-                    performPouchDbOperation(type, collection, payload)
+                if (
+                    appPermissions &&
+                    appPermissions.scopes &&
+                    (appPermissions.scopes.includes(requiredPermission) || appPermissions.scopes.includes(getScopeForOperation(action)))
+                ) {
+                    performPouchDbOperation(action, type, payload)
                         .then((result) => {
-                            sourcePort.postMessage({ type: `${type}_ACK`, success: true, data: result, nonce });
+                            sourcePort.postMessage({ action: `${action}_ACK`, success: true, data: result, nonce });
                         })
                         .catch((dbError) => {
-                            sourcePort.postMessage({ type: `${type}_ACK`, success: false, error: dbError.message, nonce });
+                            sourcePort.postMessage({ action: `${action}_ACK`, success: false, error: dbError.message, nonce });
                         });
                 } else {
-                    console.warn(`Permission denied for origin ${origin} trying to perform ${type}.`);
-                    sourcePort.postMessage({ type: `${type}_ACK`, success: false, error: "Permission Denied.", nonce });
+                    console.warn(`Permission denied for origin ${origin} trying to perform ${action}.`);
+                    sourcePort.postMessage({ action: `${action}_ACK`, success: false, error: "Permission Denied.", nonce });
                 }
             }
 
@@ -376,7 +380,7 @@
                 };
                 console.log("[HUB] Broadcasting auth state change:", state);
                 for (const app of connectedApps.values()) {
-                    app.port.postMessage({ type: "AUTH_STATE_CHANGE", data: state });
+                    app.port.postMessage({ action: "AUTH_STATE_CHANGE", data: state });
                 }
             }
 
@@ -390,33 +394,33 @@
                 return null;
             }
 
-            function getScopeForOperation(type) {
-                if (type === "DB_WRITE" || type === "DB_REMOVE") return "write";
-                if (type === "DB_READ" || type === "DB_QUERY" || type === "DB_GLOBAL_QUERY" || type === "DB_GLOBAL_SUBSCRIBE") return "read";
+            function getScopeForOperation(action) {
+                if (action === "DB_WRITE" || action === "DB_REMOVE") return "write";
+                if (action === "DB_READ" || action === "DB_QUERY" || action === "DB_GLOBAL_QUERY" || type === "DB_GLOBAL_SUBSCRIBE") return "read";
                 return null;
             }
 
-            async function performPouchDbOperation(type, collection, payload) {
+            async function performPouchDbOperation(action, type, payload) {
                 await dbOperationLock; // Wait for any pending db re-initialization to complete
                 if (!db) {
                     throw new Error("Database not initialized");
                 }
-                console.log(`Performing ${type} on collection '${collection}' with payload:`, payload);
-                switch (type) {
+                console.log(`Performing ${action} on type '${type}' with payload:`, payload);
+                switch (action) {
                     case "DB_WRITE":
                         // Any ACL makes a document globally accessible, so it must be written via the API.
                         const isGloballyAcessible = payload.acl && Object.keys(payload.acl).length > 0;
                         if (isGloballyAcessible) {
                             // If ACL is set, write through the API to trigger global DB logic
                             console.log("[HUB] Writing document with ACL through API.", payload);
-                            return await performApiWrite(collection, payload);
+                            return await performApiWrite(type, payload);
                         } else {
                             // Otherwise, write locally for speed
                             console.log("[HUB] Writing document without ACL locally.", payload);
                             if (!payload._id) {
-                                payload._id = `${collection}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                                payload._id = `${type}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
                             }
-                            return await db.put({ ...payload, collection });
+                            return await db.put({ ...payload, type: type });
                         }
                     case "DB_READ":
                         return await db.get(payload.id);
@@ -424,7 +428,7 @@
                         const { expand, maxCacheAge, ...selector } = payload;
 
                         const findResult = await db.find({
-                            selector: { ...selector },
+                            selector: { ...selector, type: type },
                         });
 
                         if (expand && expand.length > 0) {
@@ -437,7 +441,7 @@
                     case "DB_REMOVE":
                         return await db.remove(payload);
                     default:
-                        throw new Error(`Unsupported DB operation: ${type}`);
+                        throw new Error(`Unsupported DB operation: ${action}`);
                 }
             }
 
@@ -471,7 +475,7 @@
                     console.log(`[HUB] Creating DB: ${sessionInfo.dbName}`);
                     db = new PouchDB(sessionInfo.dbName);
                     await db.createIndex({
-                        index: { fields: ["collection"] },
+                        index: { fields: ["type"] },
                     });
                     const remoteDbUrl = `__COUCHDB_URL__/${sessionInfo.dbName}`;
                     remoteDb = new PouchDB(remoteDbUrl, {
@@ -519,7 +523,7 @@
                 // We can remove it or leave it empty. For now, I'll leave it empty.
             }
 
-            function createSharedListener(collection, query) {
+            function createSharedListener(type, query) {
                 if (!db) return null;
 
                 const changes = db
@@ -527,17 +531,17 @@
                         since: "now",
                         live: true,
                         include_docs: true,
-                        selector: { collection: collection },
+                        selector: { type: type },
                     })
                     .on("change", async (change) => {
-                        console.log(`[HUB] Change detected for collection ${collection}:`, change.doc);
-                        // Find all subscriptions for this collection and notify them.
+                        console.log(`[HUB] Change detected for type ${type}:`, change.doc);
+                        // Find all subscriptions for this type and notify them.
                         for (const [subId, sub] of subscriptions.entries()) {
-                            if (sub.canonicalKey.startsWith(collection + "|")) {
+                            if (sub.canonicalKey.startsWith(type + "|")) {
                                 console.log(`[HUB] Change matches subscription ${subId}. Re-running query.`);
                                 const { expand, maxCacheAge, ...selector } = sub.query;
                                 const findResult = await db.find({
-                                    selector: { ...selector, collection: collection },
+                                    selector: { ...selector, type: type },
                                 });
 
                                 let docs = findResult.docs;
@@ -546,7 +550,7 @@
                                 }
 
                                 sub.port.postMessage({
-                                    type: "DB_UPDATE",
+                                    action: "DB_UPDATE",
                                     subscriptionId: subId,
                                     data: docs,
                                 });
@@ -556,8 +560,8 @@
                 return changes;
             }
 
-            async function performGlobalQuery(type, collection, payload) {
-                console.log(`[HUB] Performing global query for collection: ${collection}`, payload);
+            async function performGlobalQuery(action, type, payload) {
+                console.log(`[HUB] Performing global query for type: ${type}`, payload);
                 try {
                     const { expand, ...selector } = payload;
                     const query = new URLSearchParams({
@@ -567,7 +571,7 @@
                         query.set("expand", expand.join(","));
                     }
                     const token = await getAccessToken();
-                    const response = await fetch(`/data/${collection}/query?${query.toString()}`, {
+                    const response = await fetch(`/data/types/${encodeURIComponent(type)}/query?${query.toString()}`, {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/json",
@@ -605,7 +609,7 @@
                 }
             }
 
-            function createSharedGlobalListener(collection, query) {
+            function createSharedGlobalListener(type, query) {
                 const VIBE_WS_URL = window.location.origin.replace(/^http/, "ws");
                 const ws = new WebSocket(`${VIBE_WS_URL}/data/global`);
                 let cachedDocs = []; // Cache for the documents of this subscription
@@ -613,16 +617,16 @@
                 ws.onopen = async () => {
                     const token = await getAccessToken();
                     const authMessage = {
-                        type: "auth",
+                        action: "auth",
                         token: token,
-                        query: { ...query, collection },
+                        query: { ...query, type: type },
                     };
                     ws.send(JSON.stringify(authMessage));
                 };
 
                 ws.onmessage = (event) => {
                     const messageData = JSON.parse(event.data);
-                    const canonicalKey = `global:${collection}|${JSON.stringify(query)}`;
+                    const canonicalKey = `global:${type}|${JSON.stringify(query)}`;
                     const sharedListener = sharedListeners.get(canonicalKey);
 
                     if (!sharedListener) return;
@@ -632,7 +636,7 @@
                             const sub = subscriptions.get(subId);
                             if (sub) {
                                 sub.port.postMessage({
-                                    type: "DB_UPDATE",
+                                    action: "DB_UPDATE",
                                     subscriptionId: subId,
                                     data: docs,
                                 });
@@ -655,7 +659,7 @@
                                 broadcastUpdate(cachedDocs);
                             })
                             .catch((err) => console.error("[HUB] Error expanding initial documents:", err));
-                    } else if (messageData.type === "update") {
+                    } else if (messageData.action === "update") {
                         // Incremental update
                         const newDocRef = messageData.data;
                         const tempDocForExpansion = [{ _id: newDocRef.ref, ref: newDocRef }];
@@ -787,9 +791,9 @@
                 return Promise.all(promises);
             }
 
-            async function performApiWrite(collection, doc) {
+            async function performApiWrite(type, doc) {
                 const token = await getAccessToken();
-                const response = await fetch(`/data/${collection}`, {
+                const response = await fetch(`/data/types/${encodeURIComponent(type)}`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
@@ -805,24 +809,7 @@
                 const result = await response.json();
                 console.log("[HUB] API write successful:", result);
 
-                if (db && result && result.ok) {
-                    console.log("[HUB] Writing to local PouchDB to trigger update.");
-                    try {
-                        const docToPut = { ...doc, _id: result.id, collection };
-                        try {
-                            const localDoc = await db.get(result.id);
-                            docToPut._rev = localDoc._rev;
-                            console.log(`[HUB] Found existing local doc with _rev: ${docToPut._rev}`);
-                        } catch (e) {
-                            console.log("[HUB] No existing local doc found. Creating new one.");
-                        }
-                        console.log("[HUB] Putting document to local DB:", docToPut);
-                        const putResponse = await db.put(docToPut);
-                        console.log("[HUB] Local PouchDB write successful:", putResponse);
-                    } catch (e) {
-                        console.error("[HUB] Error writing to local PouchDB:", e);
-                    }
-                }
+                // Local DB will catch up via sync; no manual upsert necessary.
                 return result;
             }
         </script>
@@ -857,10 +844,10 @@
                             doc_ids: [result._id],
                         });
                     }
-                    app.port.postMessage({ type: "ISSUE_CERT_ACK", success: true, data: result, nonce });
+                    app.port.postMessage({ action: "ISSUE_CERT_ACK", success: true, data: result, nonce });
                 } catch (error) {
                     console.error(`[HUB] Error during ISSUE_CERT for ${origin}:`, error);
-                    app.port.postMessage({ type: "ISSUE_CERT_ACK", success: false, error: error.message, nonce });
+                    app.port.postMessage({ action: "ISSUE_CERT_ACK", success: false, error: error.message, nonce });
                 }
             }
         </script>

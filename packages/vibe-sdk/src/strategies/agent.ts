@@ -26,19 +26,19 @@ export class AgentStrategy implements VibeTransportStrategy {
         throw new Error("Agent getUser not implemented");
     }
 
-    async read(collection: string, filter: any, callback: ReadCallback): Promise<Subscription> {
+    async read(type: string, query: any, callback: ReadCallback): Promise<Subscription> {
         throw new Error("Agent read not implemented");
     }
 
-    async readOnce<T extends Document>(collection: string, filter?: any): Promise<ReadOnceApiResponse<T>> {
+    async readOnce<T extends Document>(type: string, query?: any): Promise<ReadOnceApiResponse<T>> {
         throw new Error("Agent readOnce not implemented");
     }
 
-    async write(collection: string, data: any): Promise<any> {
+    async write(type: string, data: any): Promise<any> {
         throw new Error("Agent write not implemented");
     }
 
-    async remove(collection: string, data: any): Promise<any> {
+    async remove(type: string, data: any): Promise<any> {
         throw new Error("Agent delete not implemented");
     }
 

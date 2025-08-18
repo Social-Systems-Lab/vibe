@@ -5,7 +5,7 @@ type SubscriberCallback = (docRef: DocRef) => void;
 type Subscribers = Map<string, SubscriberCallback>; // Map<subscriberId, callback>
 
 export class GlobalFeedService {
-    private subscriptions: Map<string, Subscribers> = new Map(); // Map<collection, Subscribers>
+    private subscriptions: Map<string, Subscribers> = new Map(); // Map<tpye, Subscribers>
     private couch: nano.ServerScope | null = null;
     private changesFeed: any = null;
 
@@ -20,9 +20,9 @@ export class GlobalFeedService {
         this.changesFeed.on("change", (change: any) => {
             if (change.doc) {
                 const doc = change.doc as { ref: DocRef; _id: string };
-                const collection = doc._id.split("/")[0];
-                if (collection && doc.ref) {
-                    this.publish(collection, doc.ref);
+                const type = doc._id.split("/")[0];
+                if (type && doc.ref) {
+                    this.publish(type, doc.ref);
                 }
             }
         });
@@ -32,25 +32,25 @@ export class GlobalFeedService {
         });
     }
 
-    subscribe(collection: string, subscriberId: string, callback: SubscriberCallback) {
-        if (!this.subscriptions.has(collection)) {
-            this.subscriptions.set(collection, new Map());
+    subscribe(type: string, subscriberId: string, callback: SubscriberCallback) {
+        if (!this.subscriptions.has(type)) {
+            this.subscriptions.set(type, new Map());
         }
-        this.subscriptions.get(collection)!.set(subscriberId, callback);
-        console.log(`Subscriber ${subscriberId} subscribed to ${collection}`);
+        this.subscriptions.get(type)!.set(subscriberId, callback);
+        console.log(`Subscriber ${subscriberId} subscribed to ${type}`);
     }
 
-    unsubscribe(collection: string, subscriberId: string) {
-        if (this.subscriptions.has(collection)) {
-            this.subscriptions.get(collection)!.delete(subscriberId);
-            console.log(`Subscriber ${subscriberId} unsubscribed from ${collection}`);
+    unsubscribe(type: string, subscriberId: string) {
+        if (this.subscriptions.has(type)) {
+            this.subscriptions.get(type)!.delete(subscriberId);
+            console.log(`Subscriber ${subscriberId} unsubscribed from ${type}`);
         }
     }
 
-    publish(collection: string, docRef: DocRef) {
-        if (this.subscriptions.has(collection)) {
-            console.log(`Publishing update for collection ${collection} to ${this.subscriptions.get(collection)!.size} subscribers.`);
-            this.subscriptions.get(collection)!.forEach((callback) => {
+    publish(type: string, docRef: DocRef) {
+        if (this.subscriptions.has(type)) {
+            console.log(`Publishing update for type ${type} to ${this.subscriptions.get(type)!.size} subscribers.`);
+            this.subscriptions.get(type)!.forEach((callback) => {
                 try {
                     callback(docRef);
                 } catch (error) {
