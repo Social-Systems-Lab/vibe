@@ -99,9 +99,8 @@ jobs:
                     vibeCloudUiUrl: "http://vibe-cloud-ui-service:80"
                     corsOrigin: "${{ secrets.CORS_ORIGIN }},https://vibe-feeds.vercel.app,https://vibe-collections.vercel.app,https://${{ secrets.INGRESS_HOST }},http://${{ secrets.INGRESS_HOST }}"
                   couchdb:
-                    auth:
-                      username: "admin"
-                      password: "${{ secrets.COUCHDB_PASSWORD }}"
+                    adminUsername: "admin"
+                    adminPassword: "${{ secrets.COUCHDB_PASSWORD }}"
                     couchdbConfig:
                       couchdb:
                         uuid: "${{ secrets.COUCHDB_UUID }}"
