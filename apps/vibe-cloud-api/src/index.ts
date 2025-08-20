@@ -7,10 +7,12 @@ import { staticPlugin } from "@elysiajs/static";
 import { IdentityService } from "./services/identity";
 import { DataService, JwtPayload } from "./services/data";
 import { CertsService } from "./services/certs";
+import { EmailService } from "./services/email";
 import { StorageService, MinioStorageProvider, ScalewayStorageProvider, StorageProvider } from "./services/storage";
 import { getUserDbName } from "./lib/db";
 import { User } from "vibe-core";
 import nano from "nano";
+import { randomBytes, createHash } from "crypto";
 import { proxyRequest } from "./lib/proxy";
 import { GlobalFeedService } from "./services/global-feed";
 
@@ -54,6 +56,7 @@ const dataService = new DataService(
 );
 
 const certsService = new CertsService(identityService, dataService);
+const emailService = new EmailService();
 
 try {
     await identityService.onApplicationBootstrap(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
@@ -114,6 +117,7 @@ const app = new Elysia()
     .decorate("storageService", storageService)
     .decorate("dataService", dataService)
     .decorate("certsService", certsService)
+    .decorate("emailService", emailService)
     .decorate("globalFeedService", globalFeedService)
     .get("/health", () => ({
         status: identityService.isConnected ? "ok" : "error",
@@ -710,6 +714,56 @@ const app = new Elysia()
                 const consents = await identityService.listUserConsents(session.sessionId);
                 return { consents };
             })
+            .post(
+                "/password/forgot",
+                async ({ body, identityService, emailService }) => {
+                    const { email } = body;
+                    const user = await identityService.findByEmail(email);
+                    if (user) {
+                        const token = randomBytes(32).toString("hex");
+                        const hashedToken = createHash("sha256").update(token).digest("hex");
+                        const expires = new Date();
+                        expires.setHours(expires.getHours() + 1); // 1 hour validity
+                        if (!user.resetTokens) {
+                            user.resetTokens = [];
+                        }
+                        user.resetTokens.push({
+                            hash: hashedToken,
+                            expires: expires.toISOString(),
+                        });
+                        await identityService.updateUser(user.did, {});
+                        await emailService.sendPasswordResetEmail(email, token);
+                    }
+                    return { success: true };
+                },
+                {
+                    body: t.Object({
+                        email: t.String(),
+                    }),
+                }
+            )
+            .post(
+                "/password/reset",
+                async ({ body, identityService, set }) => {
+                    const { token, password } = body;
+                    const user = await identityService.findUserByResetToken(token);
+                    if (!user) {
+                        set.status = 400;
+                        return { error: "Invalid or expired token" };
+                    }
+                    const password_hash = await Bun.password.hash(password);
+                    user.password_hash = password_hash;
+                    user.resetTokens = user.resetTokens.filter((t: any) => t.hash !== createHash("sha256").update(token).digest("hex"));
+                    await identityService.updateUser(user.did, { password_hash });
+                    return { success: true };
+                },
+                {
+                    body: t.Object({
+                        token: t.String(),
+                        password: t.String(),
+                    }),
+                }
+            )
     )
     .group("/users", (app) =>
         app
@@ -1533,6 +1587,28 @@ const app = new Elysia()
                 {
                     params: t.Object({
                         certId: t.String(),
+                    }),
+                }
+            )
+            .post(
+                "/issue-auto",
+                async ({ profile, body, set, certsService }) => {
+                    try {
+                        const certificate = await certsService.issueAuto(profile as JwtPayload, body.subject, body.certType, body.expires);
+                        return { success: true, certificate };
+                    } catch (error: any) {
+                        set.status = 500;
+                        return { error: error.message };
+                    }
+                },
+                {
+                    body: t.Object({
+                        subject: t.String(),
+                        certType: t.Object({
+                            did: t.String(),
+                            ref: t.String(),
+                        }),
+                        expires: t.Optional(t.String()),
                     }),
                 }
             )

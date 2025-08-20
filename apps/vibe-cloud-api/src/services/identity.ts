@@ -1,7 +1,8 @@
 import Nano from "nano";
-import { generateEd25519KeyPair, didFromEd25519, generateSalt, deriveEncryptionKey, encryptData } from "vibe-core";
+import { generateEd25519KeyPair, didFromEd25519, generateSalt, deriveEncryptionKey, encryptData, decryptData } from "vibe-core";
 import { instanceIdFromDid } from "../lib/did";
 import { randomBytes, createHash } from "crypto";
+import { encryptWithMasterKey, decryptWithMasterKey } from "../lib/crypto";
 import { getUserDbName } from "../lib/db";
 
 export class IdentityService {
@@ -101,10 +102,8 @@ export class IdentityService {
         });
 
         // 4. Encrypt private key and db credentials
-        const salt = generateSalt();
-        const encryptionKey = await deriveEncryptionKey(password_raw, salt);
-        const encryptedPrivateKey = await encryptData(Buffer.from(keyPair.privateKey).toString("hex"), encryptionKey);
-        const encryptedDbPass = await encryptData(dbPass, encryptionKey);
+        const encryptedPrivateKey = encryptWithMasterKey(Buffer.from(keyPair.privateKey).toString("hex"));
+        const encryptedDbPass = encryptWithMasterKey(dbPass);
 
         // 5. Generate and store refresh token
         const refreshToken = randomBytes(32).toString("hex");
@@ -121,15 +120,10 @@ export class IdentityService {
             did,
             instanceId,
             publicKey: Buffer.from(keyPair.publicKey).toString("hex"),
-            encryptedPrivateKey: {
-                ...encryptedPrivateKey,
-                salt: Buffer.from(salt).toString("hex"),
-            },
+            encryptedPrivateKey,
             dbUser,
-            encryptedDbPass: {
-                ...encryptedDbPass,
-                salt: Buffer.from(salt).toString("hex"),
-            },
+            encryptedDbPass,
+            keyEncVersion: 2,
             refreshTokens: [
                 {
                     hash: hashedRefreshToken,
@@ -218,6 +212,34 @@ export class IdentityService {
         return null;
     }
 
+    async findUserByResetToken(resetToken: string) {
+        await this.reauthenticate();
+        if (!this.usersDb || !this.isConnected) {
+            throw new Error("Database not connected");
+        }
+        const hashedToken = createHash("sha256").update(resetToken).digest("hex");
+        const selector = {
+            selector: {
+                resetTokens: {
+                    $elemMatch: {
+                        hash: hashedToken,
+                    },
+                },
+            },
+            limit: 1,
+        };
+        const result = await this.usersDb.find(selector);
+        if (result.docs.length > 0) {
+            const user = result.docs[0];
+            const token = user.resetTokens.find((t: any) => t.hash === hashedToken);
+            if (new Date(token.expires) < new Date()) {
+                return null;
+            }
+            return user;
+        }
+        return null;
+    }
+
     async findUserByRefreshToken(refreshToken: string) {
         await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
@@ -295,7 +317,14 @@ export class IdentityService {
 
         await this.usersDb.insert(user);
     }
-    async createAuthCode(data: { userDid: string; clientId: string; redirectUri: string; codeChallenge: string; codeChallengeMethod: string; scope: string }): Promise<string> {
+    async createAuthCode(data: {
+        userDid: string;
+        clientId: string;
+        redirectUri: string;
+        codeChallenge: string;
+        codeChallengeMethod: string;
+        scope: string;
+    }): Promise<string> {
         await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");
@@ -477,7 +506,14 @@ export class IdentityService {
             consents: filtered,
         });
     }
-    async updateUser(did: string, data: { displayName?: string; pictureUrl?: string }) {
+    async getDecryptedPrivateKey(user: any): Promise<string> {
+        if (user.keyEncVersion !== 2) {
+            throw new Error("Cannot decrypt private key for unmigrated user");
+        }
+        return decryptWithMasterKey(user.encryptedPrivateKey);
+    }
+
+    async updateUser(did: string, data: { displayName?: string; pictureUrl?: string; password_hash?: string }) {
         await this.reauthenticate();
         if (!this.usersDb || !this.isConnected) {
             throw new Error("Database not connected");

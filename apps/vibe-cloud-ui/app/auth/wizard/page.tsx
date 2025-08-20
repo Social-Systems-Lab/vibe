@@ -114,10 +114,24 @@ const SignupForm = ({ setStep }: { setStep: (step: string) => void }) => {
             {error && <p className="text-red-500 text-center">{error}</p>}
             <form method="POST" action={`/auth/signup?${queryString}`} className="space-y-6" onSubmit={handleSubmit}>
                 <div>
-                    <input type="email" name="email" placeholder="Email" autoComplete="username" required className="w-full px-4 py-2 border rounded-lg bg-white mt-1" />
+                    <input
+                        type="email"
+                        name="email"
+                        placeholder="Email"
+                        autoComplete="username"
+                        required
+                        className="w-full px-4 py-2 border rounded-lg bg-white mt-1"
+                    />
                 </div>
                 <div>
-                    <input type="password" name="password" placeholder="Password" required className="w-full px-4 py-2 border rounded-lg bg-white" autoComplete="new-password" />
+                    <input
+                        type="password"
+                        name="password"
+                        placeholder="Password"
+                        required
+                        className="w-full px-4 py-2 border rounded-lg bg-white"
+                        autoComplete="new-password"
+                    />
                 </div>
                 <button type="submit" className="w-full px-4 py-2 text-white rounded-lg" style={{ backgroundColor: buttonColor }} disabled={isLoading}>
                     {isLoading ? "Signing up..." : "Sign Up"}
@@ -162,15 +176,34 @@ const LoginForm = ({ setStep }: { setStep: (step: string) => void }) => {
             </div>
             <form method="POST" action={`/auth/login?${queryString}`} className="space-y-6" onSubmit={handleSubmit}>
                 <div>
-                    <input type="email" name="email" placeholder="Email" autoComplete="username" required className="w-full px-4 py-2 mt-1 border rounded-lg bg-white" />
+                    <input
+                        type="email"
+                        name="email"
+                        placeholder="Email"
+                        autoComplete="username"
+                        required
+                        className="w-full px-4 py-2 mt-1 border rounded-lg bg-white"
+                    />
                 </div>
                 <div>
-                    <input type="password" name="password" placeholder="Password" required className="w-full px-4 py-2 border rounded-lg bg-white" autoComplete="current-password" />
+                    <input
+                        type="password"
+                        name="password"
+                        placeholder="Password"
+                        required
+                        className="w-full px-4 py-2 border rounded-lg bg-white"
+                        autoComplete="current-password"
+                    />
                 </div>
                 <button type="submit" className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700" disabled={isLoading}>
                     {isLoading ? "Logging in..." : "Log In"}
                 </button>
             </form>
+            <div className="text-center">
+                <a href="/auth/forgot" className="text-sm text-blue-600 hover:underline">
+                    Forgot password?
+                </a>
+            </div>
             <p className="text-center">
                 Don't have an account?{" "}
                 <button onClick={() => setStep("signup")} className="text-blue-600 hover:underline">
@@ -340,7 +373,11 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
                 <div className="flex flex-col items-center space-y-4">
                     <label htmlFor="picture" className="cursor-pointer">
                         <div className="w-32 h-32 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
-                            {preview ? <img src={preview} alt="Profile preview" className="w-full h-full object-cover" /> : <span className="text-gray-500">Upload Photo</span>}
+                            {preview ? (
+                                <img src={preview} alt="Profile preview" className="w-full h-full object-cover" />
+                            ) : (
+                                <span className="text-gray-500">Upload Photo</span>
+                            )}
                         </div>
                     </label>
                     <input id="picture" name="picture" type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
@@ -455,7 +492,8 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
 
     // Decide button styles based on tri-state consent
     const allowClass = hasConsented === true ? "bg-blue-600 text-white shadow-md scale-105" : "bg-gray-200 text-gray-800 hover:bg-gray-300";
-    const denyClass = hasConsented === false && !showDeniedMessage ? "bg-red-500 text-white shadow-md scale-105" : "bg-gray-200 text-gray-800 hover:bg-gray-300";
+    const denyClass =
+        hasConsented === false && !showDeniedMessage ? "bg-red-500 text-white shadow-md scale-105" : "bg-gray-200 text-gray-800 hover:bg-gray-300";
 
     return (
         <div className="w-full max-w-md space-y-6 z-30">
@@ -464,7 +502,9 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
                     {/* Keep header clean to avoid repeating app icon */}
                     <h1 className="text-2xl font-extrabold font-heading tracking-tight">{isSettingsFlow ? "App permissions" : "Almost there!"}</h1>
                 </div>
-                <p className="mt-1 text-gray-600 text-sm">{isSettingsFlow ? `Manage what ${appName} can access.` : `${appName} is requesting permission to access your Vibe account.`}</p>
+                <p className="mt-1 text-gray-600 text-sm">
+                    {isSettingsFlow ? `Manage what ${appName} can access.` : `${appName} is requesting permission to access your Vibe account.`}
+                </p>
                 {!isSettingsFlow && <p className="mt-1 text-gray-500 text-xs">You’re in control. You can change this later in Settings.</p>}
             </div>
 
@@ -484,7 +524,13 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
                         </div>
                     </div>
                     {/* Prefer user profile picture (from previous /auth/me usage in session), fallback to Vibe icon */}
-                    <Image src={(searchParams.get("userPictureUrl") as string) || "/images/vibe.png"} alt="Vibe user" width={32} height={32} className="w-8 h-8 rounded-full object-cover" />
+                    <Image
+                        src={(searchParams.get("userPictureUrl") as string) || "/images/vibe.png"}
+                        alt="Vibe user"
+                        width={32}
+                        height={32}
+                        className="w-8 h-8 rounded-full object-cover"
+                    />
                 </div>
 
                 {/* Permissions list */}
@@ -517,7 +563,9 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
                             <button
                                 onClick={() => handleSubmit("approve")}
                                 className={`flex-1 px-4 py-3 text-center font-semibold rounded-lg transition-all duration-200 border ${
-                                    hasConsented === true ? "bg-blue-600 text-white border-blue-600 shadow-sm" : "bg-white text-gray-900 border-gray-300 hover:bg-gray-50"
+                                    hasConsented === true
+                                        ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                                        : "bg-white text-gray-900 border-gray-300 hover:bg-gray-50"
                                 }`}
                                 disabled={isLoading}
                             >
@@ -526,7 +574,9 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
                             <button
                                 onClick={() => handleSubmit("deny")}
                                 className={`flex-1 px-4 py-3 text-center font-semibold rounded-lg transition-all duration-200 border ${
-                                    hasConsented === false ? "bg-red-600 text-white border-red-600 shadow-sm" : "bg-white text-gray-900 border-gray-300 hover:bg-gray-50"
+                                    hasConsented === false
+                                        ? "bg-red-600 text-white border-red-600 shadow-sm"
+                                        : "bg-white text-gray-900 border-gray-300 hover:bg-gray-50"
                                 }`}
                                 disabled={isLoading}
                             >
@@ -536,7 +586,8 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
 
                         {/* Security + disclaimer */}
                         <div className="text-[11px] leading-5 text-gray-500 text-center">
-                            By selecting Allow, you let {appName} use these permissions with your Vibe account. We will never share your credentials with the app.
+                            By selecting Allow, you let {appName} use these permissions with your Vibe account. We will never share your credentials with the
+                            app.
                         </div>
                     </>
                 )}

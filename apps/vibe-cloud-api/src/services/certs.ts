@@ -2,10 +2,46 @@ import { IdentityService } from "./identity";
 import { DataService, JwtPayload } from "./data";
 import * as jose from "jose";
 import { publicKeyHexToSpkiPem } from "../lib/did";
-import { Certificate, CertType } from "vibe-core";
+import { Certificate, CertType, DocRef, privateKeyHexToPkcs8Pem } from "vibe-core";
 
 export class CertsService {
     constructor(private identityService: IdentityService, private dataService: DataService) {}
+
+    async issueAuto(issuer: JwtPayload, subjectDid: string, certTypeRef: DocRef, expires?: string): Promise<Certificate> {
+        const user = await this.identityService.findByDid(issuer.sub);
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const privateKeyHex = await this.identityService.getDecryptedPrivateKey(user);
+        const pkcs8Pem = privateKeyHexToPkcs8Pem(privateKeyHex);
+        const privateKey = await jose.importPKCS8(pkcs8Pem, "EdDSA");
+
+        const certId = `issued-certs/${certTypeRef.ref}-${subjectDid}-${Date.now()}`;
+        const certPayload = {
+            jti: certId,
+            type: certTypeRef.ref,
+            sub: subjectDid,
+            iss: user.did,
+            exp: expires ? Math.floor(new Date(expires).getTime() / 1000) : undefined,
+        };
+
+        const signature = await new jose.CompactSign(new TextEncoder().encode(JSON.stringify(certPayload)))
+            .setProtectedHeader({ alg: "EdDSA" })
+            .sign(privateKey);
+
+        const certificate: Certificate = {
+            _id: certId,
+            type: certTypeRef.ref,
+            certType: certTypeRef,
+            issuer: user.did,
+            subject: subjectDid,
+            expires,
+            signature,
+        };
+
+        return this.issue(certificate, issuer);
+    }
 
     async issue(certificate: Certificate, issuer: JwtPayload): Promise<Certificate> {
         console.log(`Issuing cert from ${issuer.sub} to ${certificate.subject} of type ${certificate.type}`);
