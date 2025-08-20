@@ -25,12 +25,12 @@ config:
 
     # Non-sensitive values
     couchdbUrl: "http://{{ .Release.Name }}-couchdb:5984"
-    couchdbPublicUrl: "https://db.vibepublic.com"
+    couchdbPublicUrl: "https://db.vibecloud.se"
     storageProvider: "scaleway"
     scalewayRegion: "fr-par"
     scalewayEndpoint: "s3.fr-par.scw.cloud"
     scalewayBucketName: "vibe-user-storage"
-    corsOrigin: "https://vibepublic.com"
+    corsOrigin: "https://vibecloud.se"
     port: "5050"
 
 # CouchDB sub-chart configuration
@@ -49,7 +49,7 @@ couchdbSetupJob:
 
 ingress:
     enabled: true
-    host: api.vibepublic.com
+    host: api.vibecloud.se
     annotations:
         cert-manager.io/cluster-issuer: letsencrypt-prod
         nginx.ingress.kubernetes.io/ssl-redirect: "true"

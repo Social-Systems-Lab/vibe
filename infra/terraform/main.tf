@@ -55,7 +55,7 @@ resource "scaleway_object_bucket" "vibe_bucket" {
   cors_rule {
     allowed_headers = ["*"]
     allowed_methods = ["GET", "HEAD", "POST", "PUT", "DELETE"]
-    allowed_origins = ["https://*.vibepublic.com", "https://*.vibe-feeds.vercel.app", "https://api.vibepublic.com"]
+    allowed_origins = ["https://vibecloud.se", "https://*.vibecloud.se", "https://api.vibecloud.se", "https://vibe-feeds.vercel.app", "https://vibe-collections.vercel.app"]
     max_age_seconds = 3000
     expose_headers  = ["Etag"]
   }

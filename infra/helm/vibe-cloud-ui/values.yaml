@@ -12,11 +12,11 @@ service:
     targetPort: 4000
 
 config:
-    nextPublicApiUrl: "https://api.vibepublic.com"
+    nextPublicApiUrl: "https://api.vibecloud.se"
 
 ingress:
     enabled: true
-    host: vibepublic.com
+    host: vibecloud.se
     annotations:
         cert-manager.io/cluster-issuer: letsencrypt-prod
         nginx.ingress.kubernetes.io/ssl-redirect: "true"

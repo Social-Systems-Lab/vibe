@@ -97,7 +97,7 @@ jobs:
                     scalewayAccessKey: "${{ secrets.SCALEWAY_ACCESS_KEY }}"
                     scalewaySecretKey: "${{ secrets.SCALEWAY_SECRET_KEY }}"
                     vibeCloudUiUrl: "http://vibe-cloud-ui-service:80"
-                    corsOrigin: "${{ secrets.CORS_ORIGIN }},https://vibe-feeds.vercel.app,https://${{ secrets.INGRESS_HOST }},http://${{ secrets.INGRESS_HOST }}"
+                    corsOrigin: "${{ secrets.CORS_ORIGIN }},https://vibe-feeds.vercel.app,https://vibe-collections.vercel.app,https://${{ secrets.INGRESS_HOST }},http://${{ secrets.INGRESS_HOST }}"
                   couchdb:
                     auth:
                       username: "admin"
@@ -116,6 +116,10 @@ jobs:
                     --set ingress.host=${{ secrets.INGRESS_HOST }} \
                     --set clusterIssuer.email=${{ secrets.CLUSTER_ISSUER_EMAIL }}
 
-            - name: Wait for Certificate Readiness
+            - name: Wait for API Certificate Readiness
               run: |
                   kubectl wait --for=condition=Ready certificate/vibe-cloud-api-tls -n vibe --timeout=5m
+
+            - name: Wait for CouchDB Certificate Readiness
+              run: |
+                  kubectl wait --for=condition=Ready certificate/vibe-cloud-api-couchdb-tls -n vibe --timeout=5m
