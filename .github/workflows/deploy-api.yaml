@@ -96,6 +96,8 @@ jobs:
                     instanceIdSecret: "${{ secrets.INSTANCE_ID_SECRET }}"
                     scalewayAccessKey: "${{ secrets.SCALEWAY_ACCESS_KEY }}"
                     scalewaySecretKey: "${{ secrets.SCALEWAY_SECRET_KEY }}"
+                    encryptionMasterKey: "${{ secrets.ENCRYPTION_MASTER_KEY }}"
+                    sessionSecret: "${{ secrets.SESSION_SECRET }}"
                     vibeCloudUiUrl: "http://vibe-cloud-ui-service:80"
                     corsOrigin: "${{ secrets.CORS_ORIGIN }},https://vibe-feeds.vercel.app,https://vibe-collections.vercel.app,https://${{ secrets.INGRESS_HOST }},http://${{ secrets.INGRESS_HOST }}"
                   couchdb:

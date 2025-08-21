@@ -22,6 +22,8 @@ config:
     couchdbPassword: ""
     scalewayAccessKey: ""
     scalewaySecretKey: ""
+    encryptionMasterKey: ""
+    sessionSecret: ""
 
     # Non-sensitive values
     couchdbUrl: "http://{{ .Release.Name }}-couchdb:5984"

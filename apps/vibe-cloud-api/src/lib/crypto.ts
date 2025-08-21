@@ -11,6 +11,9 @@ function getMasterKey(): Buffer {
         return masterKey;
     }
     const keyHex = process.env.ENCRYPTION_MASTER_KEY;
+
+    console.log("Using ENCRYPTION_MASTER_KEY:", keyHex, "length:", keyHex ? keyHex.length : "undefined");
+
     if (!keyHex || keyHex.length !== 64) {
         throw new Error("ENCRYPTION_MASTER_KEY must be a 64-character hex string (32 bytes)");
     }
