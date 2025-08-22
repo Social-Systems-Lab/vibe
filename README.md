@@ -33,7 +33,7 @@ To get started with local development, follow these steps:
 
 2.  **Install dependencies:**
 
-    This project uses `pnpm` for package management. To install all dependencies, run the following command from the root of the repository:
+    This project uses `pnpm` for package management and `bun` for runtime in vibe-cloud-api. To install all dependencies, run the following command from the root of the repository:
 
     ```bash
     pnpm install

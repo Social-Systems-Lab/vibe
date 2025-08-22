@@ -20,9 +20,6 @@
         "concurrently": "^9.2.0",
         "@types/varint": "^6.0.0"
     },
-    "engines": {
-        "node": ">=20 <22"
-    },
     "pnpm": {
         "overrides": {
             "next": "15.4.3"
