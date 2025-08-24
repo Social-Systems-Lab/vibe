@@ -25,6 +25,8 @@ export * from "./components/layout/Header";
 export * from "./components/layout/Layout";
 export * from "./components/layout/Content";
 export * from "./components/layout/LeftPanel";
+export * from "./components/layout/TopBar";
+export * from "./components/layout/NavPanel";
 
 // App grid menu (iframe-based)
 export * from "./components/AppGridMenu";

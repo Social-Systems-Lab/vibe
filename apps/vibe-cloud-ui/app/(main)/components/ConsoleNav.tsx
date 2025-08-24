@@ -26,8 +26,8 @@ export default function ConsoleNav() {
     const pathname = usePathname() || "";
 
     return (
-        <nav className="flex flex-col gap-2 h-full bg-[#fbfbfb]">
-            <div className="p-3">
+        <nav className="flex flex-col gap-2 h-full">
+            <div className="p-3 space-y-1">
                 {items.map((it) => {
                     const active = it.match(pathname);
                     const Icon = it.icon;
@@ -36,14 +36,14 @@ export default function ConsoleNav() {
                             key={it.href}
                             href={it.href}
                             className={[
-                                "inline-flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-[1.05rem] transition",
-                                active ? "font-semibold text-foreground" : "hover:bg-[#ffac742d] text-foreground/90",
+                                "inline-flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-[1.05rem] transition font-medium",
+                                active ? "text-[#6d1da5] bg-gradient-to-r from-purple-50 to-blue-50" : "hover:bg-gray-50 text-foreground/90",
                             ].join(" ")}
                             // #ffac747d
                             // #88909f4d
                             aria-current={active ? "page" : undefined}
                         >
-                            <Icon size={20} className={active ? "text-foreground" : "text-foreground/80"} />
+                            <Icon size={20} className={active ? "" : "text-foreground/80"} />
                             <span className="truncate">{it.label}</span>
                         </Link>
                     );

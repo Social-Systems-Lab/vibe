@@ -4,6 +4,7 @@ import React from "react";
 import { cn } from "../../lib/utils";
 import { ProfileMenu } from "../../index";
 import { AppGridMenu } from "../AppGridMenu";
+import { useLayoutConfig } from "./LayoutContext";
 
 export type HeaderProps = {
     left?: React.ReactNode;
@@ -60,8 +61,16 @@ export function Header({
     variant = "default",
     backgroundClass,
 }: HeaderProps) {
+    const layout = useLayoutConfig();
+    const effVariant = layout.variant !== "default" ? layout.header.variant : variant;
+    const effHeight = layout.variant !== "default" ? layout.header.height : height;
+    const effSticky = layout.variant !== "default" ? layout.header.sticky : sticky;
+    const effBackgroundClass = layout.variant !== "default" ? layout.header.backgroundClass ?? backgroundClass : backgroundClass;
+    const isDashboard = layout.variant === "dashboard";
+    const dashboardLeftWidth = isDashboard ? layout.content.leftWidth : undefined;
+
     const defaultLeft = (
-        <div className="flex items-center space-x-2 px-3">
+        <div className="flex items-center space-x-2 px-3 shrink-0">
             <a href={logotypeHref} aria-label="Home">
                 <img src={logotypeSrc} alt={logotypeAlt} className="h-8" />
             </a>
@@ -76,26 +85,33 @@ export function Header({
     );
 
     return (
+        <>
+            {isDashboard && effSticky ? (
+                <style>{`@media (min-width: 768px){ :root { --layout-left-offset: ${dashboardLeftWidth}; } }`}</style>
+            ) : null}
         <header
             className={cn(
                 "z-10 flex items-center justify-between w-full",
-                sticky ? "fixed top-0 left-0 right-0" : "",
-                backgroundClass ?? (border ? "border-b border-border bg-background/80 backdrop-blur" : "bg-background/80 backdrop-blur"),
+                effSticky ? "fixed top-0 left-0 right-0" : "",
+                effBackgroundClass ?? (border ? "border-b border-border bg-background/80 backdrop-blur" : "bg-background/80 backdrop-blur"),
                 className
             )}
             style={{
-                height,
+                height: effHeight,
+                left: isDashboard && effSticky ? "var(--layout-left-offset, 0px)" : undefined,
                 padding: `${paddingY} ${paddingX}`,
             }}
         >
             <div
                 className="w-full flex items-center justify-between pointer-events-none"
-                style={{ maxWidth: variant === "default" ? maxWidth : "none", margin: variant === "default" ? "0 auto" : "0" }}
+                style={{ maxWidth: effVariant === "default" ? maxWidth : "none", margin: effVariant === "default" ? "0 auto" : "0" }}
             >
-                <div className="pointer-events-auto flex items-center min-w-[120px]">{left ?? defaultLeft}</div>
-                <div className="pointer-events-auto flex-1 flex items-center justify-center">{center ?? null}</div>
-                <div className="pointer-events-auto flex items-center justify-end min-w-[120px] gap-2">{right ?? defaultRight}</div>
+                <div className="pointer-events-auto flex items-center min-w-[120px]">{left !== undefined ? left : defaultLeft}</div>
+                <div className="pointer-events-auto flex-1 flex items-center justify-center">{center !== undefined ? center : null}</div>
+                <div className="pointer-events-auto flex items-center justify-end min-w-[120px] gap-2">{right !== undefined ? right : defaultRight}</div>
             </div>
         </header>
+        </>
     );
 }
+Header.displayName = "Header";
