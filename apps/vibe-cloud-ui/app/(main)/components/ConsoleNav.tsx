@@ -36,7 +36,7 @@ export default function ConsoleNav() {
                             key={it.href}
                             href={it.href}
                             className={[
-                                "inline-flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-[1.05rem] transition font-medium",
+                                "inline-flex w-full items-center gap-3 rounded-md px-3 py-2 transition text-sm font-medium",
                                 active ? "text-[#6d1da5] bg-gradient-to-r from-purple-50 to-blue-50" : "hover:bg-gray-50 text-foreground/90",
                             ].join(" ")}
                             // #ffac747d
