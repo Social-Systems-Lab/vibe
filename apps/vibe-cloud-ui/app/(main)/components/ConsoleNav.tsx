@@ -4,14 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { User, Grid, Database, HardDrive, Wallet, MessagesSquare, BadgeCheck, Wrench } from "lucide-react";
 
-type Item = {
+export type ConsoleNavItem = {
     href: string;
     label: string;
     icon: React.ComponentType<{ size?: number; className?: string }>;
     match: (pathname: string) => boolean;
 };
 
-const items: Item[] = [
+export const consoleNavItems: ConsoleNavItem[] = [
     { href: "/profile", label: "Profile", icon: User, match: (p) => p.startsWith("/profile") },
     { href: "/apps", label: "Apps", icon: Grid, match: (p) => p.startsWith("/apps") },
     { href: "/database", label: "Database", icon: Database, match: (p) => p.startsWith("/database") },
@@ -28,7 +28,7 @@ export default function ConsoleNav() {
     return (
         <nav className="flex flex-col gap-2 h-full">
             <div className="p-3 py-0 space-y-1">
-                {items.map((it) => {
+                {consoleNavItems.map((it) => {
                     const active = it.match(pathname);
                     const Icon = it.icon;
                     return (

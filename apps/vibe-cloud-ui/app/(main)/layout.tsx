@@ -1,16 +1,36 @@
 "use client";
 import React from "react";
+import { usePathname } from "next/navigation";
 import { VibeProvider, Layout, Content, NavPanel, TopBar, AppGridMenu, ProfileMenu } from "vibe-react";
 import { appManifest } from "../lib/manifest";
-import ConsoleNav from "./components/ConsoleNav";
+import ConsoleNav, { consoleNavItems } from "./components/ConsoleNav";
 import { PageTopBarProvider, usePageTopBar } from "./components/PageTopBarContext";
 
 function TopBarPortal() {
     const { content } = usePageTopBar();
+    const pathname = usePathname() || "/";
+
+    // Fallback to current section icon + label when the page doesn't provide content
+    let left = content;
+    if (!left) {
+        const match = consoleNavItems.find((it) => it.match(pathname));
+        if (match) {
+            const Icon = match.icon;
+            left = (
+                <div className="flex items-center gap-2">
+                    <Icon size={16} className="text-foreground/70" />
+                    <span className="text-sm md:text-base font-medium">{match.label}</span>
+                </div>
+            );
+        } else {
+            left = <div className="text-sm md:text-base font-medium">Vibe Cloud</div>;
+        }
+    }
+
     return (
         <div className="w-full flex items-center justify-between">
-            <div className="flex items-center gap-2">{content}</div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">{left}</div>
+            <div className="flex items-center gap-4 mr-2">
                 <AppGridMenu />
                 <ProfileMenu />
             </div>
