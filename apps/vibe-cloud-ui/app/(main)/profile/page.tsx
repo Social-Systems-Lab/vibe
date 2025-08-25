@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { appManifest } from "../../lib/manifest";
+import { Squircle } from "vibe-react";
+import { usePageTopBar } from "../components/PageTopBarContext";
 
 type BearerUser = {
     did: string;
@@ -21,6 +23,7 @@ export default function ProfilePage() {
     const [user, setUser] = useState<BearerUser | null>(null);
     const [cookieUser, setCookieUser] = useState<CookieUser | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const { setContent } = usePageTopBar();
 
     // Helpers
     const copy = async (text?: string) => {
@@ -29,6 +32,18 @@ export default function ProfilePage() {
             await navigator.clipboard.writeText(text);
         } catch {}
     };
+
+    const shortDid = (did?: string) => {
+        if (!did) return "-";
+        const last = did.slice(-6);
+        return "…" + last;
+    };
+
+    // Inject breadcrumb/title into the shared TopBar rendered by Layout
+    useEffect(() => {
+        setContent(<div className="text-sm md:text-base font-medium">Profile</div>);
+        return () => setContent(null);
+    }, [setContent]);
 
     // Acquire API token (cookie-auth)
     useEffect(() => {
@@ -77,82 +92,79 @@ export default function ProfilePage() {
     }, [apiBase]);
 
     const resolvedDisplayName = user?.displayName || cookieUser?.displayName || "Your profile";
+    const resolvedPicture = cookieUser?.pictureUrl || user?.pictureUrl || null;
+
+    // Build cover styles
+    const coverStyle = resolvedPicture ? { backgroundImage: `url(${resolvedPicture})` } : undefined;
+
+    // Avatar overlap calculations
+    const AVATAR_SIZE = 112;
+    const OVERLAP = Math.round(AVATAR_SIZE * 0.25); // 25% overlap
 
     return (
         <main className="w-full">
             <section className="max-w-5xl">
-                <h1 className="text-2xl font-heading mb-4">Profile</h1>
-
                 {error && <div className="rounded-md border border-red-300 bg-red-50 text-red-800 p-3 text-sm mb-3">{error}</div>}
 
-                <div className="rounded-lg border border-border/60 bg-background/40 p-4 backdrop-blur">
-                    <div className="flex items-center gap-4">
-                        {cookieUser?.pictureUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={cookieUser.pictureUrl} alt="" className="h-14 w-14 rounded-full border border-border/60 object-cover" loading="lazy" />
-                        ) : (
-                            <div className="h-14 w-14 rounded-full border border-border/60 bg-muted/30" />
-                        )}
+                {/* Cover */}
+                <div
+                    className={[
+                        "w-full rounded-xl overflow-hidden",
+                        resolvedPicture ? "bg-cover bg-center" : "bg-gradient-to-r from-purple-100 to-blue-100 dark:from-purple-900/30 dark:to-blue-900/30",
+                        "h-36 md:h-48 lg:aspect-[16/5]",
+                    ].join(" ")}
+                    style={coverStyle}
+                    aria-hidden="true"
+                />
+
+                {/* Info: avatar on the left, name + DID on the right, under cover.
+                    Avatar overlaps the cover by ~25% of its height. */}
+                <div className="px-4 md:px-6 pb-6">
+                    <div className="flex items-center gap-4" style={{ marginTop: -OVERLAP }}>
+                        <div className="shrink-0">
+                            <Squircle
+                                imageUrl={resolvedPicture || undefined}
+                                size={AVATAR_SIZE}
+                                className="shadow-lg ring-2 ring-background border border-border"
+                            >
+                                {resolvedDisplayName?.[0]}
+                            </Squircle>
+                        </div>
+
                         <div className="min-w-0">
-                            <div className="text-lg font-medium truncate">{resolvedDisplayName}</div>
-                            <div className="text-xs text-foreground/60">This is your identity on Vibe.</div>
-                        </div>
-                    </div>
+                            <div className="text-2xl md:text-3xl font-semibold truncate">{resolvedDisplayName}</div>
+                            <div className="text-sm text-foreground/60">This is your identity on Vibe.</div>
 
-                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                        <div className="rounded-md border border-border/60 bg-background p-3">
-                            <div className="text-xs text-foreground/60 mb-1">DID</div>
-                            <div className="flex items-center justify-between gap-3">
-                                <div className="truncate">{user?.did || "-"}</div>
-                                <button
-                                    onClick={() => copy(user?.did)}
-                                    className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent/20 transition"
-                                >
-                                    Copy
-                                </button>
-                            </div>
-                        </div>
-                        <div className="rounded-md border border-border/60 bg-background p-3">
-                            <div className="text-xs text-foreground/60 mb-1">Instance ID</div>
-                            <div className="flex items-center justify-between gap-3">
-                                <div className="truncate">{user?.instanceId || "-"}</div>
-                                <button
-                                    onClick={() => copy(user?.instanceId)}
-                                    className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent/20 transition"
-                                >
-                                    Copy
-                                </button>
-                            </div>
-                        </div>
-                        <div className="rounded-md border border-border/60 bg-background p-3">
-                            <div className="text-xs text-foreground/60 mb-1">Display name</div>
-                            <div className="flex items-center justify-between gap-3">
-                                <div className="truncate">{resolvedDisplayName}</div>
-                                <button
-                                    onClick={() => copy(resolvedDisplayName)}
-                                    className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent/20 transition"
-                                >
-                                    Copy
-                                </button>
-                            </div>
-                        </div>
-                        <div className="rounded-md border border-border/60 bg-background p-3">
-                            <div className="text-xs text-foreground/60 mb-1">Avatar URL</div>
-                            <div className="flex items-center justify-between gap-3">
-                                <div className="truncate">{cookieUser?.pictureUrl || user?.pictureUrl || "-"}</div>
-                                <button
-                                    onClick={() => copy(cookieUser?.pictureUrl || user?.pictureUrl)}
-                                    className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent/20 transition"
-                                >
-                                    Copy
-                                </button>
+                            {/* DID pill */}
+                            <div className="mt-3">
+                                <div className="inline-flex items-center gap-2 rounded-md border border-border bg-background/80 px-3 py-1 text-xs">
+                                    <span className="font-mono inline-flex items-center gap-1">
+                                        {/* key icon */}
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-foreground/50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 9.75l-7.5 7.5m0 0H9.75m2.25 0V15" />
+                                        </svg>
+                                        {shortDid(user?.did)}
+                                    </span>
+                                    <button
+                                        onClick={() => copy(user?.did)}
+                                        className="inline-flex items-center rounded-sm border border-border bg-background px-1.5 py-0.5 text-[11px] hover:bg-accent/20 transition"
+                                        title="Copy DID"
+                                    >
+                                        {/* subtle copy icon */}
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-foreground/50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h8a2 2 0 012 2v9a2 2 0 01-2 2H8a2 2 0 01-2-2V9a2 2 0 012-2z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M16 7V5a2 2 0 00-2-2H9a2 2 0 00-2 2v2" />
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
+                </div>
 
-                    <div className="mt-4 text-xs text-foreground/60">
-                        Editing profile is coming soon. You&#39;ll be able to update your display name and avatar here.
-                    </div>
+                <div className="mt-2 text-xs text-foreground/60">
+                    Editing profile is coming soon. You'll be able to update your display name, avatar and cover here.
                 </div>
             </section>
         </main>

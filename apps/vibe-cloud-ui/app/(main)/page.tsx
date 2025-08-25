@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
 export default function Page() {
-    // Console-first: default landing goes to /apps
-    redirect("/apps");
+    // Default landing goes to Profile for now
+    redirect("/profile");
 }
