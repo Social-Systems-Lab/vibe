@@ -41,8 +41,6 @@ export function TopBar({
   topOffset,
   backgroundClass,
   border = true,
-  paddingX = "16px",
-  paddingY = "8px",
 }: TopBarProps) {
   const layout = useLayoutConfig();
   const isDashboard = layout.variant === "dashboard";
@@ -51,12 +49,12 @@ export function TopBar({
   return (
     <div
       className={cn(
-        "w-full z-10",
+        "w-full z-10 px-4 md:px-6 py-2",
         sticky ? "sticky" : "",
         backgroundClass ?? (border ? "bg-background/80 backdrop-blur border-b border-border" : "bg-background/80 backdrop-blur"),
         className
       )}
-      style={{ top: sticky ? effTop : undefined, padding: `${paddingY} ${paddingX}` }}
+      style={{ top: sticky ? effTop : undefined }}
     >
       {children}
     </div>

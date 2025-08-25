@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 import { appManifest } from "../../lib/manifest";
 import { Squircle } from "vibe-react";
 import { usePageTopBar } from "../components/PageTopBarContext";
+import { User as UserIcon } from "lucide-react";
 
 type BearerUser = {
     did: string;
     instanceId: string;
     displayName?: string;
     pictureUrl?: string;
+    coverUrl?: string;
 };
 
 type CookieUser = {
@@ -41,7 +43,12 @@ export default function ProfilePage() {
 
     // Inject breadcrumb/title into the shared TopBar rendered by Layout
     useEffect(() => {
-        setContent(<div className="text-sm md:text-base font-medium">Profile</div>);
+        setContent(
+            <div className="flex items-center gap-2">
+                <UserIcon size={16} className="text-foreground/70" />
+                <span className="text-sm md:text-base font-medium">Profile</span>
+            </div>
+        );
         return () => setContent(null);
     }, [setContent]);
 
@@ -94,11 +101,12 @@ export default function ProfilePage() {
     const resolvedDisplayName = user?.displayName || cookieUser?.displayName || "Your profile";
     const resolvedPicture = cookieUser?.pictureUrl || user?.pictureUrl || null;
 
-    // Build cover styles
-    const coverStyle = resolvedPicture ? { backgroundImage: `url(${resolvedPicture})` } : undefined;
+    // Build cover styles: use user's coverUrl if present; otherwise gradient fallback via classes
+    const coverImage = user?.coverUrl || null;
+    const coverStyle = coverImage ? { backgroundImage: `url(${coverImage})` } : undefined;
 
     // Avatar overlap calculations
-    const AVATAR_SIZE = 112;
+    const AVATAR_SIZE = 160;
     const OVERLAP = Math.round(AVATAR_SIZE * 0.25); // 25% overlap
 
     return (
@@ -110,8 +118,8 @@ export default function ProfilePage() {
                 <div
                     className={[
                         "w-full rounded-xl overflow-hidden",
-                        resolvedPicture ? "bg-cover bg-center" : "bg-gradient-to-r from-purple-100 to-blue-100 dark:from-purple-900/30 dark:to-blue-900/30",
-                        "h-36 md:h-48 lg:aspect-[16/5]",
+                        coverImage ? "bg-cover bg-center" : "bg-gradient-to-r from-purple-100 to-blue-100 dark:from-purple-900/30 dark:to-blue-900/30",
+                        "h-48 md:h-64 lg:aspect-[16/4]",
                     ].join(" ")}
                     style={coverStyle}
                     aria-hidden="true"
@@ -120,8 +128,8 @@ export default function ProfilePage() {
                 {/* Info: avatar on the left, name + DID on the right, under cover.
                     Avatar overlaps the cover by ~25% of its height. */}
                 <div className="px-4 md:px-6 pb-6">
-                    <div className="flex items-center gap-4" style={{ marginTop: -OVERLAP }}>
-                        <div className="shrink-0">
+                    <div className="flex items-start gap-4">
+                        <div className="shrink-0" style={{ marginTop: -OVERLAP }}>
                             <Squircle
                                 imageUrl={resolvedPicture || undefined}
                                 size={AVATAR_SIZE}
@@ -131,7 +139,7 @@ export default function ProfilePage() {
                             </Squircle>
                         </div>
 
-                        <div className="min-w-0">
+                        <div className="min-w-0 mt-2">
                             <div className="text-2xl md:text-3xl font-semibold truncate">{resolvedDisplayName}</div>
                             <div className="text-sm text-foreground/60">This is your identity on Vibe.</div>
 

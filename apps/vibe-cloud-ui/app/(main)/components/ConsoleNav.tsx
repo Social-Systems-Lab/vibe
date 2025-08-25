@@ -27,7 +27,7 @@ export default function ConsoleNav() {
 
     return (
         <nav className="flex flex-col gap-2 h-full">
-            <div className="p-3 space-y-1">
+            <div className="p-3 py-0 space-y-1">
                 {items.map((it) => {
                     const active = it.match(pathname);
                     const Icon = it.icon;

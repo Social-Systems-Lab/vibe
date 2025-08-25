@@ -70,7 +70,7 @@ export function Header({
     const dashboardLeftWidth = isDashboard ? layout.content.leftWidth : undefined;
 
     const defaultLeft = (
-        <div className="flex items-center space-x-2 px-3 shrink-0">
+        <div className="flex items-center space-x-2 pr-3 shrink-0">
             <a href={logotypeHref} aria-label="Home">
                 <img src={logotypeSrc} alt={logotypeAlt} className="h-8" />
             </a>

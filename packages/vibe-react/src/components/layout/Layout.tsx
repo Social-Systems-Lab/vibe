@@ -172,7 +172,7 @@ export function Layout({
   // Default top bar used inside the main content for dashboard (actions right-aligned)
   const defaultTopBarDashboard = (
     <TopBarCmp border={variantConfig.chrome?.dashboard?.topBarBorder === true}>
-      <div className="flex items-center justify-end gap-4 mr-2">
+      <div className="flex items-center justify-end gap-4">
         <AppGridMenu />
         <ProfileMenu />
       </div>
@@ -188,7 +188,7 @@ export function Layout({
             <img src="/images/logotype.png" alt="App" className="h-8" />
           </a>
         </div>
-        <div className="flex items-center gap-4 mr-2">
+        <div className="flex items-center gap-4">
           <AppGridMenu />
           <ProfileMenu />
         </div>
