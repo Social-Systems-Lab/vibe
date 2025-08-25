@@ -78,7 +78,7 @@ export function Header({
     );
 
     const defaultRight = (
-        <div className="flex items-center space-x-4 mr-2">
+        <div className="flex items-center space-x-4">
             <AppGridMenu />
             <ProfileMenu />
         </div>

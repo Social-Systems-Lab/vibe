@@ -30,7 +30,7 @@ function TopBarPortal() {
     return (
         <div className="w-full flex items-center justify-between">
             <div className="flex items-center gap-2">{left}</div>
-            <div className="flex items-center gap-4 mr-2">
+            <div className="flex items-center gap-4">
                 <AppGridMenu />
                 <ProfileMenu />
             </div>
