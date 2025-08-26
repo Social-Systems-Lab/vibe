@@ -20,6 +20,8 @@ export default function StoragePage() {
     const [files, setFiles] = useState<FileDoc[] | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const [usage, setUsage] = useState<{ used_bytes: number; reserved_bytes: number; limit_bytes: number; burst_bytes: number; percent: number; tier?: string } | null>(null);
+    const [usageLoading, setUsageLoading] = useState(false);
 
     // Get API token via cookie-auth endpoint
     useEffect(() => {
@@ -36,6 +38,42 @@ export default function StoragePage() {
         getToken();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    const formatBytes = (n?: number) => {
+        if (typeof n !== "number") return "-";
+        const units = ["B", "KB", "MB", "GB", "TB"];
+        let i = 0;
+        let val = n;
+        while (val >= 1024 && i < units.length - 1) {
+            val /= 1024;
+            i++;
+        }
+        return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+    };
+
+    const loadUsage = async () => {
+        if (!token) {
+            setError("No API token. Ensure you are signed in.");
+            return;
+        }
+        setUsageLoading(true);
+        try {
+            const res = await fetch(`${apiBase}/storage/usage`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({} as any));
+                throw new Error(data?.error || `Failed to load usage (${res.status})`);
+            }
+            const data = await res.json();
+            setUsage(data);
+        } catch (e: any) {
+            setError(e?.message || "Failed to load usage");
+            setUsage(null);
+        } finally {
+            setUsageLoading(false);
+        }
+    };
 
     const loadFiles = async () => {
         if (!token) {
@@ -59,7 +97,9 @@ export default function StoragePage() {
                 throw new Error(data?.error || `Failed to list files (${res.status})`);
             }
             const data = await res.json();
-            setFiles(Array.isArray(data?.docs) ? (data.docs as FileDoc[]) : []);
+            const docs = Array.isArray(data?.docs) ? (data.docs as FileDoc[]) : [];
+            docs.sort((a, b) => (b.size ?? 0) - (a.size ?? 0));
+            setFiles(docs);
         } catch (e: any) {
             setError(e?.message || "Failed to list files");
             setFiles(null);
@@ -94,26 +134,81 @@ export default function StoragePage() {
         }
     };
 
+    const deleteFile = async (storageKey?: string) => {
+        if (!token || !storageKey) return;
+        try {
+            const ok = window.confirm("Delete this file? This cannot be undone.");
+            if (!ok) return;
+            const res = await fetch(`${apiBase}/storage/object`, {
+                method: "DELETE",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ storageKey }),
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({} as any));
+                throw new Error(data?.error || `Failed to delete file (${res.status})`);
+            }
+            await loadFiles();
+            await loadUsage();
+        } catch (e: any) {
+            setError(e?.message || "Failed to delete file");
+        }
+    };
+
     return (
         <main className="w-full">
             <section className="max-w-6xl">
                 <div className="flex items-center justify-between mb-4">
-                    <h1 className="text-2xl font-heading">Storage (Read-only)</h1>
-                    <div className="text-xs text-foreground/60">Phase 1 lists from the files namespace</div>
+                    <h1 className="text-2xl font-heading">Storage</h1>
+                    <div className="text-xs text-foreground/60">Usage and files</div>
+                </div>
+
+                {/* Usage bar */}
+                <div className="rounded-lg border border-border/60 bg-background/60 p-3 mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <div className="text-sm font-medium">Usage</div>
+                        <div className="text-xs text-foreground/60">
+                            {usageLoading && "Loading…"}
+                            {!usageLoading && usage && (
+                                <>
+                                    {formatBytes(usage.used_bytes)} used of {formatBytes(usage.limit_bytes)}
+                                    {usage.reserved_bytes ? ` (+${formatBytes(usage.reserved_bytes)} reserved)` : ""} {usage.tier ? `• ${usage.tier}` : ""}
+                                </>
+                            )}
+                            {!usageLoading && !usage && "—"}
+                        </div>
+                    </div>
+                    <div className="w-full h-3 rounded bg-border/60 overflow-hidden">
+                        <div
+                            className="h-3 bg-primary transition-all"
+                            style={{ width: `${Math.min(100, usage?.percent ?? 0)}%` }}
+                        />
+                    </div>
+                    <div className="mt-2 flex gap-2">
+                        <button
+                            onClick={loadUsage}
+                            disabled={usageLoading || !token}
+                            className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent/20 transition disabled:opacity-50"
+                        >
+                            {usageLoading ? "Refreshing…" : "Refresh usage"}
+                        </button>
+                        <button
+                            onClick={loadFiles}
+                            disabled={loading || !token}
+                            className="inline-flex items-center rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                        >
+                            {loading ? "Loading files…" : "Load files"}
+                        </button>
+                        {!token && <span className="text-xs text-foreground/60">Waiting for API token…</span>}
+                    </div>
                 </div>
 
                 {error && <div className="rounded-md border border-red-300 bg-red-50 text-red-800 p-3 text-sm mb-3">{error}</div>}
 
-                <div className="flex items-center gap-2 mb-4">
-                    <button
-                        onClick={loadFiles}
-                        disabled={loading || !token}
-                        className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-                    >
-                        {loading ? "Loading…" : "Load files"}
-                    </button>
-                    {!token && <span className="text-xs text-foreground/60">Waiting for API token…</span>}
-                </div>
+                {/* Controls moved above into Usage card */}
 
                 <div className="rounded-lg border border-border/60 bg-background/40 p-2 backdrop-blur">
                     {!files && <div className="text-sm text-foreground/60">No data yet. Click “Load files”.</div>}
@@ -146,6 +241,12 @@ export default function StoragePage() {
                                                         className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent/20 transition"
                                                     >
                                                         Preview/Download
+                                                    </button>
+                                                    <button
+                                                        onClick={() => deleteFile(f.storageKey)}
+                                                        className="inline-flex items-center rounded-md border border-red-300 bg-red-50 px-3 py-1 text-xs text-red-700 hover:bg-red-100 transition"
+                                                    >
+                                                        Delete
                                                     </button>
                                                 </div>
                                             </td>

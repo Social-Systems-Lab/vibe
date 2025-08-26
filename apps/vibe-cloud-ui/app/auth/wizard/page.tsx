@@ -275,7 +275,7 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
             const presignResponse = await fetch("/storage/presign-put", {
                 method: "POST",
                 headers: authHeaders,
-                body: JSON.stringify({ name: file.name, mime: file.type }),
+                body: JSON.stringify({ name: file.name, mime: file.type, size: file.size }),
             });
 
             if (!presignResponse.ok) {
@@ -299,6 +299,25 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
                     console.error("Upload to S3 failed");
                     setIsLoading(false);
                     return;
+                }
+                // Commit the upload to finalize quota accounting and metadata
+                try {
+                    if (plan.uploadId && plan.storageKey) {
+                        await fetch("/storage/commit", {
+                            method: "POST",
+                            headers: authHeaders,
+                            body: JSON.stringify({
+                                storageKey: plan.storageKey,
+                                name: file.name,
+                                mime: file.type,
+                                size: file.size,
+                                uploadId: plan.uploadId,
+                            }),
+                        });
+                    }
+                } catch (e) {
+                    // Non-fatal for avatar flow; server reconciler will heal if needed
+                    console.warn("Commit failed (avatar flow)", e);
                 }
                 pictureUrlValue = plan.url.split("?")[0];
             } else if (plan.strategy === "server-upload") {

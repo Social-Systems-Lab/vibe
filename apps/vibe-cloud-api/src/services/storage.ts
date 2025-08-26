@@ -93,18 +93,21 @@ export class MinioStorageProvider implements StorageProvider {
         const bucketExists = await this.client.bucketExists(bucket);
         if (!bucketExists) {
             await this.client.makeBucket(bucket, this.config.region || "");
-            const policy = {
-                Version: "2012-10-17",
-                Statement: [
-                    {
-                        Effect: "Allow",
-                        Principal: { AWS: ["*"] },
-                        Action: ["s3:GetObject"],
-                        Resource: [`arn:aws:s3:::${bucket}/*`],
-                    },
-                ],
-            };
-            await this.client.setBucketPolicy(bucket, JSON.stringify(policy));
+            const isPrivate = (process.env.PRIVATE_BUCKET ?? "true") !== "false";
+            if (!isPrivate) {
+                const policy = {
+                    Version: "2012-10-17",
+                    Statement: [
+                        {
+                            Effect: "Allow",
+                            Principal: { AWS: ["*"] },
+                            Action: ["s3:GetObject"],
+                            Resource: [`arn:aws:s3:::${bucket}/*`],
+                        },
+                    ],
+                };
+                await this.client.setBucketPolicy(bucket, JSON.stringify(policy));
+            }
         }
         await this.client.putObject(bucket, key, body, body.length, { "Content-Type": contentType });
     }
@@ -165,13 +168,17 @@ export class ScalewayStorageProvider implements StorageProvider {
     }
 
     async upload(bucket: string, key: string, body: Buffer, contentType: string): Promise<void> {
-        const command = new PutObjectCommand({
+        const isPrivate = (process.env.PRIVATE_BUCKET ?? "true") !== "false";
+        const putParams: any = {
             Bucket: bucket,
             Key: key,
             Body: body,
             ContentType: contentType,
-            ACL: "public-read",
-        });
+        };
+        if (!isPrivate) {
+            putParams.ACL = "public-read";
+        }
+        const command = new PutObjectCommand(putParams);
         await this.client.send(command);
     }
 
@@ -189,14 +196,21 @@ export class ScalewayStorageProvider implements StorageProvider {
         try {
             // eslint-disable-next-line @typescript-eslint/no-var-requires
             const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
-            const cmd = new PutObjectCommand({
+            const isPrivate = (process.env.PRIVATE_BUCKET ?? "true") !== "false";
+            const params: any = {
                 Bucket: bucket,
                 Key: key,
                 ContentType: contentType,
-                ACL: "public-read",
-            });
+            };
+            if (!isPrivate) {
+                params.ACL = "public-read";
+            }
+            const cmd = new PutObjectCommand(params);
             const signedUrl: string = await getSignedUrl(this.client as any, cmd as any, { expiresIn: expiresSeconds });
-            const headers: Record<string, string> = { "x-amz-acl": "public-read" };
+            const headers: Record<string, string> = {};
+            if (!isPrivate) {
+                headers["x-amz-acl"] = "public-read";
+            }
             if (contentType) {
                 headers["Content-Type"] = contentType;
             }

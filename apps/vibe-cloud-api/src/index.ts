@@ -9,6 +9,7 @@ import { DataService, JwtPayload } from "./services/data";
 import { CertsService } from "./services/certs";
 import { EmailService } from "./services/email";
 import { StorageService, MinioStorageProvider, ScalewayStorageProvider, StorageProvider } from "./services/storage";
+import { QuotaService } from "./services/quota";
 import { getUserDbName } from "./lib/db";
 import { User } from "vibe-core";
 import nano from "nano";
@@ -44,6 +45,8 @@ const storageProvider =
           });
 
 const storageService = new StorageService(storageProvider);
+const quotaService = new QuotaService();
+const STORAGE_BUCKET = process.env.STORAGE_BUCKET_NAME || process.env.SCALEWAY_BUCKET_NAME!;
 
 const dataService = new DataService(
     {
@@ -115,6 +118,7 @@ const app = new Elysia()
     )
     .decorate("identityService", identityService)
     .decorate("storageService", storageService)
+    .decorate("quotaService", quotaService)
     .decorate("dataService", dataService)
     .decorate("certsService", certsService)
     .decorate("emailService", emailService)
@@ -517,7 +521,7 @@ const app = new Elysia()
                                 return { error: "User not found" };
                             }
                             const buffer = Buffer.from(await picture.arrayBuffer());
-                            const bucketName = process.env.SCALEWAY_BUCKET_NAME!;
+                            const bucketName = STORAGE_BUCKET;
                             const fileName = `profile-${Date.now()}-${picture.name}`;
                             await storageService.upload(bucketName, fileName, buffer, picture.type);
                             pictureUrl = await storageService.getPublicURL(bucketName, fileName);
@@ -894,9 +898,12 @@ const app = new Elysia()
                         return { error: "Invalid multipart form-data: missing 'file' field" };
                     }
 
+                    // Quota reservation tracking for outer try/catch
+                    let uploadId: string | undefined;
+
                     try {
                         const buffer = Buffer.from(await file.arrayBuffer());
-                        const bucketName = `user-${profile.instanceId}`;
+                        const bucketName = STORAGE_BUCKET;
 
                         // Optional client-provided key; else yyyy/mm/uuid.ext
                         const providedStorageKey = (body as any).storageKey as string | undefined;
@@ -908,7 +915,18 @@ const app = new Elysia()
                             const now = new Date();
                             const yyyy = now.getUTCFullYear();
                             const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
-                            storageKey = `${yyyy}/${mm}/${uuid}${ext ? "." + ext : ""}`;
+                            storageKey = `u/${profile.instanceId}/${yyyy}/${mm}/${uuid}${ext ? "." + ext : ""}`;
+                        } else if (!storageKey.startsWith(`u/${profile.instanceId}/`)) {
+                            set.status = 400;
+                            return { error: "invalid_storageKey_prefix" };
+                        }
+                        // Quota: reserve before upload
+                        try {
+                            const reserve = await quotaService.reserve(profile.sub, profile.instanceId, Number((file as any).size) || 0, storageKey);
+                            uploadId = reserve.uploadId;
+                        } catch (e: any) {
+                            set.status = 413;
+                            return { error: "quota_exceeded", details: e?.meta };
                         }
 
                         console.debug("[/storage/upload] start", {
@@ -957,6 +975,11 @@ const app = new Elysia()
                         const stat = await storageService.statObject(bucketName, storageKey);
                         const finalSize = stat?.size ?? coercePositiveNumber(Number((file as any).size));
                         const finalMime = stat?.contentType ?? ((file as any).type || undefined);
+                        if (uploadId) {
+                            try {
+                                await quotaService.commit(profile.sub, uploadId, Number(finalSize) || 0);
+                            } catch {}
+                        }
 
                         // Idempotency: if a files doc already exists for this storageKey, return it instead of creating a new one
                         const existing = await dataService.readOnce("files", { selector: { storageKey }, limit: 1 }, profile as JwtPayload);
@@ -1039,6 +1062,11 @@ const app = new Elysia()
                             },
                         };
                     } catch (error: any) {
+                        try {
+                            if ((typeof uploadId === "string") && uploadId) {
+                                await quotaService.release(profile.sub, uploadId);
+                            }
+                        } catch {}
                         console.error("[/storage/upload] Error uploading file:", error);
                         set.status = 500;
                         return { error: "Failed to upload file" };
@@ -1083,10 +1111,24 @@ const app = new Elysia()
                     const now = new Date();
                     const yyyy = now.getUTCFullYear();
                     const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
-                    const storageKey = `${yyyy}/${mm}/${uuid}${ext ? "." + ext : ""}`;
-                    const bucket = process.env.SCALEWAY_BUCKET_NAME!;
+                    const storageKey = `u/${profile.instanceId}/${yyyy}/${mm}/${uuid}${ext ? "." + ext : ""}`;
+                    const bucket = STORAGE_BUCKET;
 
                     try {
+                        if (typeof size !== "number" || size <= 0) {
+                            set.status = 400;
+                            return { error: "Missing or invalid size" };
+                        }
+                        // Quota reserve
+                        let uploadId: string | undefined;
+                        try {
+                            const reserve = await quotaService.reserve(profile.sub, profile.instanceId, size, storageKey);
+                            uploadId = reserve.uploadId;
+                        } catch (e: any) {
+                            set.status = 413;
+                            return { error: "quota_exceeded", details: e?.meta };
+                        }
+
                         const res = await storageService.presignPut(bucket, storageKey, mime, 300);
                         if (res.strategy === "presigned") {
                             return {
@@ -1096,6 +1138,7 @@ const app = new Elysia()
                                 url: res.url,
                                 headers: res.headers,
                                 expiresIn: 300,
+                                uploadId,
                                 metadata: { name, mime, size, acl, description, tags },
                             };
                         }
@@ -1105,6 +1148,7 @@ const app = new Elysia()
                             bucket,
                             storageKey,
                             uploadPath: "/storage/upload",
+                            uploadId,
                             metadata: { name, mime, size, acl, description, tags },
                         };
                     } catch (e: any) {
@@ -1138,7 +1182,7 @@ const app = new Elysia()
                         set.status = 400;
                         return { error: "Missing storageKey" };
                     }
-                    const bucket = `user-${profile!.instanceId}`;
+                    const bucket = STORAGE_BUCKET;
                     const ttl = Math.min(Math.max(expires ?? 300, 60), 3600);
 
                     const urlObj = new URL(request.url);
@@ -1190,7 +1234,7 @@ const app = new Elysia()
                         set.status = 400;
                         return { error: "Missing storageKey or name" };
                     }
-                    const bucket = `user-${(profile as JwtPayload).instanceId}`;
+                    const bucket = STORAGE_BUCKET;
                     try {
                         // Verify object exists and stat it to override size/mime
                         const stat = await storageService.statObject(bucket, storageKey);
@@ -1209,6 +1253,12 @@ const app = new Elysia()
                         // Override suspicious fields with provider stat when available
                         const finalSize = stat.size ?? coercePositiveNumber(size);
                         const finalMime = stat.contentType ?? (typeof mime === "string" ? mime : undefined);
+                        const uploadId = (body as any).uploadId as string | undefined;
+                        if (uploadId) {
+                            try {
+                                await quotaService.commit(profile.sub, uploadId, Number(finalSize) || 0);
+                            } catch {}
+                        }
 
                         // Idempotency: if a files doc already exists for this storageKey, return it instead of creating a new one
                         const existing = await dataService.readOnce("files", { selector: { storageKey }, limit: 1 }, profile as JwtPayload);
@@ -1292,7 +1342,67 @@ const app = new Elysia()
                         acl: t.Optional(t.Any()),
                         description: t.Optional(t.String()),
                         tags: t.Optional(t.Array(t.String())),
+                        uploadId: t.Optional(t.String()),
                     }),
+                }
+            )
+            .get(
+                "/usage",
+                async ({ profile, set, quotaService }) => {
+                    if (!profile) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    try {
+                        const usage = await quotaService.usage(profile.sub);
+                        return usage;
+                    } catch (e: any) {
+                        set.status = 500;
+                        return { error: "Failed to get usage" };
+                    }
+                }
+            )
+            .delete(
+                "/object",
+                async ({ profile, body, set, storageService, dataService, quotaService }) => {
+                    if (!profile) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    const { storageKey } = body as any;
+                    if (!storageKey) {
+                        set.status = 400;
+                        return { error: "Missing storageKey" };
+                    }
+                    if (!storageKey.startsWith(`u/${profile.instanceId}/`)) {
+                        set.status = 403;
+                        return { error: "forbidden_storageKey" };
+                    }
+                    const bucket = STORAGE_BUCKET;
+                    try {
+                        const stat = await storageService.statObject(bucket, storageKey);
+                        await storageService.delete(bucket, storageKey);
+                        // Attempt to delete associated metadata doc
+                        try {
+                            const existing = await dataService.readOnce("files", { selector: { storageKey }, limit: 1 }, profile as JwtPayload);
+                            const doc = (existing as any)?.docs?.[0];
+                            if (doc?._id) {
+                                const db = dataService.getDb(profile.instanceId);
+                                const fresh = await db.get(doc._id);
+                                await db.destroy(fresh._id, fresh._rev);
+                            }
+                        } catch {}
+                        if (stat?.size) {
+                            await quotaService.debit(profile.sub, Number(stat.size) || 0);
+                        }
+                        return { ok: true };
+                    } catch (e: any) {
+                        set.status = 500;
+                        return { error: "Failed to delete object" };
+                    }
+                },
+                {
+                    body: t.Object({ storageKey: t.String() }),
                 }
             )
     )
