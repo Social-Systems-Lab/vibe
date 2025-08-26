@@ -84,7 +84,7 @@ export default function StoragePage() {
         setError(null);
         try {
             // Read from files namespace (read-only)
-            const res = await fetch(`${apiBase}/data/files/query`, {
+            const res = await fetch(`${apiBase}/data/types/files/query`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -107,6 +107,14 @@ export default function StoragePage() {
             setLoading(false);
         }
     };
+
+    // Auto-load usage when token becomes available
+    useEffect(() => {
+        if (token) {
+            void loadUsage();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [token]);
 
     const presignGet = async (storageKey?: string) => {
         if (!token || !storageKey) return;

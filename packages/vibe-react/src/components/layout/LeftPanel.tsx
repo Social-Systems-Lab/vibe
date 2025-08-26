@@ -16,12 +16,12 @@ export type LeftPanelProps = {
 const visibilityClass = (bp: LeftPanelProps["visibleFrom"]) => {
     switch (bp) {
         case "sm":
-            return "hidden sm:block";
+            return "hidden sm:flex flex-col";
         case "lg":
-            return "hidden lg:block";
+            return "hidden lg:flex flex-col";
         case "md":
         default:
-            return "hidden md:block";
+            return "hidden md:flex flex-col";
     }
 };
 

@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { User, Grid, Database, HardDrive, Wallet, MessagesSquare, BadgeCheck, Wrench } from "lucide-react";
+import { useEffect, useState } from "react";
+import { appManifest } from "../../lib/manifest";
 
 export type ConsoleNavItem = {
     href: string;
@@ -24,10 +26,59 @@ export const consoleNavItems: ConsoleNavItem[] = [
 
 export default function ConsoleNav() {
     const pathname = usePathname() || "";
+    const apiBase = (appManifest.apiUrl || "").replace(/\/$/, "");
+    const [token, setToken] = useState<string | null>(null);
+    const [usage, setUsage] = useState<{ used_bytes: number; reserved_bytes: number; limit_bytes: number; burst_bytes: number; percent: number; tier?: string } | null>(null);
+    const [usageLoading, setUsageLoading] = useState(false);
+
+    useEffect(() => {
+        const getToken = async () => {
+            try {
+                const res = await fetch(`${apiBase}/hub/api-token`, { credentials: "include" });
+                if (!res.ok) return;
+                const data = await res.json();
+                setToken(data.token);
+            } catch {
+                // ignore for nav
+            }
+        };
+        getToken();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        const loadUsage = async () => {
+            if (!token) return;
+            setUsageLoading(true);
+            try {
+                const res = await fetch(`${apiBase}/storage/usage`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                setUsage(data);
+            } finally {
+                setUsageLoading(false);
+            }
+        };
+        loadUsage();
+    }, [token, apiBase]);
+
+    const formatBytes = (n?: number) => {
+        if (typeof n !== "number") return "-";
+        const units = ["B", "KB", "MB", "GB", "TB"];
+        let i = 0;
+        let val = n;
+        while (val >= 1024 && i < units.length - 1) {
+            val /= 1024;
+            i++;
+        }
+        return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+    };
 
     return (
         <nav className="flex flex-col gap-2 h-full">
-            <div className="p-3 py-0 space-y-1">
+            <div className="p-3 py-0 space-y-1 flex-1">
                 {consoleNavItems.map((it) => {
                     const active = it.match(pathname);
                     const Icon = it.icon;
@@ -48,6 +99,20 @@ export default function ConsoleNav() {
                         </Link>
                     );
                 })}
+            </div>
+            <div className="mt-auto px-4 pb-5">
+                <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-foreground/60">Storage</span>
+                    <span className="text-[11px] text-foreground/50">
+                        {usageLoading ? "…" : usage ? `${formatBytes(usage.used_bytes)} / ${formatBytes(usage.limit_bytes)}` : "—"}
+                    </span>
+                </div>
+                <div className="w-full h-2 rounded bg-gray-100 overflow-hidden">
+                    <div
+                        className="h-2 bg-primary transition-all"
+                        style={{ width: `${Math.min(100, usage?.percent ?? 0)}%` }}
+                    />
+                </div>
             </div>
         </nav>
     );

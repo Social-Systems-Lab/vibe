@@ -211,16 +211,16 @@ export function Layout({
         <div className="grid w-full" style={{ gridTemplateColumns: `var(--left-col-width) minmax(0, 1fr)` }}>
           {/* Left rail */}
           <div
-            className={`hidden md:block ${variantConfig.chrome?.dashboard?.leftBorder !== false ? "border-r border-gray-200" : ""}`}
+            className={`hidden md:flex flex-col ${variantConfig.chrome?.dashboard?.leftBorder !== false ? "border-r border-gray-200" : ""}`}
             style={{ gridColumn: "1 / 2" }}
           >
             {headerForLeft}
             {navNode ? (
-              <div className="mt-2">
+              <div className="mt-2 flex-1">
                 {navNode}
               </div>
             ) : leftFallbackChildren.length ? (
-              <div className="mt-2">{leftFallbackChildren}</div>
+              <div className="mt-2 flex-1">{leftFallbackChildren}</div>
             ) : null}
           </div>
           {/* Main */}

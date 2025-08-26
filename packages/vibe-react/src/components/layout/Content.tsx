@@ -88,7 +88,7 @@ export function Content({
                 {/* Left column */}
                 {left ? (
                     <aside
-                        className={cn("hidden md:block", stickyLeft ? "sticky self-start" : "")}
+                        className={cn("hidden md:flex flex-col", stickyLeft ? "sticky self-start" : "")}
                         style={{ ...leftAsideStyle }}
                     >
                         {isDashboard && leftTop ? <div className="mb-2">{leftTop}</div> : null}
