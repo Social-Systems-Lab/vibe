@@ -60,8 +60,6 @@ function Pill({ children }: { children: React.ReactNode }) {
 }
 
 export default function DiscoverAppsGrid() {
-    const [followed, setFollowed] = useState<Record<string, boolean>>({});
-
     return (
         <section className="w-full">
             <div className="max-w-5xl">
@@ -74,7 +72,6 @@ export default function DiscoverAppsGrid() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                     {apps.map((app) => {
-                        const isFollowed = !!followed[app.id];
                         return (
                             <div
                                 key={app.id}
@@ -87,17 +84,6 @@ export default function DiscoverAppsGrid() {
                                 <p className="text-sm text-foreground/70 line-clamp-2">{app.description}</p>
 
                                 <div className="mt-3 flex items-center gap-2">
-                                    <button
-                                        onClick={() => setFollowed((s) => ({ ...s, [app.id]: !isFollowed }))}
-                                        className={`inline-flex items-center rounded-md border px-3 py-1 text-xs transition ${
-                                            isFollowed
-                                                ? "bg-primary text-primary-foreground border-transparent"
-                                                : "border-border bg-background hover:bg-accent/20"
-                                        }`}
-                                        aria-pressed={isFollowed}
-                                    >
-                                        {isFollowed ? "Following" : "Follow"}
-                                    </button>
                                     <Link
                                         href={app.href}
                                         className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent/20 transition"

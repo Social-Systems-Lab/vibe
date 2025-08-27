@@ -24,7 +24,6 @@ type ConsentEntry = {
 export default function CurrentAppsGrid() {
     const [consents, setConsents] = useState<ConsentEntry[] | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [followed, setFollowed] = useState<Record<string, boolean>>({});
 
     useEffect(() => {
         const fetchConsents = async () => {
@@ -79,8 +78,6 @@ export default function CurrentAppsGrid() {
                             const logo = c.manifest?.appLogoUrl || c.manifest?.appLogotypeUrl || "";
                             const showcase = c.manifest?.appShowcaseUrl || c.manifest?.backgroundImageUrl || "";
 
-                            const isFollowed = !!followed[key];
-
                             return (
                                 <div key={key} className="rounded-lg border border-border/60 bg-background/40 overflow-hidden backdrop-blur">
                                     <a href={c.origin} target="_blank" rel="noreferrer" className="block hover:bg-accent/10 transition" title={title}>
@@ -110,21 +107,6 @@ export default function CurrentAppsGrid() {
                                     </a>
                                     <div className="px-4 pb-4">
                                         <div className="flex items-center gap-2">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    // TODO: Wire to real follow API; this toggles local state as a cue
-                                                    setFollowed((s) => ({ ...s, [key]: !isFollowed }));
-                                                }}
-                                                className={`inline-flex items-center rounded-md border px-3 py-1 text-xs transition ${
-                                                    isFollowed
-                                                        ? "bg-primary text-primary-foreground border-transparent"
-                                                        : "border-border bg-background hover:bg-accent/20"
-                                                }`}
-                                            >
-                                                {isFollowed ? "Following" : "Follow"}
-                                            </button>
                                             <a
                                                 href={c.origin}
                                                 target="_blank"

@@ -13,6 +13,8 @@ type UploadAreaProps = {
     subtitle?: string;
     button?: string;
   };
+  mode?: "button" | "dropzone";
+  globalDrop?: boolean;
 };
 
 async function presignPut(apiBase: string, token: string, file: File) {
@@ -72,6 +74,8 @@ export function UploadArea({
   accept,
   multiple = true,
   text,
+  mode = "dropzone",
+  globalDrop = false,
 }: UploadAreaProps) {
   const [dragActive, setDragActive] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
@@ -156,12 +160,76 @@ export function UploadArea({
     void handleFiles(files);
   };
 
+  React.useEffect(() => {
+    if (!globalDrop) return;
+
+    const onDragOverWin = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragActive(true);
+    };
+    const onDropWin = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragActive(false);
+      const files = e.dataTransfer?.files ?? null;
+      void handleFiles(files);
+    };
+    const onDragLeaveWin = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragActive(false);
+    };
+
+    window.addEventListener("dragover", onDragOverWin);
+    window.addEventListener("drop", onDropWin);
+    window.addEventListener("dragleave", onDragLeaveWin);
+    return () => {
+      window.removeEventListener("dragover", onDragOverWin);
+      window.removeEventListener("drop", onDropWin);
+      window.removeEventListener("dragleave", onDragLeaveWin);
+    };
+  }, [globalDrop]);
+
   const labelTitle = text?.title ?? "Upload files";
   const labelSubtitle = text?.subtitle ?? "Drag & drop files here or click to browse.";
   const buttonLabel = text?.button ?? "Choose files";
 
   const acceptAttr =
     Array.isArray(accept) ? accept.join(",") : typeof accept === "string" ? accept : undefined;
+
+  if (mode === "button") {
+    const buttonLabel = text?.button ?? "Upload files";
+    return (
+      <div>
+        <button
+          type="button"
+          className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent/20 transition"
+          onClick={() => inputRef.current?.click()}
+          disabled={busy}
+        >
+          {busy ? "Uploading…" : buttonLabel}
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          className="hidden"
+          accept={acceptAttr}
+          multiple={multiple}
+          onChange={onChange}
+          disabled={busy}
+        />
+        {globalDrop && dragActive && (
+          <div className="fixed inset-0 z-50 pointer-events-none">
+            <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
+            <div className="absolute inset-4 rounded-lg border-2 border-dashed border-primary/70 flex items-center justify-center text-sm text-foreground/80">
+              Drop files to upload
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-2">

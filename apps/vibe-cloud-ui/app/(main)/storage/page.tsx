@@ -198,11 +198,6 @@ export default function StoragePage() {
         typeof row.original.size === "number" ? `${formatBytes(row.original.size)}` : "-",
     },
     {
-      accessorKey: "storageKey",
-      header: "Key",
-      cell: ({ row }) => <code className="text-xs">{row.original.storageKey || "-"}</code>,
-    },
-    {
       id: "actions",
       header: "Actions",
       cell: ({ row }) => (
@@ -264,6 +259,8 @@ export default function StoragePage() {
             <UploadArea
               token={token}
               apiBase={apiBase}
+              mode="button"
+              globalDrop
               onUploaded={async () => {
                 await loadFiles();
                 await loadUsage();
@@ -278,7 +275,7 @@ export default function StoragePage() {
           </div>
         )}
 
-        <div className="rounded-lg border border-border/60 bg-background/40 p-2 backdrop-blur">
+        <div>
           {files === null && (
             <div className="text-sm text-foreground/60">No files loaded yet.</div>
           )}

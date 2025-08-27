@@ -16,12 +16,12 @@ export type ConsoleNavItem = {
 export const consoleNavItems: ConsoleNavItem[] = [
     { href: "/profile", label: "Profile", icon: User, match: (p) => p.startsWith("/profile") },
     { href: "/apps", label: "Apps", icon: Grid, match: (p) => p.startsWith("/apps") },
-    { href: "/database", label: "Database", icon: Database, match: (p) => p.startsWith("/database") },
+    // { href: "/database", label: "Database", icon: Database, match: (p) => p.startsWith("/database") },
     { href: "/storage", label: "Storage", icon: HardDrive, match: (p) => p.startsWith("/storage") },
-    { href: "/wallet", label: "Wallet", icon: Wallet, match: (p) => p.startsWith("/wallet") },
-    { href: "/messages", label: "Messages", icon: MessagesSquare, match: (p) => p.startsWith("/messages") },
-    { href: "/certificates", label: "Certificates", icon: BadgeCheck, match: (p) => p.startsWith("/certificates") },
-    { href: "/development", label: "Development", icon: Wrench, match: (p) => p.startsWith("/development") },
+    // { href: "/wallet", label: "Wallet", icon: Wallet, match: (p) => p.startsWith("/wallet") },
+    // { href: "/messages", label: "Messages", icon: MessagesSquare, match: (p) => p.startsWith("/messages") },
+    // { href: "/certificates", label: "Certificates", icon: BadgeCheck, match: (p) => p.startsWith("/certificates") },
+    // { href: "/development", label: "Development", icon: Wrench, match: (p) => p.startsWith("/development") },
 ];
 
 export default function ConsoleNav() {
