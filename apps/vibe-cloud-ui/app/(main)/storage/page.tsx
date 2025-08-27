@@ -420,6 +420,7 @@ export default function StoragePage() {
                   await loadFiles();
                   await loadUsage();
                 }}
+                globalDrop
               />
             )}
             <DropdownMenu>
@@ -516,6 +517,7 @@ export default function StoragePage() {
                   await loadFiles();
                   await loadUsage();
                 }}
+                globalDrop
               />
             )}      
           </div>

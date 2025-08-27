@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { Button } from "../ui/button";
 
 type UploadAreaProps = {
@@ -81,6 +82,7 @@ export function UploadArea({
   const [dragActive, setDragActive] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const dragCounter = React.useRef(0);
 
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -164,31 +166,81 @@ export function UploadArea({
   React.useEffect(() => {
     if (!globalDrop) return;
 
+    const isFileDrag = (e: DragEvent) => {
+      const dt = e.dataTransfer as DataTransfer | null;
+      if (!dt) return false;
+      try {
+        if (dt.types && Array.from(dt.types).includes("Files")) return true;
+      } catch {}
+      const items = (dt as any).items as DataTransferItemList | undefined;
+      if (items && items.length) {
+        try {
+          return Array.from(items as any).some((it: any) => it.kind === "file");
+        } catch {}
+      }
+      return false;
+    };
+
+    const onDragEnterWin = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!isFileDrag(e)) return;
+      dragCounter.current += 1;
+      setDragActive(true);
+    };
+
     const onDragOverWin = (e: DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      if (!isFileDrag(e)) return;
+      if (e.dataTransfer) {
+        try {
+          e.dataTransfer.dropEffect = "copy";
+        } catch {}
+      }
       setDragActive(true);
     };
-    const onDropWin = (e: DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setDragActive(false);
-      const files = e.dataTransfer?.files ?? null;
-      void handleFiles(files);
-    };
+
     const onDragLeaveWin = (e: DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      setDragActive(false);
+      const x = (e as any).clientX;
+      const y = (e as any).clientY;
+      const leftWindow =
+        typeof x === "number" &&
+        typeof y === "number" &&
+        (x <= 0 || y <= 0 || x >= window.innerWidth || y >= window.innerHeight);
+
+      if (leftWindow) {
+        dragCounter.current = 0;
+        setDragActive(false);
+        return;
+      }
+
+      dragCounter.current = Math.max(0, dragCounter.current - 1);
+      if (dragCounter.current === 0) {
+        setDragActive(false);
+      }
     };
 
+    const onDropWin = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const files = e.dataTransfer?.files ?? null;
+      dragCounter.current = 0;
+      setDragActive(false);
+      void handleFiles(files);
+    };
+
+    window.addEventListener("dragenter", onDragEnterWin);
     window.addEventListener("dragover", onDragOverWin);
-    window.addEventListener("drop", onDropWin);
     window.addEventListener("dragleave", onDragLeaveWin);
+    window.addEventListener("drop", onDropWin);
     return () => {
+      window.removeEventListener("dragenter", onDragEnterWin);
       window.removeEventListener("dragover", onDragOverWin);
-      window.removeEventListener("drop", onDropWin);
       window.removeEventListener("dragleave", onDragLeaveWin);
+      window.removeEventListener("drop", onDropWin);
     };
   }, [globalDrop]);
 
@@ -221,14 +273,19 @@ export function UploadArea({
           onChange={onChange}
           disabled={busy}
         />
-        {globalDrop && dragActive && (
-          <div className="fixed inset-0 z-50 pointer-events-none">
-            <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
-            <div className="absolute inset-4 rounded-lg border-2 border-dashed border-violet-500/70 flex items-center justify-center text-sm text-foreground/80">
-              Drop files to upload
-            </div>
-          </div>
-        )}
+        {globalDrop && dragActive && typeof document !== "undefined" &&
+          createPortal(
+            <div className="fixed inset-0 z-[1000] pointer-events-none select-none">
+              <div className="absolute inset-0 bg-background/60 backdrop-blur-sm z-0" />
+              <div className="absolute inset-4 z-10 rounded-lg border-2 border-dashed border-violet-500/70 flex items-center justify-center">
+                <div className="px-4 py-2 rounded-full bg-violet-600 text-white text-sm md:text-base font-medium shadow-sm">
+                  Drop files to upload
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        }
       </div>
     );
   }
