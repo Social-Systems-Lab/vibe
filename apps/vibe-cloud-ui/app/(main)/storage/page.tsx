@@ -1,10 +1,40 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { appManifest } from "../../lib/manifest";
-import { DataTable } from "vibe-react";
-import type { ColumnDef } from "vibe-react";
-import { UploadArea } from "vibe-react";
+import {
+  DataTable,
+  type ColumnDef,
+  UploadArea,
+  StorageUsageCard,
+  Button,
+  Input,
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "vibe-react";
+import {
+  DownloadIcon,
+  EyeIcon,
+  Trash2Icon,
+  ImageIcon,
+  FileIcon,
+  FileTextIcon,
+  VideoIcon,
+  MusicIcon,
+  FileArchiveIcon,
+  MoreHorizontal,
+  Search,
+  SlidersHorizontal,
+} from "lucide-react";
 
 type FileDoc = {
   _id?: string;
@@ -16,6 +46,9 @@ type FileDoc = {
   createdAt?: string;
   updatedAt?: string;
 };
+
+type TypeFilter = "all" | "image" | "video" | "audio" | "doc" | "archive" | "other";
+type SortKey = "newest" | "oldest" | "name" | "size-desc" | "size-asc";
 
 export default function StoragePage() {
   const apiBase = (appManifest.apiUrl || "").replace(/\/$/, "");
@@ -31,6 +64,16 @@ export default function StoragePage() {
     tier?: string;
   } | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
+
+  // UI state
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("newest");
+
+  // Preview modal
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewFile, setPreviewFile] = useState<FileDoc | null>(null);
 
   // Get API token via cookie-auth endpoint
   useEffect(() => {
@@ -58,6 +101,36 @@ export default function StoragePage() {
       i++;
     }
     return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+  };
+
+  const mimeGroup = (mime?: string): TypeFilter => {
+    if (!mime) return "other";
+    if (mime.startsWith("image/")) return "image";
+    if (mime.startsWith("video/")) return "video";
+    if (mime.startsWith("audio/")) return "audio";
+    if (mime.includes("zip") || mime.includes("compressed")) return "archive";
+    if (mime.includes("pdf") || mime.includes("msword") || mime.includes("officedocument") || mime.startsWith("text/"))
+      return "doc";
+    return "other";
+  };
+
+  const IconForMime = ({ mime }: { mime?: string }) => {
+    const m = mimeGroup(mime);
+    const cn = "size-4 text-foreground/70";
+    switch (m) {
+      case "image":
+        return <ImageIcon className={cn} />;
+      case "video":
+        return <VideoIcon className={cn} />;
+      case "audio":
+        return <MusicIcon className={cn} />;
+      case "archive":
+        return <FileArchiveIcon className={cn} />;
+      case "doc":
+        return <FileTextIcon className={cn} />;
+      default:
+        return <FileIcon className={cn} />;
+    }
   };
 
   const loadUsage = async () => {
@@ -106,7 +179,12 @@ export default function StoragePage() {
       }
       const data = await res.json();
       const docs = Array.isArray(data?.docs) ? (data.docs as FileDoc[]) : [];
-      docs.sort((a, b) => (b.size ?? 0) - (a.size ?? 0));
+      // Default sort newest first
+      docs.sort((a, b) => {
+        const da = new Date(a.createdAt || 0).getTime();
+        const db = new Date(b.createdAt || 0).getTime();
+        return db - da;
+      });
       setFiles(docs);
     } catch (e: any) {
       setError(e?.message || "Failed to list files");
@@ -130,29 +208,43 @@ export default function StoragePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  const presignGet = async (storageKey?: string) => {
+  const getPresignedUrl = async (storageKey?: string) => {
     if (!token || !storageKey) return;
+    const res = await fetch(`${apiBase}/storage/presign-get?debug=1`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ storageKey, expires: 300 }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({} as any));
+      throw new Error(data?.error || `Failed to presign download (${res.status})`);
+    }
+    const data = await res.json();
+    const url: string | undefined = data.url || data.presignedURL || data.publicURL;
+    if (!url) throw new Error("No downloadable URL available");
+    return url;
+  };
+
+  const handleDownload = async (storageKey?: string) => {
     try {
-      // Use debug=1 in dev to get helpful URLs (presigned and/or public)
-      const res = await fetch(`${apiBase}/storage/presign-get?debug=1`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ storageKey, expires: 300 }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({} as any));
-        throw new Error(data?.error || `Failed to presign download (${res.status})`);
-      }
-      const data = await res.json();
-      // Prefer explicit URL field, fall back to presignedURL/publicURL in debug payloads
-      const url: string | undefined = data.url || data.presignedURL || data.publicURL;
-      if (!url) throw new Error("No downloadable URL available");
-      window.open(url, "_blank", "noopener,noreferrer");
+      const url = await getPresignedUrl(storageKey);
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
     } catch (e: any) {
       setError(e?.message || "Failed to presign download");
+    }
+  };
+
+  const onPreview = async (file: FileDoc) => {
+    try {
+      const url = await getPresignedUrl(file.storageKey);
+      setPreviewUrl(url || null);
+      setPreviewFile(file);
+      setPreviewOpen(true);
+    } catch (e: any) {
+      setError(e?.message || "Failed to open preview");
     }
   };
 
@@ -180,110 +272,298 @@ export default function StoragePage() {
     }
   };
 
+  // Derived list with search/filter/sort
+  const filtered = useMemo(() => {
+    const base = files || [];
+    const q = query.trim().toLowerCase();
+    let list = base.filter((f) => {
+      const matchQ = !q || f.name?.toLowerCase().includes(q) || f.mimeType?.toLowerCase().includes(q);
+      const matchType = typeFilter === "all" ? true : mimeGroup(f.mimeType) === typeFilter;
+      return matchQ && matchType;
+    });
+    switch (sortKey) {
+      case "name":
+        list = [...list].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }));
+        break;
+      case "size-asc":
+        list = [...list].sort((a, b) => (a.size || 0) - (b.size || 0));
+        break;
+      case "size-desc":
+        list = [...list].sort((a, b) => (b.size || 0) - (a.size || 0));
+        break;
+      case "oldest":
+        list = [...list].sort(
+          (a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+        );
+        break;
+      case "newest":
+      default:
+        list = [...list].sort(
+          (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        );
+    }
+    return list;
+  }, [files, query, typeFilter, sortKey]);
+
   const columns: ColumnDef<FileDoc>[] = [
     {
       accessorKey: "name",
       header: "Name",
-      cell: ({ row }) => row.original.name || "-",
+      cell: ({ row }) => {
+        const file = row.original;
+        return (
+          <div className="flex items-center gap-3">
+            <div className="size-8 rounded-md border border-border/60 bg-accent/10 flex items-center justify-center">
+              <IconForMime mime={file.mimeType} />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-medium truncate">{file.name || "-"}</div>
+              <div className="text-xs text-foreground/60">
+                {file.mimeType || "-"} • {typeof file.size === "number" ? formatBytes(file.size) : "-"}
+              </div>
+            </div>
+          </div>
+        );
+      },
     },
     {
-      accessorKey: "mimeType",
-      header: "Type",
-      cell: ({ row }) => row.original.mimeType || "-",
-    },
-    {
-      accessorKey: "size",
-      header: "Size",
-      cell: ({ row }) =>
-        typeof row.original.size === "number" ? `${formatBytes(row.original.size)}` : "-",
+      accessorKey: "createdAt",
+      header: "Uploaded",
+      cell: ({ row }) => {
+        const d = row.original.createdAt ? new Date(row.original.createdAt) : null;
+        return <span className="text-sm">{d ? d.toLocaleString() : "-"}</span>;
+      },
     },
     {
       id: "actions",
       header: "Actions",
-      cell: ({ row }) => (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => presignGet(row.original.storageKey)}
-            className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent/20 transition"
-          >
-            Preview/Download
-          </button>
-          <button
-            onClick={() => deleteFile(row.original.storageKey)}
-            className="inline-flex items-center rounded-md border border-red-300 bg-red-50 px-3 py-1 text-xs text-red-700 hover:bg-red-100 transition"
-          >
-            Delete
-          </button>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const file = row.original;
+        return (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label="Preview"
+              onClick={() => onPreview(file)}
+              title="Preview"
+            >
+              <EyeIcon className="size-4" />
+              <span className="sr-only">Preview</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label="Download"
+              onClick={() => handleDownload(file.storageKey)}
+              title="Download"
+            >
+              <DownloadIcon className="size-4" />
+              <span className="sr-only">Download</span>
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              aria-label="Delete"
+              onClick={() => deleteFile(file.storageKey)}
+              title="Delete"
+            >
+              <Trash2Icon className="size-4" />
+              <span className="sr-only">Delete</span>
+            </Button>
+          </div>
+        );
+      },
     },
   ];
+
+  const FilterChip = ({
+    value,
+    label,
+  }: {
+    value: TypeFilter;
+    label: string;
+  }) => (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => setTypeFilter(value)}
+      aria-pressed={typeFilter === value}
+      className={typeFilter === value ? "bg-violet-600 text-white border-transparent hover:bg-violet-600/90" : "border-border"}
+    >
+      {label}
+    </Button>
+  );
 
   return (
     <main className="w-full">
       <section className="max-w-6xl">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-heading">Storage</h1>
-          <div className="text-xs text-foreground/60">Usage and files</div>
+        {/* Header */}
+        {/* <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
+          <div>
+            <h1 className="text-3xl font-heading">Storage</h1>
+          </div>
+        </div> */}
+
+        {/* <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
+          <div>
+            <h1 className="text-2xl font-heading">Storage</h1>
+            <div className="text-xs text-foreground/60">Manage your uploaded files and usage</div>
+          </div>
+          <div className="flex items-center gap-2">
+            {token && (
+              <UploadArea
+                token={token}
+                apiBase={apiBase}
+                mode="button"
+                onUploaded={async () => {
+                  await loadFiles();
+                  await loadUsage();
+                }}
+              />
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" aria-label="More actions">
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => void loadFiles()}>Refresh list</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div> */}
+
+        {/* Usage */}
+        <div className="mb-4">
+          <StorageUsageCard
+            usedBytes={usage?.used_bytes}
+            reservedBytes={usage?.reserved_bytes}
+            limitBytes={usage?.limit_bytes}
+            percent={usage?.percent}
+            tier={usage?.tier}
+            loading={usageLoading}
+          />
         </div>
 
-        {/* Usage bar */}
-        <div className="rounded-lg border border-border/60 bg-background/60 p-3 mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-sm font-medium">Usage</div>
-            <div className="text-xs text-foreground/60">
-              {usageLoading && "Loading…"}
-              {!usageLoading && usage && (
-                <>
-                  {formatBytes(usage.used_bytes)} used of {formatBytes(usage.limit_bytes)}
-                  {usage.reserved_bytes ? ` (+${formatBytes(usage.reserved_bytes)} reserved)` : ""}{" "}
-                  {usage.tier ? `• ${usage.tier}` : ""}
-                </>
-              )}
-              {!usageLoading && !usage && "—"}
+        {/* Error */}
+        {error && (
+          <div className="rounded-md border border-red-300 bg-red-50 text-red-800 p-3 text-sm mb-3">{error}</div>
+        )}
+
+        {/* Upload hero / empty state */}
+        {token && files && files.length === 0 && (
+          <div className="mb-4">
+            <div className="rounded-lg border border-dashed p-8 text-center">
+              <div className="mx-auto mb-2 size-10 rounded-md border border-border/60 bg-accent/10 flex items-center justify-center">
+                <SlidersHorizontal className="size-5 text-foreground/70" />
+              </div>
+              <div className="font-medium">No files yet</div>
+              <div className="text-xs text-foreground/60 mb-3">Drag & drop to upload, or click below.</div>
+              <UploadArea
+                token={token}
+                apiBase={apiBase}
+                mode="button"
+                onUploaded={async () => {
+                  await loadFiles();
+                  await loadUsage();
+                }}
+                globalDrop
+              />
             </div>
           </div>
-          <div className="w-full h-3 rounded bg-border/60 overflow-hidden">
-            <div
-              className="h-3 bg-primary transition-all"
-              style={{ width: `${Math.min(100, usage?.percent ?? 0)}%` }}
-            />
+        )}
+
+        {/* Toolbar */}
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row items-center sm:justify-between">
+          <div className="relative w-full sm:w-80 flex flex-row gap-2">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-foreground/50" />
+            <Input
+              placeholder="Search files by name or type"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-8 shrink-0"
+            />      
           </div>
-          {!token && (
-            <div className="mt-2 text-xs text-foreground/60">Waiting for API token…</div>
-          )}
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* <FilterChip value="all" label="All" />
+            <FilterChip value="image" label="Images" />
+            <FilterChip value="video" label="Video" />
+            <FilterChip value="audio" label="Audio" />
+            <FilterChip value="doc" label="Docs" /> */}
+            {/* <FilterChip value="archive" label="Archives" />
+            <FilterChip value="other" label="Other" /> */}
+            {/* <div className="h-6 w-px bg-border mx-1" />
+            <select
+              className="h-9 text-sm rounded-md border bg-background px-2"
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as SortKey)}
+            >
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="name">Name A–Z</option>
+              <option value="size-desc">Size (large first)</option>
+              <option value="size-asc">Size (small first)</option>
+            </select> */}
+                          {token && (
+              <UploadArea
+                token={token}
+                apiBase={apiBase}
+                mode="button"
+                onUploaded={async () => {
+                  await loadFiles();
+                  await loadUsage();
+                }}
+              />
+            )}      
+          </div>
         </div>
 
-        {token && (
-          <div className="mb-4">
-            <UploadArea
-              token={token}
-              apiBase={apiBase}
-              mode="button"
-              globalDrop
-              onUploaded={async () => {
-                await loadFiles();
-                await loadUsage();
-              }}
-            />
-          </div>
-        )}
-
-        {error && (
-          <div className="rounded-md border border-red-300 bg-red-50 text-red-800 p-3 text-sm mb-3">
-            {error}
-          </div>
-        )}
-
+        {/* Files table */}
         <div>
-          {files === null && (
-            <div className="text-sm text-foreground/60">No files loaded yet.</div>
+          {files === null && <div className="text-sm text-foreground/60">No files loaded yet.</div>}
+          {files !== null && filtered.length === 0 && files.length > 0 && (
+            <div className="text-sm text-foreground/60">No results match your filters.</div>
           )}
-          {files !== null && (
-            <DataTable columns={columns} data={files} pageSize={10} />
-          )}
+          {files !== null && filtered.length > 0 && <DataTable columns={columns} data={filtered} pageSize={10} />}
         </div>
+
+        {/* Global drop affordance when using header upload */}
+        {token && <div className="sr-only" aria-live="polite">Ready to upload</div>}
       </section>
+
+      {/* Preview dialog */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{previewFile?.name || "Preview"}</DialogTitle>
+            <DialogDescription>{previewFile?.mimeType}</DialogDescription>
+          </DialogHeader>
+          <div className="min-h-[300px] max-h-[70vh] overflow-auto flex items-center justify-center rounded-md border bg-muted/20">
+            {previewUrl && (previewFile?.mimeType || "").startsWith("image/") ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={previewUrl} alt={previewFile?.name || "preview"} className="max-h-[70vh] object-contain" />
+            ) : previewUrl ? (
+              <div className="text-sm p-4">
+                Preview not available for this file type. You can download it to view.
+              </div>
+            ) : (
+              <div className="text-sm p-4">Loading preview…</div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => previewFile && handleDownload(previewFile.storageKey)}>
+              <DownloadIcon className="size-4" />
+              Download
+            </Button>
+            <DialogClose asChild>
+              <Button>Close</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

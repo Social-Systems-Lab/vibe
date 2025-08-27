@@ -15,6 +15,6 @@ export default function _TailwindScanBridge() {
   // - arbitrary color
   // - alignment
   return (
-    <div className="hidden md:block md:flex justify-end border-r border-gray-200 bg-[#ff0000] bg-[#fbfbfb] h-[30px]" />
+    <div className="hidden md:block md:flex justify-end border-r border-gray-200 bg-[#ff0000] bg-[#fbfbfb] h-[30px] inline-block size-2 rounded-full bg-violet-500 mt-2 flex items-center gap-4 text-xs text-foreground/70 ml-auto text-foreground/60 text-amber-700 absolute inset-y-0 rounded-full bg-foreground/40 ring-2 ring-amber-400/40 relative h-2 w-full overflow-hidden rounded-full bg-foreground/10 bg-violet-600 text-white hover:bg-violet-600/90 shrink-0" />
   );
 }

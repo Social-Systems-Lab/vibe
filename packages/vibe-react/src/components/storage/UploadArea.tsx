@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Button } from "../ui/button";
 
 type UploadAreaProps = {
   token: string;
@@ -201,15 +202,16 @@ export function UploadArea({
   if (mode === "button") {
     const buttonLabel = text?.button ?? "Upload files";
     return (
-      <div>
-        <button
+      <div className="shrink-0">
+        <Button
           type="button"
-          className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent/20 transition"
+          size="sm"
+          className="bg-violet-600 text-white hover:bg-violet-600/90"
           onClick={() => inputRef.current?.click()}
           disabled={busy}
         >
           {busy ? "Uploading…" : buttonLabel}
-        </button>
+        </Button>
         <input
           ref={inputRef}
           type="file"
@@ -222,7 +224,7 @@ export function UploadArea({
         {globalDrop && dragActive && (
           <div className="fixed inset-0 z-50 pointer-events-none">
             <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
-            <div className="absolute inset-4 rounded-lg border-2 border-dashed border-primary/70 flex items-center justify-center text-sm text-foreground/80">
+            <div className="absolute inset-4 rounded-lg border-2 border-dashed border-violet-500/70 flex items-center justify-center text-sm text-foreground/80">
               Drop files to upload
             </div>
           </div>
@@ -236,7 +238,7 @@ export function UploadArea({
       <div
         className={[
           "rounded-lg border border-dashed p-6 transition-colors",
-          dragActive ? "border-primary bg-primary/5" : "border-border",
+          dragActive ? "border-violet-500 bg-violet-50 ring-2 ring-violet-400/30" : "border-border",
           busy ? "opacity-70" : "",
         ].join(" ")}
         onDragOver={onDragOver}
@@ -249,9 +251,15 @@ export function UploadArea({
       >
         <div className="text-sm font-medium">{labelTitle}</div>
         <div className="text-xs text-foreground/60">{labelSubtitle}</div>
-        <div className="mt-3 inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent/20 transition">
+        <Button
+          type="button"
+          size="sm"
+          className="mt-3 bg-violet-600 text-white hover:bg-violet-600/90"
+          onClick={() => inputRef.current?.click()}
+          disabled={busy}
+        >
           {busy ? "Uploading…" : buttonLabel}
-        </div>
+        </Button>
         <input
           ref={inputRef}
           type="file"

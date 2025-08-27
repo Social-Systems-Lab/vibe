@@ -39,3 +39,4 @@ export { VibeProvider, useVibe } from "./components/VibeProvider";
 export { DataTable } from "./components/data-table/DataTable";
 export type { ColumnDef } from "./components/data-table/DataTable";
 export { UploadArea } from "./components/storage/UploadArea";
+export { StorageUsageCard } from "./components/storage/StorageUsageCard";
