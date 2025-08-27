@@ -116,6 +116,14 @@ export default function StoragePage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
 
+    // Auto-load files when token becomes available
+    useEffect(() => {
+        if (token) {
+            void loadFiles();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [token]);
+
     const presignGet = async (storageKey?: string) => {
         if (!token || !storageKey) return;
         try {
@@ -195,23 +203,7 @@ export default function StoragePage() {
                             style={{ width: `${Math.min(100, usage?.percent ?? 0)}%` }}
                         />
                     </div>
-                    <div className="mt-2 flex gap-2">
-                        <button
-                            onClick={loadUsage}
-                            disabled={usageLoading || !token}
-                            className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent/20 transition disabled:opacity-50"
-                        >
-                            {usageLoading ? "Refreshing…" : "Refresh usage"}
-                        </button>
-                        <button
-                            onClick={loadFiles}
-                            disabled={loading || !token}
-                            className="inline-flex items-center rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-                        >
-                            {loading ? "Loading files…" : "Load files"}
-                        </button>
-                        {!token && <span className="text-xs text-foreground/60">Waiting for API token…</span>}
-                    </div>
+                    {!token && <div className="mt-2 text-xs text-foreground/60">Waiting for API token…</div>}
                 </div>
 
                 {error && <div className="rounded-md border border-red-300 bg-red-50 text-red-800 p-3 text-sm mb-3">{error}</div>}
@@ -219,7 +211,7 @@ export default function StoragePage() {
                 {/* Controls moved above into Usage card */}
 
                 <div className="rounded-lg border border-border/60 bg-background/40 p-2 backdrop-blur">
-                    {!files && <div className="text-sm text-foreground/60">No data yet. Click “Load files”.</div>}
+                    {!files && <div className="text-sm text-foreground/60">No files loaded yet.</div>}
                     {files && files.length === 0 && <div className="text-sm text-foreground/60">No files found.</div>}
                     {files && files.length > 0 && (
                         <div className="overflow-x-auto">

@@ -72,7 +72,7 @@ export function Header({
     const defaultLeft = (
         <div className="flex items-center space-x-2 pr-3 shrink-0">
             <a href={logotypeHref} aria-label="Home">
-                <img src={logotypeSrc} alt={logotypeAlt} className="h-8" />
+                <img src={logotypeSrc} alt={logotypeAlt} className="h-[30px]" />
             </a>
         </div>
     );
