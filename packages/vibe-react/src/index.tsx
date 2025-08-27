@@ -19,8 +19,9 @@ export * from "./components/ui/label";
 export * from "./components/ui/radio-group";
 export * from "./components/ui/squircle";
 export * from "./components/ui/textarea";
+export * from "./components/ui/table";
 
-// Layout (new)
+// Layout
 export * from "./components/layout/Header";
 export * from "./components/layout/Layout";
 export * from "./components/layout/Content";
@@ -31,5 +32,10 @@ export * from "./components/layout/NavPanel";
 // App grid menu (iframe-based)
 export * from "./components/AppGridMenu";
 
-// Provider and hook (single source of truth)
+/* Provider and hook (single source of truth) */
 export { VibeProvider, useVibe } from "./components/VibeProvider";
+
+/* Data table and storage upload */
+export { DataTable } from "./components/data-table/DataTable";
+export type { ColumnDef } from "./components/data-table/DataTable";
+export { UploadArea } from "./components/storage/UploadArea";
