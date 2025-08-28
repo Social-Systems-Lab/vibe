@@ -140,11 +140,32 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
         };
     }, [open, readOnce, presignGet]);
 
+    function matchesAccept(f: FileItem, accept?: string) {
+        if (!accept || accept === "*/*") return true;
+        const mt = (f.mimeType || "").toLowerCase();
+        const name = (f.name || "").toLowerCase();
+        const exts = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg", ".avif"];
+        const tokens = accept.split(",").map((s) => s.trim().toLowerCase());
+        const byMime = tokens.some((t) => {
+            if (t.endsWith("/*")) {
+                const prefix = t.slice(0, t.length - 1); // keep slash
+                return mt.startsWith(prefix);
+            }
+            return mt === t;
+        });
+        const byExt = exts.some((ext) => name.endsWith(ext));
+        if (tokens.some((t) => t.startsWith("image/"))) {
+            return byMime || byExt;
+        }
+        return byMime || byExt;
+    }
+
     const filtered = useMemo(() => {
         const q = query.trim().toLowerCase();
-        if (!q) return files;
-        return files.filter((f) => (f.name || "").toLowerCase().includes(q));
-    }, [files, query]);
+        const base = files.filter((f) => matchesAccept(f, accept));
+        if (!q) return base;
+        return base.filter((f) => (f.name || "").toLowerCase().includes(q));
+    }, [files, query, accept]);
 
     function toggleSelect(file: FileItem) {
         setSelected((prev) => {
@@ -193,6 +214,7 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
         const arr = Array.from(fileList);
         const pending = arr.map((f) => ({ id: crypto.randomUUID(), name: f.name }));
         setLocalUploads((u) => [...u, ...pending]);
+        let switched = false;
 
         for (const f of arr) {
             try {
@@ -220,6 +242,10 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
 
                 setFiles((prev) => [item, ...prev]);
                 setSelected((prev) => (selectionMode === "single" ? { [item.id]: item } : { ...prev, [item.id]: item }));
+                if (selectionMode === "single" && !switched) {
+                    setTab("my-files");
+                    switched = true;
+                }
             } catch (e) {
                 console.error("Upload failed", e);
             } finally {
@@ -256,20 +282,11 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
 
     const uploadView = (
         <div
-            className="rounded-md border border-dashed p-6 text-center cursor-pointer"
+            className="rounded-md border border-dashed p-6 text-center"
             onDrop={handleDrop}
             onDragOver={preventDefaults}
             onDragEnter={preventDefaults}
             onDragLeave={preventDefaults}
-            onClick={() => fileInputRef.current?.click()}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    fileInputRef.current?.click();
-                }
-            }}
         >
             <p className="mb-3 text-sm text-muted-foreground">Drag and drop files here, or click to select</p>
             <input
@@ -280,7 +297,7 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
                 onChange={handleFileInputChange}
                 className="hidden"
             />
-            <Button variant="secondary" type="button" onClick={() => fileInputRef.current?.click()}>
+            <Button variant="secondary" type="button" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
                 Choose files
             </Button>
             {localUploads.length > 0 && <div className="mt-4 text-xs text-muted-foreground">{localUploads.length} file(s) uploading...</div>}

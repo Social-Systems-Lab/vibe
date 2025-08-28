@@ -20,7 +20,7 @@ export const consoleNavItems: ConsoleNavItem[] = [
     { href: "/storage", label: "Storage", icon: HardDrive, match: (p) => p.startsWith("/storage") },
     // { href: "/wallet", label: "Wallet", icon: Wallet, match: (p) => p.startsWith("/wallet") },
     // { href: "/messages", label: "Messages", icon: MessagesSquare, match: (p) => p.startsWith("/messages") },
-    // { href: "/certificates", label: "Certificates", icon: BadgeCheck, match: (p) => p.startsWith("/certificates") },
+    { href: "/certificates", label: "Certificates", icon: BadgeCheck, match: (p) => p.startsWith("/certificates") },
     // { href: "/development", label: "Development", icon: Wrench, match: (p) => p.startsWith("/development") },
 ];
 

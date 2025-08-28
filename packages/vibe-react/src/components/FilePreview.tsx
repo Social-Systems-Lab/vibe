@@ -1,8 +1,9 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { cn } from "../lib/utils";
 import { FileItem } from "../lib/types";
+import { useVibe } from "../index";
 
 type Size = "sm" | "md" | "lg";
 type Variant = "grid" | "inline";
@@ -32,15 +33,38 @@ function isImage(mime?: string, name?: string) {
 export function FilePreview({ file, size = "md", variant = "grid", className, onClick, selected }: FilePreviewProps) {
     const { w, h, radius } = sizeMap[size];
     const showImage = isImage(file.mimeType, file.name);
-    const src = file.thumbnailUrl || file.url;
+    const initialSrc = file.thumbnailUrl || file.url;
+
+    // Try to resolve a temporary viewing URL if we have a storageKey but no url/thumbnail yet
+    const { presignGet } = useVibe();
+    const [resolvedSrc, setResolvedSrc] = useState<string | null>(initialSrc || null);
+
+    useEffect(() => {
+        setResolvedSrc(initialSrc || null);
+    }, [initialSrc]);
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            if (!resolvedSrc && showImage && file.storageKey) {
+                try {
+                    const signed = await presignGet(file.storageKey, 300);
+                    const u = (signed as any)?.url || (signed as any);
+                    if (!cancelled) setResolvedSrc(u || null);
+                } catch {}
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [resolvedSrc, showImage, file.storageKey, presignGet]);
 
     const body =
-        showImage && src ? (
-            <img src={src} alt={file.name || "file"} width={w} height={h} className={cn("object-cover w-full h-full", radius)} draggable={false} />
+        showImage && resolvedSrc ? (
+            <img src={resolvedSrc} alt={file.name || "file"} width={w} height={h} className={cn("object-cover w-full h-full", radius)} draggable={false} />
         ) : (
             <div className={cn("flex items-center justify-center bg-muted text-muted-foreground", radius)} style={{ width: "100%", height: "100%" }}>
                 <DefaultFileIcon mime={file.mimeType} />
-                showImage: {showImage ? "yes" : "no"}
             </div>
         );
 

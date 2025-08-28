@@ -211,7 +211,7 @@ export default function ProfilePage() {
                         className={[
                             "w-full rounded-xl overflow-hidden",
                             coverImage ? "bg-cover bg-center" : "bg-gradient-to-r from-purple-100 to-blue-100 dark:from-purple-900/30 dark:to-blue-900/30",
-                            "h-48 md:h-64 lg:aspect-[16/4]",
+                            "h-[300px] md:h-[350px] lg:aspect-[16/4]",
                         ].join(" ")}
                         style={coverStyle}
                         aria-hidden="true"
