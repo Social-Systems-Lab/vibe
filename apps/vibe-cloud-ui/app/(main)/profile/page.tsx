@@ -112,7 +112,7 @@ export default function ProfilePage() {
                             "Content-Type": "application/json",
                             Authorization: `Bearer ${token}`,
                         },
-                        body: JSON.stringify({ selector: { did: user.did }, limit: 1 }),
+                        body: JSON.stringify({ did: user.did, limit: 1 }),
                     });
                     if (listRes.ok) {
                         const data = await listRes.json();

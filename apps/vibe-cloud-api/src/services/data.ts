@@ -164,6 +164,9 @@ export class DataService {
         // 2) query = { selector: { fieldA: ... }, limit, ... }
         const { expand, maxCacheAge, global, selector: nestedSelector, ...rest } = query || {};
         const selector = nestedSelector && typeof nestedSelector === "object" ? nestedSelector : rest || {};
+        if (nestedSelector && typeof nestedSelector === "object") {
+            console.warn("[DataService.readOnce] Deprecated nested selector shape detected. Prefer flat query shape.", { type });
+        }
 
         if (global) {
             console.log(`[data.ts] Performing global query for type '${type}' with selector:`, selector);
