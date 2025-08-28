@@ -816,11 +816,12 @@ const app = new Elysia()
                     set.status = 404;
                     return { error: "User not found" };
                 }
-                const user: User = {
+                const user: User & { coverUrl?: string } = {
                     did: userDoc.did,
                     instanceId: userDoc.instanceId,
                     displayName: userDoc.displayName,
                     pictureUrl: userDoc.pictureUrl || userDoc.profilePictureUrl,
+                    coverUrl: (userDoc as any).coverUrl,
                 };
                 return { user };
             })
@@ -831,14 +832,17 @@ const app = new Elysia()
                         set.status = 401;
                         return { error: "Unauthorized" };
                     }
+                    // Persist identity fields (supports displayName, pictureUrl, coverUrl)
                     const user = await identityService.updateUser(profile.sub, body);
 
+                    // Upsert canonical profile document
                     await dataService.update(
                         "profiles",
                         {
                             _id: "profiles/me",
                             name: body.displayName,
                             pictureUrl: body.pictureUrl,
+                            coverUrl: body.coverUrl,
                             did: user.did,
                         },
                         profile as JwtPayload
@@ -850,6 +854,7 @@ const app = new Elysia()
                     body: t.Object({
                         displayName: t.Optional(t.String()),
                         pictureUrl: t.Optional(t.String()),
+                        coverUrl: t.Optional(t.String()),
                     }),
                 }
             )
@@ -1619,8 +1624,27 @@ const app = new Elysia()
                             set.status = 404;
                             return { error: "User not found" };
                         }
-                        const db = dataService.getDb(user.instanceId);
-                        const doc = await db.get(ref);
+                        // Use DataService.readOnce to ensure an authenticated Couch session and proper access handling
+                        const result = await dataService.readOnce<any>(
+                            "profiles",
+                            { selector: { _id: ref }, limit: 1 },
+                            { sub: user.did, instanceId: user.instanceId } as JwtPayload
+                        );
+                        let doc = Array.isArray(result?.docs) ? result.docs[0] : null;
+                        // Fallback: Some environments may not store the profile at "profiles/me".
+                        // Try to find any profiles doc for this DID.
+                        if (!doc) {
+                            const byDid = await dataService.readOnce<any>(
+                                "profiles",
+                                { selector: { did: user.did }, limit: 1 },
+                                { sub: user.did, instanceId: user.instanceId } as JwtPayload
+                            );
+                            doc = Array.isArray(byDid?.docs) ? byDid.docs[0] : null;
+                        }
+                        if (!doc) {
+                            set.status = 404;
+                            return { error: "Document not found" };
+                        }
                         return doc;
                     } catch (error) {
                         console.error("Error expanding document:", error);

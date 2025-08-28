@@ -159,7 +159,11 @@ export class DataService {
 
     async readOnce<T extends Document>(type: string, query: any, user: JwtPayload): Promise<ReadOnceApiResponse<T>> {
         await this.reauthenticate();
-        const { expand, maxCacheAge, global, ...selector } = query;
+        // Support both shapes:
+        // 1) query = { fieldA: ..., fieldB: ... }
+        // 2) query = { selector: { fieldA: ... }, limit, ... }
+        const { expand, maxCacheAge, global, selector: nestedSelector, ...rest } = query || {};
+        const selector = nestedSelector && typeof nestedSelector === "object" ? nestedSelector : rest || {};
 
         if (global) {
             console.log(`[data.ts] Performing global query for type '${type}' with selector:`, selector);
@@ -184,6 +188,27 @@ export class DataService {
         } else {
             const db = this.getDb(user.instanceId);
             const dbName = getUserDbName(user.instanceId);
+
+            // Fast path: direct _id lookup uses primary index and avoids Mango index issues
+            if (selector && typeof selector === "object" && (selector as any)._id) {
+                try {
+                    const doc = await db.get((selector as any)._id);
+                    if (await this.verifyAccess(doc, user, "read", dbName)) {
+                        const docs = [doc] as any[];
+                        if (expand && expand.length > 0) {
+                            const edocs = await this._expand(docs, expand, user, maxCacheAge);
+                            return { docs: edocs as T[] };
+                        }
+                        return { docs: docs as T[] };
+                    }
+                    return { docs: [] as T[] };
+                } catch (e: any) {
+                    // Not found or unauthorized; return empty result
+                    return { docs: [] as T[] };
+                }
+            }
+
+            // General Mango find with type constraint
             const dbQuery = {
                 selector: {
                     ...selector,

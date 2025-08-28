@@ -90,21 +90,42 @@ export default function ProfilePage() {
         run();
     }, [apiBase, token]);
 
-    // Load cover from profiles/me (no auth required for expand)
+    // Load cover: try expand first, then authorized fallback by did
     useEffect(() => {
         const run = async () => {
             if (!user?.did) return;
             try {
+                // 1) Try unauthenticated expand for canonical id profiles/me
                 const res = await fetch(`${apiBase}/data/expand?did=${encodeURIComponent(user.did)}&ref=${encodeURIComponent("profiles/me")}`);
-                if (!res.ok) return;
-                const doc = await res.json();
-                if (doc && typeof doc === "object" && (doc as any).coverUrl) {
-                    setUser((prev) => (prev ? { ...prev, coverUrl: (doc as any).coverUrl as string } : prev));
+                if (res.ok) {
+                    const doc = await res.json();
+                    if (doc && typeof doc === "object" && (doc as any).coverUrl) {
+                        setUser((prev) => (prev ? { ...prev, coverUrl: (doc as any).coverUrl as string } : prev));
+                        return;
+                    }
+                }
+                // 2) Fallback: authorized query by did (handles missing profiles/me doc)
+                if (token) {
+                    const listRes = await fetch(`${apiBase}/data/types/profiles/query`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({ selector: { did: user.did }, limit: 1 }),
+                    });
+                    if (listRes.ok) {
+                        const data = await listRes.json();
+                        const first = Array.isArray((data as any)?.docs) ? (data as any).docs[0] : null;
+                        if (first && (first as any).coverUrl) {
+                            setUser((prev) => (prev ? { ...prev, coverUrl: (first as any).coverUrl as string } : prev));
+                        }
+                    }
                 }
             } catch {}
         };
         run();
-    }, [apiBase, user?.did]);
+    }, [apiBase, user?.did, token]);
 
     // Load cookie user (displayName/picture)
     useEffect(() => {
