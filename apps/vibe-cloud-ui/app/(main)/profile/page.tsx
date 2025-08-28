@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { appManifest } from "../../lib/manifest";
-import { Squircle } from "vibe-react";
+import { Squircle, ImagePicker } from "vibe-react";
 import { usePageTopBar } from "../components/PageTopBarContext";
-import { User as UserIcon } from "lucide-react";
+import { User as UserIcon, Camera } from "lucide-react";
 
 type BearerUser = {
     did: string;
@@ -26,6 +26,11 @@ export default function ProfilePage() {
     const [cookieUser, setCookieUser] = useState<CookieUser | null>(null);
     const [error, setError] = useState<string | null>(null);
     const { setContent } = usePageTopBar();
+
+    // Image picker state
+    const [pickerOpen, setPickerOpen] = useState(false);
+    const [pickerMode, setPickerMode] = useState<"avatar" | "cover">("avatar");
+    const [saving, setSaving] = useState(false);
 
     // Helpers
     const copy = async (text?: string) => {
@@ -85,6 +90,22 @@ export default function ProfilePage() {
         run();
     }, [apiBase, token]);
 
+    // Load cover from profiles/me (no auth required for expand)
+    useEffect(() => {
+        const run = async () => {
+            if (!user?.did) return;
+            try {
+                const res = await fetch(`${apiBase}/data/expand?did=${encodeURIComponent(user.did)}&ref=${encodeURIComponent("profiles/me")}`);
+                if (!res.ok) return;
+                const doc = await res.json();
+                if (doc && typeof doc === "object" && (doc as any).coverUrl) {
+                    setUser((prev) => (prev ? { ...prev, coverUrl: (doc as any).coverUrl as string } : prev));
+                }
+            } catch {}
+        };
+        run();
+    }, [apiBase, user?.did]);
+
     // Load cookie user (displayName/picture)
     useEffect(() => {
         const run = async () => {
@@ -109,27 +130,111 @@ export default function ProfilePage() {
     const AVATAR_SIZE = 160;
     const OVERLAP = Math.round(AVATAR_SIZE * 0.25); // 25% overlap
 
+    const openPicker = (mode: "avatar" | "cover") => {
+        setPickerMode(mode);
+        setPickerOpen(true);
+    };
+
+    const applyAvatarUrl = async (url: string) => {
+        if (!token) return;
+        setSaving(true);
+        try {
+            const res = await fetch(`${apiBase}/users/me`, {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ pictureUrl: url }),
+            });
+            if (!res.ok) throw new Error(`Failed to update avatar (${res.status})`);
+            // Optimistically update UI
+            setUser((prev) => (prev ? { ...prev, pictureUrl: url } : prev));
+            setCookieUser((prev) => (prev ? { ...prev, pictureUrl: url } : prev));
+        } catch (e: any) {
+            setError(e?.message || "Failed to update avatar");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const applyCoverUrl = async (url: string) => {
+        if (!token || !user?.did) return;
+        setSaving(true);
+        try {
+            // Upsert profiles/me with coverUrl via data API
+            const res = await fetch(`${apiBase}/data/types/profiles`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ _id: "profiles/me", coverUrl: url, did: user.did }),
+            });
+            if (!res.ok) throw new Error(`Failed to update cover (${res.status})`);
+            setUser((prev) => (prev ? { ...prev, coverUrl: url } : prev));
+        } catch (e: any) {
+            setError(e?.message || "Failed to update cover");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const onPickerSelect = async (files: any[]) => {
+        const f = Array.isArray(files) ? files[0] : null;
+        if (!f) {
+            setPickerOpen(false);
+            return;
+        }
+        const url: string | undefined = f.url || f.thumbnailUrl;
+        if (!url) {
+            setError("Selected image has no accessible URL");
+            setPickerOpen(false);
+            return;
+        }
+        if (pickerMode === "avatar") {
+            await applyAvatarUrl(url);
+        } else {
+            await applyCoverUrl(url);
+        }
+        setPickerOpen(false);
+    };
+
     return (
         <main className="w-full">
             <section className="max-w-5xl">
                 {error && <div className="rounded-md border border-red-300 bg-red-50 text-red-800 p-3 text-sm mb-3">{error}</div>}
 
                 {/* Cover */}
-                <div
-                    className={[
-                        "w-full rounded-xl overflow-hidden",
-                        coverImage ? "bg-cover bg-center" : "bg-gradient-to-r from-purple-100 to-blue-100 dark:from-purple-900/30 dark:to-blue-900/30",
-                        "h-48 md:h-64 lg:aspect-[16/4]",
-                    ].join(" ")}
-                    style={coverStyle}
-                    aria-hidden="true"
-                />
+                <div className="relative group">
+                    <div
+                        className={[
+                            "w-full rounded-xl overflow-hidden",
+                            coverImage ? "bg-cover bg-center" : "bg-gradient-to-r from-purple-100 to-blue-100 dark:from-purple-900/30 dark:to-blue-900/30",
+                            "h-48 md:h-64 lg:aspect-[16/4]",
+                        ].join(" ")}
+                        style={coverStyle}
+                        aria-hidden="true"
+                    />
+                    <button
+                        type="button"
+                        onClick={() => openPicker("cover")}
+                        className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        aria-label="Change cover image"
+                        title="Change cover image"
+                    >
+                        <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-background/80 border border-border shadow-sm text-sm">
+                            <Camera className="w-4 h-4" />
+                            <span>Change cover</span>
+                        </span>
+                    </button>
+                </div>
 
                 {/* Info: avatar on the left, name + DID on the right, under cover.
                     Avatar overlaps the cover by ~25% of its height. */}
                 <div className="px-4 md:px-6 pb-6">
                     <div className="flex items-start gap-4">
-                        <div className="shrink-0" style={{ marginTop: -OVERLAP }}>
+                        <div className="shrink-0 relative group" style={{ marginTop: -OVERLAP }}>
                             <Squircle
                                 imageUrl={resolvedPicture || undefined}
                                 size={AVATAR_SIZE}
@@ -137,6 +242,15 @@ export default function ProfilePage() {
                             >
                                 {resolvedDisplayName?.[0]}
                             </Squircle>
+                            <button
+                                type="button"
+                                onClick={() => openPicker("avatar")}
+                                className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-background/90 border border-border rounded-full p-2 shadow-sm"
+                                aria-label="Change profile picture"
+                                title="Change profile picture"
+                            >
+                                <Camera className="w-4 h-4" />
+                            </button>
                         </div>
 
                         <div className="min-w-0 mt-2">
@@ -172,9 +286,21 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="mt-2 text-xs text-foreground/60">
-                    Editing profile is coming soon. You'll be able to update your display name, avatar and cover here.
+                    Click the camera icons to update your profile picture and cover image.
+                    {saving ? <span className="ml-2 text-foreground/50">(Saving…)</span> : null}
                 </div>
             </section>
+
+            {/* Image Picker Dialog */}
+            <ImagePicker
+                open={pickerOpen}
+                onOpenChange={setPickerOpen}
+                onSelect={onPickerSelect}
+                accept="image/*"
+                selectionMode="single"
+                title={pickerMode === "avatar" ? "Choose profile picture" : "Choose cover image"}
+                allowUpload={true}
+            />
         </main>
     );
 }

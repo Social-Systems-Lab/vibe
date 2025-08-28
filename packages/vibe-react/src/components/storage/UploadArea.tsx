@@ -257,7 +257,6 @@ export function UploadArea({
       <div className="shrink-0">
         <Button
           type="button"
-          size="sm"
           className="bg-violet-600 text-white hover:bg-violet-600/90"
           onClick={() => inputRef.current?.click()}
           disabled={busy}

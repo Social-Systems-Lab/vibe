@@ -20,6 +20,9 @@ import {
   DialogDescription,
   DialogFooter,
   DialogClose,
+  Toggle,
+  ToggleGroup,
+  ToggleGroupItem
 } from "vibe-react";
 import {
   DownloadIcon,
@@ -34,6 +37,8 @@ import {
   MoreHorizontal,
   Search,
   SlidersHorizontal,
+  LayoutGrid,
+  List as ListIcon,
 } from "lucide-react";
 
 type FileDoc = {
@@ -69,6 +74,7 @@ export default function StoragePage() {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("newest");
+  const [view, setView] = useState<"table" | "grid">("table");
 
   // Preview modal
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -377,6 +383,71 @@ export default function StoragePage() {
     },
   ];
 
+  // Grid view components
+  const FileCard = ({ file }: { file: FileDoc }) => {
+    const [imgUrl, setImgUrl] = useState<string | null>(null);
+
+    useEffect(() => {
+      let cancelled = false;
+      (async () => {
+        if ((file.mimeType || "").startsWith("image/") && file.storageKey) {
+          try {
+            const u = await getPresignedUrl(file.storageKey);
+            if (!cancelled) setImgUrl(u || null);
+          } catch {}
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [file.storageKey, file.mimeType]);
+
+    return (
+      <div className="border rounded-lg overflow-hidden bg-background shadow-sm hover:shadow-md transition-shadow">
+        <div className="relative h-28 bg-accent/10">
+          {imgUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={imgUrl} alt={file.name || "preview"} className="w-full h-full object-cover" />
+          ) : (
+            <div className="h-full w-full flex items-center justify-center text-foreground/60 text-xs">No preview</div>
+          )}
+        </div>
+        <div className="p-2">
+          <div className="text-[10px] tracking-wide text-foreground/60">
+            {(mimeGroup(file.mimeType) || "").toUpperCase()}
+          </div>
+          <div className="font-medium truncate" title={file.name || ""}>
+            {file.name || "-"}
+          </div>
+          <div className="text-xs text-foreground/60">
+            {typeof file.size === "number" ? formatBytes(file.size) : "-"}
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <Button variant="outline" size="sm" aria-label="Preview" onClick={() => onPreview(file)}>
+              <EyeIcon className="size-4" />
+            </Button>
+            <Button variant="outline" size="sm" aria-label="Download" onClick={() => handleDownload(file.storageKey)}>
+              <DownloadIcon className="size-4" />
+            </Button>
+            <Button variant="destructive" size="sm" aria-label="Delete" onClick={() => deleteFile(file.storageKey)}>
+              <Trash2Icon className="size-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const FileGrid = ({ data }: { data: FileDoc[] }) => {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        {data.map((f) => (
+          <FileCard key={f._id || f.id || f.storageKey} file={f} />
+        ))}
+      </div>
+    );
+  };
+
   const FilterChip = ({
     value,
     label,
@@ -411,7 +482,47 @@ export default function StoragePage() {
             <div className="text-xs text-foreground/60">Manage your uploaded files and usage</div>
           </div>
           <div className="flex items-center gap-2">
-            {token && (
+              <div className="inline-flex rounded-md border border-border overflow-hidden">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label="Grid view"
+                  className={view === "grid" ? "bg-violet-600 text-white border-transparent hover:bg-violet-600/90" : "border-border"}
+                  onClick={() => setView("grid")}
+                >
+                  <LayoutGrid className="size-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label="Table view"
+                  className={view === "table" ? "bg-violet-600 text-white border-transparent hover:bg-violet-600/90" : "border-border"}
+                  onClick={() => setView("table")}
+                >
+                  <ListIcon className="size-4" />
+                </Button>
+              </div>
+              <div className="inline-flex rounded-md border border-border overflow-hidden">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label="Grid view"
+                  className={view === "grid" ? "bg-violet-600 text-white border-transparent hover:bg-violet-600/90" : "border-border"}
+                  onClick={() => setView("grid")}
+                >
+                  <LayoutGrid className="size-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label="Table view"
+                  className={view === "table" ? "bg-violet-600 text-white border-transparent hover:bg-violet-600/90" : "border-border"}
+                  onClick={() => setView("table")}
+                >
+                  <ListIcon className="size-4" />
+                </Button>
+              </div>
+                          {token && (
               <UploadArea
                 token={token}
                 apiBase={apiBase}
@@ -422,7 +533,7 @@ export default function StoragePage() {
                 }}
                 globalDrop
               />
-            )}
+            )}      
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" aria-label="More actions">
@@ -508,6 +619,38 @@ export default function StoragePage() {
               <option value="size-desc">Size (large first)</option>
               <option value="size-asc">Size (small first)</option>
             </select> */}
+
+                {/* <ToggleGroup variant="outline" type="single">
+                  <ToggleGroupItem value="bold" aria-label="Toggle bold">
+                    <LayoutGrid className="size-4" />
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="italic" aria-label="Toggle italic">
+                    <ListIcon className="size-4" />
+                  </ToggleGroupItem>
+                </ToggleGroup> */}
+
+              <div className="inline-flex rounded-md border border-border overflow-hidden">
+
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Grid view"
+                  className={view === "grid" ? "bg-violet-600 text-white border-transparent hover:bg-violet-600/90 rounded-none rounded-l-lg" : "rounded-none rounded-l-lg border-border"}
+                  onClick={() => setView("grid")}
+                >
+                  <LayoutGrid className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Table view"
+                  className={view === "table" ? "bg-violet-600 text-white border-transparent hover:bg-violet-600/90 rounded-none rounded-r-lg" : "rounded-none rounded-r-lg border-border"}
+                  onClick={() => setView("table")}
+                >
+                  <ListIcon className="size-4" />
+                </Button>
+              </div>
                           {token && (
               <UploadArea
                 token={token}
@@ -529,7 +672,13 @@ export default function StoragePage() {
           {files !== null && filtered.length === 0 && files.length > 0 && (
             <div className="text-sm text-foreground/60">No results match your filters.</div>
           )}
-          {files !== null && filtered.length > 0 && <DataTable columns={columns} data={filtered} pageSize={10} />}
+          {files !== null && filtered.length > 0 && (
+            view === "table" ? (
+              <DataTable columns={columns} data={filtered} pageSize={10} />
+            ) : (
+              <FileGrid data={filtered} />
+            )
+          )}
         </div>
 
         {/* Global drop affordance when using header upload */}
