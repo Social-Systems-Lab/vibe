@@ -31,6 +31,8 @@ export default function ProfilePage() {
     const [pickerOpen, setPickerOpen] = useState(false);
     const [pickerMode, setPickerMode] = useState<"avatar" | "cover">("avatar");
     const [saving, setSaving] = useState(false);
+    const [coverKey, setCoverKey] = useState<string | null>(null);
+    const [coverResolved, setCoverResolved] = useState<string | null>(null);
 
     // Helpers
     const copy = async (text?: string) => {
@@ -101,6 +103,7 @@ export default function ProfilePage() {
                     const doc = await res.json();
                     if (doc && typeof doc === "object" && (doc as any).coverUrl) {
                         setUser((prev) => (prev ? { ...prev, coverUrl: (doc as any).coverUrl as string } : prev));
+                        setCoverKey((doc as any).coverStorageKey ? String((doc as any).coverStorageKey) : null);
                         return;
                     }
                 }
@@ -119,6 +122,7 @@ export default function ProfilePage() {
                         const first = Array.isArray((data as any)?.docs) ? (data as any).docs[0] : null;
                         if (first && (first as any).coverUrl) {
                             setUser((prev) => (prev ? { ...prev, coverUrl: (first as any).coverUrl as string } : prev));
+                            setCoverKey((first as any).coverStorageKey ? String((first as any).coverStorageKey) : null);
                         }
                     }
                 }
@@ -126,6 +130,25 @@ export default function ProfilePage() {
         };
         run();
     }, [apiBase, user?.did, token]);
+
+    // Presign cover URL when we have a storage key
+    useEffect(() => {
+        const run = async () => {
+            if (!coverKey || !token || coverResolved) return;
+            try {
+                const pres = await fetch(`${apiBase}/storage/presign-get?key=${encodeURIComponent(coverKey)}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (pres.ok) {
+                    const data = await pres.json();
+                    if (data?.url) setCoverResolved(String(data.url));
+                }
+            } catch {}
+        };
+        // Delay a bit to avoid races with hub/session initialization
+        const t = setTimeout(run, 150);
+        return () => clearTimeout(t);
+    }, [apiBase, token, coverKey, coverResolved]);
 
     // Load cookie user (displayName/picture)
     useEffect(() => {
@@ -143,8 +166,8 @@ export default function ProfilePage() {
     const resolvedDisplayName = user?.displayName || cookieUser?.displayName || "Your profile";
     const resolvedPicture = cookieUser?.pictureUrl || user?.pictureUrl || null;
 
-    // Build cover styles: use user's coverUrl if present; otherwise gradient fallback via classes
-    const coverImage = user?.coverUrl || null;
+    // Build cover styles: prefer presigned URL, else user's coverUrl; otherwise gradient fallback via classes
+    const coverImage = coverResolved || user?.coverUrl || null;
     const coverStyle = coverImage ? { backgroundImage: `url(${coverImage})` } : undefined;
 
     // Avatar overlap calculations
@@ -179,21 +202,23 @@ export default function ProfilePage() {
         }
     };
 
-    const applyCoverUrl = async (url: string) => {
+    const applyCover = async (url: string, storageKey?: string) => {
         if (!token || !user?.did) return;
         setSaving(true);
         try {
-            // Upsert profiles/me with coverUrl via data API
+            // Upsert profiles/me with coverUrl and optional storageKey via data API
             const res = await fetch(`${apiBase}/data/types/profiles`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify({ _id: "profiles/me", coverUrl: url, did: user.did }),
+                body: JSON.stringify({ _id: "profiles/me", coverUrl: url, coverStorageKey: storageKey, did: user.did }),
             });
             if (!res.ok) throw new Error(`Failed to update cover (${res.status})`);
             setUser((prev) => (prev ? { ...prev, coverUrl: url } : prev));
+            if (storageKey) setCoverKey(storageKey);
+            setCoverResolved(url);
         } catch (e: any) {
             setError(e?.message || "Failed to update cover");
         } finally {
@@ -207,16 +232,32 @@ export default function ProfilePage() {
             setPickerOpen(false);
             return;
         }
-        const url: string | undefined = f.url || f.thumbnailUrl;
+        const storageKey: string | undefined = (f as any)?.storageKey;
+        let url: string | undefined = f.url || f.thumbnailUrl;
+
+        // If no URL is present but we have a storageKey, presign a GET URL
+        if (!url && storageKey && token) {
+            try {
+                const pres = await fetch(`${apiBase}/storage/presign-get?key=${encodeURIComponent(storageKey)}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (pres.ok) {
+                    const data = await pres.json();
+                    if (data?.url) url = String(data.url);
+                }
+            } catch {}
+        }
+
         if (!url) {
             setError("Selected image has no accessible URL");
             setPickerOpen(false);
             return;
         }
+
         if (pickerMode === "avatar") {
             await applyAvatarUrl(url);
         } else {
-            await applyCoverUrl(url);
+            await applyCover(url, storageKey);
         }
         setPickerOpen(false);
     };

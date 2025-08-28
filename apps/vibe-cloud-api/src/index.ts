@@ -1627,7 +1627,7 @@ const app = new Elysia()
                         // Use DataService.readOnce to ensure an authenticated Couch session and proper access handling
                         const result = await dataService.readOnce<any>(
                             "profiles",
-                            { selector: { _id: ref }, limit: 1 },
+                            {  _id: ref, limit: 1 },
                             { sub: user.did, instanceId: user.instanceId } as JwtPayload
                         );
                         let doc = Array.isArray(result?.docs) ? result.docs[0] : null;
@@ -1636,7 +1636,7 @@ const app = new Elysia()
                         if (!doc) {
                             const byDid = await dataService.readOnce<any>(
                                 "profiles",
-                                { selector: { did: user.did }, limit: 1 },
+                                { did: user.did, limit: 1 },
                                 { sub: user.did, instanceId: user.instanceId } as JwtPayload
                             );
                             doc = Array.isArray(byDid?.docs) ? byDid.docs[0] : null;

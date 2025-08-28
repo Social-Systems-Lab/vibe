@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { appManifest } from "../../lib/manifest";
+import { Button } from "vibe-react";
 
 type CertDoc = {
   _id?: string;
@@ -337,20 +338,6 @@ export default function CertificatesPage() {
       <section className="max-w-6xl">
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-2xl font-heading">Certificates</h1>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => void loadAll()}
-              disabled={loading || !token}
-              className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1.5 text-sm hover:bg-accent/20 transition disabled:opacity-50"
-            >
-              {loading ? "Refreshing…" : "Refresh"}
-            </button>
-            {myDid ? (
-              <span className="text-xs text-foreground/60">Signed in as {mask(myDid, 6, 6)}</span>
-            ) : (
-              <span className="text-xs text-foreground/60">Waiting for API token…</span>
-            )}
-          </div>
         </div>
 
         {error && (
@@ -371,13 +358,12 @@ export default function CertificatesPage() {
           ))}
 
           <div className="ml-auto">
-            <button
+            <Button
               onClick={() => setIssueOpen((v) => !v)}
               disabled={!myDid || !token}
-              className="inline-flex items-center rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
             >
               Issue Certificate
-            </button>
+            </Button>
           </div>
         </div>
 
