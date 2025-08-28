@@ -26,6 +26,32 @@ export default function _TailwindScanBridge() {
       <div className="fixed inset-0 z-[1000] pointer-events-none select-none" />
       <div className="absolute inset-0 bg-background/60 backdrop-blur-sm z-0" />
       <div className="flex items-center justify-center" />
+      {/* ImagePicker and Dialog representative classes */}
+      <div className="max-w-[720px] space-y-3 grid gap-3 grid-cols-3 col-span-full" />
+      <div className="rounded-md border border-dashed p-6 text-center mb-3 text-sm text-muted-foreground inline-block mt-4 text-xs" />
+      <div className="flex justify-end gap-2" />
+      {/* Dialog overlay/content data-state variants */}
+      <div className="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50" />
+      <div className="data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] translate-x-[-50%] translate-y-[-50%] bg-background rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg max-w-[calc(100%-2rem)]" />
+      {/* Button variants */}
+      <div className="inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium shadow-xs bg-primary text-primary-foreground hover:bg-primary/90" />
+      <div className="border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground" />
+      <div className="bg-secondary text-secondary-foreground hover:bg-secondary/80" />
+      {/* Selection rings and borders */}
+      <div className="ring-2 ring-primary border border-transparent hover:border-border" />
+
+      {/* Group hover + opacity transitions (used for hover camera overlays) */}
+      <div className="group relative">
+        <div className="opacity-0 group-hover:opacity-100 transition-opacity" />
+      </div>
+
+      {/* Pills and theme tokens used by overlays */}
+      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-background/80 border border-border shadow-sm text-sm" />
+
+      {/* Focus-visible ring tokens used by dialog/buttons */}
+      <div className="focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:border-ring outline-none" />
+
+      <div className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4" />
     </div>
   );
 }

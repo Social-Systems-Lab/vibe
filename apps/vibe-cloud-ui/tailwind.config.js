@@ -1,7 +1,14 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
     darkMode: ["class"],
-    content: ["./src/**/*.{ts,tsx}"],
+    content: [
+        "./app/**/*.{ts,tsx}",
+        "./components/**/*.{ts,tsx}",
+        "./pages/**/*.{ts,tsx}",
+        "./app/tw-scan-bridge.tsx",
+        "../../packages/vibe-react/src/**/*.{ts,tsx}",
+        "../../packages/vibe-react/dist/**/*.{js,jsx,ts,tsx}"
+    ],
     prefix: "",
     theme: {
         container: {
