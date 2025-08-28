@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -24,13 +24,14 @@ export interface ImagePickerProps {
 export type { FileItem } from "../lib/types";
 
 export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", selectionMode = "multiple", title = "Choose files", allowUpload = true }: ImagePickerProps) {
-    const { readOnce, upload, presignGet, user } = useVibe();
+    const { readOnce, upload, presignGet, user, apiBase } = useVibe();
     const [tab, setTab] = useState<TabKey>(allowUpload ? "my-files" : "my-files");
     const [loading, setLoading] = useState(false);
     const [files, setFiles] = useState<FileItem[]>([]);
     const [selected, setSelected] = useState<Record<string, FileItem>>({});
     const [localUploads, setLocalUploads] = useState<{ id: string; name: string; progress?: number }[]>([]);
     const [query, setQuery] = useState("");
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => {
         if (!open) return;
@@ -38,28 +39,92 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
         (async () => {
             setLoading(true);
             try {
-                const res = await readOnce<any>("files", {});
-                const docs = (res.docs || []) as any[];
+                const res = await readOnce<any>("files", { limit: 2000, selector: {} });
+                console.debug("ImagePicker: readOnce(files) response", res);
+                // Support multiple backend shapes: docs, items, results, rows, data.docs, arrays, etc.
+                const candidates = [
+                    (res as any)?.docs,
+                    (res as any)?.items,
+                    (res as any)?.results,
+                    (res as any)?.data?.docs,
+                    (res as any)?.data?.items,
+                    Array.isArray(res) ? res : undefined,
+                    (res as any)?.rows ? (res as any).rows.map((r: any) => r.doc || r.value || r) : undefined,
+                ].filter(Boolean);
+                let docs = (candidates[0] || []) as any[];
+                console.debug("ImagePicker: docs length", Array.isArray(docs) ? docs.length : -1);
+                // If hub DB_QUERY returns 0 docs (e.g., permission not granted), fall back to REST (like Storage page)
+                if (Array.isArray(docs) && docs.length === 0 && apiBase) {
+                    try {
+                        console.debug("ImagePicker: REST fallback via /hub/api-token + /data/types/files/query");
+                        const tokRes = await fetch(`${apiBase}/hub/api-token`, { credentials: "include" });
+                        if (tokRes.ok) {
+                            const tokData = await tokRes.json().catch(() => ({} as any));
+                            const bearer: string | undefined = (tokData as any)?.token;
+                            if (bearer) {
+                                const listRes = await fetch(`${apiBase}/data/types/files/query`, {
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json",
+                                        Authorization: `Bearer ${bearer}`,
+                                    },
+                                    body: JSON.stringify({}),
+                                });
+                                if (listRes.ok) {
+                                    const listData = await listRes.json().catch(() => ({} as any));
+                                    const restDocs = Array.isArray((listData as any)?.docs)
+                                        ? (listData as any).docs
+                                        : Array.isArray(listData)
+                                        ? (listData as any)
+                                        : [];
+                                    console.debug("ImagePicker: REST fallback docs length", restDocs.length);
+                                    if (restDocs.length > 0) {
+                                        docs = restDocs as any[];
+                                    }
+                                } else {
+                                    console.debug("ImagePicker: REST files query failed", listRes.status);
+                                }
+                            } else {
+                                console.debug("ImagePicker: No hub API token available");
+                            }
+                        } else {
+                            console.debug("ImagePicker: hub/api-token failed", tokRes.status);
+                        }
+                    } catch (err) {
+                        console.debug("ImagePicker: REST fallback failed", err);
+                    }
+                }
                 const normalized: FileItem[] = await Promise.all(
                     docs.map(async (d) => {
+                        const id =
+                            d.id ||
+                            d._id ||
+                            d.docId ||
+                            (d._id && typeof d._id === "object" && ((d._id as any).$id || (d._id as any).id)) ||
+                            crypto.randomUUID();
+                        const name = d.name || d.filename || d.title || (d as any).fileName;
+                        const mimeType = d.mimeType || d.type || (d as any).contentType;
+                        const size = d.size || (d as any).length || (d as any).bytes;
+                        const createdAt = d.createdAt || (d as any)._createdAt || (d as any).timestamp || (d as any).created || (d as any)._ts;
                         const item: FileItem = {
-                            id: d.id || d._id || d.docId || crypto.randomUUID(),
-                            name: d.name || d.filename || d.title,
-                            mimeType: d.mimeType || d.type,
-                            size: d.size,
-                            createdAt: d.createdAt || d._createdAt || d.timestamp,
-                            acl: d.acl,
+                            id,
+                            name,
+                            mimeType,
+                            size,
+                            createdAt,
+                            acl: (d as any).acl,
                         };
-                        if (d.url) {
-                            item.url = d.url;
-                        } else if (d.storageKey) {
+                        if ((d as any).url) {
+                            item.url = (d as any).url;
+                        } else if ((d as any).storageKey || (d as any).key) {
+                            const storageKey = (d as any).storageKey || (d as any).key;
                             try {
-                                const signed = await presignGet(d.storageKey, 300);
-                                item.url = signed?.url || signed;
+                                const signed = await presignGet(storageKey, 300);
+                                item.url = (signed as any)?.url || (signed as any);
                             } catch {}
-                            item.storageKey = d.storageKey;
+                            (item as any).storageKey = storageKey;
                         }
-                        if (d.thumbnailUrl) item.thumbnailUrl = d.thumbnailUrl;
+                        if ((d as any).thumbnailUrl || (d as any).thumbnail) item.thumbnailUrl = (d as any).thumbnailUrl || (d as any).thumbnail;
                         return item;
                     })
                 );
@@ -101,10 +166,16 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
     }
 
     async function handleFileInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-        const list = e.target.files;
+        // Capture the input element before awaiting to avoid pooled event target becoming null
+        const input = e.currentTarget;
+        const list = input?.files;
         if (!list || list.length === 0) return;
         await handleUploadFiles(list);
-        e.currentTarget.value = "";
+        try {
+            if (input) input.value = "";
+        } catch (err) {
+            console.debug("ImagePicker: failed to reset input value", err);
+        }
     }
 
     async function handleDrop(e: React.DragEvent) {
@@ -184,14 +255,34 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
     );
 
     const uploadView = (
-        <div className="rounded-md border border-dashed p-6 text-center" onDrop={handleDrop} onDragOver={preventDefaults} onDragEnter={preventDefaults} onDragLeave={preventDefaults}>
+        <div
+            className="rounded-md border border-dashed p-6 text-center cursor-pointer"
+            onDrop={handleDrop}
+            onDragOver={preventDefaults}
+            onDragEnter={preventDefaults}
+            onDragLeave={preventDefaults}
+            onClick={() => fileInputRef.current?.click()}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    fileInputRef.current?.click();
+                }
+            }}
+        >
             <p className="mb-3 text-sm text-muted-foreground">Drag and drop files here, or click to select</p>
-            <label className="inline-block">
-                <Input type="file" multiple accept={accept} onChange={handleFileInputChange} className="hidden" />
-                <Button variant="secondary" type="button">
-                    Choose files
-                </Button>
-            </label>
+            <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept={accept}
+                onChange={handleFileInputChange}
+                className="hidden"
+            />
+            <Button variant="secondary" type="button" onClick={() => fileInputRef.current?.click()}>
+                Choose files
+            </Button>
             {localUploads.length > 0 && <div className="mt-4 text-xs text-muted-foreground">{localUploads.length} file(s) uploading...</div>}
         </div>
     );

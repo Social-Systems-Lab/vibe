@@ -24,6 +24,7 @@ interface VibeContextType {
     upload: (file: File) => Promise<{ storageKey: string }>;
     presignPut: (name: string, mime?: string, size?: number, sha256?: string) => Promise<any>;
     presignGet: (storageKey: string, expires?: number) => Promise<any>;
+    apiBase: string;
 }
 
 const VibeContext = createContext<VibeContextType | undefined>(undefined);
@@ -139,6 +140,7 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
                 upload,
                 presignPut,
                 presignGet,
+                apiBase: (config.apiUrl || "").replace(/\/$/, ""),
             }}
         >
             {children}
