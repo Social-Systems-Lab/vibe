@@ -71,6 +71,18 @@ export class DataService {
         }
     }
 
+    private async ensureIndex(db: DocumentScope<any>, fields: string[], name: string) {
+        try {
+            await (db as any).createIndex({
+                index: { fields },
+                name,
+                type: "json",
+            });
+        } catch (e) {
+            // Ignore errors (e.g., index already exists or driver without createIndex)
+        }
+    }
+
     async write(type: string, data: any, user: JwtPayload) {
         await this.reauthenticate();
         const db = this.getDb(user.instanceId);
@@ -162,7 +174,7 @@ export class DataService {
         // Support both shapes:
         // 1) query = { fieldA: ..., fieldB: ... }
         // 2) query = { selector: { fieldA: ... }, limit, ... }
-        const { expand, maxCacheAge, global, selector: nestedSelector, ...rest } = query || {};
+        const { expand, maxCacheAge, global, selector: nestedSelector, limit, fields, sort, legacyIncludeMissingType, ...rest } = query || {};
         const selector = nestedSelector && typeof nestedSelector === "object" ? nestedSelector : rest || {};
         if (nestedSelector && typeof nestedSelector === "object") {
             console.warn("[DataService.readOnce] Deprecated nested selector shape detected. Prefer flat query shape.", { type });
@@ -212,17 +224,52 @@ export class DataService {
             }
 
             // General Mango find with type constraint
-            const dbQuery = {
-                selector: {
+            let dbQuery: any = { selector: {} };
+            if (legacyIncludeMissingType) {
+                // Broaden to include legacy "file-like" docs that may be missing type or storageKey
+                dbQuery.selector = {
+                    $or: [
+                        { ...(selector || {}), type: type },
+                        { ...(selector || {}), storageKey: { $exists: true } },
+                        { ...(selector || {}), mimeType: { $exists: true } },
+                        { ...(selector || {}), mime: { $exists: true } },
+                    ],
+                };
+                // Ensure indexes for the fields used in the $or to keep Pouch/Couch happy
+                await this.ensureIndex(db, ["type"], "idx_type");
+                await this.ensureIndex(db, ["storageKey"], "idx_storageKey");
+                await this.ensureIndex(db, ["mimeType"], "idx_mimeType");
+                await this.ensureIndex(db, ["mime"], "idx_mime");
+            } else {
+                dbQuery.selector = {
                     ...selector,
                     type: type,
-                },
-            };
-            await this.ensureTypeIndex(db);
+                };
+                await this.ensureTypeIndex(db);
+            }
+            if (typeof limit === "number" && isFinite(limit)) dbQuery.limit = Math.max(1, Math.min(limit, 20000));
+            if (Array.isArray(fields)) dbQuery.fields = fields;
+            if (Array.isArray(sort) || (sort && typeof sort === "object")) dbQuery.sort = sort as any;
             const result = await db.find(dbQuery);
 
+            let docsToProcess: any[] = result.docs as any[];
+
+            // Fallback: if querying "files" returns 0 results, scan all docs and filter heuristically.
+            // This helps surface legacy documents that may lack expected indexes/fields (e.g., missing "type").
+            if ((!Array.isArray(docsToProcess) || docsToProcess.length === 0) && type === "files") {
+                try {
+                    const listRes = await (db as any).list({ include_docs: true, limit: Math.min(typeof limit === "number" ? limit : 5000, 20000) });
+                    const allDocs = ((listRes?.rows as any[]) || []).map((r) => r?.doc).filter(Boolean);
+                    // Heuristic: treat docs as files if they have any of these indicators
+                    docsToProcess = allDocs.filter((d) => !!(d.storageKey || d.mimeType || d.mime || (d.name && d.size)));
+                } catch (e) {
+                    // ignore fallback failure; we'll return original (empty)
+                    docsToProcess = result.docs as any[];
+                }
+            }
+
             const accessibleDocs: T[] = [];
-            for (const doc of result.docs) {
+            for (const doc of docsToProcess) {
                 if (await this.verifyAccess(doc, user, "read", dbName)) {
                     accessibleDocs.push(doc as unknown as T);
                 }
@@ -436,7 +483,7 @@ export class DataService {
         return false;
     }
 
-    private async getUserCertificates(instanceId: string): Promise<Certificate[]> {
+    public async getUserCertificates(instanceId: string): Promise<Certificate[]> {
         try {
             const db = this.getDb(instanceId);
             await this.ensureTypeIndex(db);

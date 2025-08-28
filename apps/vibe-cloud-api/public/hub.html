@@ -425,10 +425,11 @@
                     case "DB_READ":
                         return await db.get(payload.id);
                     case "DB_QUERY":
-                        const { expand, maxCacheAge, ...selector } = payload;
+                        const { expand, limit, maxCacheAge, ...selector } = payload;
 
                         const findResult = await db.find({
                             selector: { ...selector, type: type },
+                            limit: limit || undefined,
                         });
 
                         if (expand && expand.length > 0) {

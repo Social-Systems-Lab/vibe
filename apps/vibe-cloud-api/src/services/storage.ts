@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import * as Minio from "minio";
 
 /**
@@ -34,6 +34,7 @@ export interface StorageProvider {
     presignGet?(bucket: string, key: string, expiresSeconds?: number): Promise<PresignGetResult>;
     download(bucket: string, key: string): Promise<{ stream: ReadableStream<any>; contentType?: string; contentLength?: number }>;
     statObject?(bucket: string, key: string): Promise<{ size?: number; contentType?: string } | null>;
+    listObjects?(bucket: string, prefix: string, maxKeys?: number): Promise<{ key: string; size?: number; contentType?: string }[]>;
 }
 
 // Minimal sanitizers/validators used server-side
@@ -151,6 +152,26 @@ export class MinioStorageProvider implements StorageProvider {
             return null;
         }
     }
+
+    async listObjects(bucket: string, prefix: string, maxKeys = 1000): Promise<{ key: string; size?: number; contentType?: string }[]> {
+        const out: { key: string; size?: number }[] = [];
+        const recursive = true;
+        const stream = this.client.listObjectsV2(bucket, prefix, recursive);
+        return new Promise((resolve, reject) => {
+            stream.on("data", (obj: any) => {
+                if (obj && obj.name) {
+                    out.push({ key: obj.name, size: obj.size });
+                    if (out.length >= maxKeys) {
+                        // stop consuming further
+                        try { (stream as any).destroy(); } catch {}
+                        resolve(out);
+                    }
+                }
+            });
+            stream.on("end", () => resolve(out));
+            stream.on("error", (err: any) => reject(err));
+        });
+    }
 }
 
 // Scaleway: S3-compatible signing
@@ -250,6 +271,19 @@ export class ScalewayStorageProvider implements StorageProvider {
             contentLength: response.ContentLength,
         };
     }
+
+    async listObjects(bucket: string, prefix: string, maxKeys = 1000): Promise<{ key: string; size?: number; contentType?: string }[]> {
+        const cmd = new ListObjectsV2Command({
+            Bucket: bucket,
+            Prefix: prefix,
+            MaxKeys: maxKeys,
+        });
+        const res: any = await this.client.send(cmd as any);
+        const contents = (res?.Contents as any[]) || [];
+        return contents
+            .filter((o) => o && o.Key)
+            .map((o) => ({ key: o.Key as string, size: typeof o.Size === "number" ? o.Size : undefined }));
+    }
 }
 
 export class StorageService {
@@ -288,6 +322,11 @@ export class StorageService {
     async statObject(bucket: string, key: string): Promise<{ size?: number; contentType?: string } | null> {
         if (!this.provider.statObject) return null;
         return this.provider.statObject(bucket, key);
+    }
+
+    async listObjects(bucket: string, prefix: string, maxKeys = 1000): Promise<{ key: string; size?: number; contentType?: string }[]> {
+        if (!this.provider.listObjects) return [];
+        return this.provider.listObjects(bucket, prefix, maxKeys);
     }
 
     /**

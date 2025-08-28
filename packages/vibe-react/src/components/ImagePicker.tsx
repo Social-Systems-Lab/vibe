@@ -8,6 +8,7 @@ import { useVibe } from "../index";
 import FilePreview from "./FilePreview";
 import { FileItem, SelectionMode } from "../lib/types";
 import { cn } from "../lib/utils";
+import { getStreamUrl } from "../lib/storage";
 
 type TabKey = "my-files" | "upload";
 
@@ -94,40 +95,38 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
                         console.debug("ImagePicker: REST fallback failed", err);
                     }
                 }
-                const normalized: FileItem[] = await Promise.all(
-                    docs.map(async (d) => {
-                        const id =
-                            d.id ||
-                            d._id ||
-                            d.docId ||
-                            (d._id && typeof d._id === "object" && ((d._id as any).$id || (d._id as any).id)) ||
-                            crypto.randomUUID();
-                        const name = d.name || d.filename || d.title || (d as any).fileName;
-                        const mimeType = d.mimeType || d.type || (d as any).contentType;
-                        const size = d.size || (d as any).length || (d as any).bytes;
-                        const createdAt = d.createdAt || (d as any)._createdAt || (d as any).timestamp || (d as any).created || (d as any)._ts;
-                        const item: FileItem = {
-                            id,
-                            name,
-                            mimeType,
-                            size,
-                            createdAt,
-                            acl: (d as any).acl,
-                        };
-                        if ((d as any).url) {
-                            item.url = (d as any).url;
-                        } else if ((d as any).storageKey || (d as any).key) {
-                            const storageKey = (d as any).storageKey || (d as any).key;
-                            try {
-                                const signed = await presignGet(storageKey, 300);
-                                item.url = (signed as any)?.url || (signed as any);
-                            } catch {}
-                            (item as any).storageKey = storageKey;
-                        }
-                        if ((d as any).thumbnailUrl || (d as any).thumbnail) item.thumbnailUrl = (d as any).thumbnailUrl || (d as any).thumbnail;
-                        return item;
-                    })
-                );
+                        const normalized: FileItem[] = await Promise.all(
+                            docs.map(async (d) => {
+                                const id =
+                                    d.id ||
+                                    d._id ||
+                                    d.docId ||
+                                    (d._id && typeof d._id === "object" && ((d._id as any).$id || (d._id as any).id)) ||
+                                    crypto.randomUUID();
+                                const name = d.name || d.filename || d.title || (d as any).fileName;
+                                const mimeType = d.mimeType || d.type || (d as any).contentType;
+                                const size = d.size || (d as any).length || (d as any).bytes;
+                                const createdAt = d.createdAt || (d as any)._createdAt || (d as any).timestamp || (d as any).created || (d as any)._ts;
+                                const item: FileItem = {
+                                    id,
+                                    name,
+                                    mimeType,
+                                    size,
+                                    createdAt,
+                                    acl: (d as any).acl,
+                                };
+                                const storageKey = (d as any).storageKey || (d as any).key;
+                                if (storageKey) {
+                                    (item as any).storageKey = storageKey;
+                                    // Prefer first-party stream URL for previews
+                                    item.url = getStreamUrl(apiBase, storageKey);
+                                } else if ((d as any).url) {
+                                    item.url = (d as any).url;
+                                }
+                                if ((d as any).thumbnailUrl || (d as any).thumbnail) item.thumbnailUrl = (d as any).thumbnailUrl || (d as any).thumbnail;
+                                return item;
+                            })
+                        );
                 if (!abort) setFiles(normalized);
             } catch (e) {
                 console.error("ImagePicker: failed to list files", e);
@@ -222,12 +221,8 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
                 const up = (await upload(f as File)) as { storageKey: string; file?: { id?: string; name?: string; mimeType?: string; size?: number } };
                 const storageKey = up.storageKey;
 
-                // 2) Get a temporary viewing URL
-                let url: string | undefined;
-                try {
-                    const signed = await presignGet(storageKey, 300);
-                    url = (signed as any)?.url || (signed as any);
-                } catch {}
+                // 2) Derive a stable preview URL (first-party stream)
+                const url: string | undefined = getStreamUrl(apiBase, storageKey);
 
                 const created = up.file;
                 const item: FileItem = {

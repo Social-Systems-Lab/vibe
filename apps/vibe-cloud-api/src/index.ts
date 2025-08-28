@@ -16,6 +16,7 @@ import nano from "nano";
 import { randomBytes, createHash } from "crypto";
 import { proxyRequest } from "./lib/proxy";
 import { GlobalFeedService } from "./services/global-feed";
+import { allowRead, isKeyInInstance } from "./lib/acl";
 
 const globalFeedService = new GlobalFeedService();
 
@@ -47,6 +48,14 @@ const storageProvider =
 const storageService = new StorageService(storageProvider);
 const quotaService = new QuotaService();
 const STORAGE_BUCKET = process.env.STORAGE_BUCKET_NAME || process.env.SCALEWAY_BUCKET_NAME!;
+
+// TTL and caching policy (configurable via env)
+const PRESIGN_DEFAULT_TTL_SECONDS = Number(process.env.PRESIGN_DEFAULT_TTL_SECONDS ?? 300);
+const PRESIGN_MAX_TTL_SECONDS = Number(process.env.PRESIGN_MAX_TTL_SECONDS ?? 3600);
+const PRESIGN_OWNER_TTL_SECONDS = Number(process.env.PRESIGN_OWNER_TTL_SECONDS ?? 86400);
+const PRESIGN_FORCE_TTL_FOR_OWNER = (process.env.PRESIGN_FORCE_TTL_FOR_OWNER ?? "false") === "true";
+const STREAM_PRIVATE_MAX_AGE_SECONDS = Number(process.env.STREAM_PRIVATE_MAX_AGE_SECONDS ?? 3600);
+const STREAM_PUBLIC_MAX_AGE_SECONDS = Number(process.env.STREAM_PUBLIC_MAX_AGE_SECONDS ?? 86400);
 
 const dataService = new DataService(
     {
@@ -131,7 +140,8 @@ const app = new Elysia()
     }))
     .get("/hub.html", async () => {
         const hubHtml = await Bun.file("public/hub.html").text();
-        const couchDbUrl = process.env.COUCHDB_PUBLIC_URL!;
+        // Use public Couch URL if provided, else fall back to internal COUCHDB_URL
+        const couchDbUrl = process.env.COUCHDB_PUBLIC_URL || process.env.COUCHDB_URL!;
         const replacedHtml = hubHtml.replace("__COUCHDB_URL__", couchDbUrl);
         return new Response(replacedHtml, {
             headers: { "Content-Type": "text/html" },
@@ -1013,7 +1023,7 @@ const app = new Elysia()
                         // Build enriched metadata similar to legacy client shape
                         const nowIso = new Date().toISOString();
                         const ext = typeof cleanName === "string" && cleanName.includes(".") ? cleanName.split(".").pop() : undefined;
-                        const type = (finalMime || "").startsWith("image/")
+                        const category = (finalMime || "").startsWith("image/")
                             ? "image"
                             : (finalMime || "").startsWith("video/")
                             ? "video"
@@ -1036,10 +1046,12 @@ const app = new Elysia()
                                 description: cleanDesc,
                                 tags: cleanTags ?? [],
                                 acl: cleanAcl,
+                                // namespace and classification
+                                type: "files",
+                                category,
                                 // legacy/compat fields
                                 ext,
                                 mime: finalMime,
-                                type,
                                 collections: [],
                                 createdAt: nowIso,
                                 updatedAt: nowIso,
@@ -1177,54 +1189,90 @@ const app = new Elysia()
             // Presign GET unchanged (kept above)
             .post(
                 "/presign-get",
-                async ({ profile, body, set, storageService, request }) => {
+                async ({ profile, body, set, storageService, request, dataService }) => {
                     if (!profile) {
                         set.status = 401;
                         return { error: "Unauthorized" };
                     }
-                    const { storageKey, expires } = body;
+                    const { storageKey, expires, appId, origin } = body as any;
                     if (!storageKey) {
                         set.status = 400;
                         return { error: "Missing storageKey" };
                     }
+                    if (!isKeyInInstance(storageKey, (profile as any).instanceId)) {
+                        set.status = 403;
+                        return { error: "forbidden_storageKey" };
+                    }
+
                     const bucket = STORAGE_BUCKET;
-                    const ttl = Math.min(Math.max(expires ?? 300, 60), 3600);
 
                     const urlObj = new URL(request.url);
                     const debug = urlObj.searchParams.get("debug") === "1";
 
                     try {
-                        const stat = await storageService.statObject(bucket, storageKey);
+                        // Load file doc for ACL checks
+                        const existing = await dataService.readOnce("files", { selector: { storageKey }, limit: 1 }, profile as JwtPayload);
+                        const doc = (existing as any)?.docs?.[0];
+                        if (!doc) {
+                            set.status = 404;
+                            return debug ? { error: "NoSuchKey", storageKey, bucket } : { error: "NoSuchKey", storageKey };
+                        }
+
+                        // TTL policy
+                        const requested = Number(expires ?? PRESIGN_DEFAULT_TTL_SECONDS);
+                        const clamped = Math.min(Math.max(isFinite(requested) ? requested : PRESIGN_DEFAULT_TTL_SECONDS, 60), PRESIGN_MAX_TTL_SECONDS);
+                        let ttl = clamped;
+                        const isOwner = (doc?.ownerDid || doc?.did) && (doc.ownerDid || doc.did) === (profile as any).sub;
+                        if (isOwner && !PRESIGN_FORCE_TTL_FOR_OWNER) {
+                            ttl = Math.min(PRESIGN_OWNER_TTL_SECONDS, PRESIGN_MAX_TTL_SECONDS);
+                        }
+
+                        // ACL evaluation
+                        const allowed = await allowRead(profile as any, doc, {
+                            appIdOrOrigin: (appId as string) || (origin as string),
+                            services: { identityService, dataService },
+                        });
+                        if (!allowed) {
+                            set.status = 403;
+                            return { error: "forbidden" };
+                        }
+
+                        // Try provider presign
+                        const res = await storageService.presignGet(bucket, storageKey, ttl);
+
+                        // Prepare an optional public URL for debug/compat
                         let publicURL: string | undefined;
                         try {
                             publicURL = await storageService.getPublicURL(bucket, storageKey);
                         } catch {}
 
-                        if (!stat) {
-                            set.status = 404;
-                            return debug ? { error: "NoSuchKey", storageKey, bucket, publicURL } : { error: "NoSuchKey", storageKey };
-                        }
-
-                        const res = await storageService.presignGet(bucket, storageKey, ttl);
-
-                        if (res.strategy === "presigned") {
+                        if (res.strategy === "presigned" && res.url) {
                             if (debug) {
                                 return { strategy: "debug", bucket, storageKey, presignedURL: res.url, publicURL, expiresIn: ttl };
                             }
-                            return { strategy: "presigned", url: res.url, expiresIn: ttl };
+                            return { url: res.url, expiresIn: ttl };
                         }
 
+                        // Fallback: if public URL might work (public visibility), expose it in debug or as a last resort
                         if (debug) {
                             return { strategy: "debug", bucket, storageKey, presignedURL: undefined, publicURL, expiresIn: ttl };
                         }
-                        return { strategy: "public-or-server" };
+                        // No direct URL available
+                        return { error: "no_presigned_url_available" };
                     } catch (e: any) {
                         console.error("[/storage/presign-get] error:", e);
                         set.status = 500;
                         return { error: "Failed to presign download" };
                     }
                 },
-                { body: t.Object({ storageKey: t.String(), expires: t.Optional(t.Number()) }) }
+                {
+                    body: t.Object({
+                        storageKey: t.String(),
+                        expires: t.Optional(t.Number()),
+                        appId: t.Optional(t.String()),
+                        origin: t.Optional(t.String()),
+                    }),
+                }
             )
             // Commit endpoint: create files doc after presigned PUT with server-side override of size/mime and sanitization
             .post(
@@ -1284,7 +1332,7 @@ const app = new Elysia()
                         // Persist metadata document with enriched fields (compat with earlier client-written docs)
                         const nowIso = new Date().toISOString();
                         const ext = typeof cleanName === "string" && cleanName.includes(".") ? cleanName.split(".").pop() : undefined;
-                        const type = (finalMime || "").startsWith("image/")
+                        const category = (finalMime || "").startsWith("image/")
                             ? "image"
                             : (finalMime || "").startsWith("video/")
                             ? "video"
@@ -1307,10 +1355,12 @@ const app = new Elysia()
                                 description: cleanDesc,
                                 tags: cleanTags ?? [],
                                 acl: cleanAcl,
+                                // namespace and classification
+                                type: "files",
+                                category,
                                 // legacy/compat fields
                                 ext,
                                 mime: finalMime,
-                                type,
                                 collections: [],
                                 createdAt: nowIso,
                                 updatedAt: nowIso,
@@ -1410,7 +1460,302 @@ const app = new Elysia()
                     body: t.Object({ storageKey: t.String() }),
                 }
             )
+            .post(
+                "/backfill-files-type",
+                async ({ profile, set, dataService, body }) => {
+                    if (!profile) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    try {
+                        const db = dataService.getDb(profile.instanceId);
+                        const dryRun = !!(body && (body as any).dryRun);
+                        const selector = { storageKey: { $exists: true }, type: { $exists: false } } as any;
+                        const result = await (db as any).find({ selector, limit: 10000 });
+                        const legacyDocs = (result?.docs as any[]) || [];
+                        if (dryRun) {
+                            return { found: legacyDocs.length, sampleIds: legacyDocs.slice(0, 10).map((d: any) => d._id) };
+                        }
+                        const updatedAtIso = new Date().toISOString();
+                        const updatedDocs = legacyDocs.map((d: any) => {
+                            const mime = d.mimeType || d.mime;
+                            let category = d.category;
+                            if (!category) {
+                                category =
+                                    (mime || "").startsWith("image/") ? "image" :
+                                    (mime || "").startsWith("video/") ? "video" :
+                                    (mime || "").startsWith("audio/") ? "audio" :
+                                    (mime || "").includes("pdf") || (mime || "").includes("word") || (mime || "").includes("excel") || (mime || "").includes("text") ? "doc" :
+                                    "other";
+                            }
+                            return { ...d, type: "files", category, updatedAt: updatedAtIso };
+                        });
+                        if (updatedDocs.length === 0) return { updated: 0 };
+                        const bulkRes = await (db as any).bulk({ docs: updatedDocs });
+                        const ok = bulkRes.filter((r: any) => !r.error).length;
+                        const errors = bulkRes.filter((r: any) => r.error);
+                        return { updated: ok, errors };
+                    } catch (e: any) {
+                        set.status = 500;
+                        return { error: "Backfill failed", details: e?.message };
+                    }
+                },
+                {
+                    body: t.Object({
+                        dryRun: t.Optional(t.Boolean()),
+                    }),
+                }
+            )
+            .get(
+                "/debug/files-scan",
+                async ({ profile, dataService, set }) => {
+                    if (!profile) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    try {
+                        const names = await dataService.getAllUserDbNames();
+                        const results: any[] = [];
+                        for (const dbName of names) {
+                            const instanceId = dbName.replace(/^userdb-/, "");
+                            try {
+                                const db = dataService.getDb(instanceId);
+                                // Use Mango if available, else fallback to list
+                                let count = 0;
+                                let sample: any[] = [];
+                                try {
+                                    await (db as any).createIndex({ index: { fields: ["type"] }, name: "idx_type", type: "json" });
+                                } catch {}
+                                try {
+                                    const r = await (db as any).find({ selector: { type: "files" }, limit: 10 });
+                                    count = (r?.docs?.length as number) || 0;
+                                    sample = (r?.docs || []).map((d: any) => ({ _id: d._id, name: d.name, storageKey: d.storageKey }));
+                                    // Try to get a true total count cheaply via list (best-effort)
+                                    try {
+                                        const full = await (db as any).find({ selector: { type: "files" }, limit: 1_000_000 });
+                                        count = (full?.docs?.length as number) || count;
+                                    } catch {}
+                                } catch {
+                                    const lst = await (db as any).list({ include_docs: true, limit: 100000 });
+                                    const docs = ((lst?.rows as any[]) || []).map((r) => r?.doc).filter(Boolean);
+                                    const files = docs.filter((d: any) => d?.type === "files");
+                                    count = files.length;
+                                    sample = files.slice(0, 10).map((d: any) => ({ _id: d._id, name: d.name, storageKey: d.storageKey }));
+                                }
+                                results.push({ dbName, instanceId, filesCount: count, sample });
+                            } catch (e) {
+                                results.push({ dbName, instanceId, error: "scan_failed" });
+                            }
+                        }
+                        return { results };
+                    } catch (e: any) {
+                        set.status = 500;
+                        return { error: "scan_failed", details: e?.message };
+                    }
+                }
+            )
+            .get(
+                "/debug/list-objects",
+                async ({ profile, storageService, set }) => {
+                    if (!profile) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    try {
+                        const prefix = `u/${profile.instanceId}/`;
+                        const bucket = STORAGE_BUCKET;
+                        const objs = await storageService.listObjects(bucket, prefix, 2000);
+                        return { bucket, prefix, count: objs.length, sample: objs.slice(0, 15) };
+                    } catch (e: any) {
+                        set.status = 500;
+                        return { error: "list_failed", details: e?.message };
+                    }
+                }
+            )
+            .post(
+                "/reindex-from-storage",
+                async ({ profile, set, dataService, storageService, body }) => {
+                    if (!profile) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+                    try {
+                        const dryRun = !!(body && (body as any).dryRun);
+                        const max = Math.min(Math.max(Number((body as any)?.max ?? 1000), 1), 5000);
+                        const prefix = `u/${profile.instanceId}/`;
+                        const bucket = STORAGE_BUCKET;
+
+                        // List objects under this tenant prefix
+                        const objects = await storageService.listObjects(bucket, prefix, max);
+
+                        let created = 0;
+                        const missing: string[] = [];
+                        const ensured: { key: string; id?: string }[] = [];
+
+                        for (const obj of objects) {
+                            const storageKey = obj.key;
+                            // Skip "directory" placeholders if any
+                            if (!storageKey || storageKey.endsWith("/")) continue;
+
+                            // Does a files doc already exist?
+                            const existing = await dataService.readOnce("files", { selector: { storageKey }, limit: 1 }, profile as JwtPayload);
+                            const doc = (existing as any)?.docs?.[0];
+                            if (doc) {
+                                ensured.push({ key: storageKey, id: doc._id || doc.id });
+                                continue;
+                            }
+
+                            missing.push(storageKey);
+                            if (dryRun) continue;
+
+                            // Stat to derive mime/size when possible
+                            const stat = await storageService.statObject(bucket, storageKey);
+                            const name = storageKey.split("/").pop() || "file";
+                            const finalMime = stat?.contentType;
+                            const size = stat?.size;
+
+                            const category = (finalMime || "").startsWith("image/")
+                                ? "image"
+                                : (finalMime || "").startsWith("video/")
+                                ? "video"
+                                : (finalMime || "").startsWith("audio/")
+                                ? "audio"
+                                : (finalMime || "").includes("pdf") ||
+                                  (finalMime || "").includes("word") ||
+                                  (finalMime || "").includes("excel") ||
+                                  (finalMime || "").includes("text")
+                                ? "doc"
+                                : "other";
+
+                            const nowIso = new Date().toISOString();
+                            const ext = typeof name === "string" && name.includes(".") ? name.split(".").pop() : undefined;
+
+                            await dataService.write(
+                                "files",
+                                {
+                                    name,
+                                    storageKey,
+                                    mimeType: finalMime,
+                                    size,
+                                    description: undefined,
+                                    tags: [],
+                                    acl: undefined,
+                                    type: "files",
+                                    category,
+                                    ext,
+                                    mime: finalMime,
+                                    collections: [],
+                                    createdAt: nowIso,
+                                    updatedAt: nowIso,
+                                },
+                                profile as JwtPayload
+                            );
+                            created++;
+                        }
+
+                        return { scanned: objects.length, missing: missing.length, created, dryRun, sampleMissing: missing.slice(0, 10) };
+                    } catch (e: any) {
+                        console.error("[/storage/reindex-from-storage] error:", e);
+                        set.status = 500;
+                        return { error: "Failed to reindex from storage", details: e?.message };
+                    }
+                },
+                {
+                    body: t.Object({
+                        dryRun: t.Optional(t.Boolean()),
+                        max: t.Optional(t.Number()),
+                    }),
+                }
+            )
     )
+    // Streaming endpoint for first-party UI with cookie or bearer auth
+    .get("/storage/stream", async ({ request, headers, cookie, jwt, sessionJwt, identityService, storageService, dataService, set }) => {
+        try {
+            const url = new URL(request.url);
+            const storageKey = url.searchParams.get("key") || url.searchParams.get("storageKey");
+            if (!storageKey) {
+                set.status = 400;
+                return { error: "Missing storageKey" };
+            }
+
+            // Resolve profile from Bearer or cookie session
+            let profile: { sub: string; instanceId: string } | null = null;
+
+            const auth = headers.authorization;
+            if (auth && auth.startsWith("Bearer ")) {
+                try {
+                    const verified = await jwt.verify(auth.slice(7));
+                    if (verified && (verified as any).sub && (verified as any).instanceId) {
+                        profile = { sub: (verified as any).sub, instanceId: (verified as any).instanceId };
+                    }
+                } catch {}
+            }
+
+            if (!profile) {
+                const sessionToken = cookie.vibe_session.value;
+                if (sessionToken) {
+                    try {
+                        const session = await sessionJwt.verify(sessionToken);
+                        if (session && (session as any).sessionId) {
+                            const user = await identityService.findByDid((session as any).sessionId);
+                            if (user) {
+                                profile = { sub: user.did, instanceId: user.instanceId };
+                            }
+                        }
+                    } catch {}
+                }
+            }
+
+            if (!profile) {
+                set.status = 401;
+                return { error: "Unauthorized" };
+            }
+
+            if (!isKeyInInstance(storageKey, profile.instanceId)) {
+                set.status = 403;
+                return { error: "forbidden_storageKey" };
+            }
+
+            const bucket = STORAGE_BUCKET;
+
+            // Load doc and check ACL
+            const existing = await dataService.readOnce("files", { selector: { storageKey }, limit: 1 }, profile as any);
+            const doc = (existing as any)?.docs?.[0];
+            if (!doc) {
+                set.status = 404;
+                return { error: "NoSuchKey", storageKey };
+            }
+
+            const allowed = await allowRead(profile as any, doc, { services: { identityService, dataService } });
+            if (!allowed) {
+                set.status = 403;
+                return { error: "forbidden" };
+            }
+
+            // Fetch metadata and stream
+            const stat = await storageService.statObject(bucket, storageKey);
+            const dl = await storageService.download(bucket, storageKey);
+
+            // Build headers
+            const headersOut: Record<string, string> = {};
+            if (dl.contentType || stat?.contentType) headersOut["Content-Type"] = dl.contentType || stat?.contentType || "application/octet-stream";
+            if (dl.contentLength || stat?.size) headersOut["Content-Length"] = String(dl.contentLength || stat?.size || "");
+            headersOut["Accept-Ranges"] = "bytes";
+
+            const isPublic = doc?.acl && typeof doc.acl === "object" && (doc.acl as any).visibility === "public";
+            if (isPublic) {
+                headersOut["Cache-Control"] = `public, max-age=${STREAM_PUBLIC_MAX_AGE_SECONDS}`;
+            } else {
+                headersOut["Cache-Control"] = `private, max-age=${STREAM_PRIVATE_MAX_AGE_SECONDS}, must-revalidate`;
+            }
+
+            return new Response(dl.stream as any, { headers: headersOut });
+        } catch (e) {
+            console.error("[/storage/stream] error:", e);
+            set.status = 500;
+            return { error: "Failed to stream object" };
+        }
+    })
     .group("/data", (app) =>
         app
             .derive(async ({ jwt, headers }) => {

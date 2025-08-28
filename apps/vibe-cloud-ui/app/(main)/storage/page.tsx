@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { appManifest } from "../../lib/manifest";
+import { useVibe, VibeImage, getStreamUrl } from "vibe-react";
 import {
   DataTable,
   type ColumnDef,
@@ -56,7 +56,7 @@ type TypeFilter = "all" | "image" | "video" | "audio" | "doc" | "archive" | "oth
 type SortKey = "newest" | "oldest" | "name" | "size-desc" | "size-asc";
 
 export default function StoragePage() {
-  const apiBase = (appManifest.apiUrl || "").replace(/\/$/, "");
+  const { apiBase, readOnce } = useVibe();
   const [token, setToken] = useState<string | null>(null);
   const [files, setFiles] = useState<FileDoc[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -164,27 +164,17 @@ export default function StoragePage() {
   };
 
   const loadFiles = async () => {
-    if (!token) {
-      setError("No API token. Ensure you are signed in.");
-      return;
-    }
     setError(null);
     try {
-      // Read from files namespace (read-only)
-      const res = await fetch(`${apiBase}/data/types/files/query`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({} as any));
-        throw new Error(data?.error || `Failed to list files (${res.status})`);
-      }
-      const data = await res.json();
-      const docs = Array.isArray(data?.docs) ? (data.docs as FileDoc[]) : [];
+      // Hub-aware read; avoids manual REST and plays well with PouchDB cache
+      const res = await readOnce<any>("files", { legacyIncludeMissingType: true, limit: 2000 });
+      const docs: FileDoc[] = Array.isArray((res as any)?.docs)
+        ? (res as any).docs
+        : Array.isArray(res)
+        ? (res as any)
+        : Array.isArray((res as any)?.items)
+        ? (res as any).items
+        : [];
       // Default sort newest first
       docs.sort((a, b) => {
         const da = new Date(a.createdAt || 0).getTime();
@@ -214,39 +204,24 @@ export default function StoragePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  const getPresignedUrl = async (storageKey?: string) => {
-    if (!token || !storageKey) return;
-    const res = await fetch(`${apiBase}/storage/presign-get?debug=1`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ storageKey, expires: 300 }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({} as any));
-      throw new Error(data?.error || `Failed to presign download (${res.status})`);
-    }
-    const data = await res.json();
-    const url: string | undefined = data.url || data.presignedURL || data.publicURL;
-    if (!url) throw new Error("No downloadable URL available");
-    return url;
+  const getPreviewUrl = async (storageKey?: string) => {
+    if (!storageKey) return;
+    return getStreamUrl(apiBase, storageKey);
   };
 
   const handleDownload = async (storageKey?: string) => {
     try {
-      const url = await getPresignedUrl(storageKey);
+      const url = storageKey ? getStreamUrl(apiBase, storageKey) : undefined;
       if (url) window.open(url, "_blank", "noopener,noreferrer");
     } catch (e: any) {
-      setError(e?.message || "Failed to presign download");
+      setError(e?.message || "Failed to open download");
     }
   };
 
   const onPreview = async (file: FileDoc) => {
     try {
-      const url = await getPresignedUrl(file.storageKey);
-      setPreviewUrl(url || null);
+      const url = file.storageKey ? getStreamUrl(apiBase, file.storageKey) : null;
+      setPreviewUrl(url);
       setPreviewFile(file);
       setPreviewOpen(true);
     } catch (e: any) {
@@ -391,16 +366,14 @@ export default function StoragePage() {
       let cancelled = false;
       (async () => {
         if ((file.mimeType || "").startsWith("image/") && file.storageKey) {
-          try {
-            const u = await getPresignedUrl(file.storageKey);
-            if (!cancelled) setImgUrl(u || null);
-          } catch {}
+          const u = getStreamUrl(apiBase, file.storageKey);
+          if (!cancelled) setImgUrl(u || null);
         }
       })();
       return () => {
         cancelled = true;
       };
-    }, [file.storageKey, file.mimeType]);
+    }, [apiBase, file.storageKey, file.mimeType]);
 
     return (
       <div className="border rounded-lg overflow-hidden bg-background shadow-sm hover:shadow-md transition-shadow">

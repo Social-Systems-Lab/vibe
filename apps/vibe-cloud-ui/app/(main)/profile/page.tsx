@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { appManifest } from "../../lib/manifest";
-import { Squircle, ImagePicker } from "vibe-react";
+import { useVibe, Squircle, ImagePicker, getStreamUrl } from "vibe-react";
 import { usePageTopBar } from "../components/PageTopBarContext";
 import { User as UserIcon, Camera } from "lucide-react";
 
@@ -20,7 +19,7 @@ type CookieUser = {
 };
 
 export default function ProfilePage() {
-    const apiBase = (appManifest.apiUrl || "").replace(/\/$/, "");
+    const { apiBase, user: vibeUser, readOnce } = useVibe();
     const [token, setToken] = useState<string | null>(null);
     const [user, setUser] = useState<BearerUser | null>(null);
     const [cookieUser, setCookieUser] = useState<CookieUser | null>(null);
@@ -74,81 +73,45 @@ export default function ProfilePage() {
         run();
     }, [apiBase]);
 
-    // Load bearer user (preferred for DID + instanceId)
+    // Load user from VibeProvider instead of manual fetch
     useEffect(() => {
-        const run = async () => {
-            if (!token) return;
-            try {
-                const res = await fetch(`${apiBase}/users/me`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                if (!res.ok) throw new Error(`Failed to load user (${res.status})`);
-                const data = await res.json();
-                setUser(data.user as BearerUser);
-            } catch (e: any) {
-                setError(e?.message || "Failed to load user");
-            }
-        };
-        run();
-    }, [apiBase, token]);
+        if (!vibeUser) return;
+        setUser({
+            did: (vibeUser as any).did,
+            instanceId: (vibeUser as any).instanceId,
+            displayName: (vibeUser as any).displayName,
+            pictureUrl: (vibeUser as any).pictureUrl,
+        });
+    }, [vibeUser]);
 
-    // Load cover: try expand first, then authorized fallback by did
+    // Load cover via hub-aware readOnce, avoid manual REST
     useEffect(() => {
-        const run = async () => {
+        let abort = false;
+        (async () => {
             if (!user?.did) return;
             try {
-                // 1) Try unauthenticated expand for canonical id profiles/me
-                const res = await fetch(`${apiBase}/data/expand?did=${encodeURIComponent(user.did)}&ref=${encodeURIComponent("profiles/me")}`);
-                if (res.ok) {
-                    const doc = await res.json();
-                    if (doc && typeof doc === "object" && (doc as any).coverUrl) {
+                const res = await readOnce<any>("profiles", { _id: "profiles/me", limit: 1 });
+                const doc = Array.isArray((res as any)?.docs) ? (res as any).docs[0] : null;
+                if (doc && !abort) {
+                    if ((doc as any).coverUrl) {
                         setUser((prev) => (prev ? { ...prev, coverUrl: (doc as any).coverUrl as string } : prev));
-                        setCoverKey((doc as any).coverStorageKey ? String((doc as any).coverStorageKey) : null);
-                        return;
                     }
+                    setCoverKey((doc as any).coverStorageKey ? String((doc as any).coverStorageKey) : null);
                 }
-                // 2) Fallback: authorized query by did (handles missing profiles/me doc)
-                if (token) {
-                    const listRes = await fetch(`${apiBase}/data/types/profiles/query`, {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Bearer ${token}`,
-                        },
-                        body: JSON.stringify({ did: user.did, limit: 1 }),
-                    });
-                    if (listRes.ok) {
-                        const data = await listRes.json();
-                        const first = Array.isArray((data as any)?.docs) ? (data as any).docs[0] : null;
-                        if (first && (first as any).coverUrl) {
-                            setUser((prev) => (prev ? { ...prev, coverUrl: (first as any).coverUrl as string } : prev));
-                            setCoverKey((first as any).coverStorageKey ? String((first as any).coverStorageKey) : null);
-                        }
-                    }
-                }
-            } catch {}
+            } catch {
+                // ignore; cover is optional
+            }
+        })();
+        return () => {
+            abort = true;
         };
-        run();
-    }, [apiBase, user?.did, token]);
+    }, [readOnce, user?.did]);
 
-    // Presign cover URL when we have a storage key
+    // Resolve cover stream URL when we have a storage key (no presign needed for first-party UI)
     useEffect(() => {
-        const run = async () => {
-            if (!coverKey || !token || coverResolved) return;
-            try {
-                const pres = await fetch(`${apiBase}/storage/presign-get?key=${encodeURIComponent(coverKey)}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                if (pres.ok) {
-                    const data = await pres.json();
-                    if (data?.url) setCoverResolved(String(data.url));
-                }
-            } catch {}
-        };
-        // Delay a bit to avoid races with hub/session initialization
-        const t = setTimeout(run, 150);
-        return () => clearTimeout(t);
-    }, [apiBase, token, coverKey, coverResolved]);
+        if (!coverKey || coverResolved) return;
+        setCoverResolved(getStreamUrl(apiBase, coverKey));
+    }, [apiBase, coverKey, coverResolved]);
 
     // Load cookie user (displayName/picture)
     useEffect(() => {
@@ -206,19 +169,27 @@ export default function ProfilePage() {
         if (!token || !user?.did) return;
         setSaving(true);
         try {
-            // Upsert profiles/me with coverUrl and optional storageKey via data API
+            // Upsert profiles/me with coverStorageKey via data API (do not persist presigned URLs)
+            const payload: any = { _id: "profiles/me", did: user.did };
+            if (storageKey) payload.coverStorageKey = storageKey;
+
             const res = await fetch(`${apiBase}/data/types/profiles`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify({ _id: "profiles/me", coverUrl: url, coverStorageKey: storageKey, did: user.did }),
+                body: JSON.stringify(payload),
             });
             if (!res.ok) throw new Error(`Failed to update cover (${res.status})`);
-            setUser((prev) => (prev ? { ...prev, coverUrl: url } : prev));
-            if (storageKey) setCoverKey(storageKey);
-            setCoverResolved(url);
+
+            if (storageKey) {
+                setCoverKey(storageKey);
+                setCoverResolved(getStreamUrl(apiBase, storageKey));
+            } else if (url) {
+                // Fallback for legacy items without storageKey
+                setCoverResolved(url);
+            }
         } catch (e: any) {
             setError(e?.message || "Failed to update cover");
         } finally {
@@ -235,17 +206,9 @@ export default function ProfilePage() {
         const storageKey: string | undefined = (f as any)?.storageKey;
         let url: string | undefined = f.url || f.thumbnailUrl;
 
-        // If no URL is present but we have a storageKey, presign a GET URL
-        if (!url && storageKey && token) {
-            try {
-                const pres = await fetch(`${apiBase}/storage/presign-get?key=${encodeURIComponent(storageKey)}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                if (pres.ok) {
-                    const data = await pres.json();
-                    if (data?.url) url = String(data.url);
-                }
-            } catch {}
+        // Prefer stable stream URL when a storageKey exists (no presign required for first-party UI)
+        if (storageKey) {
+            url = `${apiBase}/storage/stream?key=${encodeURIComponent(storageKey)}`;
         }
 
         if (!url) {

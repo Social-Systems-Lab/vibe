@@ -42,3 +42,7 @@ export { DataTable } from "./components/data-table/DataTable";
 export type { ColumnDef } from "./components/data-table/DataTable";
 export { UploadArea } from "./components/storage/UploadArea";
 export { StorageUsageCard } from "./components/storage/StorageUsageCard";
+
+// Storage helpers and components
+export * from "./components/VibeImage";
+export * from "./lib/storage";

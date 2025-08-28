@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { cn } from "../lib/utils";
 import { FileItem } from "../lib/types";
 import { useVibe } from "../index";
+import { getStreamUrl } from "../lib/storage";
 
 type Size = "sm" | "md" | "lg";
 type Variant = "grid" | "inline";
@@ -36,7 +37,7 @@ export function FilePreview({ file, size = "md", variant = "grid", className, on
     const initialSrc = file.thumbnailUrl || file.url;
 
     // Try to resolve a temporary viewing URL if we have a storageKey but no url/thumbnail yet
-    const { presignGet } = useVibe();
+    const { apiBase } = useVibe();
     const [resolvedSrc, setResolvedSrc] = useState<string | null>(initialSrc || null);
 
     useEffect(() => {
@@ -47,17 +48,14 @@ export function FilePreview({ file, size = "md", variant = "grid", className, on
         let cancelled = false;
         (async () => {
             if (!resolvedSrc && showImage && file.storageKey) {
-                try {
-                    const signed = await presignGet(file.storageKey, 300);
-                    const u = (signed as any)?.url || (signed as any);
-                    if (!cancelled) setResolvedSrc(u || null);
-                } catch {}
+                const u = getStreamUrl(apiBase, file.storageKey);
+                if (!cancelled) setResolvedSrc(u || null);
             }
         })();
         return () => {
             cancelled = true;
         };
-    }, [resolvedSrc, showImage, file.storageKey, presignGet]);
+    }, [resolvedSrc, showImage, file.storageKey, apiBase]);
 
     const body =
         showImage && resolvedSrc ? (
