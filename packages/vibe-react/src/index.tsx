@@ -46,3 +46,5 @@ export { StorageUsageCard } from "./components/storage/StorageUsageCard";
 // Storage helpers and components
 export * from "./components/VibeImage";
 export * from "./lib/storage";
+
+export type { FileDoc } from "vibe-sdk";

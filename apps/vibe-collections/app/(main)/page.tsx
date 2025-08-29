@@ -3,25 +3,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Document } from "vibe-sdk";
-import { ProfileMenu, useVibe } from "vibe-react";
+import { type FileDoc, ProfileMenu, useVibe } from "vibe-react";
 import { Home } from "lucide-react";
-
-type FileDoc = {
-    _id?: string;
-    collection: "files";
-    name: string;
-    ext?: string;
-    mime: string;
-    size: number;
-    sha256?: string;
-    storageKey: string;
-    previewKey?: string;
-    type?: string;
-    tags?: string[];
-    collections?: string[];
-    createdAt?: string;
-    updatedAt?: string;
-} & Document;
 
 export default function CollectionsPage() {
     return <CollectionsInner />;
@@ -104,7 +87,10 @@ function CollectionsInner() {
         async (list: File[]) => {
             for (const file of list) {
                 // Use SDK upload which handles server doc creation and commit
-                const up = (await upload(file)) as { storageKey: string; file?: { id?: string; name?: string; mimeType?: string; size?: number } };
+                const up = (await upload(file)) as {
+                    storageKey: string;
+                    file?: { id?: string; name?: string; mimeType?: string; size?: number };
+                };
                 const storageKey = up.storageKey;
             }
             await refresh();
@@ -127,7 +113,9 @@ function CollectionsInner() {
             {dragActive && (
                 <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center">
                     <div className="absolute inset-0 bg-blue-600/10 ring-2 ring-blue-500" />
-                    <div className="relative z-50 rounded-full bg-blue-600 text-white px-6 py-3 shadow-lg border border-blue-500">Drop files to upload</div>
+                    <div className="relative z-50 rounded-full bg-blue-600 text-white px-6 py-3 shadow-lg border border-blue-500">
+                        Drop files to upload
+                    </div>
                 </div>
             )}
         </div>
@@ -153,14 +141,28 @@ function SearchInTopBar() {
     );
 }
 
-function Header({ q, setQ, type, setType, onRefresh }: { q: string; setQ: (v: string) => void; type: string; setType: (v: string) => void; onRefresh: () => void }) {
+function Header({
+    q,
+    setQ,
+    type,
+    setType,
+    onRefresh,
+}: {
+    q: string;
+    setQ: (v: string) => void;
+    type: string;
+    setType: (v: string) => void;
+    onRefresh: () => void;
+}) {
     const [view, setView] = useState<"grid" | "list">("grid");
     return (
         <div className="px-4 py-3 flex items-center gap-3">
             <div className="ml-auto flex items-center gap-2">
                 <div className="inline-flex rounded-lg border overflow-hidden">
                     <button
-                        className={`px-3 py-2 text-sm ${view === "grid" ? "bg-neutral-100" : "bg-white hover:bg-neutral-50"}`}
+                        className={`px-3 py-2 text-sm ${
+                            view === "grid" ? "bg-neutral-100" : "bg-white hover:bg-neutral-50"
+                        }`}
                         onClick={() => setView("grid")}
                         aria-label="Grid view"
                         title="Grid view"
@@ -168,7 +170,9 @@ function Header({ q, setQ, type, setType, onRefresh }: { q: string; setQ: (v: st
                         ⬚
                     </button>
                     <button
-                        className={`px-3 py-2 text-sm ${view === "list" ? "bg-neutral-100" : "bg-white hover:bg-neutral-50"}`}
+                        className={`px-3 py-2 text-sm ${
+                            view === "list" ? "bg-neutral-100" : "bg-white hover:bg-neutral-50"
+                        }`}
                         onClick={() => setView("list")}
                         aria-label="List view"
                         title="List view"
@@ -212,7 +216,13 @@ function humanSize(bytes: number) {
     return `${v.toFixed(1)} ${units[idx]}`;
 }
 
-function DragDropUploader({ onUploaded, onFilesSelected }: { onUploaded: () => void; onFilesSelected: (files: File[]) => Promise<void> }) {
+function DragDropUploader({
+    onUploaded,
+    onFilesSelected,
+}: {
+    onUploaded: () => void;
+    onFilesSelected: (files: File[]) => Promise<void>;
+}) {
     // Component retained for input handling if we want inline picker later, but not rendered in UI.
     const [busy, setBusy] = useState(false);
 
@@ -259,7 +269,13 @@ function UsageBar({ usedBytes, quotaBytes }: { usedBytes: number; quotaBytes: nu
 
 const presignCache = new Map<string, string>();
 
-function FilesArea({ files, presignGet }: { files: FileDoc[]; presignGet: (key: string, expires?: number) => Promise<any> }) {
+function FilesArea({
+    files,
+    presignGet,
+}: {
+    files: FileDoc[];
+    presignGet: (key: string, expires?: number) => Promise<any>;
+}) {
     const [view, setView] = useState<"grid" | "list">("grid");
 
     // View is controlled by Header via CSS variable hack or global state in future; for now allow keyboard toggle
@@ -293,7 +309,9 @@ function FilesArea({ files, presignGet }: { files: FileDoc[]; presignGet: (key: 
                             <td className="py-2 px-2">{f.name}</td>
                             <td className="py-2 px-2 uppercase text-neutral-500">{f.type}</td>
                             <td className="py-2 px-2">{humanSize(f.size)}</td>
-                            <td className="py-2 px-2 text-neutral-500">{f.updatedAt ? new Date(f.updatedAt).toLocaleString() : "-"}</td>
+                            <td className="py-2 px-2 text-neutral-500">
+                                {f.updatedAt ? new Date(f.updatedAt).toLocaleString() : "-"}
+                            </td>
                         </tr>
                     ))}
                 </tbody>
@@ -310,7 +328,13 @@ function FilesArea({ files, presignGet }: { files: FileDoc[]; presignGet: (key: 
     );
 }
 
-function FileCard({ file, presignGet }: { file: FileDoc; presignGet: (key: string, expires?: number) => Promise<any> }) {
+function FileCard({
+    file,
+    presignGet,
+}: {
+    file: FileDoc;
+    presignGet: (key: string, expires?: number) => Promise<any>;
+}) {
     const [imgUrl, setImgUrl] = useState<string | null>(null);
 
     useEffect(() => {
@@ -351,7 +375,9 @@ function FileCard({ file, presignGet }: { file: FileDoc; presignGet: (key: strin
                 {imgUrl ? (
                     <Image src={imgUrl} alt={file.name} fill sizes="200px" className="object-cover" />
                 ) : (
-                    <div className="h-full w-full flex items-center justify-center text-neutral-400 text-sm">No preview</div>
+                    <div className="h-full w-full flex items-center justify-center text-neutral-400 text-sm">
+                        No preview
+                    </div>
                 )}
             </div>
             <div className="p-2">

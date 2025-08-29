@@ -40,7 +40,8 @@ export type DocRef = {
 };
 
 export interface Document {
-    _id: string;
+    _id?: string;
+    _rev?: string;
     [key: string]: any;
 }
 
@@ -102,3 +103,16 @@ export interface Acl {
     write?: AclPermission;
     create?: AclPermission;
 }
+
+export type FileDoc = {
+    name?: string;
+    storageKey?: string;
+    mimeType?: string;
+    size?: number;
+    tags?: string[];
+    ext?: string;
+    type?: "files";
+    collections?: string[];
+    createdAt?: string;
+    updatedAt?: string;
+} & Document;

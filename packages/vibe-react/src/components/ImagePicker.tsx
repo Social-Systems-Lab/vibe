@@ -24,7 +24,15 @@ export interface ImagePickerProps {
 
 export type { FileItem } from "../lib/types";
 
-export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", selectionMode = "multiple", title = "Choose files", allowUpload = true }: ImagePickerProps) {
+export function ImagePicker({
+    open,
+    onOpenChange,
+    onSelect,
+    accept = "image/*",
+    selectionMode = "multiple",
+    title = "Choose files",
+    allowUpload = true,
+}: ImagePickerProps) {
     const { readOnce, upload, presignGet, user, apiBase } = useVibe();
     const [tab, setTab] = useState<TabKey>(allowUpload ? "my-files" : "my-files");
     const [loading, setLoading] = useState(false);
@@ -40,7 +48,7 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
         (async () => {
             setLoading(true);
             try {
-                const res = await readOnce<any>("files", { limit: 2000, selector: {} });
+                const res = await readOnce<any>("files", { limit: 2000 });
                 console.debug("ImagePicker: readOnce(files) response", res);
                 // Support multiple backend shapes: docs, items, results, rows, data.docs, arrays, etc.
                 const candidates = [
@@ -95,38 +103,44 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
                         console.debug("ImagePicker: REST fallback failed", err);
                     }
                 }
-                        const normalized: FileItem[] = await Promise.all(
-                            docs.map(async (d) => {
-                                const id =
-                                    d.id ||
-                                    d._id ||
-                                    d.docId ||
-                                    (d._id && typeof d._id === "object" && ((d._id as any).$id || (d._id as any).id)) ||
-                                    crypto.randomUUID();
-                                const name = d.name || d.filename || d.title || (d as any).fileName;
-                                const mimeType = d.mimeType || d.type || (d as any).contentType;
-                                const size = d.size || (d as any).length || (d as any).bytes;
-                                const createdAt = d.createdAt || (d as any)._createdAt || (d as any).timestamp || (d as any).created || (d as any)._ts;
-                                const item: FileItem = {
-                                    id,
-                                    name,
-                                    mimeType,
-                                    size,
-                                    createdAt,
-                                    acl: (d as any).acl,
-                                };
-                                const storageKey = (d as any).storageKey || (d as any).key;
-                                if (storageKey) {
-                                    (item as any).storageKey = storageKey;
-                                    // Prefer first-party stream URL for previews
-                                    item.url = getStreamUrl(apiBase, storageKey);
-                                } else if ((d as any).url) {
-                                    item.url = (d as any).url;
-                                }
-                                if ((d as any).thumbnailUrl || (d as any).thumbnail) item.thumbnailUrl = (d as any).thumbnailUrl || (d as any).thumbnail;
-                                return item;
-                            })
-                        );
+                const normalized: FileItem[] = await Promise.all(
+                    docs.map(async (d) => {
+                        const id =
+                            d.id ||
+                            d._id ||
+                            d.docId ||
+                            (d._id && typeof d._id === "object" && ((d._id as any).$id || (d._id as any).id)) ||
+                            crypto.randomUUID();
+                        const name = d.name || d.filename || d.title || (d as any).fileName;
+                        const mimeType = d.mimeType || d.type || (d as any).contentType;
+                        const size = d.size || (d as any).length || (d as any).bytes;
+                        const createdAt =
+                            d.createdAt ||
+                            (d as any)._createdAt ||
+                            (d as any).timestamp ||
+                            (d as any).created ||
+                            (d as any)._ts;
+                        const item: FileItem = {
+                            id,
+                            name,
+                            mimeType,
+                            size,
+                            createdAt,
+                            acl: (d as any).acl,
+                        };
+                        const storageKey = (d as any).storageKey || (d as any).key;
+                        if (storageKey) {
+                            (item as any).storageKey = storageKey;
+                            // Prefer first-party stream URL for previews
+                            item.url = getStreamUrl(apiBase, storageKey);
+                        } else if ((d as any).url) {
+                            item.url = (d as any).url;
+                        }
+                        if ((d as any).thumbnailUrl || (d as any).thumbnail)
+                            item.thumbnailUrl = (d as any).thumbnailUrl || (d as any).thumbnail;
+                        return item;
+                    })
+                );
                 if (!abort) setFiles(normalized);
             } catch (e) {
                 console.error("ImagePicker: failed to list files", e);
@@ -218,7 +232,10 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
         for (const f of arr) {
             try {
                 // 1) Upload binary to storage (server may directly create file doc or require commit; SDK handles both)
-                const up = (await upload(f as File)) as { storageKey: string; file?: { id?: string; name?: string; mimeType?: string; size?: number } };
+                const up = (await upload(f as File)) as {
+                    storageKey: string;
+                    file?: { id?: string; name?: string; mimeType?: string; size?: number };
+                };
                 const storageKey = up.storageKey;
 
                 // 2) Derive a stable preview URL (first-party stream)
@@ -236,7 +253,9 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
                 };
 
                 setFiles((prev) => [item, ...prev]);
-                setSelected((prev) => (selectionMode === "single" ? { [item.id]: item } : { ...prev, [item.id]: item }));
+                setSelected((prev) =>
+                    selectionMode === "single" ? { [item.id]: item } : { ...prev, [item.id]: item }
+                );
                 if (selectionMode === "single" && !switched) {
                     setTab("my-files");
                     switched = true;
@@ -267,9 +286,18 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
             <Input placeholder="Search files..." value={query} onChange={(e) => setQuery(e.target.value)} />
             <div className={cn("grid gap-3", "grid-cols-3")}>
                 {loading && <div className="text-sm text-muted-foreground col-span-full">Loading...</div>}
-                {!loading && filtered.length === 0 && <div className="text-sm text-muted-foreground col-span-full">No files found</div>}
+                {!loading && filtered.length === 0 && (
+                    <div className="text-sm text-muted-foreground col-span-full">No files found</div>
+                )}
                 {filtered.map((f) => (
-                    <FilePreview key={f.id} file={f} size="md" variant="grid" selected={!!selected[f.id]} onClick={() => toggleSelect(f)} />
+                    <FilePreview
+                        key={f.id}
+                        file={f}
+                        size="md"
+                        variant="grid"
+                        selected={!!selected[f.id]}
+                        onClick={() => toggleSelect(f)}
+                    />
                 ))}
             </div>
         </div>
@@ -292,10 +320,19 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
                 onChange={handleFileInputChange}
                 className="hidden"
             />
-            <Button variant="secondary" type="button" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
+            <Button
+                variant="secondary"
+                type="button"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                }}
+            >
                 Choose files
             </Button>
-            {localUploads.length > 0 && <div className="mt-4 text-xs text-muted-foreground">{localUploads.length} file(s) uploading...</div>}
+            {localUploads.length > 0 && (
+                <div className="mt-4 text-xs text-muted-foreground">{localUploads.length} file(s) uploading...</div>
+            )}
         </div>
     );
 
@@ -313,7 +350,9 @@ export function ImagePicker({ open, onOpenChange, onSelect, accept = "image/*", 
                 </DialogHeader>
                 <div className="flex items-center justify-between mb-3">
                     {tabBtns}
-                    <div className="text-xs text-muted-foreground">{selectionMode === "multiple" ? "Multi-select enabled" : "Single select"}</div>
+                    <div className="text-xs text-muted-foreground">
+                        {selectionMode === "multiple" ? "Multi-select enabled" : "Single select"}
+                    </div>
                 </div>
                 {tab === "my-files" ? myFilesView : uploadView}
                 <div className="mt-4 flex justify-end gap-2">

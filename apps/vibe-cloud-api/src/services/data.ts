@@ -1,7 +1,17 @@
 import nano, { DocumentScope } from "nano";
 import { getUserDbName } from "../lib/db";
 import { IdentityService } from "./identity";
-import { CachedDoc, DocRef, Certificate, Acl, AclPermission, AclRule, publicKeyHexToSpkiPem, Document, ReadOnceApiResponse } from "vibe-core";
+import {
+    CachedDoc,
+    DocRef,
+    Certificate,
+    Acl,
+    AclPermission,
+    AclRule,
+    publicKeyHexToSpkiPem,
+    Document,
+    ReadOnceApiResponse,
+} from "vibe-core";
 import * as jose from "jose";
 import { GlobalFeedService } from "./global-feed";
 
@@ -29,7 +39,11 @@ export class DataService {
     public globalDb: DocumentScope<any>;
     private globalFeedService: GlobalFeedService;
 
-    constructor(config: { url: string; user: string; pass: string }, identityService: IdentityService, globalFeedService: GlobalFeedService) {
+    constructor(
+        config: { url: string; user: string; pass: string },
+        identityService: IdentityService,
+        globalFeedService: GlobalFeedService
+    ) {
         this.config = config;
         this.couch = nano(config.url);
         this.identityService = identityService;
@@ -171,14 +185,9 @@ export class DataService {
 
     async readOnce<T extends Document>(type: string, query: any, user: JwtPayload): Promise<ReadOnceApiResponse<T>> {
         await this.reauthenticate();
-        // Support both shapes:
-        // 1) query = { fieldA: ..., fieldB: ... }
-        // 2) query = { selector: { fieldA: ... }, limit, ... }
-        const { expand, maxCacheAge, global, selector: nestedSelector, limit, fields, sort, legacyIncludeMissingType, ...rest } = query || {};
-        const selector = nestedSelector && typeof nestedSelector === "object" ? nestedSelector : rest || {};
-        if (nestedSelector && typeof nestedSelector === "object") {
-            console.warn("[DataService.readOnce] Deprecated nested selector shape detected. Prefer flat query shape.", { type });
-        }
+        // TODO make sure deconstruction of query is same in hub.html and keep in sync
+        const { expand, maxCacheAge, global, limit, fields, sort, ...rest } = query || {};
+        const selector = rest || {};
 
         if (global) {
             console.log(`[data.ts] Performing global query for type '${type}' with selector:`, selector);
@@ -188,9 +197,8 @@ export class DataService {
                         $gte: `${type}/`,
                         $lt: `${type}/\ufff0`,
                     },
-                    // Do not include the rest of the selector, as it may contain fields
-                    // like 'type' which do not exist on the DocRef documents in the global DB.
-                    // The _id prefix is the sole filter for types.
+                    // TODO make sure global db always store full document but only return as DocRef so we can do selector queries
+                    // for now it is stored as DocRefs and the _id prefix is the sole filter for types.
                 },
             };
             console.log("[data.ts] Executing global DB query:", JSON.stringify(dbQuery, null, 2));
@@ -225,28 +233,12 @@ export class DataService {
 
             // General Mango find with type constraint
             let dbQuery: any = { selector: {} };
-            if (legacyIncludeMissingType) {
-                // Broaden to include legacy "file-like" docs that may be missing type or storageKey
-                dbQuery.selector = {
-                    $or: [
-                        { ...(selector || {}), type: type },
-                        { ...(selector || {}), storageKey: { $exists: true } },
-                        { ...(selector || {}), mimeType: { $exists: true } },
-                        { ...(selector || {}), mime: { $exists: true } },
-                    ],
-                };
-                // Ensure indexes for the fields used in the $or to keep Pouch/Couch happy
-                await this.ensureIndex(db, ["type"], "idx_type");
-                await this.ensureIndex(db, ["storageKey"], "idx_storageKey");
-                await this.ensureIndex(db, ["mimeType"], "idx_mimeType");
-                await this.ensureIndex(db, ["mime"], "idx_mime");
-            } else {
-                dbQuery.selector = {
-                    ...selector,
-                    type: type,
-                };
-                await this.ensureTypeIndex(db);
-            }
+            dbQuery.selector = {
+                ...selector,
+                type: type,
+            };
+            await this.ensureTypeIndex(db);
+
             if (typeof limit === "number" && isFinite(limit)) dbQuery.limit = Math.max(1, Math.min(limit, 20000));
             if (Array.isArray(fields)) dbQuery.fields = fields;
             if (Array.isArray(sort) || (sort && typeof sort === "object")) dbQuery.sort = sort as any;
@@ -258,10 +250,15 @@ export class DataService {
             // This helps surface legacy documents that may lack expected indexes/fields (e.g., missing "type").
             if ((!Array.isArray(docsToProcess) || docsToProcess.length === 0) && type === "files") {
                 try {
-                    const listRes = await (db as any).list({ include_docs: true, limit: Math.min(typeof limit === "number" ? limit : 5000, 20000) });
+                    const listRes = await (db as any).list({
+                        include_docs: true,
+                        limit: Math.min(typeof limit === "number" ? limit : 5000, 20000),
+                    });
                     const allDocs = ((listRes?.rows as any[]) || []).map((r) => r?.doc).filter(Boolean);
                     // Heuristic: treat docs as files if they have any of these indicators
-                    docsToProcess = allDocs.filter((d) => !!(d.storageKey || d.mimeType || d.mime || (d.name && d.size)));
+                    docsToProcess = allDocs.filter(
+                        (d) => !!(d.storageKey || d.mimeType || d.mime || (d.name && d.size))
+                    );
                 } catch (e) {
                     // ignore fallback failure; we'll return original (empty)
                     docsToProcess = result.docs as any[];
@@ -452,7 +449,12 @@ export class DataService {
         return response;
     }
 
-    private async verifyAccess(doc: any, user: JwtPayload, permission: "read" | "write" | "create", dbName: string): Promise<boolean> {
+    private async verifyAccess(
+        doc: any,
+        user: JwtPayload,
+        permission: "read" | "write" | "create",
+        dbName: string
+    ): Promise<boolean> {
         const docInstanceId = dbName.replace("userdb-", "");
         if (docInstanceId === user.instanceId) {
             return true;
@@ -548,6 +550,9 @@ export class DataService {
             if (rule === "*") return true;
             return rule === userDid;
         }
-        return verifiedCerts.some((cert) => cert.payload.sub === userDid && cert.payload.iss === rule.issuer && cert.payload.type === rule.type);
+        return verifiedCerts.some(
+            (cert) =>
+                cert.payload.sub === userDid && cert.payload.iss === rule.issuer && cert.payload.type === rule.type
+        );
     }
 }

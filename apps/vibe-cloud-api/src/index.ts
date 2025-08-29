@@ -11,7 +11,7 @@ import { EmailService } from "./services/email";
 import { StorageService, MinioStorageProvider, ScalewayStorageProvider, StorageProvider } from "./services/storage";
 import { QuotaService } from "./services/quota";
 import { getUserDbName } from "./lib/db";
-import { User } from "vibe-core";
+import { Certificate, User } from "vibe-core";
 import nano from "nano";
 import { randomBytes, createHash } from "crypto";
 import { proxyRequest } from "./lib/proxy";
@@ -185,7 +185,8 @@ const app = new Elysia()
                     const origin = new URL(request.url).origin;
                     console.log("[authorize] Request origin:", origin);
 
-                    const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope, prompt } = query;
+                    const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope, prompt } =
+                        query;
                     const sessionToken = cookie.vibe_session.value;
                     console.log("[authorize] Session token from cookie:", cookie.vibe_session.value);
                     console.log("[authorize] Using session token:", sessionToken);
@@ -228,7 +229,10 @@ const app = new Elysia()
                                         if (state) {
                                             finalRedirectUrl.searchParams.set("state", state);
                                         }
-                                        console.log("[authorize] Redirecting to client with auth code:", finalRedirectUrl.toString());
+                                        console.log(
+                                            "[authorize] Redirecting to client with auth code:",
+                                            finalRedirectUrl.toString()
+                                        );
                                         return redirect(finalRedirectUrl.toString());
                                     } else {
                                         console.log("[authorize] User has not consented or prompt is 'consent'.");
@@ -312,19 +316,25 @@ const app = new Elysia()
 
                     const sessionToken = cookie.vibe_session.value;
                     if (!sessionToken) {
-                        return new Response(renderScript({ status: "LOGGED_OUT" }), { headers: { "Content-Type": "text/html" } });
+                        return new Response(renderScript({ status: "LOGGED_OUT" }), {
+                            headers: { "Content-Type": "text/html" },
+                        });
                     }
 
                     try {
                         const session = await sessionJwt.verify(sessionToken);
                         if (!session || !session.sessionId) {
-                            return new Response(renderScript({ status: "LOGGED_OUT" }), { headers: { "Content-Type": "text/html" } });
+                            return new Response(renderScript({ status: "LOGGED_OUT" }), {
+                                headers: { "Content-Type": "text/html" },
+                            });
                         }
 
                         const userDid = session.sessionId;
                         const user = await identityService.findByDid(userDid);
                         if (!user) {
-                            return new Response(renderScript({ status: "LOGGED_OUT" }), { headers: { "Content-Type": "text/html" } });
+                            return new Response(renderScript({ status: "LOGGED_OUT" }), {
+                                headers: { "Content-Type": "text/html" },
+                            });
                         }
 
                         const hasConsented = await identityService.hasUserConsented(userDid, client_id);
@@ -359,7 +369,9 @@ const app = new Elysia()
                             }
                         );
                     } catch (e) {
-                        return new Response(renderScript({ status: "LOGGED_OUT" }), { headers: { "Content-Type": "text/html" } });
+                        return new Response(renderScript({ status: "LOGGED_OUT" }), {
+                            headers: { "Content-Type": "text/html" },
+                        });
                     }
                 },
                 {
@@ -402,7 +414,12 @@ const app = new Elysia()
                         return new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 });
                     }
 
-                    const userDid = await identityService.validateAuthCode(code, code_verifier, client_id, redirect_uri);
+                    const userDid = await identityService.validateAuthCode(
+                        code,
+                        code_verifier,
+                        client_id,
+                        redirect_uri
+                    );
                     if (!userDid) {
                         return new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 });
                     }
@@ -505,7 +522,17 @@ const app = new Elysia()
             )
             .post(
                 "/profile",
-                async ({ body, sessionJwt, cookie, set, query, identityService, storageService, dataService, redirect }) => {
+                async ({
+                    body,
+                    sessionJwt,
+                    cookie,
+                    set,
+                    query,
+                    identityService,
+                    storageService,
+                    dataService,
+                    redirect,
+                }) => {
                     const sessionToken = cookie.vibe_session.value;
                     if (!sessionToken) {
                         set.status = 401;
@@ -767,7 +794,9 @@ const app = new Elysia()
                     }
                     const password_hash = await Bun.password.hash(password);
                     user.password_hash = password_hash;
-                    user.resetTokens = user.resetTokens.filter((t: any) => t.hash !== createHash("sha256").update(token).digest("hex"));
+                    user.resetTokens = user.resetTokens.filter(
+                        (t: any) => t.hash !== createHash("sha256").update(token).digest("hex")
+                    );
                     await identityService.updateUser(user.did, { password_hash });
                     return { success: true };
                 },
@@ -937,7 +966,12 @@ const app = new Elysia()
                         }
                         // Quota: reserve before upload
                         try {
-                            const reserve = await quotaService.reserve(profile.sub, profile.instanceId, Number((file as any).size) || 0, storageKey);
+                            const reserve = await quotaService.reserve(
+                                profile.sub,
+                                profile.instanceId,
+                                Number((file as any).size) || 0,
+                                storageKey
+                            );
                             uploadId = reserve.uploadId;
                         } catch (e: any) {
                             set.status = 413;
@@ -953,12 +987,23 @@ const app = new Elysia()
                             size: (file as any).size,
                         });
 
-                        await storageService.upload(bucketName, storageKey, buffer, (file as any).type || "application/octet-stream");
+                        await storageService.upload(
+                            bucketName,
+                            storageKey,
+                            buffer,
+                            (file as any).type || "application/octet-stream"
+                        );
 
                         // Sanitize and persist metadata immediately (server-upload strategy)
-                        const { sanitizeText, sanitizeTags, validateAclShape, coercePositiveNumber } = await import("./services/storage");
+                        const { sanitizeText, sanitizeTags, validateAclShape, coercePositiveNumber } = await import(
+                            "./services/storage"
+                        );
                         const nameFromClient = (body as any).name ?? (file as any).name ?? "file";
-                        const cleanName = sanitizeText(typeof nameFromClient === "string" ? nameFromClient : String(nameFromClient), 256) || "file";
+                        const cleanName =
+                            sanitizeText(
+                                typeof nameFromClient === "string" ? nameFromClient : String(nameFromClient),
+                                256
+                            ) || "file";
                         const cleanDesc = sanitizeText((body as any).description, 1024);
 
                         // tags: allow "a,b" or JSON '["a","b"]' or array of strings
@@ -997,7 +1042,11 @@ const app = new Elysia()
                         }
 
                         // Idempotency: if a files doc already exists for this storageKey, return it instead of creating a new one
-                        const existing = await dataService.readOnce("files", { selector: { storageKey }, limit: 1 }, profile as JwtPayload);
+                        const existing = await dataService.readOnce(
+                            "files",
+                            { storageKey, limit: 1 },
+                            profile as JwtPayload
+                        );
                         if (existing && Array.isArray((existing as any).docs) && (existing as any).docs.length > 0) {
                             const doc = (existing as any).docs[0];
                             const url = await storageService.getPublicURL(bucketName, storageKey);
@@ -1022,7 +1071,10 @@ const app = new Elysia()
 
                         // Build enriched metadata similar to legacy client shape
                         const nowIso = new Date().toISOString();
-                        const ext = typeof cleanName === "string" && cleanName.includes(".") ? cleanName.split(".").pop() : undefined;
+                        const ext =
+                            typeof cleanName === "string" && cleanName.includes(".")
+                                ? cleanName.split(".").pop()
+                                : undefined;
                         const category = (finalMime || "").startsWith("image/")
                             ? "image"
                             : (finalMime || "").startsWith("video/")
@@ -1080,7 +1132,7 @@ const app = new Elysia()
                         };
                     } catch (error: any) {
                         try {
-                            if ((typeof uploadId === "string") && uploadId) {
+                            if (typeof uploadId === "string" && uploadId) {
                                 await quotaService.release(profile.sub, uploadId);
                             }
                         } catch {}
@@ -1139,7 +1191,12 @@ const app = new Elysia()
                         // Quota reserve
                         let uploadId: string | undefined;
                         try {
-                            const reserve = await quotaService.reserve(profile.sub, profile.instanceId, size, storageKey);
+                            const reserve = await quotaService.reserve(
+                                profile.sub,
+                                profile.instanceId,
+                                size,
+                                storageKey
+                            );
                             uploadId = reserve.uploadId;
                         } catch (e: any) {
                             set.status = 413;
@@ -1211,18 +1268,28 @@ const app = new Elysia()
 
                     try {
                         // Load file doc for ACL checks
-                        const existing = await dataService.readOnce("files", { selector: { storageKey }, limit: 1 }, profile as JwtPayload);
+                        const existing = await dataService.readOnce(
+                            "files",
+                            { storageKey, limit: 1 },
+                            profile as JwtPayload
+                        );
                         const doc = (existing as any)?.docs?.[0];
                         if (!doc) {
                             set.status = 404;
-                            return debug ? { error: "NoSuchKey", storageKey, bucket } : { error: "NoSuchKey", storageKey };
+                            return debug
+                                ? { error: "NoSuchKey", storageKey, bucket }
+                                : { error: "NoSuchKey", storageKey };
                         }
 
                         // TTL policy
                         const requested = Number(expires ?? PRESIGN_DEFAULT_TTL_SECONDS);
-                        const clamped = Math.min(Math.max(isFinite(requested) ? requested : PRESIGN_DEFAULT_TTL_SECONDS, 60), PRESIGN_MAX_TTL_SECONDS);
+                        const clamped = Math.min(
+                            Math.max(isFinite(requested) ? requested : PRESIGN_DEFAULT_TTL_SECONDS, 60),
+                            PRESIGN_MAX_TTL_SECONDS
+                        );
                         let ttl = clamped;
-                        const isOwner = (doc?.ownerDid || doc?.did) && (doc.ownerDid || doc.did) === (profile as any).sub;
+                        const isOwner =
+                            (doc?.ownerDid || doc?.did) && (doc.ownerDid || doc.did) === (profile as any).sub;
                         if (isOwner && !PRESIGN_FORCE_TTL_FOR_OWNER) {
                             ttl = Math.min(PRESIGN_OWNER_TTL_SECONDS, PRESIGN_MAX_TTL_SECONDS);
                         }
@@ -1248,14 +1315,28 @@ const app = new Elysia()
 
                         if (res.strategy === "presigned" && res.url) {
                             if (debug) {
-                                return { strategy: "debug", bucket, storageKey, presignedURL: res.url, publicURL, expiresIn: ttl };
+                                return {
+                                    strategy: "debug",
+                                    bucket,
+                                    storageKey,
+                                    presignedURL: res.url,
+                                    publicURL,
+                                    expiresIn: ttl,
+                                };
                             }
                             return { url: res.url, expiresIn: ttl };
                         }
 
                         // Fallback: if public URL might work (public visibility), expose it in debug or as a last resort
                         if (debug) {
-                            return { strategy: "debug", bucket, storageKey, presignedURL: undefined, publicURL, expiresIn: ttl };
+                            return {
+                                strategy: "debug",
+                                bucket,
+                                storageKey,
+                                presignedURL: undefined,
+                                publicURL,
+                                expiresIn: ttl,
+                            };
                         }
                         // No direct URL available
                         return { error: "no_presigned_url_available" };
@@ -1297,7 +1378,9 @@ const app = new Elysia()
                         }
 
                         // Sanitize user-intent fields
-                        const { sanitizeText, sanitizeTags, validateAclShape, coercePositiveNumber } = await import("./services/storage");
+                        const { sanitizeText, sanitizeTags, validateAclShape, coercePositiveNumber } = await import(
+                            "./services/storage"
+                        );
                         const cleanName = sanitizeText(name, 256) || name.slice(0, 256);
                         const cleanDesc = sanitizeText(description, 1024);
                         const cleanTags = sanitizeTags(tags, 64, 64);
@@ -1314,7 +1397,11 @@ const app = new Elysia()
                         }
 
                         // Idempotency: if a files doc already exists for this storageKey, return it instead of creating a new one
-                        const existing = await dataService.readOnce("files", { selector: { storageKey }, limit: 1 }, profile as JwtPayload);
+                        const existing = await dataService.readOnce(
+                            "files",
+                            { storageKey, limit: 1 },
+                            profile as JwtPayload
+                        );
                         if (existing && Array.isArray((existing as any).docs) && (existing as any).docs.length > 0) {
                             const doc = (existing as any).docs[0];
                             return {
@@ -1331,7 +1418,10 @@ const app = new Elysia()
 
                         // Persist metadata document with enriched fields (compat with earlier client-written docs)
                         const nowIso = new Date().toISOString();
-                        const ext = typeof cleanName === "string" && cleanName.includes(".") ? cleanName.split(".").pop() : undefined;
+                        const ext =
+                            typeof cleanName === "string" && cleanName.includes(".")
+                                ? cleanName.split(".").pop()
+                                : undefined;
                         const category = (finalMime || "").startsWith("image/")
                             ? "image"
                             : (finalMime || "").startsWith("video/")
@@ -1401,22 +1491,19 @@ const app = new Elysia()
                     }),
                 }
             )
-            .get(
-                "/usage",
-                async ({ profile, set, quotaService }) => {
-                    if (!profile) {
-                        set.status = 401;
-                        return { error: "Unauthorized" };
-                    }
-                    try {
-                        const usage = await quotaService.usage(profile.sub);
-                        return usage;
-                    } catch (e: any) {
-                        set.status = 500;
-                        return { error: "Failed to get usage" };
-                    }
+            .get("/usage", async ({ profile, set, quotaService }) => {
+                if (!profile) {
+                    set.status = 401;
+                    return { error: "Unauthorized" };
                 }
-            )
+                try {
+                    const usage = await quotaService.usage(profile.sub);
+                    return usage;
+                } catch (e: any) {
+                    set.status = 500;
+                    return { error: "Failed to get usage" };
+                }
+            })
             .delete(
                 "/object",
                 async ({ profile, body, set, storageService, dataService, quotaService }) => {
@@ -1439,7 +1526,11 @@ const app = new Elysia()
                         await storageService.delete(bucket, storageKey);
                         // Attempt to delete associated metadata doc
                         try {
-                            const existing = await dataService.readOnce("files", { selector: { storageKey }, limit: 1 }, profile as JwtPayload);
+                            const existing = await dataService.readOnce(
+                                "files",
+                                { storageKey, limit: 1 },
+                                profile as JwtPayload
+                            );
                             const doc = (existing as any)?.docs?.[0];
                             if (doc?._id) {
                                 const db = dataService.getDb(profile.instanceId);
@@ -1474,19 +1565,28 @@ const app = new Elysia()
                         const result = await (db as any).find({ selector, limit: 10000 });
                         const legacyDocs = (result?.docs as any[]) || [];
                         if (dryRun) {
-                            return { found: legacyDocs.length, sampleIds: legacyDocs.slice(0, 10).map((d: any) => d._id) };
+                            return {
+                                found: legacyDocs.length,
+                                sampleIds: legacyDocs.slice(0, 10).map((d: any) => d._id),
+                            };
                         }
                         const updatedAtIso = new Date().toISOString();
                         const updatedDocs = legacyDocs.map((d: any) => {
                             const mime = d.mimeType || d.mime;
                             let category = d.category;
                             if (!category) {
-                                category =
-                                    (mime || "").startsWith("image/") ? "image" :
-                                    (mime || "").startsWith("video/") ? "video" :
-                                    (mime || "").startsWith("audio/") ? "audio" :
-                                    (mime || "").includes("pdf") || (mime || "").includes("word") || (mime || "").includes("excel") || (mime || "").includes("text") ? "doc" :
-                                    "other";
+                                category = (mime || "").startsWith("image/")
+                                    ? "image"
+                                    : (mime || "").startsWith("video/")
+                                    ? "video"
+                                    : (mime || "").startsWith("audio/")
+                                    ? "audio"
+                                    : (mime || "").includes("pdf") ||
+                                      (mime || "").includes("word") ||
+                                      (mime || "").includes("excel") ||
+                                      (mime || "").includes("text")
+                                    ? "doc"
+                                    : "other";
                             }
                             return { ...d, type: "files", category, updatedAt: updatedAtIso };
                         });
@@ -1506,72 +1606,79 @@ const app = new Elysia()
                     }),
                 }
             )
-            .get(
-                "/debug/files-scan",
-                async ({ profile, dataService, set }) => {
-                    if (!profile) {
-                        set.status = 401;
-                        return { error: "Unauthorized" };
-                    }
-                    try {
-                        const names = await dataService.getAllUserDbNames();
-                        const results: any[] = [];
-                        for (const dbName of names) {
-                            const instanceId = dbName.replace(/^userdb-/, "");
+            .get("/debug/files-scan", async ({ profile, dataService, set }) => {
+                if (!profile) {
+                    set.status = 401;
+                    return { error: "Unauthorized" };
+                }
+                try {
+                    const names = await dataService.getAllUserDbNames();
+                    const results: any[] = [];
+                    for (const dbName of names) {
+                        const instanceId = dbName.replace(/^userdb-/, "");
+                        try {
+                            const db = dataService.getDb(instanceId);
+                            // Use Mango if available, else fallback to list
+                            let count = 0;
+                            let sample: any[] = [];
                             try {
-                                const db = dataService.getDb(instanceId);
-                                // Use Mango if available, else fallback to list
-                                let count = 0;
-                                let sample: any[] = [];
+                                await (db as any).createIndex({
+                                    index: { fields: ["type"] },
+                                    name: "idx_type",
+                                    type: "json",
+                                });
+                            } catch {}
+                            try {
+                                const r = await (db as any).find({ selector: { type: "files" }, limit: 10 });
+                                count = (r?.docs?.length as number) || 0;
+                                sample = (r?.docs || []).map((d: any) => ({
+                                    _id: d._id,
+                                    name: d.name,
+                                    storageKey: d.storageKey,
+                                }));
+                                // Try to get a true total count cheaply via list (best-effort)
                                 try {
-                                    await (db as any).createIndex({ index: { fields: ["type"] }, name: "idx_type", type: "json" });
+                                    const full = await (db as any).find({
+                                        selector: { type: "files" },
+                                        limit: 1_000_000,
+                                    });
+                                    count = (full?.docs?.length as number) || count;
                                 } catch {}
-                                try {
-                                    const r = await (db as any).find({ selector: { type: "files" }, limit: 10 });
-                                    count = (r?.docs?.length as number) || 0;
-                                    sample = (r?.docs || []).map((d: any) => ({ _id: d._id, name: d.name, storageKey: d.storageKey }));
-                                    // Try to get a true total count cheaply via list (best-effort)
-                                    try {
-                                        const full = await (db as any).find({ selector: { type: "files" }, limit: 1_000_000 });
-                                        count = (full?.docs?.length as number) || count;
-                                    } catch {}
-                                } catch {
-                                    const lst = await (db as any).list({ include_docs: true, limit: 100000 });
-                                    const docs = ((lst?.rows as any[]) || []).map((r) => r?.doc).filter(Boolean);
-                                    const files = docs.filter((d: any) => d?.type === "files");
-                                    count = files.length;
-                                    sample = files.slice(0, 10).map((d: any) => ({ _id: d._id, name: d.name, storageKey: d.storageKey }));
-                                }
-                                results.push({ dbName, instanceId, filesCount: count, sample });
-                            } catch (e) {
-                                results.push({ dbName, instanceId, error: "scan_failed" });
+                            } catch {
+                                const lst = await (db as any).list({ include_docs: true, limit: 100000 });
+                                const docs = ((lst?.rows as any[]) || []).map((r) => r?.doc).filter(Boolean);
+                                const files = docs.filter((d: any) => d?.type === "files");
+                                count = files.length;
+                                sample = files
+                                    .slice(0, 10)
+                                    .map((d: any) => ({ _id: d._id, name: d.name, storageKey: d.storageKey }));
                             }
+                            results.push({ dbName, instanceId, filesCount: count, sample });
+                        } catch (e) {
+                            results.push({ dbName, instanceId, error: "scan_failed" });
                         }
-                        return { results };
-                    } catch (e: any) {
-                        set.status = 500;
-                        return { error: "scan_failed", details: e?.message };
                     }
+                    return { results };
+                } catch (e: any) {
+                    set.status = 500;
+                    return { error: "scan_failed", details: e?.message };
                 }
-            )
-            .get(
-                "/debug/list-objects",
-                async ({ profile, storageService, set }) => {
-                    if (!profile) {
-                        set.status = 401;
-                        return { error: "Unauthorized" };
-                    }
-                    try {
-                        const prefix = `u/${profile.instanceId}/`;
-                        const bucket = STORAGE_BUCKET;
-                        const objs = await storageService.listObjects(bucket, prefix, 2000);
-                        return { bucket, prefix, count: objs.length, sample: objs.slice(0, 15) };
-                    } catch (e: any) {
-                        set.status = 500;
-                        return { error: "list_failed", details: e?.message };
-                    }
+            })
+            .get("/debug/list-objects", async ({ profile, storageService, set }) => {
+                if (!profile) {
+                    set.status = 401;
+                    return { error: "Unauthorized" };
                 }
-            )
+                try {
+                    const prefix = `u/${profile.instanceId}/`;
+                    const bucket = STORAGE_BUCKET;
+                    const objs = await storageService.listObjects(bucket, prefix, 2000);
+                    return { bucket, prefix, count: objs.length, sample: objs.slice(0, 15) };
+                } catch (e: any) {
+                    set.status = 500;
+                    return { error: "list_failed", details: e?.message };
+                }
+            })
             .post(
                 "/reindex-from-storage",
                 async ({ profile, set, dataService, storageService, body }) => {
@@ -1598,7 +1705,11 @@ const app = new Elysia()
                             if (!storageKey || storageKey.endsWith("/")) continue;
 
                             // Does a files doc already exist?
-                            const existing = await dataService.readOnce("files", { selector: { storageKey }, limit: 1 }, profile as JwtPayload);
+                            const existing = await dataService.readOnce(
+                                "files",
+                                { storageKey, limit: 1 },
+                                profile as JwtPayload
+                            );
                             const doc = (existing as any)?.docs?.[0];
                             if (doc) {
                                 ensured.push({ key: storageKey, id: doc._id || doc.id });
@@ -1628,7 +1739,8 @@ const app = new Elysia()
                                 : "other";
 
                             const nowIso = new Date().toISOString();
-                            const ext = typeof name === "string" && name.includes(".") ? name.split(".").pop() : undefined;
+                            const ext =
+                                typeof name === "string" && name.includes(".") ? name.split(".").pop() : undefined;
 
                             await dataService.write(
                                 "files",
@@ -1653,7 +1765,13 @@ const app = new Elysia()
                             created++;
                         }
 
-                        return { scanned: objects.length, missing: missing.length, created, dryRun, sampleMissing: missing.slice(0, 10) };
+                        return {
+                            scanned: objects.length,
+                            missing: missing.length,
+                            created,
+                            dryRun,
+                            sampleMissing: missing.slice(0, 10),
+                        };
                     } catch (e: any) {
                         console.error("[/storage/reindex-from-storage] error:", e);
                         set.status = 500;
@@ -1669,93 +1787,98 @@ const app = new Elysia()
             )
     )
     // Streaming endpoint for first-party UI with cookie or bearer auth
-    .get("/storage/stream", async ({ request, headers, cookie, jwt, sessionJwt, identityService, storageService, dataService, set }) => {
-        try {
-            const url = new URL(request.url);
-            const storageKey = url.searchParams.get("key") || url.searchParams.get("storageKey");
-            if (!storageKey) {
-                set.status = 400;
-                return { error: "Missing storageKey" };
-            }
+    .get(
+        "/storage/stream",
+        async ({ request, headers, cookie, jwt, sessionJwt, identityService, storageService, dataService, set }) => {
+            try {
+                const url = new URL(request.url);
+                const storageKey = url.searchParams.get("key") || url.searchParams.get("storageKey");
+                if (!storageKey) {
+                    set.status = 400;
+                    return { error: "Missing storageKey" };
+                }
 
-            // Resolve profile from Bearer or cookie session
-            let profile: { sub: string; instanceId: string } | null = null;
+                // Resolve profile from Bearer or cookie session
+                let profile: { sub: string; instanceId: string } | null = null;
 
-            const auth = headers.authorization;
-            if (auth && auth.startsWith("Bearer ")) {
-                try {
-                    const verified = await jwt.verify(auth.slice(7));
-                    if (verified && (verified as any).sub && (verified as any).instanceId) {
-                        profile = { sub: (verified as any).sub, instanceId: (verified as any).instanceId };
-                    }
-                } catch {}
-            }
-
-            if (!profile) {
-                const sessionToken = cookie.vibe_session.value;
-                if (sessionToken) {
+                const auth = headers.authorization;
+                if (auth && auth.startsWith("Bearer ")) {
                     try {
-                        const session = await sessionJwt.verify(sessionToken);
-                        if (session && (session as any).sessionId) {
-                            const user = await identityService.findByDid((session as any).sessionId);
-                            if (user) {
-                                profile = { sub: user.did, instanceId: user.instanceId };
-                            }
+                        const verified = await jwt.verify(auth.slice(7));
+                        if (verified && (verified as any).sub && (verified as any).instanceId) {
+                            profile = { sub: (verified as any).sub, instanceId: (verified as any).instanceId };
                         }
                     } catch {}
                 }
+
+                if (!profile) {
+                    const sessionToken = cookie.vibe_session.value;
+                    if (sessionToken) {
+                        try {
+                            const session = await sessionJwt.verify(sessionToken);
+                            if (session && (session as any).sessionId) {
+                                const user = await identityService.findByDid((session as any).sessionId);
+                                if (user) {
+                                    profile = { sub: user.did, instanceId: user.instanceId };
+                                }
+                            }
+                        } catch {}
+                    }
+                }
+
+                if (!profile) {
+                    set.status = 401;
+                    return { error: "Unauthorized" };
+                }
+
+                if (!isKeyInInstance(storageKey, profile.instanceId)) {
+                    set.status = 403;
+                    return { error: "forbidden_storageKey" };
+                }
+
+                const bucket = STORAGE_BUCKET;
+
+                // Load doc and check ACL
+                const existing = await dataService.readOnce("files", { storageKey, limit: 1 }, profile as any);
+                const doc = (existing as any)?.docs?.[0];
+                if (!doc) {
+                    set.status = 404;
+                    return { error: "NoSuchKey", storageKey };
+                }
+
+                const allowed = await allowRead(profile as any, doc, { services: { identityService, dataService } });
+                if (!allowed) {
+                    set.status = 403;
+                    return { error: "forbidden" };
+                }
+
+                // Fetch metadata and stream
+                const stat = await storageService.statObject(bucket, storageKey);
+                const dl = await storageService.download(bucket, storageKey);
+
+                // Build headers
+                const headersOut: Record<string, string> = {};
+                if (dl.contentType || stat?.contentType)
+                    headersOut["Content-Type"] = dl.contentType || stat?.contentType || "application/octet-stream";
+                if (dl.contentLength || stat?.size)
+                    headersOut["Content-Length"] = String(dl.contentLength || stat?.size || "");
+                headersOut["Accept-Ranges"] = "bytes";
+
+                const isPublic = doc?.acl && typeof doc.acl === "object" && (doc.acl as any).visibility === "public";
+                if (isPublic) {
+                    headersOut["Cache-Control"] = `public, max-age=${STREAM_PUBLIC_MAX_AGE_SECONDS}`;
+                } else {
+                    headersOut["Cache-Control"] = `private, max-age=${STREAM_PRIVATE_MAX_AGE_SECONDS}, must-revalidate`;
+                }
+
+                return new Response(dl.stream as any, { headers: headersOut });
+            } catch (e) {
+                console.error("[/storage/stream] error:", e);
+                set.status = 500;
+                return { error: "Failed to stream object" };
             }
-
-            if (!profile) {
-                set.status = 401;
-                return { error: "Unauthorized" };
-            }
-
-            if (!isKeyInInstance(storageKey, profile.instanceId)) {
-                set.status = 403;
-                return { error: "forbidden_storageKey" };
-            }
-
-            const bucket = STORAGE_BUCKET;
-
-            // Load doc and check ACL
-            const existing = await dataService.readOnce("files", { selector: { storageKey }, limit: 1 }, profile as any);
-            const doc = (existing as any)?.docs?.[0];
-            if (!doc) {
-                set.status = 404;
-                return { error: "NoSuchKey", storageKey };
-            }
-
-            const allowed = await allowRead(profile as any, doc, { services: { identityService, dataService } });
-            if (!allowed) {
-                set.status = 403;
-                return { error: "forbidden" };
-            }
-
-            // Fetch metadata and stream
-            const stat = await storageService.statObject(bucket, storageKey);
-            const dl = await storageService.download(bucket, storageKey);
-
-            // Build headers
-            const headersOut: Record<string, string> = {};
-            if (dl.contentType || stat?.contentType) headersOut["Content-Type"] = dl.contentType || stat?.contentType || "application/octet-stream";
-            if (dl.contentLength || stat?.size) headersOut["Content-Length"] = String(dl.contentLength || stat?.size || "");
-            headersOut["Accept-Ranges"] = "bytes";
-
-            const isPublic = doc?.acl && typeof doc.acl === "object" && (doc.acl as any).visibility === "public";
-            if (isPublic) {
-                headersOut["Cache-Control"] = `public, max-age=${STREAM_PUBLIC_MAX_AGE_SECONDS}`;
-            } else {
-                headersOut["Cache-Control"] = `private, max-age=${STREAM_PRIVATE_MAX_AGE_SECONDS}, must-revalidate`;
-            }
-
-            return new Response(dl.stream as any, { headers: headersOut });
-        } catch (e) {
-            console.error("[/storage/stream] error:", e);
-            set.status = 500;
-            return { error: "Failed to stream object" };
         }
-    })
+    )
     .group("/data", (app) =>
         app
             .derive(async ({ jwt, headers }) => {
@@ -1866,7 +1989,11 @@ const app = new Elysia()
                             console.log(`WebSocket authenticated for type: ${type} by user ${profile.sub}`);
 
                             const processAndSend = async () => {
-                                const result = await dataService.readOnce(type, message.query || {}, profile as JwtPayload);
+                                const result = await dataService.readOnce(
+                                    type,
+                                    message.query || {},
+                                    profile as JwtPayload
+                                );
                                 ws.send(result);
                             };
 
@@ -1936,7 +2063,11 @@ const app = new Elysia()
                         });
 
                         // Send initial data
-                        const result = await dataService.readOnce(type, { ...message.query, global: true }, profile as JwtPayload);
+                        const result = await dataService.readOnce(
+                            type,
+                            { ...message.query, global: true },
+                            profile as JwtPayload
+                        );
                         ws.send(result);
                     }
                 },
@@ -1970,20 +2101,18 @@ const app = new Elysia()
                             return { error: "User not found" };
                         }
                         // Use DataService.readOnce to ensure an authenticated Couch session and proper access handling
-                        const result = await dataService.readOnce<any>(
-                            "profiles",
-                            {  _id: ref, limit: 1 },
-                            { sub: user.did, instanceId: user.instanceId } as JwtPayload
-                        );
+                        const result = await dataService.readOnce<any>("profiles", { _id: ref, limit: 1 }, {
+                            sub: user.did,
+                            instanceId: user.instanceId,
+                        } as JwtPayload);
                         let doc = Array.isArray(result?.docs) ? result.docs[0] : null;
                         // Fallback: Some environments may not store the profile at "profiles/me".
                         // Try to find any profiles doc for this DID.
                         if (!doc) {
-                            const byDid = await dataService.readOnce<any>(
-                                "profiles",
-                                { did: user.did, limit: 1 },
-                                { sub: user.did, instanceId: user.instanceId } as JwtPayload
-                            );
+                            const byDid = await dataService.readOnce<any>("profiles", { did: user.did, limit: 1 }, {
+                                sub: user.did,
+                                instanceId: user.instanceId,
+                            } as JwtPayload);
                             doc = Array.isArray(byDid?.docs) ? byDid.docs[0] : null;
                         }
                         if (!doc) {
@@ -2030,7 +2159,7 @@ const app = new Elysia()
                 "/issue",
                 async ({ profile, body, set, certsService }) => {
                     try {
-                        const certificate = await certsService.issue(body, profile as JwtPayload);
+                        const certificate = await certsService.issue(body as Certificate, profile as JwtPayload);
                         return { success: true, certificate };
                     } catch (error: any) {
                         set.status = 500;
@@ -2073,7 +2202,12 @@ const app = new Elysia()
                 "/issue-auto",
                 async ({ profile, body, set, certsService }) => {
                     try {
-                        const certificate = await certsService.issueAuto(profile as JwtPayload, body.subject, body.certType, body.expires);
+                        const certificate = await certsService.issueAuto(
+                            profile as JwtPayload,
+                            body.subject,
+                            body.certType,
+                            body.expires
+                        );
                         return { success: true, certificate };
                     } catch (error: any) {
                         set.status = 500;
@@ -2156,4 +2290,6 @@ const app = new Elysia()
 
 export type App = typeof app;
 
-console.log(`Vibe Cloud API (${process.env.APP_VERSION}) is running at http://${app.server?.hostname}:${app.server?.port}`);
+console.log(
+    `Vibe Cloud API (${process.env.APP_VERSION}) is running at http://${app.server?.hostname}:${app.server?.port}`
+);
