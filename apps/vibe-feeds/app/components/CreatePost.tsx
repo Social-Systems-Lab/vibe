@@ -27,7 +27,9 @@ export function CreatePost() {
     const [acl, setAcl] = useState<Acl>({ read: { allow: ["*"] } });
 
     // Attached files to this post (any type; previews show images best-effort)
-    const [attachments, setAttachments] = useState<{ id: string; name?: string; url?: string; storageKey?: string; mimeType?: string; size?: number }[]>([]);
+    const [attachments, setAttachments] = useState<
+        { id: string; name?: string; url?: string; storageKey?: string; mimeType?: string; size?: number }[]
+    >([]);
 
     // ImagePicker modal
     const [pickerOpen, setPickerOpen] = useState(false);
@@ -63,7 +65,10 @@ export function CreatePost() {
             for (const f of files) {
                 try {
                     // 1) Upload file binary; SDK returns storageKey and may include created file doc
-                    const up = (await upload(f as File)) as { storageKey: string; file?: { id?: string; name?: string; mimeType?: string; size?: number } };
+                    const up = (await upload(f as File)) as {
+                        storageKey: string;
+                        file?: { id?: string; name?: string; mimeType?: string; size?: number };
+                    };
                     const storageKey = up.storageKey;
 
                     // 2) Best-effort preview URL
@@ -107,7 +112,7 @@ export function CreatePost() {
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
                 <div className="flex flex-1 cursor-pointer items-center space-x-4 rounded-[15px] bg-white p-4">
-                    <Squircle imageUrl={user?.pictureUrl} size={40}>
+                    <Squircle src={user?.pictureUrl} size={40}>
                         {user?.displayName?.[0]}
                     </Squircle>
                     <div className="flex flex-1">
@@ -122,7 +127,7 @@ export function CreatePost() {
                 <DialogHeader>
                     <DialogTitle>
                         <div className="flex items-center gap-4">
-                            <Squircle imageUrl={user?.pictureUrl} size={40}>
+                            <Squircle src={user?.pictureUrl} size={40}>
                                 {user?.displayName?.[0]}
                             </Squircle>
                             <div>
@@ -145,7 +150,14 @@ export function CreatePost() {
                             {attachments.map((f) => (
                                 <div key={f.id} className="relative group">
                                     <FilePreview
-                                        file={{ id: f.id, name: f.name, url: f.url, storageKey: f.storageKey, mimeType: f.mimeType, size: f.size }}
+                                        file={{
+                                            id: f.id,
+                                            name: f.name,
+                                            url: f.url,
+                                            storageKey: f.storageKey,
+                                            mimeType: f.mimeType,
+                                            size: f.size,
+                                        }}
                                         size="md"
                                         variant="grid"
                                     />
@@ -186,7 +198,16 @@ export function CreatePost() {
             <ImagePicker
                 open={pickerOpen}
                 onOpenChange={setPickerOpen}
-                onSelect={(picked: Array<{ id: string; name?: string; storageKey?: string; url?: string; mimeType?: string; size?: number }>) => {
+                onSelect={(
+                    picked: Array<{
+                        id: string;
+                        name?: string;
+                        storageKey?: string;
+                        url?: string;
+                        mimeType?: string;
+                        size?: number;
+                    }>
+                ) => {
                     setAttachments((prev) => {
                         const mapped = picked.map((p) => ({
                             id: p.id,

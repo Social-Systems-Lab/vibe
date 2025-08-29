@@ -143,7 +143,7 @@ export function PostCard({ post }: PostCardProps) {
             <div className="flex space-x-4">
                 <HoverCard>
                     <HoverCardTrigger onClick={handleSelectUser}>
-                        <Squircle imageUrl={(post.author as Profile)?.pictureUrl} size={38}>
+                        <Squircle src={(post.author as Profile)?.pictureUrl} size={38}>
                             {(post.author as Profile)?.name?.substring(0, 2).toUpperCase()}
                         </Squircle>
                     </HoverCardTrigger>

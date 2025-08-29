@@ -1,28 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useVibe, Squircle, ImagePicker, getStreamUrl } from "vibe-react";
+import { useVibe, Squircle, ImagePicker, VibeImage } from "vibe-react";
 import { usePageTopBar } from "../components/PageTopBarContext";
 import { User as UserIcon, Camera } from "lucide-react";
+import { FileDoc } from "vibe-sdk";
 
-type BearerUser = {
-    did: string;
-    instanceId: string;
-    displayName?: string;
+type ProfileDoc = {
+    _id: string;
+    name?: string;
     pictureUrl?: string;
     coverUrl?: string;
-};
-
-type CookieUser = {
-    displayName?: string;
-    pictureUrl?: string;
+    coverStorageKey?: string;
+    did: string;
 };
 
 export default function ProfilePage() {
-    const { apiBase, user: vibeUser, readOnce } = useVibe();
-    const [token, setToken] = useState<string | null>(null);
-    const [user, setUser] = useState<BearerUser | null>(null);
-    const [cookieUser, setCookieUser] = useState<CookieUser | null>(null);
+    const { user: vibeUser, read, write } = useVibe();
+    const [profile, setProfile] = useState<ProfileDoc | null>(null);
     const [error, setError] = useState<string | null>(null);
     const { setContent } = usePageTopBar();
 
@@ -30,8 +25,6 @@ export default function ProfilePage() {
     const [pickerOpen, setPickerOpen] = useState(false);
     const [pickerMode, setPickerMode] = useState<"avatar" | "cover">("avatar");
     const [saving, setSaving] = useState(false);
-    const [coverKey, setCoverKey] = useState<string | null>(null);
-    const [coverResolved, setCoverResolved] = useState<string | null>(null);
 
     // Helpers
     const copy = async (text?: string) => {
@@ -58,80 +51,27 @@ export default function ProfilePage() {
         return () => setContent(null);
     }, [setContent]);
 
-    // Acquire API token (cookie-auth)
-    useEffect(() => {
-        const run = async () => {
-            try {
-                const res = await fetch(`${apiBase}/hub/api-token`, { credentials: "include" });
-                if (!res.ok) throw new Error(`Token fetch failed (${res.status})`);
-                const data = await res.json();
-                setToken(data.token);
-            } catch (e: any) {
-                setError(e?.message || "Failed to get API token");
-            }
-        };
-        run();
-    }, [apiBase]);
-
-    // Load user from VibeProvider instead of manual fetch
+    // Subscribe to profile document
     useEffect(() => {
         if (!vibeUser) return;
-        setUser({
-            did: (vibeUser as any).did,
-            instanceId: (vibeUser as any).instanceId,
-            displayName: (vibeUser as any).displayName,
-            pictureUrl: (vibeUser as any).pictureUrl,
-        });
-    }, [vibeUser]);
-
-    // Load cover via hub-aware readOnce, avoid manual REST
-    useEffect(() => {
-        let abort = false;
-        (async () => {
-            if (!user?.did) return;
-            try {
-                const res = await readOnce<any>("profiles", { _id: "profiles/me", limit: 1 });
-                const doc = Array.isArray((res as any)?.docs) ? (res as any).docs[0] : null;
-                if (doc && !abort) {
-                    if ((doc as any).coverUrl) {
-                        setUser((prev) => (prev ? { ...prev, coverUrl: (doc as any).coverUrl as string } : prev));
-                    }
-                    setCoverKey((doc as any).coverStorageKey ? String((doc as any).coverStorageKey) : null);
-                }
-            } catch {
-                // ignore; cover is optional
+        const query = { _id: "profiles/me", limit: 1 };
+        const sub = read("profiles", query, ({ data }) => {
+            const doc = data?.[0] as ProfileDoc | undefined;
+            console.log("********* Profile doc update", doc);
+            if (doc) {
+                setProfile(doc);
             }
-        })();
+        });
         return () => {
-            abort = true;
+            sub.then((s) => s.unsubscribe());
         };
-    }, [readOnce, user?.did]);
+    }, [vibeUser, read]);
 
-    // Resolve cover stream URL when we have a storage key (no presign needed for first-party UI)
-    useEffect(() => {
-        if (!coverKey || coverResolved) return;
-        setCoverResolved(getStreamUrl(apiBase, coverKey));
-    }, [apiBase, coverKey, coverResolved]);
-
-    // Load cookie user (displayName/picture)
-    useEffect(() => {
-        const run = async () => {
-            try {
-                const res = await fetch(`${apiBase}/auth/me`, { credentials: "include" });
-                if (!res.ok) return; // optional
-                const data = await res.json();
-                setCookieUser(data as CookieUser);
-            } catch {}
-        };
-        run();
-    }, [apiBase]);
-
-    const resolvedDisplayName = user?.displayName || cookieUser?.displayName || "Your profile";
-    const resolvedPicture = cookieUser?.pictureUrl || user?.pictureUrl || null;
-
-    // Build cover styles: prefer presigned URL, else user's coverUrl; otherwise gradient fallback via classes
-    const coverImage = coverResolved || user?.coverUrl || null;
-    const coverStyle = coverImage ? { backgroundImage: `url(${coverImage})` } : undefined;
+    const resolvedDisplayName = profile?.name || vibeUser?.displayName || "Your profile";
+    const resolvedPicture = profile?.pictureUrl || (vibeUser as any)?.pictureUrl || null;
+    const coverFileDoc = profile?.coverStorageKey
+        ? ({ storageKey: profile.coverStorageKey, mimeType: "image/" } as FileDoc)
+        : null;
 
     // Avatar overlap calculations
     const AVATAR_SIZE = 160;
@@ -142,105 +82,52 @@ export default function ProfilePage() {
         setPickerOpen(true);
     };
 
-    const applyAvatarUrl = async (url: string) => {
-        if (!token) return;
-        setSaving(true);
-        try {
-            const res = await fetch(`${apiBase}/users/me`, {
-                method: "PATCH",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ pictureUrl: url }),
-            });
-            if (!res.ok) throw new Error(`Failed to update avatar (${res.status})`);
-            // Optimistically update UI
-            setUser((prev) => (prev ? { ...prev, pictureUrl: url } : prev));
-            setCookieUser((prev) => (prev ? { ...prev, pictureUrl: url } : prev));
-        } catch (e: any) {
-            setError(e?.message || "Failed to update avatar");
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const applyCover = async (url: string, storageKey?: string) => {
-        if (!token || !user?.did) return;
-        setSaving(true);
-        try {
-            // Upsert profiles/me with coverStorageKey via data API (do not persist presigned URLs)
-            const payload: any = { _id: "profiles/me", did: user.did };
-            if (storageKey) payload.coverStorageKey = storageKey;
-
-            const res = await fetch(`${apiBase}/data/types/profiles`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(payload),
-            });
-            if (!res.ok) throw new Error(`Failed to update cover (${res.status})`);
-
-            if (storageKey) {
-                setCoverKey(storageKey);
-                setCoverResolved(getStreamUrl(apiBase, storageKey));
-            } else if (url) {
-                // Fallback for legacy items without storageKey
-                setCoverResolved(url);
-            }
-        } catch (e: any) {
-            setError(e?.message || "Failed to update cover");
-        } finally {
-            setSaving(false);
-        }
-    };
-
     const onPickerSelect = async (files: any[]) => {
         const f = Array.isArray(files) ? files[0] : null;
-        if (!f) {
+        if (!f || !vibeUser) {
             setPickerOpen(false);
             return;
         }
-        const storageKey: string | undefined = (f as any)?.storageKey;
-        let url: string | undefined = f.url || f.thumbnailUrl;
-
-        // Prefer stable stream URL when a storageKey exists (no presign required for first-party UI)
-        if (storageKey) {
-            url = `${apiBase}/storage/stream?key=${encodeURIComponent(storageKey)}`;
-        }
-
-        if (!url) {
-            setError("Selected image has no accessible URL");
+        setSaving(true);
+        try {
+            const payload: Partial<ProfileDoc> = { _id: "profiles/me", did: vibeUser.did };
+            if (pickerMode === "avatar") {
+                payload.pictureUrl = f.storageKey;
+            } else {
+                payload.coverStorageKey = f.storageKey;
+            }
+            await write("profiles", payload);
+        } catch (e: any) {
+            setError(e?.message || "Failed to update profile");
+        } finally {
+            setSaving(false);
             setPickerOpen(false);
-            return;
         }
-
-        if (pickerMode === "avatar") {
-            await applyAvatarUrl(url);
-        } else {
-            await applyCover(url, storageKey);
-        }
-        setPickerOpen(false);
     };
 
     return (
         <main className="w-full">
             <section className="max-w-5xl">
-                {error && <div className="rounded-md border border-red-300 bg-red-50 text-red-800 p-3 text-sm mb-3">{error}</div>}
+                {error && (
+                    <div className="rounded-md border border-red-300 bg-red-50 text-red-800 p-3 text-sm mb-3">
+                        {error}
+                    </div>
+                )}
 
                 {/* Cover */}
                 <div className="relative group">
                     <div
                         className={[
                             "w-full rounded-xl overflow-hidden",
-                            coverImage ? "bg-cover bg-center" : "bg-gradient-to-r from-purple-100 to-blue-100 dark:from-purple-900/30 dark:to-blue-900/30",
+                            coverFileDoc
+                                ? "bg-cover bg-center"
+                                : "bg-gradient-to-r from-purple-100 to-blue-100 dark:from-purple-900/30 dark:to-blue-900/30",
                             "h-[300px] md:h-[350px] lg:aspect-[16/4]",
                         ].join(" ")}
-                        style={coverStyle}
                         aria-hidden="true"
-                    />
+                    >
+                        {coverFileDoc && <VibeImage src={coverFileDoc} className="w-full h-full object-cover" />}
+                    </div>
                     <button
                         type="button"
                         onClick={() => openPicker("cover")}
@@ -261,7 +148,7 @@ export default function ProfilePage() {
                     <div className="flex items-start gap-4">
                         <div className="shrink-0 relative group" style={{ marginTop: -OVERLAP }}>
                             <Squircle
-                                imageUrl={resolvedPicture || undefined}
+                                src={resolvedPicture}
                                 size={AVATAR_SIZE}
                                 className="shadow-lg ring-2 ring-background border border-border"
                             >
@@ -287,21 +174,51 @@ export default function ProfilePage() {
                                 <div className="inline-flex items-center gap-2 rounded-md border border-border bg-background/80 px-3 py-1 text-xs">
                                     <span className="font-mono inline-flex items-center gap-1">
                                         {/* key icon */}
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-foreground/50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 9.75l-7.5 7.5m0 0H9.75m2.25 0V15" />
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            className="h-3 w-3 text-foreground/50"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"
+                                            />
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                d="M19.5 9.75l-7.5 7.5m0 0H9.75m2.25 0V15"
+                                            />
                                         </svg>
-                                        {shortDid(user?.did)}
+                                        {shortDid(vibeUser?.did)}
                                     </span>
                                     <button
-                                        onClick={() => copy(user?.did)}
+                                        onClick={() => copy(vibeUser?.did)}
                                         className="inline-flex items-center rounded-sm border border-border bg-background px-1.5 py-0.5 text-[11px] hover:bg-accent/20 transition"
                                         title="Copy DID"
                                     >
                                         {/* subtle copy icon */}
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-foreground/50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h8a2 2 0 012 2v9a2 2 0 01-2 2H8a2 2 0 01-2-2V9a2 2 0 012-2z" />
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M16 7V5a2 2 0 00-2-2H9a2 2 0 00-2 2v2" />
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            className="h-3 w-3 text-foreground/50"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                d="M8 7h8a2 2 0 012 2v9a2 2 0 01-2 2H8a2 2 0 01-2-2V9a2 2 0 012-2z"
+                                            />
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                d="M16 7V5a2 2 0 00-2-2H9a2 2 0 00-2 2v2"
+                                            />
                                         </svg>
                                     </button>
                                 </div>

@@ -29,14 +29,14 @@ export const ProfileMenu = () => {
     return (
         <div className="relative inline-block" ref={menuRef}>
             <button onClick={() => setIsOpen(!isOpen)} className="bg-transparent border-none p-0 cursor-pointer block">
-                <Squircle imageUrl={(user as any).pictureUrl} size={40}>
+                <Squircle src={(user as any).pictureUrl} size={40}>
                     {user.displayName?.[0]}
                 </Squircle>
             </button>
             {isOpen && (
                 <div className="absolute top-12 right-0 bg-white rounded-lg shadow-lg w-64 z-[1001] border border-gray-200 overflow-hidden">
                     <div className="p-3 flex items-center">
-                        <Squircle imageUrl={(user as any).pictureUrl} size={40} className="mr-3">
+                        <Squircle src={(user as any).pictureUrl} size={40} className="mr-3">
                             {user.displayName?.[0]}
                         </Squircle>
                         <span className="font-bold text-lg whitespace-nowrap">{user.displayName || ""}</span>

@@ -1,16 +1,18 @@
 import React from "react";
+import { FileDoc } from "vibe-sdk";
+import VibeImage from "../VibeImage";
 
 interface SquircleProps {
-    imageUrl?: string | null;
+    src?: FileDoc | string | null;
     size?: number;
     className?: string;
     children?: React.ReactNode; // For fallback content like initials
     asCircle?: boolean;
 }
 
-const SQUIRCLE_PATH = "M 0 80 C 0 20, 20 0, 80 0 S 160 20, 160 80, 140 160 80 160, 0 140, 0 80";
+const SQUIRCLE_PATH = "M 0 80 C 0 20, 20 0, 80 0 S 160 20, 160 80, 140 160, 80 160, 0 140, 0 80";
 
-export function Squircle({ imageUrl, size = 60, className, children, asCircle }: SquircleProps) {
+export function Squircle({ src, size = 60, className, children, asCircle }: SquircleProps) {
     const clipPathId = `squircle-clip-${Math.random().toString(36).substring(2, 15)}`;
 
     return (
@@ -36,17 +38,8 @@ export function Squircle({ imageUrl, size = 60, className, children, asCircle }:
                     </defs>
                 </svg>
             )}
-            {imageUrl ? (
-                <img
-                    src={imageUrl}
-                    alt="Squircle content"
-                    style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                        display: "block",
-                    }}
-                />
+            {src ? (
+                <VibeImage src={src} alt="Squircle content" className="w-full h-full object-cover block" />
             ) : (
                 <div
                     style={{
