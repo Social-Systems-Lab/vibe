@@ -3,7 +3,17 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
 import "../input.css";
 import LoadingAnimation from "./LoadingAnimation";
-import { VibeSDK, User, ReadCallback, Subscription, createSdk, DocRef, VibeManifest, Document, ReadOnceResponse } from "vibe-sdk";
+import {
+    VibeSDK,
+    User,
+    ReadCallback,
+    Subscription,
+    createSdk,
+    DocRef,
+    VibeManifest,
+    Document,
+    ReadOnceResponse,
+} from "vibe-sdk";
 
 interface VibeContextType {
     sdk: VibeSDK;
@@ -25,6 +35,7 @@ interface VibeContextType {
     presignPut: (name: string, mime?: string, size?: number, sha256?: string) => Promise<any>;
     presignGet: (storageKey: string, expires?: number) => Promise<any>;
     apiBase: string;
+    getToken: () => string | null;
 }
 
 const VibeContext = createContext<VibeContextType | undefined>(undefined);
@@ -35,7 +46,15 @@ const DefaultLoadingComponent = () => (
     </div>
 );
 
-export const VibeProvider = ({ children, config, loadingComponent }: { children: ReactNode; config: VibeManifest; loadingComponent?: ReactNode }) => {
+export const VibeProvider = ({
+    children,
+    config,
+    loadingComponent,
+}: {
+    children: ReactNode;
+    config: VibeManifest;
+    loadingComponent?: ReactNode;
+}) => {
     const [sdk] = useState(() => createSdk(config));
     const [user, setUser] = useState<User | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -97,7 +116,8 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
     const readOnce = <T extends Document>(collection: string, query?: any) => sdk.readOnce<T>(collection, query);
     const write = (collection: string, data: any) => sdk.write(collection, data);
     const remove = (collection: string, data: any) => sdk.remove(collection, data);
-    const issueCert = (targetDid: string, certType: DocRef, expires?: string) => sdk.issueCert(targetDid, certType, expires);
+    const issueCert = (targetDid: string, certType: DocRef, expires?: string) =>
+        sdk.issueCert(targetDid, certType, expires);
     const revokeCert = (certId: string) => sdk.revokeCert(certId);
 
     // Storage helpers delegating to SDK
@@ -108,7 +128,8 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
         }
         return { storageKey: res.storageKey as string };
     };
-    const presignPut = (name: string, mime?: string, size?: number, sha256?: string) => sdk.storage.presignPut(name, mime, size, sha256);
+    const presignPut = (name: string, mime?: string, size?: number, sha256?: string) =>
+        sdk.storage.presignPut(name, mime, size, sha256);
     const presignGet = (storageKey: string, expires?: number) => sdk.storage.presignGet(storageKey, expires);
     const LoadingComponent = loadingComponent || <DefaultLoadingComponent />;
 
@@ -141,6 +162,7 @@ export const VibeProvider = ({ children, config, loadingComponent }: { children:
                 presignPut,
                 presignGet,
                 apiBase: (config.apiUrl || "").replace(/\/$/, ""),
+                getToken: () => sdk.getToken(),
             }}
         >
             {children}

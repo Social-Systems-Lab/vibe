@@ -94,7 +94,10 @@ export class VibeSDK {
         upload: async (
             file: File & { type?: string; name: string },
             opts?: { acl?: unknown; description?: string; tags?: string[] }
-        ): Promise<{ storageKey: string; file?: { id?: string; name?: string; storageKey: string; mimeType?: string; size?: number } }> => {
+        ): Promise<{
+            storageKey: string;
+            file?: { id?: string; name?: string; storageKey: string; mimeType?: string; size?: number };
+        }> => {
             if (!this.authManager.isLoggedIn()) throw new Error("Not authenticated");
             const headers = { Authorization: `Bearer ${this.authManager.getAccessToken()}` };
 
@@ -110,7 +113,9 @@ export class VibeSDK {
 
             // 2) Execute plan
             let storageKey: string | undefined;
-            let createdFile: { id?: string; name?: string; storageKey: string; mimeType?: string; size?: number } | undefined;
+            let createdFile:
+                | { id?: string; name?: string; storageKey: string; mimeType?: string; size?: number }
+                | undefined;
 
             if (plan && plan.strategy === "presigned") {
                 const putHeaders = new Headers(plan.headers || {});
@@ -127,7 +132,9 @@ export class VibeSDK {
                     size: (file as any).size || plan.metadata?.size,
                     ...(opts || {}),
                 };
-                const { data: commitRes, error: commitErr } = await this.api.storage["commit"].post(commitBody, { headers });
+                const { data: commitRes, error: commitErr } = await this.api.storage["commit"].post(commitBody, {
+                    headers,
+                });
                 if (commitErr) {
                     console.warn("Commit metadata failed; continuing without file doc", commitErr);
                 } else if (commitRes && typeof commitRes === "object" && "file" in commitRes) {
@@ -145,10 +152,13 @@ export class VibeSDK {
                     size: (file as any).size || plan.metadata?.size,
                     ...(opts || {}),
                 };
-                const { data: upRes, error: upErr } = await this.api.storage.upload.post(uploadBody as any, { headers });
+                const { data: upRes, error: upErr } = await this.api.storage.upload.post(uploadBody as any, {
+                    headers,
+                });
                 if (upErr) throw new Error(`Server upload failed: ${JSON.stringify(upErr)}`);
                 if (upRes && typeof upRes === "object") {
-                    if ("storageKey" in upRes && (upRes as any).storageKey) storageKey = (upRes as any).storageKey as string;
+                    if ("storageKey" in upRes && (upRes as any).storageKey)
+                        storageKey = (upRes as any).storageKey as string;
                     if ("file" in upRes) createdFile = upRes.file as typeof createdFile;
                 }
             } else {
@@ -282,7 +292,14 @@ export class VibeSDK {
                     console.log("VibeSDK: Posting INIT message to hub with target origin:", targetOrigin);
                 }
                 this.hubFrame.contentWindow.postMessage(
-                    { action: "INIT", payload: { origin: window.location.origin, user: this.user, redirectUri: this.config.redirectUri } },
+                    {
+                        action: "INIT",
+                        payload: {
+                            origin: window.location.origin,
+                            user: this.user,
+                            redirectUri: this.config.redirectUri,
+                        },
+                    },
                     targetOrigin,
                     [channel.port2]
                 );
@@ -426,7 +443,9 @@ export class VibeSDK {
         const { generatePkce } = await import("./strategies/standalone");
         const pkce = await generatePkce();
         sessionStorage.setItem("vibe_pkce_verifier", pkce.verifier);
-        const state = window.crypto.getRandomValues(new Uint8Array(16)).reduce((s, byte) => s + byte.toString(16).padStart(2, "0"), "");
+        const state = window.crypto
+            .getRandomValues(new Uint8Array(16))
+            .reduce((s, byte) => s + byte.toString(16).padStart(2, "0"), "");
         sessionStorage.setItem("vibe_oauth_state", state);
         const params = new URLSearchParams({
             response_type: "code",
@@ -493,7 +512,9 @@ export class VibeSDK {
     async getUser(): Promise<User | null> {
         if (!this.authManager.isLoggedIn()) return null;
         try {
-            const { data, error } = await this.api.users.me.get({ $headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` } });
+            const { data, error } = await this.api.users.me.get({
+                $headers: { Authorization: `Bearer ${this.authManager.getAccessToken()}` },
+            });
             if (error) {
                 console.error("Error fetching user:", error.value);
                 this.authManager.setAccessToken(null);
@@ -507,6 +528,10 @@ export class VibeSDK {
             console.error("Exception fetching user:", e);
             return null;
         }
+    }
+
+    getToken(): string | null {
+        return this.authManager.getAccessToken();
     }
 
     // --- Data Methods (from HubStrategy, now using postToHub) ---
@@ -570,17 +595,19 @@ export class VibeSDK {
 
     // --- State Management ---
     onStateChange(callback: (state: { isAuthenticated: boolean; user: User | null }) => void) {
-        const authUnsubscribe = this.authManager.onStateChange(async (state: { isLoggedIn: boolean; user: User | null }) => {
-            this.user = state.user;
+        const authUnsubscribe = this.authManager.onStateChange(
+            async (state: { isLoggedIn: boolean; user: User | null }) => {
+                this.user = state.user;
 
-            // Inform the hub about the user change
-            if (this.hubPort) {
-                this.postToHub({ action: "SET_USER", payload: this.user });
+                // Inform the hub about the user change
+                if (this.hubPort) {
+                    this.postToHub({ action: "SET_USER", payload: this.user });
+                }
+
+                this.isAuthenticated = state.isLoggedIn;
+                callback({ isAuthenticated: this.isAuthenticated, user: this.user });
             }
-
-            this.isAuthenticated = state.isLoggedIn;
-            callback({ isAuthenticated: this.isAuthenticated, user: this.user });
-        });
+        );
 
         // Immediately notify with current state
         callback({ isAuthenticated: this.isAuthenticated, user: this.user });

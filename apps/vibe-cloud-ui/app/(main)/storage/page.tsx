@@ -366,12 +366,7 @@ export default function StoragePage() {
                 <div className="relative h-28 bg-accent/10">
                     {file ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <VibeImage
-                            src={file}
-                            token={token}
-                            alt={file.name || "preview"}
-                            className="w-full h-full object-cover"
-                        />
+                        <VibeImage src={file} alt={file.name || "preview"} className="w-full h-full object-cover" />
                     ) : (
                         // <img src={imgUrl} alt={file.name || "preview"} className="w-full h-full object-cover" />
                         <div className="h-full w-full flex items-center justify-center text-foreground/60 text-xs">

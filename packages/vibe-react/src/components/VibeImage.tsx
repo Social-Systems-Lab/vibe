@@ -8,24 +8,29 @@ import { FileDoc } from "vibe-sdk";
 export type VibeImageProps = Omit<React.ImgHTMLAttributes<HTMLImageElement>, "src"> & {
     src?: FileDoc | string;
     strategy?: UrlStrategy;
-    token?: string | null;
 };
 
 /**
  * VibeImage renders an <img> for a storage object.
- * - If a token is provided, it will fetch the image via an authenticated request.
- * - Otherwise, it will fall back to a direct stream URL.
+ * - It automatically uses the session token from VibeProvider for authenticated requests.
+ * - It will only attempt to render files with an "image/*" mime type.
  */
-export function VibeImage({ src, strategy = "auto", token, alt = "", ...rest }: VibeImageProps) {
-    const { apiBase } = useVibe();
+export function VibeImage({ src, strategy = "auto", alt = "", ...rest }: VibeImageProps) {
+    const { apiBase, getToken } = useVibe();
     const [objectUrl, setObjectUrl] = useState<string | undefined>(undefined);
 
+    const fileDoc = typeof src === "object" ? src : null;
+    const isImage = fileDoc?.mimeType?.startsWith("image/");
+
     useEffect(() => {
+        if (!isImage) return;
+
         let isMounted = true;
         let currentObjectUrl: string | null = null;
 
         const fetchAndSetImage = async () => {
-            const storageKey = typeof src === "object" ? src?.storageKey : null;
+            const storageKey = fileDoc?.storageKey;
+            const token = getToken();
 
             if (storageKey && token) {
                 try {
@@ -64,9 +69,9 @@ export function VibeImage({ src, strategy = "auto", token, alt = "", ...rest }: 
                 URL.revokeObjectURL(currentObjectUrl);
             }
         };
-    }, [src, token, apiBase]);
+    }, [src, getToken, apiBase, isImage, fileDoc]);
 
-    if (!objectUrl) {
+    if (!isImage || !objectUrl) {
         return null;
     }
 
