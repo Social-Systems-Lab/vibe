@@ -18,22 +18,8 @@ export type VibeImageProps = Omit<React.ImgHTMLAttributes<HTMLImageElement>, "sr
  */
 export function VibeImage({ src, strategy = "auto", alt = "", ...rest }: VibeImageProps) {
     const { apiBase } = useVibe();
-    const [imgUrl, setImgUrl] = useState<string | null>(null);
-
-    useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            if ((file.mimeType || "").startsWith("image/") && file.storageKey) {
-                const u = getStreamUrl(apiBase, file.storageKey);
-                if (!cancelled) setImgUrl(u || null);
-            }
-        })();
-        return () => {
-            cancelled = true;
-        };
-    }, [apiBase, file.storageKey, file.mimeType]);
-
-    const resolved = src?.storageKey ? getStreamUrl(apiBase, src.storageKey) : src;
+    const resolved =
+        typeof src === "string" ? src : src?.storageKey ? getStreamUrl(apiBase, src.storageKey) : undefined;
 
     if (!resolved) {
         // Render nothing if we have neither storageKey nor src

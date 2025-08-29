@@ -7,8 +7,8 @@ export type UrlStrategy = "auto" | "stream" | "presigned";
  * This requires the API to expose GET /storage/stream?key=...
  */
 export function getStreamUrl(apiBase: string, storageKey: string): string {
-  const base = (apiBase || "").replace(/\/+$/, "");
-  return `${base}/storage/stream?key=${encodeURIComponent(storageKey)}`;
+    const base = (apiBase || "").replace(/\/+$/, "");
+    return `${base}/storage/stream?key=${encodeURIComponent(storageKey)}`;
 }
 
 /**
@@ -17,16 +17,16 @@ export function getStreamUrl(apiBase: string, storageKey: string): string {
  * If you need presigned behavior here, wire it via the SDK and return a short-lived URL.
  */
 export function getUrl(opts: {
-  apiBase: string;
-  storageKey: string;
-  strategy?: UrlStrategy;
-  // expires?: number; // reserved for future presign usage
+    apiBase: string;
+    storageKey: string;
+    strategy?: UrlStrategy;
+    // expires?: number; // reserved for future presign usage
 }): string {
-  const { apiBase, storageKey, strategy = "auto" } = opts;
-  switch (strategy) {
-    case "stream":
-    case "auto":
-    default:
-      return getStreamUrl(apiBase, storageKey);
-  }
+    const { apiBase, storageKey, strategy = "auto" } = opts;
+    switch (strategy) {
+        case "stream":
+        case "auto":
+        default:
+            return getStreamUrl(apiBase, storageKey)!;
+    }
 }

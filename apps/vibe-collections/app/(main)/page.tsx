@@ -308,7 +308,7 @@ function FilesArea({
                         <tr key={f._id} className="border-t hover:bg-neutral-50">
                             <td className="py-2 px-2">{f.name}</td>
                             <td className="py-2 px-2 uppercase text-neutral-500">{f.type}</td>
-                            <td className="py-2 px-2">{humanSize(f.size)}</td>
+                            <td className="py-2 px-2">{humanSize(f.size!)}</td>
                             <td className="py-2 px-2 text-neutral-500">
                                 {f.updatedAt ? new Date(f.updatedAt).toLocaleString() : "-"}
                             </td>
@@ -373,7 +373,7 @@ function FileCard({
         <div className="border rounded-lg overflow-hidden bg-white shadow-sm hover:shadow-md transition-shadow">
             <div className="relative h-28 bg-neutral-100">
                 {imgUrl ? (
-                    <Image src={imgUrl} alt={file.name} fill sizes="200px" className="object-cover" />
+                    <Image src={imgUrl} alt={file.name!} fill sizes="200px" className="object-cover" />
                 ) : (
                     <div className="h-full w-full flex items-center justify-center text-neutral-400 text-sm">
                         No preview
@@ -385,7 +385,7 @@ function FileCard({
                 <div className="font-medium truncate" title={file.name}>
                     {file.name}
                 </div>
-                <div className="text-xs text-neutral-500">{humanSize(file.size)}</div>
+                <div className="text-xs text-neutral-500">{humanSize(file.size!)}</div>
             </div>
         </div>
     );

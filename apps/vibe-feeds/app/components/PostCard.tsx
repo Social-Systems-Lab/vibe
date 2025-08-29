@@ -88,7 +88,7 @@ export function PostCard({ post }: PostCardProps) {
         }
     };
 
-    const postDate = new Date(parseInt(post._id?.split("/")[1]?.split("-")[0]) * 1);
+    const postDate = new Date(parseInt((post._id ?? "")?.split("/")[1]?.split("-")[0]) * 1);
     const isOwnPost = post.author.did === user?.did;
 
     // Normalize attachments: post.attachments can be an array of DocRefs or expanded file docs (after expand)
@@ -189,7 +189,11 @@ export function PostCard({ post }: PostCardProps) {
                     {hasImages && (
                         <div className="relative mt-3 w-full">
                             <div className="h-64 w-full overflow-hidden rounded-lg bg-neutral-100">
-                                <img src={imageUrls[currentIdx]} alt={`image-${currentIdx + 1}`} className="h-64 w-full rounded-lg object-cover" />
+                                <img
+                                    src={imageUrls[currentIdx]}
+                                    alt={`image-${currentIdx + 1}`}
+                                    className="h-64 w-full rounded-lg object-cover"
+                                />
                             </div>
 
                             {imageUrls.length > 1 && (
@@ -221,7 +225,9 @@ export function PostCard({ post }: PostCardProps) {
                                                 <button
                                                     key={idx}
                                                     onClick={() => setCurrentIdx(idx)}
-                                                    className={`mx-1 h-1.5 w-1.5 rounded-full ${idx === currentIdx ? "bg-blue-500" : "bg-gray-300"}`}
+                                                    className={`mx-1 h-1.5 w-1.5 rounded-full ${
+                                                        idx === currentIdx ? "bg-blue-500" : "bg-gray-300"
+                                                    }`}
                                                     aria-label={`Go to image ${idx + 1}`}
                                                 />
                                             ))}
