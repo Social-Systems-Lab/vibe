@@ -105,6 +105,8 @@ export default function ProfilePage() {
                 payload.coverUrl = getStreamUrl(f.storageKey);
             }
             await write("profiles", payload);
+            const updatedProfile = await readOnce("profiles", { _id: "profiles/me", limit: 1 });
+            setProfile((updatedProfile as any)?.docs?.[0] || null);
         } catch (e: any) {
             setError(e?.message || "Failed to update profile");
         } finally {
