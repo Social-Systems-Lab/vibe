@@ -1793,18 +1793,22 @@ const app = new Elysia()
             try {
                 const url = new URL(request.url);
                 const storageKey = url.searchParams.get("key") || url.searchParams.get("storageKey");
+                const tokenFromQuery = url.searchParams.get("token");
                 if (!storageKey) {
                     set.status = 400;
                     return { error: "Missing storageKey" };
                 }
 
-                // Resolve profile from Bearer or cookie session
+                // Resolve profile from Bearer, query param, or cookie session
                 let profile: { sub: string; instanceId: string } | null = null;
 
                 const auth = headers.authorization;
-                if (auth && auth.startsWith("Bearer ")) {
+                const bearerToken = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
+                const tokenToVerify = bearerToken || tokenFromQuery;
+
+                if (tokenToVerify) {
                     try {
-                        const verified = await jwt.verify(auth.slice(7));
+                        const verified = await jwt.verify(tokenToVerify);
                         if (verified && (verified as any).sub && (verified as any).instanceId) {
                             profile = { sub: (verified as any).sub, instanceId: (verified as any).instanceId };
                         }

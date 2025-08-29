@@ -6,9 +6,13 @@ export type UrlStrategy = "auto" | "stream" | "presigned";
  * Derive a first-party stream URL for a storage object.
  * This requires the API to expose GET /storage/stream?key=...
  */
-export function getStreamUrl(apiBase: string, storageKey: string): string {
+export function getStreamUrl(apiBase: string, storageKey: string, token?: string): string {
     const base = (apiBase || "").replace(/\/+$/, "");
-    return `${base}/storage/stream?key=${encodeURIComponent(storageKey)}`;
+    let url = `${base}/storage/stream?key=${encodeURIComponent(storageKey)}`;
+    if (token) {
+        url += `&token=${encodeURIComponent(token)}`;
+    }
+    return url;
 }
 
 /**

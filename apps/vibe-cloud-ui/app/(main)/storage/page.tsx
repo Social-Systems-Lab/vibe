@@ -203,12 +203,12 @@ export default function StoragePage() {
 
     const getPreviewUrl = async (storageKey?: string) => {
         if (!storageKey) return;
-        return getStreamUrl(apiBase, storageKey);
+        return getStreamUrl(apiBase, storageKey, token || undefined);
     };
 
     const handleDownload = async (storageKey?: string) => {
         try {
-            const url = storageKey ? getStreamUrl(apiBase, storageKey) : undefined;
+            const url = storageKey ? getStreamUrl(apiBase, storageKey, token || undefined) : undefined;
             if (url) window.open(url, "_blank", "noopener,noreferrer");
         } catch (e: any) {
             setError(e?.message || "Failed to open download");
@@ -217,7 +217,7 @@ export default function StoragePage() {
 
     const onPreview = async (file: FileDoc) => {
         try {
-            const url = file.storageKey ? getStreamUrl(apiBase, file.storageKey) : null;
+            const url = file.storageKey ? getStreamUrl(apiBase, file.storageKey, token || undefined) : null;
             setPreviewUrl(url);
             setPreviewFile(file);
             setPreviewOpen(true);
@@ -366,7 +366,12 @@ export default function StoragePage() {
                 <div className="relative h-28 bg-accent/10">
                     {file ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <VibeImage src={file} alt={file.name || "preview"} className="w-full h-full object-cover" />
+                        <VibeImage
+                            src={file}
+                            token={token}
+                            alt={file.name || "preview"}
+                            className="w-full h-full object-cover"
+                        />
                     ) : (
                         // <img src={imgUrl} alt={file.name || "preview"} className="w-full h-full object-cover" />
                         <div className="h-full w-full flex items-center justify-center text-foreground/60 text-xs">
