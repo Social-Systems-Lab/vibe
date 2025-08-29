@@ -14,6 +14,7 @@ import {
     Document,
     ReadOnceResponse,
 } from "vibe-sdk";
+import { getStreamUrl } from "../lib/storage";
 
 interface VibeContextType {
     sdk: VibeSDK;
@@ -36,6 +37,7 @@ interface VibeContextType {
     presignGet: (storageKey: string, expires?: number) => Promise<any>;
     apiBase: string;
     getToken: () => string | null;
+    getStreamUrl: (storageKey: string) => string;
 }
 
 const VibeContext = createContext<VibeContextType | undefined>(undefined);
@@ -163,6 +165,8 @@ export const VibeProvider = ({
                 presignGet,
                 apiBase: (config.apiUrl || "").replace(/\/$/, ""),
                 getToken: () => sdk.getToken(),
+                getStreamUrl: (storageKey: string) =>
+                    getStreamUrl(config.apiUrl, storageKey, sdk.getToken() || undefined),
             }}
         >
             {children}

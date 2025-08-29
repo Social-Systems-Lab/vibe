@@ -6,7 +6,7 @@ import { getStreamUrl, UrlStrategy } from "../lib/storage";
 import { FileDoc } from "vibe-sdk";
 
 export type VibeImageProps = Omit<React.ImgHTMLAttributes<HTMLImageElement>, "src"> & {
-    src?: FileDoc | string;
+    src?: FileDoc | string | null;
     strategy?: UrlStrategy;
 };
 
@@ -19,11 +19,14 @@ export function VibeImage({ src, strategy = "auto", alt = "", ...rest }: VibeIma
     const { apiBase, getToken } = useVibe();
     const [objectUrl, setObjectUrl] = useState<string | undefined>(undefined);
 
-    const fileDoc = typeof src === "object" ? src : null;
-    const isImage = fileDoc?.mimeType?.startsWith("image/");
+    const fileDoc = typeof src === "object" && src !== null ? src : null;
+    const isRenderableImage = fileDoc ? fileDoc.mimeType?.startsWith("image/") : typeof src === "string";
 
     useEffect(() => {
-        if (!isImage) return;
+        if (!isRenderableImage) {
+            setObjectUrl(undefined);
+            return;
+        }
 
         let isMounted = true;
         let currentObjectUrl: string | null = null;
@@ -69,9 +72,9 @@ export function VibeImage({ src, strategy = "auto", alt = "", ...rest }: VibeIma
                 URL.revokeObjectURL(currentObjectUrl);
             }
         };
-    }, [src, getToken, apiBase, isImage, fileDoc]);
+    }, [src, getToken, apiBase, isRenderableImage, fileDoc]);
 
-    if (!isImage || !objectUrl) {
+    if (!isRenderableImage || !objectUrl) {
         return null;
     }
 

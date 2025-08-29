@@ -16,7 +16,7 @@ type ProfileDoc = {
 };
 
 export default function ProfilePage() {
-    const { user: vibeUser, read, write } = useVibe();
+    const { user: vibeUser, read, write, apiBase, getStreamUrl } = useVibe();
     const [profile, setProfile] = useState<ProfileDoc | null>(null);
     const [error, setError] = useState<string | null>(null);
     const { setContent } = usePageTopBar();
@@ -57,7 +57,6 @@ export default function ProfilePage() {
         const query = { _id: "profiles/me", limit: 1 };
         const sub = read("profiles", query, ({ data }) => {
             const doc = data?.[0] as ProfileDoc | undefined;
-            console.log("********* Profile doc update", doc);
             if (doc) {
                 setProfile(doc);
             }
@@ -68,7 +67,13 @@ export default function ProfilePage() {
     }, [vibeUser, read]);
 
     const resolvedDisplayName = profile?.name || vibeUser?.displayName || "Your profile";
-    const resolvedPicture = profile?.pictureUrl || (vibeUser as any)?.pictureUrl || null;
+    const resolvedPictureUrl = profile?.pictureUrl || (vibeUser as any)?.pictureUrl || null;
+    const resolvedPicture = resolvedPictureUrl
+        ? resolvedPictureUrl.startsWith("http")
+            ? resolvedPictureUrl
+            : ({ storageKey: resolvedPictureUrl, mimeType: "image/" } as FileDoc)
+        : null;
+
     const coverFileDoc = profile?.coverStorageKey
         ? ({ storageKey: profile.coverStorageKey, mimeType: "image/" } as FileDoc)
         : null;
@@ -95,6 +100,7 @@ export default function ProfilePage() {
                 payload.pictureUrl = f.storageKey;
             } else {
                 payload.coverStorageKey = f.storageKey;
+                payload.coverUrl = getStreamUrl(f.storageKey);
             }
             await write("profiles", payload);
         } catch (e: any) {
