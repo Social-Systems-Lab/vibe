@@ -16,7 +16,7 @@ type ProfileDoc = {
 };
 
 export default function ProfilePage() {
-    const { user: vibeUser, read, write, apiBase, getStreamUrl } = useVibe();
+    const { user: vibeUser, read, write, apiBase, getStreamUrl, readOnce } = useVibe();
     const [profile, setProfile] = useState<ProfileDoc | null>(null);
     const [error, setError] = useState<string | null>(null);
     const { setContent } = usePageTopBar();
@@ -95,7 +95,9 @@ export default function ProfilePage() {
         }
         setSaving(true);
         try {
-            const payload: Partial<ProfileDoc> = { ...profile, _id: "profiles/me", did: vibeUser.did };
+            const res = await readOnce("profiles", { _id: "profiles/me", limit: 1 });
+            const doc = (res as any)?.docs?.[0];
+            const payload: Partial<ProfileDoc> = { ...doc, _id: "profiles/me", did: vibeUser.did };
             if (pickerMode === "avatar") {
                 payload.pictureUrl = f.storageKey;
             } else {
