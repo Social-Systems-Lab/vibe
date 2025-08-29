@@ -95,7 +95,7 @@ export default function ProfilePage() {
         }
         setSaving(true);
         try {
-            const payload: Partial<ProfileDoc> = { _id: "profiles/me", did: vibeUser.did };
+            const payload: Partial<ProfileDoc> = { ...profile, _id: "profiles/me", did: vibeUser.did };
             if (pickerMode === "avatar") {
                 payload.pictureUrl = f.storageKey;
             } else {
