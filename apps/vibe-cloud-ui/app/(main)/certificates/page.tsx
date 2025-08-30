@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { appManifest } from "../../lib/manifest";
 import { Button, DataTable, type ColumnDef, Input } from "vibe-react";
 import { Search, LayoutGrid, List } from "lucide-react";
+import CertificateDesigner from "./designer";
 
 type CertDoc = {
     _id?: string;
@@ -123,6 +124,7 @@ export default function CertificatesPage() {
     const [busyIds, setBusyIds] = useState<Record<string, boolean>>({}); // revoke button spinners
     const [query, setQuery] = useState("");
     const [view, setView] = useState<"table" | "grid">("table");
+    const [designerOpen, setDesignerOpen] = useState(false);
 
     // Acquire API token via cookie-auth (server will look at session cookie)
     useEffect(() => {
@@ -550,6 +552,17 @@ export default function CertificatesPage() {
             header: "Created",
             cell: ({ row }) => formatDate(row.original.createdAt),
         },
+        {
+            id: "actions",
+            header: "Actions",
+            cell: ({ row }) => (
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setDesignerOpen(true)}>
+                        Design
+                    </Button>
+                </div>
+            ),
+        },
     ];
 
     return (
@@ -767,6 +780,15 @@ export default function CertificatesPage() {
                             </div>
                         )}
                     </div>
+                )}
+                {designerOpen && (
+                    <CertificateDesigner
+                        onClose={() => setDesignerOpen(false)}
+                        onSave={(template) => {
+                            console.log("save", template);
+                            setDesignerOpen(false);
+                        }}
+                    />
                 )}
             </section>
         </main>

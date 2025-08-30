@@ -56,6 +56,7 @@ export interface CertType extends Document {
     description: string;
     badgeIconUrl?: string;
     bannerImageUrl?: string;
+    template?: any;
 }
 
 export interface Post extends Document {

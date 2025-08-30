@@ -122,7 +122,13 @@ export class CertsService {
         return this.dataService.write("revocations", revocation, issuer);
     }
 
-    async createCertType(owner: JwtPayload, name: string, label: string, description: string): Promise<CertType> {
+    async createCertType(
+        owner: JwtPayload,
+        name: string,
+        label: string,
+        description: string,
+        template?: any
+    ): Promise<CertType> {
         const certType: CertType = {
             _id: `cert-types/${owner.sub}/${name}`,
             type: "cert-types",
@@ -131,6 +137,7 @@ export class CertsService {
             label,
             description,
             createdAt: new Date().toISOString(),
+            template,
         };
 
         await this.dataService.write("cert-types", certType, owner);

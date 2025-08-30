@@ -2237,7 +2237,8 @@ const app = new Elysia()
                             profile as JwtPayload,
                             body.name,
                             body.label,
-                            body.description
+                            body.description,
+                            body.template
                         );
                         return { success: true, certType };
                     } catch (error: any) {
@@ -2250,6 +2251,7 @@ const app = new Elysia()
                         name: t.String(),
                         label: t.String(),
                         description: t.String(),
+                        template: t.Optional(t.Any()),
                     }),
                 }
             )
