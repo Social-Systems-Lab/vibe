@@ -130,6 +130,7 @@ export class CertsService {
             name,
             label,
             description,
+            createdAt: new Date().toISOString(),
         };
 
         await this.dataService.write("cert-types", certType, owner);

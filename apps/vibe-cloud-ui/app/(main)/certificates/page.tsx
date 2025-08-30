@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { appManifest } from "../../lib/manifest";
 import { Button, DataTable, type ColumnDef, Input } from "vibe-react";
-import { Search } from "lucide-react";
+import { Search, LayoutGrid, List } from "lucide-react";
 
 type CertDoc = {
     _id?: string;
@@ -122,6 +122,7 @@ export default function CertificatesPage() {
     const [loading, setLoading] = useState(false);
     const [busyIds, setBusyIds] = useState<Record<string, boolean>>({}); // revoke button spinners
     const [query, setQuery] = useState("");
+    const [view, setView] = useState<"table" | "grid">("table");
 
     // Acquire API token via cookie-auth (server will look at session cookie)
     useEffect(() => {
@@ -535,9 +536,9 @@ export default function CertificatesPage() {
 
     const columnsMyTypes: ColumnDef<CertTypeDoc>[] = [
         {
-            accessorKey: "ref",
-            header: "Ref",
-            cell: ({ row }) => <code className="text-xs">{row.original._id || row.original.id || "-"}</code>,
+            accessorKey: "badge",
+            header: "Badge",
+            cell: () => <div></div>,
         },
         {
             accessorKey: "name",
@@ -545,12 +546,7 @@ export default function CertificatesPage() {
             cell: ({ row }) => row.original.name || row.original.label || "-",
         },
         {
-            accessorKey: "owner",
-            header: "Owner",
-            cell: ({ row }) => <code className="text-xs">{row.original.owner || "-"}</code>,
-        },
-        {
-            accessorKey: "created",
+            accessorKey: "createdAt",
             header: "Created",
             cell: ({ row }) => formatDate(row.original.createdAt),
         },
@@ -658,6 +654,34 @@ export default function CertificatesPage() {
                             className="pl-8 shrink-0"
                         />
                     </div>
+                    <div className="inline-flex rounded-md border border-border overflow-hidden">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label="Grid view"
+                            className={
+                                view === "grid"
+                                    ? "bg-violet-600 text-white border-transparent hover:bg-violet-600/90 rounded-none rounded-l-lg"
+                                    : "rounded-none rounded-l-lg border-border"
+                            }
+                            onClick={() => setView("grid")}
+                        >
+                            <LayoutGrid className="size-4" />
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label="Table view"
+                            className={
+                                view === "table"
+                                    ? "bg-violet-600 text-white border-transparent hover:bg-violet-600/90 rounded-none rounded-r-lg"
+                                    : "rounded-none rounded-r-lg border-border"
+                            }
+                            onClick={() => setView("table")}
+                        >
+                            <List className="size-4" />
+                        </Button>
+                    </div>
                 </div>
 
                 {/* Tabs content */}
@@ -722,7 +746,26 @@ export default function CertificatesPage() {
                                 </div>
                             </div>
                         )}
-                        <DataTable columns={columnsMyTypes} data={filteredMyTypes} pageSize={10} />
+                        {view === "table" ? (
+                            <DataTable columns={columnsMyTypes} data={filteredMyTypes} pageSize={10} />
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                                {filteredMyTypes.map((t) => (
+                                    <div
+                                        key={t._id || t.id}
+                                        className="border rounded-lg overflow-hidden bg-background shadow-sm hover:shadow-md transition-shadow"
+                                    >
+                                        <div className="relative h-28 bg-accent/10"></div>
+                                        <div className="p-2">
+                                            <div className="font-medium truncate" title={t.name || ""}>
+                                                {t.name || "-"}
+                                            </div>
+                                            <div className="text-xs text-foreground/60">{formatDate(t.createdAt)}</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
             </section>
