@@ -2229,6 +2229,30 @@ const app = new Elysia()
                     }),
                 }
             )
+            .post(
+                "/types/create",
+                async ({ profile, body, set, certsService }) => {
+                    try {
+                        const certType = await certsService.createCertType(
+                            profile as JwtPayload,
+                            body.name,
+                            body.label,
+                            body.description
+                        );
+                        return { success: true, certType };
+                    } catch (error: any) {
+                        set.status = 500;
+                        return { error: error.message };
+                    }
+                },
+                {
+                    body: t.Object({
+                        name: t.String(),
+                        label: t.String(),
+                        description: t.String(),
+                    }),
+                }
+            )
     )
     .group("/hub", (app) =>
         app

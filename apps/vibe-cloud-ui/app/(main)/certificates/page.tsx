@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { appManifest } from "../../lib/manifest";
-import { Button } from "vibe-react";
+import { Button, DataTable, type ColumnDef, Input } from "vibe-react";
+import { Search } from "lucide-react";
 
 type CertDoc = {
     _id?: string;
@@ -92,7 +93,7 @@ export default function CertificatesPage() {
     const [myDid, setMyDid] = useState<string | null>(null);
 
     // Tabs
-    const tabs = ["Issued to Me", "Issued by Me", "My Types"] as const;
+    const tabs = ["Issued to Me", "Issued by Me", "My Certificate Types"] as const;
     type Tab = (typeof tabs)[number];
     const [activeTab, setActiveTab] = useState<Tab>("Issued to Me");
 
@@ -109,10 +110,18 @@ export default function CertificatesPage() {
     const [issueExpires, setIssueExpires] = useState(""); // yyyy-mm-dd
     const [issuing, setIssuing] = useState(false);
 
+    // Create type form
+    const [createOpen, setCreateOpen] = useState(false);
+    const [createName, setCreateName] = useState("");
+    const [createLabel, setCreateLabel] = useState("");
+    const [createDescription, setCreateDescription] = useState("");
+    const [creating, setCreating] = useState(false);
+
     // Global UI
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [busyIds, setBusyIds] = useState<Record<string, boolean>>({}); // revoke button spinners
+    const [query, setQuery] = useState("");
 
     // Acquire API token via cookie-auth (server will look at session cookie)
     useEffect(() => {
@@ -215,9 +224,6 @@ export default function CertificatesPage() {
     const loadMyTypes = async () => {
         if (!authHeaders) return;
         const body: any = {};
-        if (myDid) {
-            body.selector = { owner: myDid };
-        }
         const res = await fetch(`${apiBase}/data/types/cert-types/query`, {
             method: "POST",
             headers: authHeaders,
@@ -316,6 +322,43 @@ export default function CertificatesPage() {
         }
     };
 
+    const createCertType = async () => {
+        if (!authHeaders || !myDid) return;
+        if (!createName || !createLabel) {
+            setError("Name and Label are required");
+            return;
+        }
+        setCreating(true);
+        setError(null);
+        try {
+            const body = {
+                name: createName.trim(),
+                label: createLabel.trim(),
+                description: createDescription.trim(),
+            };
+            const res = await fetch(`${apiBase}/certs/types/create`, {
+                method: "POST",
+                headers: authHeaders,
+                body: JSON.stringify(body),
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({} as any));
+                throw new Error(data?.error || `Failed to create certificate type (${res.status})`);
+            }
+            // Reset form
+            setCreateName("");
+            setCreateLabel("");
+            setCreateDescription("");
+            setCreateOpen(false);
+            // Refresh my types
+            await loadMyTypes();
+        } catch (e: any) {
+            setError(e?.message || "Failed to create certificate type");
+        } finally {
+            setCreating(false);
+        }
+    };
+
     const isRevoked = (cert: CertDoc) => {
         const key = cert._id || cert.id;
         if (!key) return false;
@@ -329,6 +372,189 @@ export default function CertificatesPage() {
             label: t.name || t.label || t._id || t.id || "-",
         }));
     }, [myTypes]);
+
+    const filteredIssuedToMe = useMemo(() => {
+        const base = issuedToMe || [];
+        const q = query.trim().toLowerCase();
+        return base.filter((c) => {
+            const matchQ =
+                !q ||
+                c.type?.toLowerCase().includes(q) ||
+                c.issuer?.toLowerCase().includes(q) ||
+                c.certType?.ref?.toLowerCase().includes(q);
+            return matchQ;
+        });
+    }, [issuedToMe, query]);
+
+    const filteredIssuedByMe = useMemo(() => {
+        const base = issuedByMe || [];
+        const q = query.trim().toLowerCase();
+        return base.filter((c) => {
+            const matchQ =
+                !q ||
+                c.type?.toLowerCase().includes(q) ||
+                c.subject?.toLowerCase().includes(q) ||
+                c.certType?.ref?.toLowerCase().includes(q);
+            return matchQ;
+        });
+    }, [issuedByMe, query]);
+
+    const filteredMyTypes = useMemo(() => {
+        const base = myTypes || [];
+        const q = query.trim().toLowerCase();
+        return base.filter((t) => {
+            const matchQ =
+                !q ||
+                t.name?.toLowerCase().includes(q) ||
+                t.label?.toLowerCase().includes(q) ||
+                t.owner?.toLowerCase().includes(q);
+            return matchQ;
+        });
+    }, [myTypes, query]);
+
+    const columnsIssuedToMe: ColumnDef<CertDoc>[] = [
+        {
+            accessorKey: "id",
+            header: "ID",
+            cell: ({ row }) => <code className="text-xs">{row.original._id || row.original.id || "-"}</code>,
+        },
+        {
+            accessorKey: "type",
+            header: "Type",
+            cell: ({ row }) => row.original.type || "-",
+        },
+        {
+            accessorKey: "issuer",
+            header: "Issuer",
+            cell: ({ row }) => <code className="text-xs">{row.original.issuer || "-"}</code>,
+        },
+        {
+            accessorKey: "ref",
+            header: "Ref",
+            cell: ({ row }) => <code className="text-xs">{row.original.certType?.ref || "-"}</code>,
+        },
+        {
+            accessorKey: "expires",
+            header: "Expires",
+            cell: ({ row }) => formatDate(row.original.expires),
+        },
+        {
+            accessorKey: "signature",
+            header: "Signature",
+            cell: ({ row }) => <code className="text-xs">{mask(row.original.signature)}</code>,
+        },
+        {
+            id: "actions",
+            header: "Actions",
+            cell: ({ row }) => (
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void copy(row.original.signature)}
+                        disabled={!row.original.signature}
+                    >
+                        Copy signature
+                    </Button>
+                </div>
+            ),
+        },
+    ];
+
+    const columnsIssuedByMe: ColumnDef<CertDoc>[] = [
+        {
+            accessorKey: "id",
+            header: "ID",
+            cell: ({ row }) => <code className="text-xs">{row.original._id || row.original.id || "-"}</code>,
+        },
+        {
+            accessorKey: "type",
+            header: "Type",
+            cell: ({ row }) => row.original.type || "-",
+        },
+        {
+            accessorKey: "subject",
+            header: "Subject",
+            cell: ({ row }) => <code className="text-xs">{row.original.subject || "-"}</code>,
+        },
+        {
+            accessorKey: "ref",
+            header: "Ref",
+            cell: ({ row }) => <code className="text-xs">{row.original.certType?.ref || "-"}</code>,
+        },
+        {
+            accessorKey: "expires",
+            header: "Expires",
+            cell: ({ row }) => formatDate(row.original.expires),
+        },
+        {
+            accessorKey: "status",
+            header: "Status",
+            cell: ({ row }) => {
+                const revoked = isRevoked(row.original);
+                return revoked ? (
+                    <span className="inline-flex items-center rounded border border-red-300 bg-red-50 text-red-800 px-2 py-0.5 text-xs">
+                        Revoked
+                    </span>
+                ) : (
+                    <span className="inline-flex items-center rounded border border-emerald-300 bg-emerald-50 text-emerald-800 px-2 py-0.5 text-xs">
+                        Active
+                    </span>
+                );
+            },
+        },
+        {
+            id: "actions",
+            header: "Actions",
+            cell: ({ row }) => {
+                const id = row.original._id || row.original.id || "";
+                const revoked = isRevoked(row.original);
+                return (
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void copy(row.original.signature)}
+                            disabled={!row.original.signature}
+                        >
+                            Copy signature
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => void revokeCert(id)}
+                            disabled={!id || revoked || !!busyIds[id]}
+                        >
+                            {busyIds[id] ? "Revoking…" : "Revoke"}
+                        </Button>
+                    </div>
+                );
+            },
+        },
+    ];
+
+    const columnsMyTypes: ColumnDef<CertTypeDoc>[] = [
+        {
+            accessorKey: "ref",
+            header: "Ref",
+            cell: ({ row }) => <code className="text-xs">{row.original._id || row.original.id || "-"}</code>,
+        },
+        {
+            accessorKey: "name",
+            header: "Name",
+            cell: ({ row }) => row.original.name || row.original.label || "-",
+        },
+        {
+            accessorKey: "owner",
+            header: "Owner",
+            cell: ({ row }) => <code className="text-xs">{row.original.owner || "-"}</code>,
+        },
+        {
+            accessorKey: "created",
+            header: "Created",
+            cell: ({ row }) => formatDate(row.original.createdAt),
+        },
+    ];
 
     return (
         <main className="w-full">
@@ -421,174 +647,82 @@ export default function CertificatesPage() {
                     </div>
                 )}
 
+                {/* Toolbar */}
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row items-center sm:justify-between">
+                    <div className="relative w-full sm:w-80 flex flex-row gap-2">
+                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-foreground/50" />
+                        <Input
+                            placeholder="Search..."
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            className="pl-8 shrink-0"
+                        />
+                    </div>
+                </div>
+
                 {/* Tabs content */}
                 {activeTab === "Issued to Me" && (
-                    <div className="rounded-lg border border-border/60 bg-background/40 p-2 backdrop-blur">
-                        {!issuedToMe ? (
-                            <div className="text-sm text-foreground/60">Loading…</div>
-                        ) : issuedToMe.length === 0 ? (
-                            <div className="text-sm text-foreground/60">No certificates issued to you.</div>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm">
-                                    <thead className="text-left text-foreground/70">
-                                        <tr>
-                                            <th className="py-2 pr-3">ID</th>
-                                            <th className="py-2 pr-3">Type</th>
-                                            <th className="py-2 pr-3">Issuer</th>
-                                            <th className="py-2 pr-3">Ref</th>
-                                            <th className="py-2 pr-3">Expires</th>
-                                            <th className="py-2 pr-3">Signature</th>
-                                            <th className="py-2 pr-3">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-border/60">
-                                        {issuedToMe.map((c) => (
-                                            <tr key={c._id || c.id}>
-                                                <td className="py-2 pr-3">
-                                                    <code className="text-xs">{c._id || c.id || "-"}</code>
-                                                </td>
-                                                <td className="py-2 pr-3">{c.type || "-"}</td>
-                                                <td className="py-2 pr-3">
-                                                    <code className="text-xs">{c.issuer || "-"}</code>
-                                                </td>
-                                                <td className="py-2 pr-3">
-                                                    <code className="text-xs">{c.certType?.ref || "-"}</code>
-                                                </td>
-                                                <td className="py-2 pr-3">{formatDate(c.expires)}</td>
-                                                <td className="py-2 pr-3">
-                                                    <code className="text-xs">{mask(c.signature)}</code>
-                                                </td>
-                                                <td className="py-2 pr-3">
-                                                    <div className="flex items-center gap-2">
-                                                        <button
-                                                            onClick={() => void copy(c.signature)}
-                                                            disabled={!c.signature}
-                                                            className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent/20 transition disabled:opacity-50"
-                                                        >
-                                                            Copy signature
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
+                    <DataTable columns={columnsIssuedToMe} data={filteredIssuedToMe} pageSize={10} />
                 )}
 
                 {activeTab === "Issued by Me" && (
-                    <div className="rounded-lg border border-border/60 bg-background/40 p-2 backdrop-blur">
-                        {!issuedByMe ? (
-                            <div className="text-sm text-foreground/60">Loading…</div>
-                        ) : issuedByMe.length === 0 ? (
-                            <div className="text-sm text-foreground/60">You have not issued any certificates.</div>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm">
-                                    <thead className="text-left text-foreground/70">
-                                        <tr>
-                                            <th className="py-2 pr-3">ID</th>
-                                            <th className="py-2 pr-3">Type</th>
-                                            <th className="py-2 pr-3">Subject</th>
-                                            <th className="py-2 pr-3">Ref</th>
-                                            <th className="py-2 pr-3">Expires</th>
-                                            <th className="py-2 pr-3">Status</th>
-                                            <th className="py-2 pr-3">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-border/60">
-                                        {issuedByMe.map((c) => {
-                                            const id = c._id || c.id || "";
-                                            const revoked = isRevoked(c);
-                                            return (
-                                                <tr key={id}>
-                                                    <td className="py-2 pr-3">
-                                                        <code className="text-xs">{id || "-"}</code>
-                                                    </td>
-                                                    <td className="py-2 pr-3">{c.type || "-"}</td>
-                                                    <td className="py-2 pr-3">
-                                                        <code className="text-xs">{c.subject || "-"}</code>
-                                                    </td>
-                                                    <td className="py-2 pr-3">
-                                                        <code className="text-xs">{c.certType?.ref || "-"}</code>
-                                                    </td>
-                                                    <td className="py-2 pr-3">{formatDate(c.expires)}</td>
-                                                    <td className="py-2 pr-3">
-                                                        {revoked ? (
-                                                            <span className="inline-flex items-center rounded border border-red-300 bg-red-50 text-red-800 px-2 py-0.5 text-xs">
-                                                                Revoked
-                                                            </span>
-                                                        ) : (
-                                                            <span className="inline-flex items-center rounded border border-emerald-300 bg-emerald-50 text-emerald-800 px-2 py-0.5 text-xs">
-                                                                Active
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                    <td className="py-2 pr-3">
-                                                        <div className="flex items-center gap-2">
-                                                            <button
-                                                                onClick={() => void copy(c.signature)}
-                                                                disabled={!c.signature}
-                                                                className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent/20 transition disabled:opacity-50"
-                                                            >
-                                                                Copy signature
-                                                            </button>
-                                                            <button
-                                                                onClick={() => void revokeCert(id)}
-                                                                disabled={!id || revoked || !!busyIds[id]}
-                                                                className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent/20 transition disabled:opacity-50"
-                                                            >
-                                                                {busyIds[id] ? "Revoking…" : "Revoke"}
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
+                    <DataTable columns={columnsIssuedByMe} data={filteredIssuedByMe} pageSize={10} />
                 )}
 
-                {activeTab === "My Types" && (
-                    <div className="rounded-lg border border-border/60 bg-background/40 p-2 backdrop-blur">
-                        {!myTypes ? (
-                            <div className="text-sm text-foreground/60">Loading…</div>
-                        ) : myTypes.length === 0 ? (
-                            <div className="text-sm text-foreground/60">No certificate types found.</div>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm">
-                                    <thead className="text-left text-foreground/70">
-                                        <tr>
-                                            <th className="py-2 pr-3">Ref</th>
-                                            <th className="py-2 pr-3">Name</th>
-                                            <th className="py-2 pr-3">Owner</th>
-                                            <th className="py-2 pr-3">Created</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-border/60">
-                                        {myTypes.map((t) => (
-                                            <tr key={t._id || t.id}>
-                                                <td className="py-2 pr-3">
-                                                    <code className="text-xs">{t._id || t.id || "-"}</code>
-                                                </td>
-                                                <td className="py-2 pr-3">{t.name || t.label || "-"}</td>
-                                                <td className="py-2 pr-3">
-                                                    <code className="text-xs">{t.owner || "-"}</code>
-                                                </td>
-                                                <td className="py-2 pr-3">{formatDate(t.createdAt)}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                {activeTab === "My Certificate Types" && (
+                    <div>
+                        <div className="flex items-center justify-end mb-2">
+                            <Button onClick={() => setCreateOpen(true)}>Create Type</Button>
+                        </div>
+                        {createOpen && (
+                            <div className="rounded-lg border border-border/60 bg-background/40 p-3 mb-4">
+                                <div className="grid gap-3 md:grid-cols-3">
+                                    <div className="flex flex-col">
+                                        <label className="text-xs text-foreground/60 mb-1">Name</label>
+                                        <input
+                                            value={createName}
+                                            onChange={(e) => setCreateName(e.target.value)}
+                                            placeholder="e.g. friend-of"
+                                            className="border rounded-md px-2 py-1.5 bg-background"
+                                        />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <label className="text-xs text-foreground/60 mb-1">Label</label>
+                                        <input
+                                            value={createLabel}
+                                            onChange={(e) => setCreateLabel(e.target.value)}
+                                            placeholder="e.g. Friend Of"
+                                            className="border rounded-md px-2 py-1.5 bg-background"
+                                        />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <label className="text-xs text-foreground/60 mb-1">Description</label>
+                                        <input
+                                            value={createDescription}
+                                            onChange={(e) => setCreateDescription(e.target.value)}
+                                            placeholder="e.g. A friend of the user"
+                                            className="border rounded-md px-2 py-1.5 bg-background"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="mt-3 flex items-center gap-2">
+                                    <button
+                                        onClick={() => void createCertType()}
+                                        disabled={creating || !createName || !createLabel}
+                                        className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                                    >
+                                        {creating ? "Creating…" : "Create"}
+                                    </button>
+                                    <button
+                                        onClick={() => setCreateOpen(false)}
+                                        className="inline-flex items-center rounded-md border border-border bg-background px-4 py-2 text-sm hover:bg-accent/20"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
                             </div>
                         )}
+                        <DataTable columns={columnsMyTypes} data={filteredMyTypes} pageSize={10} />
                     </div>
                 )}
             </section>

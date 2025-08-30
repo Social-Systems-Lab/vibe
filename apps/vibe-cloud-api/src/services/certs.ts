@@ -7,7 +7,12 @@ import { Certificate, CertType, DocRef, privateKeyHexToPkcs8Pem } from "vibe-cor
 export class CertsService {
     constructor(private identityService: IdentityService, private dataService: DataService) {}
 
-    async issueAuto(issuer: JwtPayload, subjectDid: string, certTypeRef: DocRef, expires?: string): Promise<Certificate> {
+    async issueAuto(
+        issuer: JwtPayload,
+        subjectDid: string,
+        certTypeRef: DocRef,
+        expires?: string
+    ): Promise<Certificate> {
         const user = await this.identityService.findByDid(issuer.sub);
         if (!user) {
             throw new Error("User not found");
@@ -57,7 +62,9 @@ export class CertsService {
             { sub: certificate.certType.did, instanceId: "0" }
         );
         if (!certTypeResult || !certTypeResult.docs || certTypeResult.docs.length === 0) {
-            throw new Error(`Certificate Type ${certificate.certType.ref} not found for did ${certificate.certType.did}`);
+            throw new Error(
+                `Certificate Type ${certificate.certType.ref} not found for did ${certificate.certType.did}`
+            );
         }
         const certType = certTypeResult.docs[0] as CertType;
         if (certType.owner !== issuer.sub) {
@@ -91,7 +98,10 @@ export class CertsService {
         const subjectIdentity = await this.identityService.findByDid(certificate.subject);
         if (subjectIdentity) {
             const subjectPayload: JwtPayload = { sub: certificate.subject, instanceId: subjectIdentity.instanceId };
-            const subjectCert: Certificate = { ...certificate, _id: `certs/${certificate.type}-${certificate.issuer}-${Date.now()}` };
+            const subjectCert: Certificate = {
+                ...certificate,
+                _id: `certs/${certificate.type}-${certificate.issuer}-${Date.now()}`,
+            };
             await this.dataService.write("certs", subjectCert, subjectPayload);
         } else {
             console.warn(`Could not find subject ${certificate.subject} to remote-write certificate.`);
@@ -110,5 +120,20 @@ export class CertsService {
         };
 
         return this.dataService.write("revocations", revocation, issuer);
+    }
+
+    async createCertType(owner: JwtPayload, name: string, label: string, description: string): Promise<CertType> {
+        const certType: CertType = {
+            _id: `cert-types/${owner.sub}/${name}`,
+            type: "cert-types",
+            owner: owner.sub,
+            name,
+            label,
+            description,
+        };
+
+        await this.dataService.write("cert-types", certType, owner);
+
+        return certType;
     }
 }
