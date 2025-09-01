@@ -325,7 +325,7 @@ export default function CertificatesPage() {
         }
     };
 
-    const createCertType = async () => {
+    const createCertType = async (template?: any) => {
         if (!authHeaders || !myDid) return;
         if (!createName || !createLabel) {
             setError("Name and Label are required");
@@ -338,6 +338,7 @@ export default function CertificatesPage() {
                 name: createName.trim(),
                 label: createLabel.trim(),
                 description: createDescription.trim(),
+                template,
             };
             const res = await fetch(`${apiBase}/certs/types/create`, {
                 method: "POST",
@@ -785,7 +786,7 @@ export default function CertificatesPage() {
                     <CertificateDesigner
                         onClose={() => setDesignerOpen(false)}
                         onSave={(template) => {
-                            console.log("save", template);
+                            createCertType(template);
                             setDesignerOpen(false);
                         }}
                     />

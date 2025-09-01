@@ -16,11 +16,14 @@ export type ConsoleNavItem = {
 export const consoleNavItems: ConsoleNavItem[] = [
     { href: "/profile", label: "Profile", icon: User, match: (p) => p.startsWith("/profile") },
     { href: "/apps", label: "Apps", icon: Grid, match: (p) => p.startsWith("/apps") },
-    // { href: "/database", label: "Database", icon: Database, match: (p) => p.startsWith("/database") },
     { href: "/storage", label: "Storage", icon: HardDrive, match: (p) => p.startsWith("/storage") },
+
+    //{ href: "/certificates", label: "Certificates", icon: BadgeCheck, match: (p) => p.startsWith("/certificates") },
+
+    // TBD
+    // { href: "/database", label: "Database", icon: Database, match: (p) => p.startsWith("/database") },
     // { href: "/wallet", label: "Wallet", icon: Wallet, match: (p) => p.startsWith("/wallet") },
     // { href: "/messages", label: "Messages", icon: MessagesSquare, match: (p) => p.startsWith("/messages") },
-    { href: "/certificates", label: "Certificates", icon: BadgeCheck, match: (p) => p.startsWith("/certificates") },
     // { href: "/development", label: "Development", icon: Wrench, match: (p) => p.startsWith("/development") },
 ];
 
@@ -28,7 +31,14 @@ export default function ConsoleNav() {
     const pathname = usePathname() || "";
     const apiBase = (appManifest.apiUrl || "").replace(/\/$/, "");
     const [token, setToken] = useState<string | null>(null);
-    const [usage, setUsage] = useState<{ used_bytes: number; reserved_bytes: number; limit_bytes: number; burst_bytes: number; percent: number; tier?: string } | null>(null);
+    const [usage, setUsage] = useState<{
+        used_bytes: number;
+        reserved_bytes: number;
+        limit_bytes: number;
+        burst_bytes: number;
+        percent: number;
+        tier?: string;
+    } | null>(null);
     const [usageLoading, setUsageLoading] = useState(false);
 
     useEffect(() => {
@@ -88,7 +98,9 @@ export default function ConsoleNav() {
                             href={it.href}
                             className={[
                                 "inline-flex w-full items-center gap-3 rounded-md px-3 py-2 transition text-sm font-medium",
-                                active ? "text-[#6d1da5] bg-gradient-to-r from-purple-50 to-blue-50" : "hover:bg-gray-50 text-foreground/90",
+                                active
+                                    ? "text-[#6d1da5] bg-gradient-to-r from-purple-50 to-blue-50"
+                                    : "hover:bg-gray-50 text-foreground/90",
                             ].join(" ")}
                             // #ffac747d
                             // #88909f4d
@@ -104,7 +116,11 @@ export default function ConsoleNav() {
                 <div className="flex items-center justify-between mb-1">
                     <span className="text-xs text-foreground/60">Storage</span>
                     <span className="text-[11px] text-foreground/50">
-                        {usageLoading ? "…" : usage ? `${formatBytes(usage.used_bytes)} / ${formatBytes(usage.limit_bytes)}` : "—"}
+                        {usageLoading
+                            ? "…"
+                            : usage
+                            ? `${formatBytes(usage.used_bytes)} / ${formatBytes(usage.limit_bytes)}`
+                            : "—"}
                     </span>
                 </div>
                 <div className="w-full h-2 rounded bg-gray-100 overflow-hidden">
