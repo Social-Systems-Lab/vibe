@@ -755,6 +755,36 @@ const app = new Elysia()
                 const consents = await identityService.listUserConsents(session.sessionId);
                 return { consents };
             })
+            .delete(
+                "/me/consents",
+                async ({ cookie, set, identityService, sessionJwt, body }) => {
+                    const sessionToken = cookie.vibe_session.value;
+                    if (!sessionToken) {
+                        set.status = 401;
+                        return { error: "Unauthorized" };
+                    }
+
+                    const session = await sessionJwt.verify(sessionToken);
+                    if (!session || !session.sessionId) {
+                        set.status = 401;
+                        return { error: "Invalid session" };
+                    }
+
+                    const { clientId } = body as { clientId: string };
+                    if (!clientId) {
+                        set.status = 400;
+                        return { error: "Missing clientId" };
+                    }
+
+                    await identityService.revokeUserConsent(session.sessionId, clientId);
+                    return { success: true };
+                },
+                {
+                    body: t.Object({
+                        clientId: t.String(),
+                    }),
+                }
+            )
             .post(
                 "/password/forgot",
                 async ({ body, identityService, emailService }) => {

@@ -34,7 +34,7 @@ export const ProfileMenu = () => {
                 </Squircle>
             </button>
             {isOpen && (
-                <div className="absolute top-12 right-0 bg-white rounded-lg shadow-lg w-64 z-[1001] border border-gray-200 overflow-hidden">
+                <div className="absolute top-12 right-0 bg-white rounded-lg shadow-lg w-64 z-[1000] border border-gray-200 overflow-hidden">
                     <div className="p-3 flex items-center">
                         <Squircle src={(user as any).pictureUrl} size={40} className="mr-3">
                             {user.displayName?.[0]}

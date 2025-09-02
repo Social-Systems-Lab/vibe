@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useVibe, Squircle, ImagePicker, VibeImage } from "vibe-react";
+import { useVibe, Squircle, ImagePicker, VibeImage, Button } from "vibe-react";
 import { usePageTopBar } from "../components/PageTopBarContext";
-import { User as UserIcon, Camera } from "lucide-react";
+import { User as UserIcon, Camera, KeyRound, Copy } from "lucide-react";
 import { FileDoc } from "vibe-sdk";
 
 type ProfileDoc = {
@@ -37,7 +37,7 @@ export default function ProfilePage() {
     const shortDid = (did?: string) => {
         if (!did) return "-";
         const last = did.slice(-6);
-        return "…" + last;
+        return last;
     };
 
     // Inject breadcrumb/title into the shared TopBar rendered by Layout
@@ -177,60 +177,19 @@ export default function ProfilePage() {
 
                         <div className="min-w-0 mt-2">
                             <div className="text-2xl md:text-3xl font-semibold truncate">{resolvedDisplayName}</div>
-                            <div className="text-sm text-foreground/60">This is your identity on Vibe.</div>
+                            {/* <div className="text-sm text-foreground/60">This is your identity on Vibe.</div> */}
 
                             {/* DID pill */}
-                            <div className="mt-3">
-                                <div className="inline-flex items-center gap-2 rounded-md border border-border bg-background/80 px-3 py-1 text-xs">
-                                    <span className="font-mono inline-flex items-center gap-1">
-                                        {/* key icon */}
-                                        <svg
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            className="h-3 w-3 text-foreground/50"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                        >
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"
-                                            />
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                d="M19.5 9.75l-7.5 7.5m0 0H9.75m2.25 0V15"
-                                            />
-                                        </svg>
-                                        {shortDid(vibeUser?.did)}
-                                    </span>
-                                    <button
+                            <div>
+                                <div className="inline-flex items-center gap-2 text-xs">
+                                    <div
+                                        className="font-mono inline-flex items-center gap-1 hover:bg-accent/20 rounded-full cursor-pointer"
                                         onClick={() => copy(vibeUser?.did)}
-                                        className="inline-flex items-center rounded-sm border border-border bg-background px-1.5 py-0.5 text-[11px] hover:bg-accent/20 transition"
-                                        title="Copy DID"
                                     >
-                                        {/* subtle copy icon */}
-                                        <svg
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            className="h-3 w-3 text-foreground/50"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                        >
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                d="M8 7h8a2 2 0 012 2v9a2 2 0 01-2 2H8a2 2 0 01-2-2V9a2 2 0 012-2z"
-                                            />
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                d="M16 7V5a2 2 0 00-2-2H9a2 2 0 00-2 2v2"
-                                            />
-                                        </svg>
-                                    </button>
+                                        {/* key icon */}
+                                        <KeyRound size={10} />
+                                        {shortDid(vibeUser?.did)}
+                                    </div>
                                 </div>
                             </div>
                         </div>

@@ -1,5 +1,12 @@
 import Nano from "nano";
-import { generateEd25519KeyPair, didFromEd25519, generateSalt, deriveEncryptionKey, encryptData, decryptData } from "vibe-core";
+import {
+    generateEd25519KeyPair,
+    didFromEd25519,
+    generateSalt,
+    deriveEncryptionKey,
+    encryptData,
+    decryptData,
+} from "vibe-core";
 import { instanceIdFromDid } from "../lib/did";
 import { randomBytes, createHash } from "crypto";
 import { encryptWithMasterKey, decryptWithMasterKey } from "../lib/crypto";
@@ -390,7 +397,12 @@ export class IdentityService {
 
         // PKCE verification
         if (doc.codeChallengeMethod === "S256") {
-            const hashedVerifier = createHash("sha256").update(codeVerifier).digest("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+            const hashedVerifier = createHash("sha256")
+                .update(codeVerifier)
+                .digest("base64")
+                .replace(/\+/g, "-")
+                .replace(/\//g, "_")
+                .replace(/=/g, "");
             if (doc.codeChallenge !== hashedVerifier) {
                 throw new Error("Invalid code_verifier.");
             }
@@ -609,21 +621,23 @@ export class IdentityService {
         if (!user) return [];
         const consents = Array.isArray(user.consents) ? user.consents : [];
         // Normalize legacy string entries into structured minimal shape
-        return consents.map((c: any) => {
-            if (typeof c === "string") {
+        return consents
+            .map((c: any) => {
+                if (typeof c === "string") {
+                    return {
+                        clientId: c,
+                        origin: c,
+                        manifest: {},
+                        addedAt: new Date(0).toISOString(),
+                    };
+                }
                 return {
-                    clientId: c,
-                    origin: c,
-                    manifest: {},
-                    addedAt: new Date(0).toISOString(),
+                    clientId: c.clientId,
+                    origin: c.origin ?? c.clientId,
+                    manifest: c.manifest ?? {},
+                    addedAt: c.addedAt ?? new Date(0).toISOString(),
                 };
-            }
-            return {
-                clientId: c.clientId,
-                origin: c.origin ?? c.clientId,
-                manifest: c.manifest ?? {},
-                addedAt: c.addedAt ?? new Date(0).toISOString(),
-            };
-        });
+            })
+            .filter((c: any) => c.clientId !== "vibe-cloud-ui");
     }
 }

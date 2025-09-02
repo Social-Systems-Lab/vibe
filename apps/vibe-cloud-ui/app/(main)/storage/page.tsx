@@ -344,7 +344,7 @@ export default function StoragePage() {
                             <span className="sr-only">Download</span>
                         </Button>
                         <Button
-                            variant="destructive"
+                            variant="outline"
                             size="sm"
                             aria-label="Delete"
                             onClick={() => deleteFile(file.storageKey)}
@@ -397,7 +397,7 @@ export default function StoragePage() {
                             <DownloadIcon className="size-4" />
                         </Button>
                         <Button
-                            variant="destructive"
+                            variant="outline"
                             size="sm"
                             aria-label="Delete"
                             onClick={() => deleteFile(file.storageKey)}
