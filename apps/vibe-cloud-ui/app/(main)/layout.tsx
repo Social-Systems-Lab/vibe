@@ -28,7 +28,7 @@ function TopBarPortal() {
     }
 
     return (
-        <div className="w-full flex items-center justify-between pr-24">
+        <div className="w-full h-[56px] flex items-center justify-between pr-24">
             <div className="flex items-center gap-2">{left}</div>
         </div>
     );
