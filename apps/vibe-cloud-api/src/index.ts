@@ -214,6 +214,37 @@ const app = new Elysia()
                                     console.log("[authorize] User has consented:", hasConsented);
 
                                     if (hasConsented) {
+                                        // Check if manifest has changed significantly (especially scopes)
+                                        const consents = await identityService.listUserConsents(user.did);
+                                        const existingConsent = consents.find((c) => c.clientId === client_id);
+
+                                        if (existingConsent) {
+                                            // Compare scopes - if app requested new scopes, require re-consent
+                                            const requestedScopes = scope ? scope.split(" ").sort() : [];
+                                            const consentedScopes = (existingConsent.scopes || []).sort();
+
+                                            const hasNewScopes = requestedScopes.some(
+                                                (scope) => !consentedScopes.includes(scope)
+                                            );
+                                            const hasFewerScopes = consentedScopes.some(
+                                                (scope) => !requestedScopes.includes(scope)
+                                            );
+
+                                            if (hasNewScopes || hasFewerScopes) {
+                                                console.log("[authorize] App manifest changed, requiring re-consent");
+                                                const { form_type, ...rest } = query as any;
+                                                const params = new URLSearchParams(rest);
+                                                params.set("step", "consent");
+                                                params.set("hasConsented", "false"); // Force re-consent
+                                                const redirectPath = `/auth/wizard?${params.toString()}`;
+                                                console.log(
+                                                    "[authorize] Redirecting to wizard for re-consent:",
+                                                    redirectPath
+                                                );
+                                                return redirect(redirectPath);
+                                            }
+                                        }
+
                                         console.log("[authorize] User has consented, creating auth code.");
                                         const authCode = await identityService.createAuthCode({
                                             userDid: user.did,
@@ -1956,9 +1987,13 @@ const app = new Elysia()
             )
             .post(
                 "/types/:type",
-                async ({ profile, params, body, set, dataService }) => {
+                async ({ profile, params, body, set, dataService, request, headers }) => {
                     try {
-                        const result = await dataService.write(params.type, body, profile as JwtPayload);
+                        // Extract app origin for scope checking
+                        const origin = headers
+                            ? headers.get("origin") || headers.get("referer")?.split("/").slice(0, 3).join("/")
+                            : "";
+                        const result = await dataService.write(params.type, body, profile as JwtPayload, origin);
                         return { success: true, ...result };
                     } catch (error: any) {
                         set.status = 500;
@@ -1977,14 +2012,28 @@ const app = new Elysia()
             )
             .post(
                 "/types/:type/query",
-                async ({ profile, params, body, set, query, dataService }) => {
+                async ({ profile, params, body, set, query, dataService, request, headers }) => {
                     try {
                         const fullQuery = {
                             ...(body as any),
                             expand: query.expand ? query.expand.split(",") : undefined,
                             global: query.global === "true",
                         };
-                        const result = await dataService.readOnce(params.type, fullQuery, profile as JwtPayload);
+                        // Extract app origin for scope checking
+                        const origin =
+                            headers && typeof headers === "object"
+                                ? typeof (headers as any).get === "function"
+                                    ? (headers as any).get("origin") ||
+                                      (headers as any).get("referer")?.split("/").slice(0, 3).join("/")
+                                    : (headers as any).origin ||
+                                      (headers as any).referer?.split("/").slice(0, 3).join("/")
+                                : "";
+                        const result = await dataService.readOnce(
+                            params.type,
+                            fullQuery,
+                            profile as JwtPayload,
+                            origin
+                        );
                         return result;
                     } catch (error: any) {
                         set.status = 500;
@@ -2308,11 +2357,17 @@ const app = new Elysia()
                         return { scopes: [] }; // No session, no permissions
                     }
 
-                    const hasConsented = await identityService.hasUserConsented(user.did, origin);
-                    if (hasConsented) {
-                        // For now, grant full read/write access if consented.
-                        // This will be replaced with a more granular permission system.
-                        return { scopes: ["read", "write"] };
+                    // Auto-consent for vibe-cloud-ui (main UI app)
+                    const vibeCloudUiUrl = process.env.VIBE_CLOUD_UI_URL || "http://localhost:4000";
+                    if (origin === vibeCloudUiUrl || origin === "http://localhost:3000") {
+                        return { scopes: ["read:*", "write:*", "upload:files", "read:global"] };
+                    }
+
+                    const consents = await identityService.listUserConsents(user.did);
+                    const consent = consents.find((c) => c.origin === origin || c.clientId === origin);
+
+                    if (consent && consent.scopes) {
+                        return { scopes: consent.scopes };
                     }
 
                     return { scopes: [] };

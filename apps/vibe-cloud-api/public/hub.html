@@ -103,7 +103,9 @@
                 }
 
                 if (event.origin !== origin) {
-                    console.error(`Origin mismatch! Event came from ${event.origin} but claimed to be ${origin}. Denying connection.`);
+                    console.error(
+                        `Origin mismatch! Event came from ${event.origin} but claimed to be ${origin}. Denying connection.`
+                    );
                     return;
                 }
 
@@ -247,7 +249,9 @@
                 if (action === "DB_SUBSCRIBE") {
                     const { query } = payload;
                     const canonicalKey = `${type}|${JSON.stringify(query || {})}`;
-                    console.log(`[HUB] Subscription request for ${subscriptionId} from ${origin} with key ${canonicalKey}`);
+                    console.log(
+                        `[HUB] Subscription request for ${subscriptionId} from ${origin} with key ${canonicalKey}`
+                    );
 
                     subscriptions.set(subscriptionId, {
                         canonicalKey,
@@ -298,11 +302,21 @@
                     performGlobalQuery(action, type, payload)
                         .then((result) => {
                             console.log(`[HUB] DB_GLOBAL_QUERY successful, returning ${result.length} docs.`);
-                            sourcePort.postMessage({ action: "DB_GLOBAL_QUERY_ACK", success: true, data: result, nonce });
+                            sourcePort.postMessage({
+                                action: "DB_GLOBAL_QUERY_ACK",
+                                success: true,
+                                data: result,
+                                nonce,
+                            });
                         })
                         .catch((dbError) => {
                             console.error(`[HUB] DB_GLOBAL_QUERY failed:`, dbError);
-                            sourcePort.postMessage({ action: "DB_GLOBAL_QUERY_ACK", success: false, error: dbError.message, nonce });
+                            sourcePort.postMessage({
+                                action: "DB_GLOBAL_QUERY_ACK",
+                                success: false,
+                                error: dbError.message,
+                                nonce,
+                            });
                         });
                     return;
                 }
@@ -310,7 +324,9 @@
                 if (action === "DB_GLOBAL_SUBSCRIBE") {
                     const { query } = payload;
                     const canonicalKey = `global:${type}|${JSON.stringify(query || {})}`;
-                    console.log(`[HUB] Global subscription request for ${subscriptionId} from ${origin} with key ${canonicalKey}`);
+                    console.log(
+                        `[HUB] Global subscription request for ${subscriptionId} from ${origin} with key ${canonicalKey}`
+                    );
 
                     subscriptions.set(subscriptionId, {
                         canonicalKey,
@@ -349,27 +365,43 @@
                     }
                     return;
                 }
-                const requiredPermission = `${getScopeForOperation(action)}:${type}`;
+                const scope = getScopeForOperation(action);
+                const requiredPermission = `${scope}:${type}`;
                 const appPermissions = permissionsCache.get(origin);
 
-                console.log(`[HUB] Required permission: ${requiredPermission}`);
+                console.log(`[HUB] Required permission for ${action} on ${type}: ${requiredPermission}`);
 
                 // Check for both the specific permission (e.g., "write:posts") and a wildcard (e.g., "write")
-                if (
+                const hasPermission =
                     appPermissions &&
                     appPermissions.scopes &&
-                    (appPermissions.scopes.includes(requiredPermission) || appPermissions.scopes.includes(getScopeForOperation(action)))
-                ) {
+                    (appPermissions.scopes.includes(requiredPermission) ||
+                        appPermissions.scopes.includes(scope) ||
+                        appPermissions.scopes.includes("upload:files")); // Special case for file uploads
+
+                if (hasPermission) {
                     performPouchDbOperation(action, type, payload)
                         .then((result) => {
                             sourcePort.postMessage({ action: `${action}_ACK`, success: true, data: result, nonce });
                         })
                         .catch((dbError) => {
-                            sourcePort.postMessage({ action: `${action}_ACK`, success: false, error: dbError.message, nonce });
+                            sourcePort.postMessage({
+                                action: `${action}_ACK`,
+                                success: false,
+                                error: dbError.message,
+                                nonce,
+                            });
                         });
                 } else {
-                    console.warn(`Permission denied for origin ${origin} trying to perform ${action}.`);
-                    sourcePort.postMessage({ action: `${action}_ACK`, success: false, error: "Permission Denied.", nonce });
+                    console.warn(
+                        `Permission denied for origin ${origin} trying to perform ${action} on ${type}. Required: ${requiredPermission}`
+                    );
+                    sourcePort.postMessage({
+                        action: `${action}_ACK`,
+                        success: false,
+                        error: "Permission Denied.",
+                        nonce,
+                    });
                 }
             }
 
@@ -396,7 +428,13 @@
 
             function getScopeForOperation(action) {
                 if (action === "DB_WRITE" || action === "DB_REMOVE") return "write";
-                if (action === "DB_READ" || action === "DB_QUERY" || action === "DB_GLOBAL_QUERY" || type === "DB_GLOBAL_SUBSCRIBE") return "read";
+                if (
+                    action === "DB_READ" ||
+                    action === "DB_QUERY" ||
+                    action === "DB_GLOBAL_QUERY" ||
+                    action === "DB_GLOBAL_SUBSCRIBE"
+                )
+                    return "read";
                 return null;
             }
 

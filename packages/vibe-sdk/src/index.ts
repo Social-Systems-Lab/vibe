@@ -63,6 +63,7 @@ export type VibeManifest = {
     buttonColor?: string;
     fontColor?: string;
     debug?: boolean;
+    scopes?: string[];
 };
 
 export class VibeSDK {
@@ -447,11 +448,12 @@ export class VibeSDK {
             .getRandomValues(new Uint8Array(16))
             .reduce((s, byte) => s + byte.toString(16).padStart(2, "0"), "");
         sessionStorage.setItem("vibe_oauth_state", state);
+        const scopeString = this.config.scopes ? [...this.config.scopes].join(" ") : "";
         const params = new URLSearchParams({
             response_type: "code",
             client_id: this.config.clientId,
             redirect_uri: this.config.redirectUri,
-            scope: "openid profile email",
+            scope: scopeString,
             state: state,
             code_challenge: pkce.challenge,
             code_challenge_method: "S256",

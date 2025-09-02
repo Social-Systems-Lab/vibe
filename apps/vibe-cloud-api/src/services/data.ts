@@ -97,7 +97,16 @@ export class DataService {
         }
     }
 
-    async write(type: string, data: any, user: JwtPayload) {
+    async write(type: string, data: any, user: JwtPayload, appOrigin?: string) {
+        // Check app scope for write operation
+        const requiredScope = `write:${type}`;
+        const hasScope = await this.checkAppScope(user, appOrigin, requiredScope);
+        if (!hasScope) {
+            throw new Error(
+                `App does not have permission to write to type '${type}'. Required scope: ${requiredScope}`
+            );
+        }
+
         await this.reauthenticate();
         const db = this.getDb(user.instanceId);
         const dbName = getUserDbName(user.instanceId);
@@ -183,7 +192,19 @@ export class DataService {
         return allDbs.filter((db) => db.startsWith("userdb-"));
     }
 
-    async readOnce<T extends Document>(type: string, query: any, user: JwtPayload): Promise<ReadOnceApiResponse<T>> {
+    async readOnce<T extends Document>(
+        type: string,
+        query: any,
+        user: JwtPayload,
+        appOrigin?: string
+    ): Promise<ReadOnceApiResponse<T>> {
+        // Check app scope for read operation
+        const requiredScope = `read:${type}`;
+        const hasScope = await this.checkAppScope(user, appOrigin, requiredScope);
+        if (!hasScope) {
+            throw new Error(`App does not have permission to read type '${type}'. Required scope: ${requiredScope}`);
+        }
+
         await this.reauthenticate();
         // TODO make sure deconstruction of query is same in hub.html and keep in sync
         const { expand, maxCacheAge, global, limit, fields, sort, ...rest } = query || {};
@@ -554,5 +575,37 @@ export class DataService {
             (cert) =>
                 cert.payload.sub === userDid && cert.payload.iss === rule.issuer && cert.payload.type === rule.type
         );
+    }
+
+    /**
+     * Check if the app has the required scope for the operation
+     */
+    private async checkAppScope(
+        user: JwtPayload,
+        appOrigin: string | undefined,
+        requiredScope: string
+    ): Promise<boolean> {
+        // If no app origin (internal operations), allow
+        if (!appOrigin) return true;
+
+        // Get user's consents for this app
+        const consents = await this.identityService.listUserConsents(user.sub);
+        const consent = consents.find((c) => c.origin === appOrigin || c.clientId === appOrigin);
+
+        if (!consent || !consent.scopes) return false;
+
+        // Check if any of the consented scopes match the required scope
+        return consent.scopes.some((scope: string) => {
+            // Exact match
+            if (scope === requiredScope) return true;
+
+            // Wildcard match (e.g., "read:*" matches "read:profiles")
+            if (scope.endsWith(":*")) {
+                const scopePrefix = scope.slice(0, -1); // Remove :*
+                return requiredScope.startsWith(scopePrefix);
+            }
+
+            return false;
+        });
     }
 }

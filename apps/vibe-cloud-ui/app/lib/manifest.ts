@@ -25,4 +25,5 @@ export const appManifest: VibeManifest = {
     buttonColor: "#0000FF",
     fontColor: "#000000",
     debug: true,
+    scopes: ["read:profiles", "read:contacts", "read:global"],
 };

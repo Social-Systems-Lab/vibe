@@ -56,7 +56,9 @@ function Wizard() {
                             <img src={appLogotypeUrl} alt={`${appName} logotype`} className="h-12" />
                         ) : (
                             <div className="flex items-center">
-                                {appLogoUrl && <img src={appLogoUrl} alt={`${appName} logo`} className="w-12 h-12 mr-4" />}
+                                {appLogoUrl && (
+                                    <img src={appLogoUrl} alt={`${appName} logo`} className="w-12 h-12 mr-4" />
+                                )}
 
                                 <div className="text-2xl font-bold font-heading">{appName}</div>
                             </div>
@@ -64,7 +66,9 @@ function Wizard() {
                     </div>
                     {appTagline && <p className="text-5xl font-bold mb-6">{appTagline}</p>}
                     {appDescription && <p className="text-lg opacity-80 mb-8">{appDescription}</p>}
-                    {appShowcaseUrl && appShowcaseUrl !== "undefined" && <img src={appShowcaseUrl} alt={`${appName} showcase`} className="w-full " />}
+                    {appShowcaseUrl && appShowcaseUrl !== "undefined" && (
+                        <img src={appShowcaseUrl} alt={`${appName} showcase`} className="w-full " />
+                    )}
                 </div>
                 <div className="text-center absolute bottom-4">
                     <p className="text-sm opacity-70">Powered by Vibe. Your everything.</p>
@@ -133,7 +137,12 @@ const SignupForm = ({ setStep }: { setStep: (step: string) => void }) => {
                         autoComplete="new-password"
                     />
                 </div>
-                <button type="submit" className="w-full px-4 py-2 text-white rounded-lg" style={{ backgroundColor: buttonColor }} disabled={isLoading}>
+                <button
+                    type="submit"
+                    className="w-full px-4 py-2 text-white rounded-lg"
+                    style={{ backgroundColor: buttonColor }}
+                    disabled={isLoading}
+                >
                     {isLoading ? "Signing up..." : "Sign Up"}
                 </button>
             </form>
@@ -195,7 +204,11 @@ const LoginForm = ({ setStep }: { setStep: (step: string) => void }) => {
                         autoComplete="current-password"
                     />
                 </div>
-                <button type="submit" className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700" disabled={isLoading}>
+                <button
+                    type="submit"
+                    className="w-full px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                    disabled={isLoading}
+                >
                     {isLoading ? "Logging in..." : "Log In"}
                 </button>
             </form>
@@ -385,8 +398,12 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
     return (
         <div className="w-full max-w-md space-y-6 z-30">
             <div className="text-center">
-                <h1 className="text-3xl font-bold font-heading">{isSettingsFlow ? "Profile Settings" : "Complete Your Profile"}</h1>
-                <p className="mt-2 text-gray-600">{isSettingsFlow ? "Update your profile information." : "Just a few more details to get you set up."}</p>
+                <h1 className="text-3xl font-bold font-heading">
+                    {isSettingsFlow ? "Profile Settings" : "Complete Your Profile"}
+                </h1>
+                <p className="mt-2 text-gray-600">
+                    {isSettingsFlow ? "Update your profile information." : "Just a few more details to get you set up."}
+                </p>
             </div>
             <form className="space-y-6" onSubmit={handleSubmit} encType="multipart/form-data">
                 <div className="flex flex-col items-center space-y-4">
@@ -399,7 +416,14 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
                             )}
                         </div>
                     </label>
-                    <input id="picture" name="picture" type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+                    <input
+                        id="picture"
+                        name="picture"
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={handleFileChange}
+                    />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Display Name</label>
@@ -414,7 +438,11 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
                         className="w-full px-4 py-2 mt-1 border rounded-lg bg-white"
                     />
                 </div>
-                <button type="submit" className="w-full px-4 py-2 text-white bg-green-500 rounded-lg hover:bg-green-600" disabled={isLoading}>
+                <button
+                    type="submit"
+                    className="w-full px-4 py-2 text-white bg-green-500 rounded-lg hover:bg-green-600"
+                    disabled={isLoading}
+                >
                     {isLoading ? "Saving..." : isSettingsFlow ? "Save Changes" : "Save and Continue"}
                 </button>
             </form>
@@ -431,7 +459,8 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
 
     // Tri-state consent from URL: true | false | undefined (undecided)
     const urlHasConsented = searchParams.get("hasConsented");
-    const initialConsent: boolean | undefined = urlHasConsented === "true" ? true : urlHasConsented === "false" ? undefined : undefined;
+    const initialConsent: boolean | undefined =
+        urlHasConsented === "true" ? true : urlHasConsented === "false" ? undefined : undefined;
 
     // Track current consent selection; undefined means undecided -> show both options equally
     const [hasConsented, setHasConsented] = useState<boolean | undefined>(initialConsent);
@@ -510,21 +539,34 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
     };
 
     // Decide button styles based on tri-state consent
-    const allowClass = hasConsented === true ? "bg-blue-600 text-white shadow-md scale-105" : "bg-gray-200 text-gray-800 hover:bg-gray-300";
+    const allowClass =
+        hasConsented === true
+            ? "bg-blue-600 text-white shadow-md scale-105"
+            : "bg-gray-200 text-gray-800 hover:bg-gray-300";
     const denyClass =
-        hasConsented === false && !showDeniedMessage ? "bg-red-500 text-white shadow-md scale-105" : "bg-gray-200 text-gray-800 hover:bg-gray-300";
+        hasConsented === false && !showDeniedMessage
+            ? "bg-red-500 text-white shadow-md scale-105"
+            : "bg-gray-200 text-gray-800 hover:bg-gray-300";
 
     return (
         <div className="w-full max-w-md space-y-6 z-30">
             <div className="text-center">
                 <div className="inline-flex items-center justify-center mb-2">
                     {/* Keep header clean to avoid repeating app icon */}
-                    <h1 className="text-2xl font-extrabold font-heading tracking-tight">{isSettingsFlow ? "App permissions" : "Almost there!"}</h1>
+                    <h1 className="text-2xl font-extrabold font-heading tracking-tight">
+                        {isSettingsFlow ? "App permissions" : "Almost there!"}
+                    </h1>
                 </div>
                 <p className="mt-1 text-gray-600 text-sm">
-                    {isSettingsFlow ? `Manage what ${appName} can access.` : `${appName} is requesting permission to access your Vibe account.`}
+                    {isSettingsFlow
+                        ? `Manage what ${appName} can access.`
+                        : `${appName} is requesting permission to access your Vibe account.`}
                 </p>
-                {!isSettingsFlow && <p className="mt-1 text-gray-500 text-xs">You’re in control. You can change this later in Settings.</p>}
+                {!isSettingsFlow && (
+                    <p className="mt-1 text-gray-500 text-xs">
+                        You’re in control. You can change this later in Settings.
+                    </p>
+                )}
             </div>
 
             <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
@@ -533,7 +575,11 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
                     <div className="flex items-center gap-3">
                         {/* Only show the app icon here to avoid repetition */}
                         {searchParams.get("appLogoUrl") ? (
-                            <img src={searchParams.get("appLogoUrl") as string} className="w-8 h-8 rounded" alt={`${appName} logo`} />
+                            <img
+                                src={searchParams.get("appLogoUrl") as string}
+                                className="w-8 h-8 rounded"
+                                alt={`${appName} logo`}
+                            />
                         ) : (
                             <div className="w-8 h-8 rounded bg-gray-200" />
                         )}
@@ -558,16 +604,41 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
                         <h3 className="font-semibold text-gray-900 text-sm">Permissions requested</h3>
                     </div>
                     <ul className="p-4 text-gray-700 text-sm space-y-2">
-                        <li className="flex items-start gap-2">
-                            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-blue-500"></span>
-                            Read your profile information
-                        </li>
-                        <li className="flex items-start gap-2">
-                            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-blue-500"></span>
-                            Read your contacts
-                        </li>
+                        {searchParams
+                            .get("scope")
+                            ?.split(" ")
+                            .filter((scope) => scope !== "openid" && scope !== "profile" && scope !== "email")
+                            .map((scope, index) => (
+                                <li key={index} className="flex items-start gap-2">
+                                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+                                    {scope.startsWith("read:") &&
+                                        `Read your ${scope.replace("read:", "").replace(/s$/, "")} data`}
+                                    {scope.startsWith("write:") &&
+                                        `Write to your ${scope.replace("write:", "").replace(/s$/, "")} data`}
+                                    {scope === "upload:files" && "Upload files"}
+                                    {scope === "read:global" && "Read public data from other users"}
+                                    {!scope.startsWith("read:") &&
+                                        !scope.startsWith("write:") &&
+                                        scope !== "upload:files" &&
+                                        scope !== "read:global" &&
+                                        scope}
+                                </li>
+                            )) || (
+                            <>
+                                <li className="flex items-start gap-2">
+                                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+                                    Read your profile information
+                                </li>
+                                <li className="flex items-start gap-2">
+                                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+                                    Read your contacts
+                                </li>
+                            </>
+                        )}
                     </ul>
-                    <div className="px-4 pb-3 text-xs text-gray-500">Only with your consent. You can revoke access anytime in Settings.</div>
+                    <div className="px-4 pb-3 text-xs text-gray-500">
+                        Only with your consent. You can revoke access anytime in Settings.
+                    </div>
                 </div>
 
                 {/* Denied state */}
@@ -605,8 +676,8 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
 
                         {/* Security + disclaimer */}
                         <div className="text-[11px] leading-5 text-gray-500 text-center">
-                            By selecting Allow, you let {appName} use these permissions with your Vibe account. We will never share your credentials with the
-                            app.
+                            By selecting Allow, you let {appName} use these permissions with your Vibe account. We will
+                            never share your credentials with the app.
                         </div>
                     </>
                 )}

@@ -391,8 +391,25 @@ export class IdentityService {
             throw new Error("Client ID does not match.");
         }
 
+        // Validate redirectUri starts with clientId (same origin security)
         if (doc.redirectUri !== redirectUri) {
             throw new Error("Redirect URI does not match.");
+        }
+
+        // Security: redirectUri should start with clientId (same domain)
+        try {
+            const clientUrl = new URL(doc.clientId);
+            const redirectUrl = new URL(doc.redirectUri);
+            if (!redirectUrl.href.startsWith(clientUrl.origin)) {
+                throw new Error("Redirect URI must be on the same domain as client ID.");
+            }
+        } catch (e) {
+            throw new Error("Invalid client ID or redirect URI format.");
+        }
+
+        // Validate scopes against app manifest
+        if (doc.scope) {
+            await this.validateScopesAgainstManifest(clientId, doc.scope);
         }
 
         // PKCE verification
@@ -415,8 +432,36 @@ export class IdentityService {
 
         return doc.userDid;
     }
+
     /**
-     * Store/Upsert a user's consent for an app with full inline manifest.
+     * Validate requested scopes against the app's manifest
+     * Document types are dynamic, so we validate scope format but allow any document type
+     */
+    private async validateScopesAgainstManifest(clientId: string, requestedScopes: string): Promise<void> {
+        const scopes = requestedScopes.split(" ");
+
+        // Valid scope patterns (document types can be anything)
+        const validPatterns = [
+            /^openid$/,
+            /^profile$/,
+            /^email$/,
+            /^read:[a-zA-Z0-9_-]+$/,
+            /^write:[a-zA-Z0-9_-]+$/,
+            /^upload:files$/,
+            /^read:global$/,
+        ];
+
+        for (const scope of scopes) {
+            const isValid = validPatterns.some((pattern) => pattern.test(scope));
+            if (!isValid) {
+                console.warn(`Invalid scope format requested by client ${clientId}: ${scope}`);
+                // For now, we'll allow unknown scopes but log them
+                // In production, you might want to reject unknown scopes
+            }
+        }
+    }
+    /**
+     * Store/Upsert a user's consent for an app with full inline manifest and scopes.
      * Replaces legacy string[] consents with structured entries.
      */
     async storeUserConsent(
@@ -424,6 +469,7 @@ export class IdentityService {
         consent: {
             clientId: string;
             origin: string;
+            scopes?: string[];
             manifest: {
                 appName?: string;
                 appDescription?: string;
@@ -452,6 +498,7 @@ export class IdentityService {
         const newEntry = {
             clientId: consent.clientId,
             origin: consent.origin,
+            scopes: consent.scopes || [],
             manifest: consent.manifest || {},
             addedAt: consent.addedAt || nowIso,
         };
@@ -609,6 +656,7 @@ export class IdentityService {
         Array<{
             clientId: string;
             origin: string;
+            scopes?: string[];
             manifest: any;
             addedAt: string;
         }>
