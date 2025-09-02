@@ -56,6 +56,8 @@ export default function _TailwindScanBridge() {
             <div className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4" />
 
             <div className="border rounded-md px-2 py-1.5 bg-background" />
+
+            <div className="absolute right-0 mt-2 rounded-lg border border-gray-200 bg-white shadow-xl z-[1000] overflow-hidden visible" />
         </div>
     );
 }

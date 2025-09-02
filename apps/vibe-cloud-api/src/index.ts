@@ -1991,7 +1991,7 @@ const app = new Elysia()
                     try {
                         // Extract app origin for scope checking
                         const origin = headers
-                            ? headers.get("origin") || headers.get("referer")?.split("/").slice(0, 3).join("/")
+                            ? headers.origin || headers.referer?.split("/").slice(0, 3).join("/")
                             : "";
                         const result = await dataService.write(params.type, body, profile as JwtPayload, origin);
                         return { success: true, ...result };
@@ -2020,14 +2020,9 @@ const app = new Elysia()
                             global: query.global === "true",
                         };
                         // Extract app origin for scope checking
-                        const origin =
-                            headers && typeof headers === "object"
-                                ? typeof (headers as any).get === "function"
-                                    ? (headers as any).get("origin") ||
-                                      (headers as any).get("referer")?.split("/").slice(0, 3).join("/")
-                                    : (headers as any).origin ||
-                                      (headers as any).referer?.split("/").slice(0, 3).join("/")
-                                : "";
+                        const origin = headers
+                            ? headers.origin || headers.referer?.split("/").slice(0, 3).join("/")
+                            : "";
                         const result = await dataService.readOnce(
                             params.type,
                             fullQuery,
