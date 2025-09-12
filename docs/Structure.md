@@ -9,8 +9,7 @@ This document outlines the structure of the Vibe monorepo, including all applica
 ├── apps
 │  ├── vibe-cloud-api
 │  ├── vibe-cloud-ui
-│  ├── vibe-collections
-│  └── vibe-feeds
+│  └── vibe-notes
 ├── docs
 ├── infra
 │  ├── helm
@@ -194,11 +193,11 @@ This is the backend API for Vibe Cloud.
 }
 ```
 
-### `vibe-feeds`
+### `vibe-notes`
 
 **Type:** Next.js Application
 
-This application handles the user-facing feeds.
+This is a example application integrating with vibe cloud to allow user to create notes (like onenote, keep, etc). It's currently just a skeleton project.
 
 **Folder Structure**
 
@@ -206,24 +205,11 @@ This application handles the user-facing feeds.
 .
 ├── app
 │  ├── (main)
-│  │  ├── feeds
-│  │  │  └── [feedId]
-│  │  │      └── page.tsx
 │  │  ├── layout.tsx
 │  │  └── page.tsx
 │  ├── auth
 │  │  └── callback
 │  │      └── page.tsx
-│  ├── components
-│  │  ├── CreatePost.tsx
-│  │  ├── Feed.tsx
-│  │  ├── LeftSidebar.tsx
-│  │  ├── PostCard.tsx
-│  │  ├── RightSidebar.tsx
-│  │  ├── UserHoverCard.tsx
-│  │  └── UserPreview.tsx
-│  ├── context
-│  │  └── SelectedUserContext.tsx
 │  ├── lib
 │  │  └── manifest.ts
 │  ├── favicon.ico
@@ -232,10 +218,8 @@ This application handles the user-facing feeds.
 ├── public
 │  ├── images
 │  │  ├── logo.png
-│  │  ├── logo3.png
 │  │  ├── logotype.png
 │  │  ├── showcase.png
-│  │  └── showcase2.png
 │  ├── file.svg
 │  ├── globe.svg
 │  ├── next.svg
@@ -249,118 +233,6 @@ This application handles the user-facing feeds.
 ├── README.md
 ├── tsconfig.json
 └── vercel.json
-```
-
-**`package.json`**
-
-```json
-{
-    "name": "vibe-feeds",
-    "version": "0.1.3",
-    "private": true,
-    "scripts": {
-        "dev": "next dev -p 3000 --turbopack",
-        "build": "next build --turbopack",
-        "start": "next start",
-        "lint": "next lint"
-    },
-    "dependencies": {
-        "lucide-react": "^0.516.0",
-        "next": "^15.4.3",
-        "react": "19.1.0",
-        "react-dom": "19.1.0",
-        "vibe-react": "workspace:*",
-        "vibe-sdk": "workspace:*"
-    },
-    "devDependencies": {
-        "typescript": "^5",
-        "@types/node": "^20",
-        "@types/react": "^19",
-        "@types/react-dom": "^19",
-        "@tailwindcss/postcss": "^4",
-        "tailwindcss": "^4",
-        "tailwindcss-animate": "^1.0.7"
-    }
-}
-```
-
-### `vibe-collections`
-
-**Type:** Next.js Application
-
-This application manages user collections.
-
-**Folder Structure**
-
-```
-.
-├── app
-│  ├── (main)
-│  │  ├── layout.tsx
-│  │  └── page.tsx
-│  ├── auth
-│  │  └── callback
-│  │      └── page.tsx
-│  ├── components
-│  │  ├── Collections.tsx
-│  │  ├── UploadButton.tsx
-│  │  └── VibeProvider.tsx
-│  ├── lib
-│  │  └── manifest.ts
-│  ├── favicon.ico
-│  ├── globals.css
-│  └── layout.tsx
-├── public
-│  ├── images
-│  │  ├── logo.png
-│  │  ├── logotype.png
-│  │  └── showcase.png
-│  ├── file.svg
-│  ├── globe.svg
-│  ├── next.svg
-│  ├── vercel.svg
-│  └── window.svg
-├── .gitignore
-├── Dockerfile
-├── next.config.ts
-├── package.json
-├── postcss.config.mjs
-├── README.md
-├── tsconfig.json
-└── vercel.json
-```
-
-**`package.json`**
-
-```json
-{
-    "name": "vibe-collections",
-    "version": "0.1.0",
-    "private": true,
-    "scripts": {
-        "dev": "next dev -p 3001 --turbopack",
-        "build": "next build --turbopack",
-        "start": "next start",
-        "lint": "next lint"
-    },
-    "dependencies": {
-        "lucide-react": "^0.516.0",
-        "next": "^15.4.3",
-        "react": "19.1.0",
-        "react-dom": "19.1.0",
-        "vibe-react": "workspace:*",
-        "vibe-sdk": "workspace:*"
-    },
-    "devDependencies": {
-        "typescript": "^5",
-        "@types/node": "^20",
-        "@types/react": "^19",
-        "@types/react-dom": "^19",
-        "@tailwindcss/postcss": "^4",
-        "tailwindcss": "^4",
-        "tailwindcss-animate": "^1.0.7"
-    }
-}
 ```
 
 ## Packages

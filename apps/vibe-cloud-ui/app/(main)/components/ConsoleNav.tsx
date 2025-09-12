@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { User, Grid, Database, HardDrive, Wallet, MessagesSquare, BadgeCheck, Wrench } from "lucide-react";
+import { User, Grid, Database, HardDrive, Wallet, MessagesSquare, BadgeCheck, Wrench, FileText } from "lucide-react";
 import { useEffect, useState } from "react";
 import { appManifest } from "../../lib/manifest";
 
@@ -16,6 +16,7 @@ export type ConsoleNavItem = {
 export const consoleNavItems: ConsoleNavItem[] = [
     { href: "/profile", label: "Profile", icon: User, match: (p) => p.startsWith("/profile") },
     { href: "/apps", label: "Apps", icon: Grid, match: (p) => p.startsWith("/apps") },
+    { href: "/content", label: "Content", icon: FileText, match: (p) => p.startsWith("/content") },
     { href: "/storage", label: "Storage", icon: HardDrive, match: (p) => p.startsWith("/storage") },
 
     //{ href: "/certificates", label: "Certificates", icon: BadgeCheck, match: (p) => p.startsWith("/certificates") },

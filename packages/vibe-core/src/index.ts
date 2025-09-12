@@ -117,3 +117,40 @@ export type FileDoc = {
     createdAt?: string;
     updatedAt?: string;
 } & Document;
+
+export type VibeManifest = {
+    apiUrl: string;
+    clientId: string;
+    redirectUri: string;
+    hubUrl?: string;
+    appName?: string;
+    backgroundImageUrl?: string;
+    appTagline?: string;
+    appDescription?: string;
+    themeColor?: string;
+    appLogoUrl?: string;
+    appLogotypeUrl?: string;
+    appShowcaseUrl?: string;
+    backgroundColor?: string;
+    buttonColor?: string;
+    fontColor?: string;
+    debug?: boolean;
+    scopes?: string[];
+    contentManagers?: {
+        id: string;
+        label: string;
+        rules: any;
+        display: {
+            sortField: string;
+            icon?: string;
+        };
+        managerPaths: {
+            create: string;
+            edit: string;
+            view: {
+                preview: string;
+                full: string;
+            };
+        };
+    }[];
+};

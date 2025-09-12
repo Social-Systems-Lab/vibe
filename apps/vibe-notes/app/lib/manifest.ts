@@ -10,10 +10,11 @@ const getBaseUrl = () => {
 const baseUrl = getBaseUrl();
 
 export const appManifest: VibeManifest = {
-    appName: "Wordlock",
+    appName: "Notes",
     backgroundImageUrl: `${baseUrl}/images/logo.png`,
-    appTagline: "Guess the word, unlock the prize.",
-    appDescription: "Create custom feeds and share content on your terms.",
+    appTagline: "Notes that stay with you.",
+    appDescription:
+        "Whether it’s a to-do list, a sudden idea, or a detailed plan, Vibe Notes makes it easy to capture your thoughts instantly. Lightweight and distraction-free, it’s designed to help your ideas flow.",
     apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:5050",
     clientId: baseUrl,
     redirectUri: `${baseUrl}/auth/callback`,
@@ -25,4 +26,5 @@ export const appManifest: VibeManifest = {
     buttonColor: "#0000FF",
     fontColor: "#000000",
     debug: true,
+    scopes: ["read:notes", "write:notes"],
 };

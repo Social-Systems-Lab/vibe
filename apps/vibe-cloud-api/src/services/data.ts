@@ -62,6 +62,34 @@ export class DataService {
                 throw error;
             }
         }
+
+        // Initialize renderers on boot
+        await this.initRenderers();
+        await this.initManagers();
+    }
+
+    async initManagers() {
+        // Find all manager documents across all user databases
+        const allDbs = await this.getAllUserDbNames();
+        for (const dbName of allDbs) {
+            const db = this.couch.use(dbName);
+            const result = await db.find({ selector: { type: "manager" } });
+            for (const managerDoc of result.docs) {
+                await this.handleManagerChange(managerDoc);
+            }
+        }
+    }
+
+    async initRenderers() {
+        // Find all renderer documents across all user databases
+        const allDbs = await this.getAllUserDbNames();
+        for (const dbName of allDbs) {
+            const db = this.couch.use(dbName);
+            const result = await db.find({ selector: { type: "renderer" } });
+            for (const rendererDoc of result.docs) {
+                await this.handleRendererChange(rendererDoc);
+            }
+        }
     }
 
     private async reauthenticate() {
@@ -98,6 +126,14 @@ export class DataService {
     }
 
     async write(type: string, data: any, user: JwtPayload, appOrigin?: string) {
+        // Prevent apps from writing renderer documents directly
+        if (type === "renderer" && appOrigin) {
+            throw new Error("Apps cannot write renderer documents directly. They must be defined in the manifest.");
+        }
+        if (type === "manager" && appOrigin) {
+            throw new Error("Apps cannot write manager documents directly. They must be defined in the manifest.");
+        }
+
         // Check app scope for write operation
         const requiredScope = `write:${type}`;
         const hasScope = await this.checkAppScope(user, appOrigin, requiredScope);
@@ -184,7 +220,136 @@ export class DataService {
             })
         );
 
+        // Handle renderer document creation/updates
+        if (type === "renderer") {
+            await this.handleRendererChange(docs[0]);
+        }
+
+        // Handle manager document creation/updates
+        if (type === "manager") {
+            await this.handleManagerChange(docs[0]);
+        }
+
         return response;
+    }
+
+    private async handleRendererChange(rendererDoc: any) {
+        try {
+            const designDocId = `_design/${rendererDoc.rendererId}`;
+            const designDoc = await this.compileRendererDesignDoc(rendererDoc);
+
+            console.log(`Compiling design doc for renderer ${rendererDoc.rendererId}`);
+
+            // Get existing design doc if it exists
+            try {
+                const existing = await this.globalDb.get(designDocId);
+                (designDoc as any)._rev = existing._rev;
+            } catch (error: any) {
+                if (error.statusCode !== 404) {
+                    throw error;
+                }
+            }
+
+            // Insert/update the design document
+            await this.globalDb.insert(designDoc);
+            console.log(`Generated design doc ${designDocId} for renderer`);
+        } catch (error) {
+            console.error(`Failed to compile design doc for renderer ${rendererDoc._id}:`, error);
+        }
+    }
+
+    private compileRendererDesignDoc(rendererDoc: any): any {
+        if (!rendererDoc.enabled || !rendererDoc.rules || !rendererDoc.rules.all) {
+            return {}; // Empty design doc for disabled renderers
+        }
+
+        // Compile the rules into JavaScript conditions
+        const conditions = rendererDoc.rules.all.map((rule: any) => {
+            return this.compileRuleToJS(rule);
+        });
+
+        const mapFunction = `
+function (doc) {
+    if (${conditions.join(" && ")}) {
+        emit([doc.${rendererDoc.display.sortField || "createdAt"} || doc._id, doc._id], null);
+    }
+}`;
+
+        return {
+            _id: `_design/${rendererDoc.rendererId}`,
+            views: {
+                content: {
+                    map: mapFunction,
+                    reduce: "_count",
+                },
+            },
+        };
+    }
+
+    private compileRuleToJS(rule: any): string {
+        if (rule.eq && Array.isArray(rule.eq) && rule.eq.length === 2) {
+            // Rule like: { "eq": ["type", "post"] }
+            const [field, value] = rule.eq;
+            return `doc.${field} === "${value}"`;
+        } else if (rule.exists) {
+            // Rule like: { "exists": "author" }
+            return `doc.${rule.exists}`;
+        } else {
+            throw new Error(`Unsupported rule type: ${JSON.stringify(rule)}`);
+        }
+    }
+
+    private async handleManagerChange(managerDoc: any) {
+        try {
+            const designDocId = `_design/${managerDoc.managerId}`;
+            const designDoc = await this.compileManagerDesignDoc(managerDoc);
+
+            console.log(`Compiling design doc for manager ${managerDoc.managerId}`);
+
+            // Get existing design doc if it exists
+            try {
+                const existing = await this.globalDb.get(designDocId);
+                (designDoc as any)._rev = existing._rev;
+            } catch (error: any) {
+                if (error.statusCode !== 404) {
+                    throw error;
+                }
+            }
+
+            // Insert/update the design document
+            await this.globalDb.insert(designDoc);
+            console.log(`Generated design doc ${designDocId} for manager`);
+        } catch (error) {
+            console.error(`Failed to compile design doc for manager ${managerDoc._id}:`, error);
+        }
+    }
+
+    private compileManagerDesignDoc(managerDoc: any): any {
+        if (!managerDoc.enabled || !managerDoc.rules || !managerDoc.rules.all) {
+            return {}; // Empty design doc for disabled managers
+        }
+
+        // Compile the rules into JavaScript conditions
+        const conditions = managerDoc.rules.all.map((rule: any) => {
+            return this.compileRuleToJS(rule);
+        });
+
+        const mapFunction = `
+function (doc) {
+    if (${conditions.join(" && ")}) {
+        emit([doc.${managerDoc.display.sortField || "createdAt"} || doc._id, doc._id], null);
+    }
+}`;
+
+        return {
+            _id: `_design/${managerDoc.managerId}`,
+            views: {
+                content: {
+                    map: mapFunction,
+                    reduce: "_count",
+                },
+            },
+        };
     }
 
     async getAllUserDbNames(): Promise<string[]> {

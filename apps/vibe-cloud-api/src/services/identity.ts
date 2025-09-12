@@ -11,6 +11,7 @@ import { instanceIdFromDid } from "../lib/did";
 import { randomBytes, createHash } from "crypto";
 import { encryptWithMasterKey, decryptWithMasterKey } from "../lib/crypto";
 import { getUserDbName } from "../lib/db";
+import { vibeCloudUiManifest } from "../lib/vibe-cloud-ui-manifest";
 
 export class IdentityService {
     private nano: Nano.ServerScope;
@@ -148,6 +149,14 @@ export class IdentityService {
             did,
         };
         await this.nano.db.use(userDbName).insert(profile);
+
+        // Automatically grant consent to the Vibe Cloud UI and register its default renderers
+
+        await this.storeUserConsent(did, {
+            clientId: vibeCloudUiManifest.clientId,
+            origin: vibeCloudUiManifest.clientId,
+            manifest: vibeCloudUiManifest,
+        });
 
         return { ...userDocument, refreshToken };
     }
@@ -481,6 +490,7 @@ export class IdentityService {
                 backgroundColor?: string;
                 buttonColor?: string;
                 themeColor?: string;
+                contentManagers?: any[];
             };
             addedAt?: string;
         }
@@ -521,6 +531,41 @@ export class IdentityService {
             ...user,
             consents,
         });
+
+        // After storing consent, process the content managers
+        if (consent.manifest.contentManagers) {
+            await this.registerManagersFromManifest(user, consent.clientId, consent.manifest.contentManagers);
+        }
+    }
+
+    private async registerManagersFromManifest(user: any, clientId: string, managers: any[]) {
+        const userDb = this.nano.use(getUserDbName(user.instanceId));
+
+        for (const manager of managers) {
+            const managerDoc = {
+                _id: `manager/${clientId}/${manager.id}`,
+                type: "manager",
+                managerId: `${clientId}/${manager.id}`,
+                appClientId: clientId,
+                label: manager.label,
+                rules: manager.rules,
+                display: manager.display,
+                managerPaths: manager.managerPaths,
+                version: 1, // or a version from the manifest
+                enabled: true,
+            };
+
+            try {
+                const existing = await userDb.get(managerDoc._id);
+                (managerDoc as any)._rev = existing._rev;
+            } catch (error: any) {
+                if (error.statusCode !== 404) {
+                    console.error(`Error fetching existing manager doc: ${error}`);
+                }
+            }
+
+            await userDb.insert(managerDoc);
+        }
     }
 
     async hasUserConsented(userDid: string, clientIdOrOrigin: string): Promise<boolean> {

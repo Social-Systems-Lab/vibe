@@ -1,4 +1,4 @@
-import { DocRef, ReadCallback, Subscription, User, Document, ReadOnceResponse } from "vibe-core";
+import { VibeManifest, DocRef, ReadCallback, Subscription, User, Document, ReadOnceResponse } from "vibe-core";
 import { SessionState, SessionManager } from "./session-manager";
 import { edenTreaty } from "@elysiajs/eden";
 import type { App } from "vibe-cloud-api";
@@ -45,26 +45,6 @@ class AuthManager {
         this.stateChangeListeners.forEach((listener) => listener(state));
     }
 }
-
-export type VibeManifest = {
-    apiUrl: string;
-    clientId: string;
-    redirectUri: string;
-    hubUrl?: string;
-    appName?: string;
-    backgroundImageUrl?: string;
-    appTagline?: string;
-    appDescription?: string;
-    themeColor?: string;
-    appLogoUrl?: string;
-    appLogotypeUrl?: string;
-    appShowcaseUrl?: string;
-    backgroundColor?: string;
-    buttonColor?: string;
-    fontColor?: string;
-    debug?: boolean;
-    scopes?: string[];
-};
 
 export class VibeSDK {
     public isAuthenticated = false;

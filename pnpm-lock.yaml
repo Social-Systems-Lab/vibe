@@ -150,7 +150,7 @@ importers:
         specifier: ^5
         version: 5.8.3
 
-  apps/vibe-wordlock:
+  apps/vibe-notes:
     dependencies:
       lucide-react:
         specifier: ^0.516.0
