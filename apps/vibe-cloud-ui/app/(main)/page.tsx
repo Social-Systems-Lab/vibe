@@ -30,12 +30,12 @@ export default function LandingPage() {
                             {/* <Link href="/console/developers" className="transition hover:text-white/80">
                                 Developers
                             </Link> */}
-                            <Link href="/console/content" className="transition hover:text-white/80">
+                            {/* <Link href="/console/content" className="transition hover:text-white/80">
                                 Console
-                            </Link>
+                            </Link> */}
                         </nav>
                     </div>
-                    <div className="flex items-center gap-3 text-sm font-medium">
+                    {/* <div className="flex items-center gap-3 text-sm font-medium">
                         <Link
                             href="/console"
                             className="rounded-full border border-white/40 px-4 py-2 transition hover:border-white"
@@ -48,7 +48,7 @@ export default function LandingPage() {
                         >
                             Sign up
                         </Link>
-                    </div>
+                    </div> */}
                 </header>
 
                 <main>

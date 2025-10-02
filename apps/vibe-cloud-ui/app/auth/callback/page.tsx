@@ -12,7 +12,7 @@ export default function AuthCallbackPage() {
         const handleAuth = async () => {
             const sdk = createSdk(appManifest);
             await sdk.handleRedirectCallback(window.location.href);
-            window.location.replace("/");
+            window.location.replace("/console");
         };
         handleAuth();
     }, [router]);
