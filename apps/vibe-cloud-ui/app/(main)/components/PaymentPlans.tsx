@@ -51,7 +51,7 @@ export default function PaymentPlans() {
                 </div>
 
                 <Link
-                    href="/console"
+                    href="#waitlist"
                     className="mb-6 block w-full rounded-full bg-gray-200 py-3 text-center text-gray-600 transition hover:bg-gray-300"
                 >
                     Cancel plan
@@ -84,7 +84,7 @@ export default function PaymentPlans() {
                 </div>
 
                 <Link
-                    href="/console"
+                    href="#waitlist"
                     className="mb-6 block w-full rounded-full bg-white py-3 text-center font-semibold text-purple-600 transition hover:bg-white/90"
                 >
                     Liberate yourself
@@ -104,3 +104,4 @@ export default function PaymentPlans() {
         </div>
     );
 }
+

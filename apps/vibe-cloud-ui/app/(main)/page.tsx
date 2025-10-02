@@ -27,11 +27,11 @@ export default function LandingPage() {
                             <span className="text-xl font-semibold">Vibe</span>
                         </Link>
                         <nav className="hidden items-center gap-6 text-sm font-medium md:flex">
+                            <Link href="/manifesto" className="transition hover:text-white/80">
+                                Manifesto
+                            </Link>
                             {/* <Link href="/console/developers" className="transition hover:text-white/80">
                                 Developers
-                            </Link> */}
-                            {/* <Link href="/console/content" className="transition hover:text-white/80">
-                                Console
                             </Link> */}
                         </nav>
                     </div>
@@ -43,7 +43,7 @@ export default function LandingPage() {
                             Log in
                         </Link>
                         <Link
-                            href="/console"
+                            href="#waitlist"
                             className="rounded-full bg-white px-5 py-2 text-purple-600 transition hover:bg-white/90"
                         >
                             Sign up
@@ -52,7 +52,6 @@ export default function LandingPage() {
                 </header>
 
                 <main>
-                    {/* Hero */}
                     <section className="relative pt-10 pb-24">
                         <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] lg:px-8">
                             <div className="space-y-8">
@@ -65,10 +64,17 @@ export default function LandingPage() {
                                 </div>
                                 <div className="flex flex-wrap gap-4">
                                     <Link
-                                        href="/console"
+                                        href="#waitlist"
                                         className="inline-flex items-center rounded-full bg-[#c17dff] px-8 py-3 text-lg font-semibold text-white shadow-lg transition hover:bg-opacity-90"
                                     >
                                         Get Vibe
+                                        <ArrowRight className="ml-2 h-5 w-5" />
+                                    </Link>
+                                    <Link
+                                        href="/manifesto"
+                                        className="inline-flex items-center rounded-full border border-white/40 px-8 py-3 text-lg font-semibold transition hover:border-white"
+                                    >
+                                        Read the manifesto
                                         <ArrowRight className="ml-2 h-5 w-5" />
                                     </Link>
                                 </div>
@@ -102,8 +108,45 @@ export default function LandingPage() {
                         </div>
                     </section>
 
-                    {/* Features */}
-                    <section className="bg-white pt-20 pb-16 text-gray-900">
+                    <section className="bg-white py-16 text-gray-900">
+                        <div className="mx-auto flex max-w-6xl flex-col gap-10 rounded-3xl bg-gray-50 p-8 shadow-lg md:flex-row">
+                            <div className="space-y-4 md:w-2/3">
+                                <h2 className="text-3xl font-bold text-gray-900">
+                                    Declaration of Independence (From Big Tech)
+                                </h2>
+                                <p className="text-lg text-gray-600">
+                                    Big Tech monopolies have captured our data, our connections, and our attention. We
+                                    are building an open alternative that puts people back in control. Explore the
+                                    manifesto to see the principles guiding Vibe and the community forming around it.
+                                </p>
+                                <ul className="list-disc space-y-2 pl-5 text-gray-600">
+                                    <li>Digital self-sovereignty is a right, not a premium feature.</li>
+                                    <li>
+                                        Transparency and portability must replace hidden algorithms and walled gardens.
+                                    </li>
+                                    <li>Communities thrive when they own their identities, content, and networks.</li>
+                                </ul>
+                                <Link
+                                    href="/manifesto"
+                                    className="inline-flex items-center rounded-full bg-purple-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-purple-500"
+                                >
+                                    Read the full manifesto
+                                    <ArrowRight className="ml-2 h-4 w-4" />
+                                </Link>
+                            </div>
+                            <div className="rounded-2xl border border-purple-100 bg-white p-6 text-sm text-gray-600 shadow-sm md:w-1/3">
+                                <p className="mb-4 font-semibold text-gray-900">Core principles</p>
+                                <p>Freedom, dignity, and user-owned infrastructure power every decision we make.</p>
+                                <p className="mt-4 font-semibold text-gray-900">Our pledge</p>
+                                <p>
+                                    Service by service, we replace extractive platforms with open tools that respect the
+                                    people who use them.
+                                </p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section className="bg-white pt-4 pb-16 text-gray-900">
                         <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 md:grid-cols-3 lg:gap-12 lg:px-8">
                             <FeatureCard
                                 icon={<Database className="h-8 w-8 text-purple-500" />}
@@ -113,7 +156,7 @@ export default function LandingPage() {
                             <FeatureCard
                                 icon={<ArrowRightLeft className="h-8 w-8 text-purple-500" />}
                                 title="Your Journey"
-                                description="Move between apps without friction while keeping your content."
+                                description="Move between services without friction while keeping your history."
                             />
                             <FeatureCard
                                 icon={<Key className="h-8 w-8 text-purple-500" />}
@@ -123,7 +166,6 @@ export default function LandingPage() {
                         </div>
                     </section>
 
-                    {/* Plans */}
                     <section className="bg-gray-100 py-16 text-gray-900">
                         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                             <h2 className="mb-12 text-center text-3xl font-bold">Choose your plan</h2>
@@ -131,7 +173,6 @@ export default function LandingPage() {
                         </div>
                     </section>
 
-                    {/* Partners */}
                     <section className="bg-white py-16 text-gray-900">
                         <div className="mx-auto max-w-7xl space-y-12 px-4 sm:px-6 lg:px-8">
                             <h2 className="text-center text-3xl font-bold">Our network</h2>
@@ -197,18 +238,44 @@ export default function LandingPage() {
                         </div>
                     </section>
 
-                    {/* Final CTA */}
-                    <section className="bg-gray-100 py-12 text-gray-900">
-                        <div className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
-                            <h3 className="mb-6 text-2xl font-bold">Your digital freedom begins here</h3>
-                            {/* <p className="mb-6 text-4xl font-bold text-blue-600">2</p> */}
-                            <Link
-                                href="/console"
-                                className="inline-flex items-center rounded-full bg-[#c17dff] px-8 py-3 text-lg font-semibold text-white shadow-lg transition hover:bg-opacity-90"
-                            >
-                                Get Vibe
-                                <ArrowRight className="ml-2 h-5 w-5" />
-                            </Link>
+                    <section id="waitlist" className="bg-gradient-to-br from-purple-600 to-blue-500 py-16">
+                        <div className="mx-auto max-w-4xl px-4 text-white sm:px-6 lg:px-8">
+                            <div className="rounded-3xl border border-white/20 bg-white/10 p-8 backdrop-blur">
+                                <h2 className="text-3xl font-bold">Join the Vibe waitlist</h2>
+                                <p className="mt-2 text-base text-white/90">
+                                    Be the first to try the next wave of apps built on user-owned identity, content, and
+                                    connections.
+                                </p>
+                                <form className="mt-8 space-y-4" action="https://formspree.io/f/mvgzrjgv" method="POST">
+                                    <input
+                                        type="text"
+                                        name="name"
+                                        placeholder="Your name"
+                                        className="w-full rounded-full border border-white/30 bg-white/10 px-4 py-3 text-white placeholder-white/60 focus:border-white focus:outline-none"
+                                    />
+                                    <input
+                                        type="email"
+                                        name="email"
+                                        placeholder="Your email"
+                                        className="w-full rounded-full border border-white/30 bg-white/10 px-4 py-3 text-white placeholder-white/60 focus:border-white focus:outline-none"
+                                        required
+                                    />
+                                    <textarea
+                                        name="message"
+                                        placeholder="Optional message"
+                                        className="w-full rounded-2xl border border-white/30 bg-white/10 px-4 py-3 text-white placeholder-white/60 focus:border-white focus:outline-none"
+                                        rows={4}
+                                    />
+                                    <button
+                                        type="submit"
+                                        className="inline-flex items-center rounded-full bg-white px-6 py-3 font-semibold text-purple-600 transition hover:bg-white/90"
+                                    >
+                                        <Mail className="mr-2 h-5 w-5" />
+                                        Join the waitlist
+                                        <ArrowRight className="ml-2 h-5 w-5" />
+                                    </button>
+                                </form>
+                            </div>
                         </div>
                     </section>
                 </main>
