@@ -27,9 +27,9 @@ export default function LandingPage() {
                             <span className="text-xl font-semibold">Vibe</span>
                         </Link>
                         <nav className="hidden items-center gap-6 text-sm font-medium md:flex">
-                            <Link href="/console/developers" className="transition hover:text-white/80">
+                            {/* <Link href="/console/developers" className="transition hover:text-white/80">
                                 Developers
-                            </Link>
+                            </Link> */}
                             <Link href="/console/content" className="transition hover:text-white/80">
                                 Console
                             </Link>
@@ -75,7 +75,7 @@ export default function LandingPage() {
                             </div>
                             <div className="relative hidden justify-center sm:flex">
                                 <div className="absolute inset-0 -z-10 rounded-full bg-gradient-to-r from-blue-400 to-purple-400 opacity-60 blur-3xl" />
-                                <div className="relative h-[500px] w-[260px]">
+                                <div className="relative h-[500px] w-[260px] z-[100]">
                                     <Image
                                         src="/images/phone.png"
                                         alt="Vibe app"

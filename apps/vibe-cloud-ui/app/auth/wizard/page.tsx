@@ -612,6 +612,7 @@ const ConsentForm = ({ setStep }: { setStep: (step: string) => void }) => {
                                 <li key={index} className="flex items-start gap-2">
                                     <span className="mt-1 h-1.5 w-1.5 rounded-full bg-blue-500"></span>
                                     {scope.startsWith("read:") &&
+                                        !scope.startsWith("read:global") &&
                                         `Read your ${scope.replace("read:", "").replace(/s$/, "")} data`}
                                     {scope.startsWith("write:") &&
                                         `Write to your ${scope.replace("write:", "").replace(/s$/, "")} data`}
