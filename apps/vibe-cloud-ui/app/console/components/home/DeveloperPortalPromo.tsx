@@ -11,7 +11,7 @@ export default function DeveloperPortalPromo() {
                             <p className="mt-1 text-sm text-foreground/70">Create portable apps with user-owned identity, content, and connections.</p>
                         </div>
                         <Link
-                            href="/developers"
+                            href="/console/developers"
                             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition"
                         >
                             Open Developer Portal
@@ -56,3 +56,4 @@ export default function DeveloperPortalPromo() {
         </section>
     );
 }
+

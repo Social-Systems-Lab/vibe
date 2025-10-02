@@ -52,46 +52,67 @@ export const VibeProvider = ({
     children,
     config,
     loadingComponent,
+    requireAuth = true,
 }: {
     children: ReactNode;
     config: VibeManifest;
     loadingComponent?: ReactNode;
+    requireAuth?: boolean;
 }) => {
     const [sdk] = useState(() => createSdk(config));
     const [user, setUser] = useState<User | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [isSessionChecked, setIsSessionChecked] = useState(false);
     const [isLoggingOut, setIsLoggingOut] = useState(false);
-    const initCalled = useRef(false);
+    const requireAuthRef = useRef(requireAuth);
+    const authAttemptRef = useRef(false);
 
     useEffect(() => {
-        if (initCalled.current) return;
-        initCalled.current = true;
+        requireAuthRef.current = requireAuth;
+        if (!requireAuth) {
+            authAttemptRef.current = false;
+        }
+    }, [requireAuth]);
 
+    useEffect(() => {
         let isMounted = true;
 
-        const initSdk = async () => {
-            const sessionState = await sdk.init();
-            if (isMounted) {
-                setIsSessionChecked(true);
+        const triggerAuth = () => {
+            if (!requireAuthRef.current) {
+                return;
             }
-            return sessionState;
+            if (authAttemptRef.current) {
+                return;
+            }
+            authAttemptRef.current = true;
+            sdk.signup();
         };
 
         const unsubscribe = sdk.onStateChange((state) => {
-            if (isMounted) {
-                setIsLoggedIn(state.isAuthenticated);
-                setUser(state.user);
+            if (!isMounted) {
+                return;
+            }
+            setIsLoggedIn(state.isAuthenticated);
+            setUser(state.user);
+            if (state.isAuthenticated) {
+                authAttemptRef.current = false;
+            } else {
+                triggerAuth();
             }
         });
 
-        initSdk().then((sessionState) => {
-            if (isMounted && sessionState) {
-                if (sessionState.status === "LOGGED_OUT") {
-                    sdk.signup();
-                }
+        const initSdk = async () => {
+            const sessionState = await sdk.init();
+            if (!isMounted) {
+                return;
             }
-        });
+            setIsSessionChecked(true);
+            if (sessionState && sessionState.status === "LOGGED_OUT") {
+                triggerAuth();
+            }
+        };
+
+        initSdk();
 
         return () => {
             isMounted = false;
@@ -139,7 +160,7 @@ export const VibeProvider = ({
         return <>{LoadingComponent}</>;
     }
 
-    if (!isLoggedIn) {
+    if (requireAuth && !isLoggedIn) {
         return null;
     }
 
@@ -181,3 +202,4 @@ export const useVibe = () => {
     }
     return context;
 };
+
