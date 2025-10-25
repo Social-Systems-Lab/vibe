@@ -16,7 +16,7 @@ Creators, movements, and everyday users need resilience and portability. Grassro
 
 ## Product summary — what Vibe is
 
-Vibe is a personal cloud and app platform: a user‑owned service for identity, data (CouchDB), files (S3‑compatible) and permissions that apps connect to via consent. Developers use our SDKs and components for auth, storage, real‑time sync, and cross‑app data sharing. Public documents can be discovered globally, enabling fast feeds and search while ownership remains with the user.
+Vibe is a personal cloud and app platform: a user‑owned service for identity, data, files and permissions that apps connect to via consent. Developers use our SDKs and components for auth, storage, real‑time sync, and cross‑app data sharing. Public documents can be discovered globally, enabling fast feeds and search while ownership remains with the user.
 
 ## Core principles
 
@@ -26,14 +26,14 @@ Self‑sovereignty as a path, not a dogma. In **v1**, keys are held by the manag
 
 -   **Vibe Cloud API** (ElysiaJS):
 
-    -   OAuth 2.0 + OIDC identity provider; iframe **Hub** for silent login and cross‑app sessions (PKCE).
-    -   Per‑user data stores (CouchDB) and file storage (S3‑compatible).
+    -   Identity provider.
+    -   Data store (DB) and file storage (S3‑compatible).
     -   Consent management UI and policies.
     -   Certificate service for issuing/revoking verifiable claims.
-    -   Global index of **DocRefs** for public discovery/feeds.
-    -   Real‑time endpoints (CouchDB `_changes`, subscriptions).
+    -   Global index of data for public discovery/feeds.
+    -   Real‑time endpoints.
 
--   **Vibe SDK** (TS/JS): Auth, read/write/subscribe, files, consent, certificates; strategies for agent/standalone/auth‑proxy.
+-   **Vibe SDK** (TS/JS): Auth, read/write/subscribe to user/app data, upload files
 -   **Vibe React**: Provider, hooks, and UI components (auth widgets, layout, pickers, permission dialogs, profile menu, etc.).
 -   **Example apps**: `vibe‑notes` (skeleton), `vibe‑collections` (Drive‑like), `vibe‑feeds` (social feed; planned) to demonstrate interop and consent.
 
@@ -41,11 +41,11 @@ Self‑sovereignty as a path, not a dogma. In **v1**, keys are held by the manag
 
 **Identity & sessions.** Users are identified with DIDs; sessions use OAuth 2.0 PKCE. V1 uses server custody for keys (with a clear migration to self‑hosted custody in v2 and device keys in v3). An iframe‑based **Hub** enables silent login and cross‑app sessions.
 
-**Data plane.** Per‑user CouchDB databases; the client uses PouchDB for caching and real‑time sync via `_changes`.
+**Data plane.** Postgres database and jsonb fields for documents;
 
 **Files.** S3‑compatible object storage. Quotas are enforced with reserve → pre‑signed POST → commit plus nightly reconciliation.
 
-**Global index.** Public documents publish **DocRefs** to a global DB for efficient range scans and subscriptions. We are evaluating storing the full document in the global DB for advanced queries, while returning DocRefs to apps.
+**Global index.** Public documents indexed efficient range scans and subscriptions.
 
 **Consent.** App manifests describe requested collection operations; in v1 scopes are broad (read/write doc types). "Ask" mode and finer scopes are planned. We are also exploring a certificate‑based model where apps receive issued rights like users.
 

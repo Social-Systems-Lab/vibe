@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="800" height="600" fill="#f8f9fa" />
+  
+  <!-- Title -->
+  <text x="400" y="30" font-family="Arial" font-size="24" text-anchor="middle" font-weight="bold">Vibe Component Relationships</text>
+  
+  <!-- Core Components -->
+  <circle cx="400" cy="120" r="50" fill="#e8eaf6" stroke="#3f51b5" stroke-width="2" />
+  <text x="400" y="125" font-family="Arial" font-size="16" text-anchor="middle" font-weight="bold">vibe-core</text>
+  
+  <!-- SDK -->
+  <circle cx="250" cy="250" r="50" fill="#e3f2fd" stroke="#2196f3" stroke-width="2" />
+  <text x="250" y="255" font-family="Arial" font-size="16" text-anchor="middle" font-weight="bold">vibe-sdk</text>
+  
+  <!-- React -->
+  <circle cx="550" cy="250" r="50" fill="#e3f2fd" stroke="#2196f3" stroke-width="2" />
+  <text x="550" y="255" font-family="Arial" font-size="16" text-anchor="middle" font-weight="bold">vibe-react</text>
+  
+  <!-- API -->
+  <circle cx="400" cy="350" r="50" fill="#e8f5e9" stroke="#4caf50" stroke-width="2" />
+  <text x="400" y="355" font-family="Arial" font-size="16" text-anchor="middle" font-weight="bold">vibe-cloud-api</text>
+  
+  <!-- Applications -->
+  <circle cx="200" cy="450" r="50" fill="#bbdefb" stroke="#1976d2" stroke-width="2" />
+  <text x="200" y="455" font-family="Arial" font-size="16" text-anchor="middle" font-weight="bold">vibe-cloud-ui</text>
+  
+  <circle cx="400" cy="500" r="50" fill="#bbdefb" stroke="#1976d2" stroke-width="2" />
+  <text x="400" y="505" font-family="Arial" font-size="16" text-anchor="middle" font-weight="bold">vibe-notes</text>
+  
+  <circle cx="600" cy="450" r="50" fill="#bbdefb" stroke="#1976d2" stroke-width="2" />
+  <text x="600" y="455" font-family="Arial" font-size="16" text-anchor="middle" font-weight="bold">future apps</text>
+  
+  <!-- Connections -->
+  <!-- Core to SDK -->
+  <line x1="370" y1="160" x2="280" y2="210" stroke="#3f51b5" stroke-width="2" />
+  <polygon points="285,205 275,215 290,215" fill="#3f51b5" />
+  <text x="310" y="190" font-family="Arial" font-size="12">depends on</text>
+  
+  <!-- Core to React -->
+  <line x1="430" y1="160" x2="520" y2="210" stroke="#3f51b5" stroke-width="2" />
+  <polygon points="515,205 525,215 510,215" fill="#3f51b5" />
+  <text x="490" y="190" font-family="Arial" font-size="12">depends on</text>
+  
+  <!-- SDK to API -->
+  <line x1="280" y1="290" x2="360" y2="320" stroke="#2196f3" stroke-width="2" />
+  <polygon points="355,315 365,325 350,325" fill="#2196f3" />
+  <text x="310" y="315" font-family="Arial" font-size="12">calls</text>
+  
+  <!-- React to SDK -->
+  <line x1="510" y1="280" x2="290" y2="280" stroke="#2196f3" stroke-width="2" />
+  <polygon points="295,275 285,280 295,285" fill="#2196f3" />
+  <text x="400" y="270" font-family="Arial" font-size="12">uses</text>
+  
+  <!-- Cloud UI to React -->
+  <line x1="240" y1="420" x2="510" y2="280" stroke="#1976d2" stroke-width="2" />
+  <polygon points="505,285 515,275 520,290" fill="#1976d2" />
+  <text x="350" y="360" font-family="Arial" font-size="12">uses</text>
+  
+  <!-- Cloud UI to SDK -->
+  <line x1="220" y1="410" x2="240" y2="290" stroke="#1976d2" stroke-width="2" />
+  <polygon points="235,295 245,285 250,300" fill="#1976d2" />
+  <text x="210" y="350" font-family="Arial" font-size="12">uses</text>
+  
+  <!-- Notes to React -->
+  <line x1="430" y1="470" x2="520" y2="290" stroke="#1976d2" stroke-width="2" />
+  <polygon points="515,295 525,285 530,300" fill="#1976d2" />
+  <text x="490" y="380" font-family="Arial" font-size="12">uses</text>
+  
+  <!-- Notes to SDK -->
+  <line x1="370" y1="470" x2="280" y2="290" stroke="#1976d2" stroke-width="2" />
+  <polygon points="275,295 285,285 290,300" fill="#1976d2" />
+  <text x="310" y="380" font-family="Arial" font-size="12">uses</text>
+  
+  <!-- Future Apps to React -->
+  <line x1="570" y1="420" x2="550" y2="300" stroke="#1976d2" stroke-width="2" />
+  <polygon points="545,305 555,295 560,310" fill="#1976d2" />
+  <text x="540" y="360" font-family="Arial" font-size="12">uses</text>
+  
+  <!-- Future Apps to SDK -->
+  <line x1="560" y1="430" x2="290" y2="280" stroke="#1976d2" stroke-width="2" />
+  <polygon points="295,285 285,275 300,270" fill="#1976d2" />
+  <text x="420" y="330" font-family="Arial" font-size="12">uses</text>
+  
+  <!-- Legend -->
+  <rect x="600" y="50" width="150" height="100" fill="none" stroke="#757575" stroke-width="1" />
+  <text x="675" y="70" font-family="Arial" font-size="14" text-anchor="middle" font-weight="bold">Legend</text>
+  
+  <circle cx="625" cy="90" r="10" fill="#e8eaf6" stroke="#3f51b5" stroke-width="2" />
+  <text x="675" y="95" font-family="Arial" font-size="12" text-anchor="middle">Core Package</text>
+  
+  <circle cx="625" cy="115" r="10" fill="#e3f2fd" stroke="#2196f3" stroke-width="2" />
+  <text x="675" y="120" font-family="Arial" font-size="12" text-anchor="middle">SDK/UI Package</text>
+  
+  <circle cx="625" cy="140" r="10" fill="#e8f5e9" stroke="#4caf50" stroke-width="2" />
+  <text x="675" y="145" font-family="Arial" font-size="12" text-anchor="middle">API</text>
+  
+  <circle cx="625" cy="165" r="10" fill="#bbdefb" stroke="#1976d2" stroke-width="2" />
+  <text x="675" y="170" font-family="Arial" font-size="12" text-anchor="middle">Applications</text>
+</svg>
