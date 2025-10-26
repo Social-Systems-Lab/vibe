@@ -9,17 +9,21 @@ function Wizard() {
     const [step, setStep] = useState(searchParams.get("step") || "signup");
 
     // Extract branding and app info from URL
-    const appName = searchParams.get("appName") || "your application";
-    const backgroundImageUrl = searchParams.get("backgroundImageUrl");
-    const appTagline = searchParams.get("appTagline");
-    const appDescription = searchParams.get("appDescription");
-    const themeColor = searchParams.get("theme_color") || "#000000";
-    const customLandingPage = searchParams.get("custom_landing_page");
-    const appLogoUrl = searchParams.get("appLogoUrl");
-    const appLogotypeUrl = searchParams.get("appLogotypeUrl");
-    const appShowcaseUrl = searchParams.get("appShowcaseUrl");
-    const backgroundColor = searchParams.get("backgroundColor") || "#FFFFFF";
-    const fontColor = searchParams.get("fontColor") || "#000000";
+    const getSafe = (key: string) => {
+        const v = searchParams.get(key);
+        return v && v !== "undefined" ? v : null;
+    };
+    const appName = getSafe("appName") || "your application";
+    const backgroundImageUrl = getSafe("backgroundImageUrl");
+    const appTagline = getSafe("appTagline");
+    const appDescription = getSafe("appDescription");
+    const themeColor = getSafe("theme_color") || "#000000";
+    const customLandingPage = getSafe("custom_landing_page");
+    const appLogoUrl = getSafe("appLogoUrl");
+    const appLogotypeUrl = getSafe("appLogotypeUrl");
+    const appShowcaseUrl = getSafe("appShowcaseUrl");
+    const backgroundColor = getSafe("backgroundColor") || "#FFFFFF";
+    const fontColor = getSafe("fontColor") || "#000000";
 
     // Extract OAuth params to forward them
     const queryString = searchParams.toString();
@@ -238,12 +242,14 @@ const ProfileForm = ({ setStep }: { setStep: (step: string) => void }) => {
 
     useEffect(() => {
         const fetchUserData = async () => {
-            const response = await fetch(`/auth/me?${queryString}`);
-            if (response.ok) {
-                const data = await response.json();
-                setDisplayName(data.displayName);
-                setPreview(data.pictureUrl);
-            }
+            try {
+                const response = await fetch(`/auth/me?${queryString}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    setDisplayName(data.displayName ?? "");
+                    setPreview(data.pictureUrl ?? null);
+                }
+            } catch {}
         };
         fetchUserData();
     }, [queryString]);

@@ -12,6 +12,7 @@ import { CertsService } from "./services/certs";
 import { EmailService } from "./services/email";
 import { StorageService, MinioStorageProvider, ScalewayStorageProvider, StorageProvider } from "./services/storage";
 import { QuotaService } from "./services/quota";
+import { QuotaServiceNoop } from "./services/quota.noop";
 import { getUserDbName } from "./lib/db";
 import { Certificate, User } from "vibe-core";
 import nano from "nano";
@@ -61,7 +62,7 @@ const storageProvider =
           });
 
 const storageService = new StorageService(storageProvider);
-const quotaService = new QuotaService();
+const quotaService = dataProvider === "postgres" ? new QuotaServiceNoop() : new QuotaService();
 const STORAGE_BUCKET = process.env.STORAGE_BUCKET_NAME || process.env.SCALEWAY_BUCKET_NAME!;
 
 // TTL and caching policy (configurable via env)
@@ -216,6 +217,26 @@ const app = new Elysia()
     .get("/app-grid", ({ request }) => proxyRequest(request))
     .group("/auth", (app) =>
         app
+            .get(
+                "/me",
+                async ({ cookie, sessionJwt, identityService, set }) => {
+                    const sessionToken = cookie.vibe_session.value;
+                    if (!sessionToken) return { displayName: "", pictureUrl: undefined };
+                    try {
+                        const session = await sessionJwt.verify(sessionToken);
+                        if (!session || !session.sessionId) return { displayName: "", pictureUrl: undefined };
+                        const user = await identityService.findByDid(session.sessionId);
+                        if (!user) return { displayName: "", pictureUrl: undefined };
+                        return {
+                            displayName: user.displayName || "",
+                            pictureUrl: user.pictureUrl || user.profilePictureUrl,
+                        };
+                    } catch (e) {
+                        set.status = 200;
+                        return { displayName: "", pictureUrl: undefined };
+                    }
+                }
+            )
             .get(
                 "/authorize",
                 async ({ query, request, cookie, sessionJwt, identityService, redirect }) => {
