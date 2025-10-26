@@ -4,7 +4,8 @@ import { jwt } from "@elysiajs/jwt";
 import { cookie } from "@elysiajs/cookie";
 import { cors } from "@elysiajs/cors";
 import { staticPlugin } from "@elysiajs/static";
-import { IdentityService } from "./services/identity";
+import { IdentityService as CouchIdentityService } from "./services/identity";
+import { IdentityService as PostgresIdentityService } from "./services/identity.postgres";
 import { DataService, JwtPayload } from "./services/data";
 import { PostgresDataService } from "./services/data.postgres";
 import { CertsService } from "./services/certs";
@@ -21,12 +22,25 @@ import { allowRead, isKeyInInstance } from "./lib/acl";
 
 const globalFeedService = new GlobalFeedService();
 
-const identityService = new IdentityService({
-    url: process.env.COUCHDB_URL!,
-    user: process.env.COUCHDB_USER!,
-    pass: process.env.COUCHDB_PASSWORD!,
-    instanceIdSecret: process.env.INSTANCE_ID_SECRET!,
-});
+const dataProvider = process.env.DATA_PROVIDER || "couch";
+
+const identityService =
+    dataProvider === "postgres"
+        ? new PostgresIdentityService({
+              connectionString: process.env.PG_CONNECTION_STRING,
+              host: process.env.PGHOST,
+              port: process.env.PGPORT ? Number(process.env.PGPORT) : undefined,
+              database: process.env.PGDATABASE,
+              user: process.env.PGUSER,
+              password: process.env.PGPASSWORD,
+              instanceIdSecret: process.env.INSTANCE_ID_SECRET!,
+          })
+        : new CouchIdentityService({
+              url: process.env.COUCHDB_URL!,
+              user: process.env.COUCHDB_USER!,
+              pass: process.env.COUCHDB_PASSWORD!,
+              instanceIdSecret: process.env.INSTANCE_ID_SECRET!,
+          });
 
 const storageProvider =
     process.env.STORAGE_PROVIDER === "minio"
@@ -58,7 +72,6 @@ const PRESIGN_FORCE_TTL_FOR_OWNER = (process.env.PRESIGN_FORCE_TTL_FOR_OWNER ?? 
 const STREAM_PRIVATE_MAX_AGE_SECONDS = Number(process.env.STREAM_PRIVATE_MAX_AGE_SECONDS ?? 3600);
 const STREAM_PUBLIC_MAX_AGE_SECONDS = Number(process.env.STREAM_PUBLIC_MAX_AGE_SECONDS ?? 86400);
 
-const dataProvider = process.env.DATA_PROVIDER || "couch";
 const dataService: any =
     dataProvider === "postgres"
         ? new PostgresDataService(
@@ -87,7 +100,10 @@ const certsService = new CertsService(identityService, dataService);
 const emailService = new EmailService();
 
 try {
-    await identityService.onApplicationBootstrap(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
+    await identityService.onApplicationBootstrap(
+        process.env.COUCHDB_USER!,
+        process.env.COUCHDB_PASSWORD!
+    );
     await dataService.init();
     if (dataProvider === "couch") {
         const couch = nano(process.env.COUCHDB_URL!);
