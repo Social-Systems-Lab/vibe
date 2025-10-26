@@ -6,6 +6,7 @@ import { cors } from "@elysiajs/cors";
 import { staticPlugin } from "@elysiajs/static";
 import { IdentityService } from "./services/identity";
 import { DataService, JwtPayload } from "./services/data";
+import { PostgresDataService } from "./services/data.postgres";
 import { CertsService } from "./services/certs";
 import { EmailService } from "./services/email";
 import { StorageService, MinioStorageProvider, ScalewayStorageProvider, StorageProvider } from "./services/storage";
@@ -57,15 +58,30 @@ const PRESIGN_FORCE_TTL_FOR_OWNER = (process.env.PRESIGN_FORCE_TTL_FOR_OWNER ?? 
 const STREAM_PRIVATE_MAX_AGE_SECONDS = Number(process.env.STREAM_PRIVATE_MAX_AGE_SECONDS ?? 3600);
 const STREAM_PUBLIC_MAX_AGE_SECONDS = Number(process.env.STREAM_PUBLIC_MAX_AGE_SECONDS ?? 86400);
 
-const dataService = new DataService(
-    {
-        url: process.env.COUCHDB_URL!,
-        user: process.env.COUCHDB_USER!,
-        pass: process.env.COUCHDB_PASSWORD!,
-    },
-    identityService,
-    globalFeedService
-);
+const dataProvider = process.env.DATA_PROVIDER || "couch";
+const dataService: any =
+    dataProvider === "postgres"
+        ? new PostgresDataService(
+              {
+                  connectionString: process.env.PG_CONNECTION_STRING,
+                  host: process.env.PGHOST,
+                  port: process.env.PGPORT ? Number(process.env.PGPORT) : undefined,
+                  database: process.env.PGDATABASE,
+                  user: process.env.PGUSER,
+                  password: process.env.PGPASSWORD,
+              },
+              identityService,
+              globalFeedService
+          )
+        : new DataService(
+              {
+                  url: process.env.COUCHDB_URL!,
+                  user: process.env.COUCHDB_USER!,
+                  pass: process.env.COUCHDB_PASSWORD!,
+              },
+              identityService,
+              globalFeedService
+          );
 
 const certsService = new CertsService(identityService, dataService);
 const emailService = new EmailService();
@@ -73,9 +89,15 @@ const emailService = new EmailService();
 try {
     await identityService.onApplicationBootstrap(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
     await dataService.init();
-    const couch = nano(process.env.COUCHDB_URL!);
-    await couch.auth(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
-    await globalFeedService.init(process.env.COUCHDB_URL!, process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
+    if (dataProvider === "couch") {
+        const couch = nano(process.env.COUCHDB_URL!);
+        await couch.auth(process.env.COUCHDB_USER!, process.env.COUCHDB_PASSWORD!);
+        await globalFeedService.init(
+            process.env.COUCHDB_URL!,
+            process.env.COUCHDB_USER!,
+            process.env.COUCHDB_PASSWORD!
+        );
+    }
 } catch (error) {
     console.error("Failed to start server:", error);
     process.exit(1);
@@ -1587,17 +1609,7 @@ const app = new Elysia()
                         await storageService.delete(bucket, storageKey);
                         // Attempt to delete associated metadata doc
                         try {
-                            const existing = await dataService.readOnce(
-                                "files",
-                                { storageKey, limit: 1 },
-                                profile as JwtPayload
-                            );
-                            const doc = (existing as any)?.docs?.[0];
-                            if (doc?._id) {
-                                const db = dataService.getDb(profile.instanceId);
-                                const fresh = await db.get(doc._id);
-                                await db.destroy(fresh._id, fresh._rev);
-                            }
+                            await dataService.deleteByStorageKey(storageKey, profile as JwtPayload);
                         } catch {}
                         if (stat?.size) {
                             await quotaService.debit(profile.sub, Number(stat.size) || 0);
@@ -1968,16 +1980,8 @@ const app = new Elysia()
                     }
                     const limit = Math.min(Math.max(Number(query.limit) || 2000, 1), 20000);
                     try {
-                        const db = dataService.getDb(profile.instanceId);
-                        const result = await (db as any).list({ include_docs: true, limit });
-                        const setTypes = new Set<string>();
-                        for (const row of (result?.rows as any[]) || []) {
-                            const d = (row as any)?.doc;
-                            if (d && typeof d.type === "string") {
-                                setTypes.add(d.type);
-                            }
-                        }
-                        return { types: Array.from(setTypes).sort() };
+                        const types = await dataService.listTypes(profile.instanceId, limit);
+                        return { types };
                     } catch (e: any) {
                         set.status = 500;
                         return { error: "Failed to list types" };
@@ -2179,7 +2183,7 @@ const app = new Elysia()
                             return { error: "User not found" };
                         }
                         // Use DataService.readOnce to ensure an authenticated Couch session and proper access handling
-                        const result = await dataService.readOnce<any>("profiles", { _id: ref, limit: 1 }, {
+                        const result = await dataService.readOnce("profiles", { _id: ref, limit: 1 }, {
                             sub: user.did,
                             instanceId: user.instanceId,
                         } as JwtPayload);
@@ -2187,7 +2191,7 @@ const app = new Elysia()
                         // Fallback: Some environments may not store the profile at "profiles/me".
                         // Try to find any profiles doc for this DID.
                         if (!doc) {
-                            const byDid = await dataService.readOnce<any>("profiles", { did: user.did, limit: 1 }, {
+                            const byDid = await dataService.readOnce("profiles", { did: user.did, limit: 1 }, {
                                 sub: user.did,
                                 instanceId: user.instanceId,
                             } as JwtPayload);

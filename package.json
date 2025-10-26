@@ -14,11 +14,13 @@
         "build": "pnpm run build:clean-seq"
     },
     "dependencies": {
+        "pg": "^8.16.3",
         "undici": "^7.10.0"
     },
     "devDependencies": {
-        "concurrently": "^9.2.0",
-        "@types/varint": "^6.0.0"
+        "@types/pg": "^8.15.5",
+        "@types/varint": "^6.0.0",
+        "concurrently": "^9.2.0"
     },
     "pnpm": {
         "overrides": {

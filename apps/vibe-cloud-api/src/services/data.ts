@@ -233,6 +233,49 @@ export class DataService {
         return response;
     }
 
+    async deleteById(id: string, user: JwtPayload) {
+        await this.reauthenticate();
+        const db = this.getDb(user.instanceId);
+        try {
+            const doc = await db.get(id);
+            await db.destroy(doc._id, (doc as any)._rev);
+        } catch (e) {
+            // ignore if not found
+        }
+    }
+
+    async deleteByStorageKey(storageKey: string, user: JwtPayload) {
+        await this.reauthenticate();
+        const db = this.getDb(user.instanceId);
+        try {
+            await this.ensureIndex(db, ["type", "storageKey"], "idx_files_storageKey");
+        } catch {}
+        try {
+            const result = await (db as any).find({ selector: { type: "files", storageKey }, limit: 10 });
+            const docs = (result?.docs as any[]) || [];
+            for (const d of docs) {
+                await db.destroy(d._id, d._rev);
+            }
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    async listTypes(instanceId: string, limit: number): Promise<string[]> {
+        const db = this.getDb(instanceId);
+        try {
+            const res = await (db as any).list({ include_docs: true, limit: Math.max(1, Math.min(limit || 2000, 20000)) });
+            const set = new Set<string>();
+            for (const row of (res?.rows as any[]) || []) {
+                const d = (row as any)?.doc;
+                if (d && typeof d.type === "string") set.add(d.type);
+            }
+            return Array.from(set).sort();
+        } catch {
+            return [];
+        }
+    }
+
     private async handleRendererChange(rendererDoc: any) {
         try {
             const designDocId = `_design/${rendererDoc.rendererId}`;

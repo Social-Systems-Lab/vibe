@@ -1,4 +1,30 @@
 services:
+    postgres:
+        image: postgres:16-alpine
+        ports:
+            - "5432:5432"
+        environment:
+            - POSTGRES_DB=vibe
+            - POSTGRES_USER=postgres
+            - POSTGRES_PASSWORD=postgres
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U postgres -d vibe"]
+            interval: 5s
+            timeout: 3s
+            retries: 20
+        volumes:
+            - postgres-data:/var/lib/postgresql/data
+    pgadmin:
+        image: dpage/pgadmin4:8.12
+        depends_on:
+            - postgres
+        ports:
+            - "5051:80"
+        environment:
+            - PGADMIN_DEFAULT_EMAIL=admin@example.com
+            - PGADMIN_DEFAULT_PASSWORD=admin
+        volumes:
+            - pgadmin-data:/var/lib/pgadmin
     couchdb:
         image: couchdb:3.5
         ports:
@@ -40,11 +66,32 @@ services:
         ports:
             - "5050:5050"
         environment:
+            # Select Postgres data provider for local dev
+            - DATA_PROVIDER=postgres
+
+            # Postgres connection (matches apps/vibe-cloud-api/.env.example)
+            - PGHOST=postgres
+            - PGPORT=5432
+            - PGDATABASE=vibe
+            - PGUSER=postgres
+            - PGPASSWORD=postgres
+
+            # Leave CouchDB vars for any legacy code paths still in use
             - COUCHDB_URL=http://couchdb:5984
             - COUCHDB_USER=admin
             - COUCHDB_PASSWORD=password
+
+            # Storage configuration -> MinIO
+            - STORAGE_PROVIDER=minio
+            - STORAGE_BUCKET_NAME=vibe-cloud
+            - MINIO_ENDPOINT=minio
+            - MINIO_PORT=9000
+            - MINIO_USE_SSL=false
+            - MINIO_ACCESS_KEY=minioadmin
+            - MINIO_SECRET_KEY=minioadmin
             - VIBE_CLOUD_UI_URL=http://vibe-cloud-ui:4000
         depends_on:
+            - postgres
             - couchdb-setup
             - minio
             - vibe-cloud-ui
@@ -52,3 +99,7 @@ services:
         build:
             context: ../../
             dockerfile: apps/vibe-cloud-ui/Dockerfile
+
+volumes:
+    postgres-data:
+    pgadmin-data:
