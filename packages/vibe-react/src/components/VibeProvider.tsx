@@ -66,6 +66,7 @@ export const VibeProvider = ({
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const requireAuthRef = useRef(requireAuth);
     const authAttemptRef = useRef(false);
+    const isSessionCheckedRef = useRef(false);
 
     useEffect(() => {
         requireAuthRef.current = requireAuth;
@@ -97,7 +98,10 @@ export const VibeProvider = ({
             if (state.isAuthenticated) {
                 authAttemptRef.current = false;
             } else {
-                triggerAuth();
+                // Avoid premature redirects before init completes
+                if (isSessionCheckedRef.current) {
+                    triggerAuth();
+                }
             }
         });
 
@@ -107,6 +111,7 @@ export const VibeProvider = ({
                 return;
             }
             setIsSessionChecked(true);
+            isSessionCheckedRef.current = true;
             if (sessionState && sessionState.status === "LOGGED_OUT") {
                 triggerAuth();
             }

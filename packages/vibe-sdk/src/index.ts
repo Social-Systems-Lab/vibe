@@ -408,7 +408,12 @@ export class VibeSDK {
         }
         if (data && typeof data === "object" && "access_token" in data) {
             this.authManager.setAccessToken(data.access_token as string);
-            await this.getUser();
+            try {
+                await this.getUser();
+            } finally {
+                // Ensure listeners update even if user fetch fails; token is valid
+                this.authManager.notifyStateChange();
+            }
         } else {
             throw new Error("Invalid response from token endpoint.");
         }
@@ -499,7 +504,7 @@ export class VibeSDK {
             });
             if (error) {
                 console.error("Error fetching user:", error.value);
-                this.authManager.setAccessToken(null);
+                // Keep token; user may still be valid. Retry on next init/state change.
                 this.authManager.setUser(null);
                 return null;
             }
@@ -516,44 +521,89 @@ export class VibeSDK {
         return this.authManager.getAccessToken();
     }
 
-    // --- Data Methods (from HubStrategy, now using postToHub) ---
+    // --- Data Methods (direct API, Postgres-first) ---
     async read(type: string, query: any, callback: ReadCallback): Promise<Subscription> {
-        const subscriptionId = this.generateNonce(); // Re-use nonce generation for sub ids
-        this.subscriptions.set(subscriptionId, callback);
+        // Initial fetch
+        const initial = await this.readOnce(type, query);
+        callback({ ok: true, data: initial.docs });
 
-        const { global, ...filter } = query;
-        const action = global ? "DB_GLOBAL_SUBSCRIBE" : "DB_SUBSCRIBE";
+        // Live updates
+        if (query && query.global) {
+            // Global via WS
+            const wsUrl = (this.config.apiUrl || "").replace(/^http/, "ws");
+            const ws = new WebSocket(`${wsUrl}/data/global`);
+            const token = this.getToken();
+            ws.onopen = () => {
+                ws.send(
+                    JSON.stringify({ action: "auth", token, query: { ...(query || {}), type } })
+                );
+            };
+            ws.onmessage = async (ev) => {
+                try {
+                    const msg = JSON.parse(ev.data as any);
+                    if (msg?.docs) {
+                        // Expand DocRefs via /data/expand pathway handled by API hub path, but here we can just re-fetch
+                        const refreshed = await this.readOnce(type, query);
+                        callback({ ok: true, data: refreshed.docs });
+                    } else if (msg?.action === "update") {
+                        const refreshed = await this.readOnce(type, query);
+                        callback({ ok: true, data: refreshed.docs });
+                    }
+                } catch {}
+            };
+            return { unsubscribe: () => ws.close() };
+        }
 
-        this.hubPort?.postMessage({ action, type, payload: { query: filter }, subscriptionId });
-
-        const initialData = await this.readOnce(type, query);
-        callback({ ok: true, data: initialData.docs });
-
-        return {
-            unsubscribe: () => {
-                this.subscriptions.delete(subscriptionId);
-                const unsubscribeType = global ? "DB_GLOBAL_UNSUBSCRIBE" : "DB_UNSUBSCRIBE";
-                this.hubPort?.postMessage({ action: unsubscribeType, payload: { subscriptionId } });
-            },
-        };
+        // Per-user: simple polling until we add server WS
+        const interval = setInterval(async () => {
+            try {
+                const refreshed = await this.readOnce(type, query);
+                callback({ ok: true, data: refreshed.docs });
+            } catch {}
+        }, 2000);
+        return { unsubscribe: () => clearInterval(interval) };
     }
 
     async readOnce<T extends Document>(type: string, query: any = {}): Promise<ReadOnceResponse<T>> {
-        const { global, ...filter } = query;
-        const action = global ? "DB_GLOBAL_QUERY" : "DB_QUERY";
-        const result = await this.postToHub({ action, type, payload: { ...filter } });
-        return {
-            docs: result,
-            doc: result?.[0],
-        };
+        const { global, expand, ...selector } = query || {};
+        const qs = new URLSearchParams();
+        if (expand) qs.set("expand", Array.isArray(expand) ? expand.join(",") : String(expand));
+        if (global) qs.set("global", "true");
+
+        const headers: Record<string, string> = {};
+        const token = this.authManager.getAccessToken();
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+
+        const res = await fetch(
+            `${(this.config.apiUrl || "").replace(/\/$/, "")}/data/types/${encodeURIComponent(
+                type
+            )}/query?${qs.toString()}`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json", ...headers },
+                body: JSON.stringify(selector || {}),
+            }
+        );
+        if (!res.ok) throw new Error(`readOnce failed: ${res.status}`);
+        const body = await res.json();
+        const docs = (body?.docs || []) as T[];
+        return { docs, doc: docs[0] };
     }
 
     async write(type: string, data: any): Promise<any> {
-        return this.postToHub({ action: "DB_WRITE", type, payload: data });
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        const token = this.authManager.getAccessToken();
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        const res = await fetch(
+            `${(this.config.apiUrl || "").replace(/\/$/, "")}/data/types/${encodeURIComponent(type)}`,
+            { method: "POST", headers, body: JSON.stringify(data) }
+        );
+        if (!res.ok) throw new Error(`write failed: ${res.status}`);
+        return await res.json();
     }
 
-    async remove(type: string, data: any): Promise<any> {
-        return this.postToHub({ action: "DB_REMOVE", type, payload: data });
+    async remove(_type: string, _data: any): Promise<any> {
+        throw new Error("remove not implemented yet");
     }
 
     // --- Cert Methods (from StandaloneStrategy) ---

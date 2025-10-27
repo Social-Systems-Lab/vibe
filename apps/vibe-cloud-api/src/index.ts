@@ -133,6 +133,8 @@ const app = new Elysia()
         cors({
             origin: allowedOrigins,
             credentials: true,
+            allowedHeaders: ["Authorization", "Content-Type"],
+            exposedHeaders: ["Content-Disposition"],
         })
     )
     .use(cookie())
@@ -181,7 +183,9 @@ const app = new Elysia()
         const hubHtml = await Bun.file("public/hub.html").text();
         // Use public Couch URL if provided, else fall back to internal COUCHDB_URL
         const couchDbUrl = process.env.COUCHDB_PUBLIC_URL || process.env.COUCHDB_URL!;
-        const replacedHtml = hubHtml.replace("__COUCHDB_URL__", couchDbUrl);
+        const replacedHtml = hubHtml
+            .replace("__COUCHDB_URL__", couchDbUrl)
+            .replace("__REMOTE_ONLY__", (process.env.DATA_PROVIDER || "couch") === "postgres" ? "true" : "false");
         return new Response(replacedHtml, {
             headers: { "Content-Type": "text/html" },
         });
@@ -496,7 +500,7 @@ const app = new Elysia()
             // })
             .post(
                 "/token",
-                async ({ body, identityService, jwt }) => {
+                async ({ body, identityService }) => {
                     //console.log("[/auth/token] Received body:", body);
                     const { grant_type, code, code_verifier, client_id, redirect_uri } = body;
 
@@ -519,7 +523,15 @@ const app = new Elysia()
                         return new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 });
                     }
 
-                    const accessToken = await jwt.sign({ sub: user.did, instanceId: user.instanceId });
+                    // Issue token with jose to include custom claims reliably
+                    const secret = new TextEncoder().encode(process.env.JWT_SECRET!);
+                    const { SignJWT } = await import("jose");
+                    const accessToken = await new SignJWT({ instanceId: user.instanceId })
+                        .setProtectedHeader({ alg: "HS256" })
+                        .setSubject(user.did)
+                        .setIssuedAt()
+                        .setExpirationTime("15m")
+                        .sign(secret);
                     return {
                         access_token: accessToken,
                         token_type: "Bearer",
@@ -731,9 +743,14 @@ const app = new Elysia()
                             themeColor: (query as any).themeColor,
                         };
 
+                        // Persist scopes that were requested so future /authorize can compare accurately
+                        const scopeParam = (query as any).scope as string | undefined;
+                        const scopes = scopeParam ? scopeParam.split(" ").filter(Boolean) : [];
+
                         await identityService.storeUserConsent(session.sessionId, {
                             clientId: client_id,
                             origin: origin!,
+                            scopes,
                             manifest,
                         });
                     } else {
@@ -758,6 +775,7 @@ const app = new Elysia()
                     }
 
                     params.delete("prompt");
+                    params.delete("hasConsented");
                     params.delete("step");
                     // UI-only params should not leak into authorize roundtrip
                     params.delete("appName");
@@ -930,11 +948,42 @@ const app = new Elysia()
     )
     .group("/users", (app) =>
         app
-            .derive(async ({ jwt, headers }) => {
+            .derive(async ({ jwt, headers, cookie, sessionJwt, identityService }) => {
                 const auth = headers.authorization;
+                console.log("[/users] Authorization header:", auth ? `${auth.slice(0, 16)}...` : "<missing>");
                 const token = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
-                const profile = await jwt.verify(token);
-                return { profile };
+                // First try bearer token
+                if (token) {
+                    try {
+                        // Verify using jose directly to avoid schema/filtering issues
+                        const joseMod = await import("jose");
+                        const secret = new TextEncoder().encode(process.env.JWT_SECRET!);
+                        const { payload } = await joseMod.jwtVerify(token, secret);
+                        console.log("[/users] Decoded JWT (keys):", Object.keys(payload || {}));
+                        const sub = (payload as any)?.sub as string | undefined;
+                        const instanceId = (payload as any)?.instanceId as string | undefined;
+                        console.log("[/users] JWT verified payload:", { sub, instanceId });
+                        if (typeof sub === "string" && typeof instanceId === "string") {
+                            return { profile: { sub, instanceId } };
+                        }
+                        console.warn("[/users] JWT payload missing fields; falling back to cookie session");
+                    } catch (e) {
+                        console.error("[/users] JWT verify failed:", e);
+                    }
+                }
+                // Fallback to cookie session -> build profile
+                try {
+                    const sessionToken = cookie.vibe_session?.value;
+                    if (!sessionToken) return { profile: null };
+                    const session = await sessionJwt.verify(sessionToken);
+                    if (!session || !session.sessionId) return { profile: null };
+                    const user = await identityService.findByDid(session.sessionId);
+                    if (!user) return { profile: null };
+                    return { profile: { sub: user.did, instanceId: user.instanceId } };
+                } catch (e) {
+                    console.error("[/users] Cookie session fallback failed:", e);
+                    return { profile: null };
+                }
             })
             .guard({
                 beforeHandle: ({ profile, set }) => {

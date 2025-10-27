@@ -1,903 +1,306 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <title>Vibe Hub</title>
-        <script src="https://cdn.jsdelivr.net/npm/pouchdb@9.0.0/dist/pouchdb.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/pouchdb@9.0.0/dist/pouchdb.find.min.js"></script>
-    </head>
-    <body>
-        <h1>Vibe Data Hub</h1>
-        <script>
-            // --- 1. Initialization and State ---
-            const permissionsCache = new Map();
-            const connectedApps = new Map();
-            let db = null;
-            let remoteDb = null;
-            let currentUser = null;
-            let syncHandler = null;
-            const subscriptions = new Map();
-            const sharedListeners = new Map();
-            let dbOperationLock = Promise.resolve(); // Re-introducing the lock as it's the correct pattern.
+  <head>
+    <meta charset="utf-8" />
+    <title>Vibe Hub</title>
+  </head>
+  <body>
+    <script>
+      // Minimal Postgres-only hub: no PouchDB, no CouchDB.
+      // Responsibilities:
+      // - Bridge between apps and cloud API via postMessage
+      // - Silent auth assist (permissions + api-token)
+      // - Read/write via API
+      // - Global subscribe via WS; per-user subscribe via lightweight polling
 
-            // --- 1.2 Shared Worker Initialization ---
-            let sharedWorker = null;
-            if (window.SharedWorker) {
-                console.log("[HUB] Shared Worker is supported. Initializing...");
-                sharedWorker = new SharedWorker("shared-worker.js");
+      const connectedApps = new Map(); // origin -> { port }
+      const permissionsCache = new Map(); // origin -> { scopes: string[] }
+      const subscriptions = new Map(); // id -> { port, key }
+      const sharedListeners = new Map(); // key -> { cancel, subscribers: Set<id> }
+      let currentUser = null;
 
-                sharedWorker.port.onmessage = (event) => {
-                    console.log("[HUB] Received message from Shared Worker:", event.data);
-                    // Handle messages from the worker, e.g., forward to the correct app port
-                };
-
-                sharedWorker.onerror = (err) => {
-                    console.error("[HUB] Shared Worker error:", err);
-                };
-
-                // Start the port to allow messages to be received
-                sharedWorker.port.start();
-
-                // Test message to see if the connection is working
-                sharedWorker.port.postMessage({ action: "HUB_INIT" });
-            } else {
-                console.warn("[HUB] Shared Worker is not supported in this browser.");
+      // Logging passthrough to parent apps
+      const originalConsole = { ...console };
+      ["log", "warn", "error", "info", "debug"].forEach((level) => {
+        const orig = console[level];
+        console[level] = (...args) => {
+          try {
+            for (const app of connectedApps.values()) {
+              app.port.postMessage({ action: "HUB_LOG", data: { level, args } });
             }
+          } catch {}
+          orig.apply(console, args);
+        };
+      });
 
-            // --- 1.3 Logging Bridge ---
-            const originalConsole = { ...console };
-            const logToParent = (level, args) => {
-                try {
-                    // We need to check if connectedApps is being initialized to avoid errors
-                    if (connectedApps && connectedApps.values) {
-                        for (const app of connectedApps.values()) {
-                            app.port.postMessage({
-                                action: "HUB_LOG",
-                                data: {
-                                    level,
-                                    // Ensure args are serializable
-                                    args: JSON.parse(JSON.stringify(args)),
-                                },
-                            });
-                        }
-                    }
-                } catch (error) {
-                    // Use original console to avoid infinite loops
-                    originalConsole.error("Error posting log to parent:", error);
-                }
-            };
-            const levels = ["log", "warn", "error", "info", "debug"];
-            levels.forEach((level) => {
-                const originalMethod = console[level];
-                console[level] = (...args) => {
-                    originalMethod.apply(console, args);
-                    logToParent(level, args);
-                };
+      window.addEventListener("message", (event) => {
+        const { action } = event.data || {};
+        if (action === "INIT") return handleInit(event);
+        if (action === "SET_USER") return handleSetUser(event);
+        if (action === "FORCE_REFRESH_PERMISSIONS") return refreshPermissionsFor(event);
+        if (action && action.startsWith("DB_")) return handleDataOperation(event);
+      });
+
+      async function handleInit(event) {
+        const { payload } = event.data || {};
+        const { origin } = payload || {};
+        const port = event.ports?.[0];
+        if (!port) return console.error("INIT without MessagePort");
+        if (event.origin !== origin) return console.error("Origin mismatch", event.origin, origin);
+        connectedApps.set(origin, { port });
+
+        try {
+          const perms = await getPermissions(origin);
+          permissionsCache.set(origin, perms);
+          port.postMessage({ action: "INIT_ACK", success: true });
+        } catch (e) {
+          port.postMessage({ action: "INIT_FAIL", success: false, error: String(e?.message || e) });
+        }
+      }
+
+      async function handleSetUser(event) {
+        const user = event.data?.payload || null;
+        const origin = event.target?.origin || findOriginForPort(event.target);
+        const app = connectedApps.get(origin);
+        if (!app) return console.error("SET_USER from unknown origin");
+        currentUser = user;
+        try {
+          const perms = await getPermissions(origin);
+          permissionsCache.set(origin, perms);
+          broadcastAuthState();
+          app.port.postMessage({ action: "SET_USER_ACK", success: true });
+        } catch (e) {
+          app.port.postMessage({ action: "SET_USER_ACK", success: false, error: String(e?.message || e) });
+        }
+      }
+
+      async function refreshPermissionsFor(event) {
+        const origin = findOriginForPort(event.target);
+        if (!origin) return;
+        try {
+          const perms = await getPermissions(origin);
+          permissionsCache.set(origin, perms);
+          broadcastAuthState();
+        } catch {}
+      }
+
+      function broadcastAuthState() {
+        const state = { isLoggedIn: !!currentUser, user: currentUser };
+        for (const app of connectedApps.values()) {
+          app.port.postMessage({ action: "AUTH_STATE_CHANGE", data: state });
+        }
+      }
+
+      function findOriginForPort(port) {
+        for (const [origin, p] of connectedApps.entries()) if (p.port === port) return origin;
+        return null;
+      }
+
+      function getScopeForOperation(action) {
+        if (action === "DB_WRITE" || action === "DB_REMOVE") return "write";
+        if (action === "DB_READ" || action === "DB_QUERY" || action === "DB_GLOBAL_QUERY" || action === "DB_GLOBAL_SUBSCRIBE") return "read";
+        return null;
+      }
+
+      async function handleDataOperation(event) {
+        const { action, type, payload, nonce, subscriptionId } = event.data || {};
+        const origin = event.target?.origin || findOriginForPort(event.target);
+        if (!origin) return console.error("Unknown origin for DB op");
+        const app = connectedApps.get(origin);
+        if (!app) return console.error("No app port for DB op");
+        const port = app.port;
+
+        // Global
+        if (action === "DB_GLOBAL_QUERY") {
+          return performGlobalQuery(type, payload)
+            .then((res) => port.postMessage({ action: "DB_GLOBAL_QUERY_ACK", success: true, data: res, nonce }))
+            .catch((err) => port.postMessage({ action: "DB_GLOBAL_QUERY_ACK", success: false, error: String(err?.message || err), nonce }));
+        }
+        if (action === "DB_GLOBAL_SUBSCRIBE") {
+          const key = `global:${type}|${JSON.stringify(payload?.query || {})}`;
+          subscriptions.set(subscriptionId, { port, key });
+          if (!sharedListeners.has(key)) {
+            const listener = createSharedGlobalListener(type, payload?.query || {});
+            sharedListeners.set(key, { cancel: () => listener.close && listener.close(), subscribers: new Set([subscriptionId]) });
+          } else {
+            sharedListeners.get(key).subscribers.add(subscriptionId);
+          }
+          return;
+        }
+        if (action === "DB_GLOBAL_UNSUBSCRIBE") {
+          const sub = subscriptions.get(subscriptionId);
+          if (sub) {
+            subscriptions.delete(subscriptionId);
+            const sl = sharedListeners.get(sub.key);
+            if (sl) {
+              sl.subscribers.delete(subscriptionId);
+              if (sl.subscribers.size === 0) {
+                sl.cancel?.();
+                sharedListeners.delete(sub.key);
+              }
+            }
+          }
+          return;
+        }
+
+        // Permission check
+        const scope = getScopeForOperation(action);
+        const required = `${scope}:${type}`;
+        const perms = permissionsCache.get(origin) || { scopes: [] };
+        const allowed = perms.scopes?.includes(required) || perms.scopes?.includes(scope) || perms.scopes?.includes("upload:files");
+        if (!allowed) {
+          return port.postMessage({ action: `${action}_ACK`, success: false, error: "Permission Denied.", nonce });
+        }
+
+        // Per-user operations via API
+        try {
+          if (action === "DB_WRITE") {
+            const res = await apiWrite(type, payload);
+            return port.postMessage({ action: "DB_WRITE_ACK", success: true, data: res, nonce });
+          }
+          if (action === "DB_QUERY") {
+            const res = await apiQuery(type, payload || {});
+            return port.postMessage({ action: "DB_QUERY_ACK", success: true, data: res, nonce });
+          }
+          if (action === "DB_READ") {
+            const res = await apiQuery(type, { _id: payload?.id });
+            return port.postMessage({ action: "DB_READ_ACK", success: true, data: res?.[0] || null, nonce });
+          }
+          if (action === "DB_REMOVE") {
+            return port.postMessage({ action: "DB_REMOVE_ACK", success: false, error: "Remove not implemented", nonce });
+          }
+        } catch (e) {
+          return port.postMessage({ action: `${action}_ACK`, success: false, error: String(e?.message || e), nonce });
+        }
+      }
+
+      async function getPermissions(origin) {
+        const res = await fetch(`/hub/permissions?origin=${encodeURIComponent(origin)}`, { credentials: "include" });
+        if (!res.ok) return { scopes: [] };
+        return await res.json();
+      }
+
+      async function getAccessToken() {
+        const res = await fetch("/hub/api-token", { credentials: "include" });
+        if (!res.ok) throw new Error("Failed to fetch API token");
+        const { token } = await res.json();
+        return token;
+      }
+
+      async function apiWrite(type, doc) {
+        const token = await getAccessToken();
+        const resp = await fetch(`/data/types/${encodeURIComponent(type)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify(doc),
+        });
+        if (!resp.ok) throw new Error(`API Write Error: ${resp.status}`);
+        return await resp.json();
+      }
+
+      async function apiQuery(type, query) {
+        const { expand, ...selector } = query || {};
+        const qs = new URLSearchParams();
+        if (expand) qs.set("expand", expand.join(","));
+        const token = await getAccessToken();
+        const resp = await fetch(`/data/types/${encodeURIComponent(type)}/query?${qs.toString()}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify(selector || {}),
+        });
+        if (!resp.ok) throw new Error(`API Query Error: ${resp.status}`);
+        const result = await resp.json();
+        return result.docs || [];
+      }
+
+      async function performGlobalQuery(type, payload) {
+        const { expand, ...selector } = payload || {};
+        const qs = new URLSearchParams({ global: "true" });
+        if (expand) qs.set("expand", expand.join(","));
+        const token = await getAccessToken();
+        const resp = await fetch(`/data/types/${encodeURIComponent(type)}/query?${qs.toString()}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify(selector || {}),
+        });
+        if (!resp.ok) throw new Error(`API Global Query Error: ${resp.status}`);
+        const result = await resp.json();
+        if (!result.docs || result.docs.length === 0) return [];
+        const temp = result.docs.map((d) => ({ _id: d._id, ref: d.ref }));
+        let full = await _expand(temp, ["ref"]);
+        full = full.map((x) => x.ref).filter(Boolean);
+        if (expand) full = await _expand(full, expand);
+        return full;
+      }
+
+      function createSharedGlobalListener(type, query) {
+        const wsUrl = window.location.origin.replace(/^http/, "ws");
+        const ws = new WebSocket(`${wsUrl}/data/global`);
+        let cache = [];
+        ws.onopen = async () => {
+          const token = await getAccessToken();
+          ws.send(JSON.stringify({ action: "auth", token, query: { ...(query || {}), type } }));
+        };
+        ws.onmessage = async (ev) => {
+          const msg = JSON.parse(ev.data);
+          const key = `global:${type}|${JSON.stringify(query || {})}`;
+          const sl = sharedListeners.get(key);
+          if (!sl) return;
+          const broadcast = (docs) => {
+            sl.subscribers.forEach((sid) => {
+              const sub = subscriptions.get(sid);
+              if (sub) sub.port.postMessage({ action: "DB_UPDATE", subscriptionId: sid, data: docs });
             });
-
-            console.log("Hub script loaded.");
-
-            // --- 2. Main Message Handler ---
-            window.addEventListener("message", (event) => {
-                // In a real implementation, we would strictly validate event.origin against a list of known apps.
-                // For the PoC, we trust the origin that the SDK provides.
-                const { action, payload, nonce, origin } = event.data;
-
-                if (action === "INIT") {
-                    handleInit(event);
-                } else if (action === "GET_USER") {
-                    handleGetUser(event);
-                } else if (action && action.startsWith("DB_")) {
-                    handleDataOperation(event);
-                }
-            });
-
-            // --- 3. Handlers ---
-            async function handleInit(event) {
-                const { payload } = event.data;
-                const { origin, user, redirectUri } = payload;
-                const sourcePort = event.ports[0];
-
-                if (!sourcePort) {
-                    console.error("Initialization received without a MessagePort. Aborting.");
-                    return;
-                }
-
-                if (event.origin !== origin) {
-                    console.error(
-                        `Origin mismatch! Event came from ${event.origin} but claimed to be ${origin}. Denying connection.`
-                    );
-                    return;
-                }
-
-                try {
-                    console.log(`[HUB] Received INIT from claimed origin: ${origin}`);
-                    console.log(`[HUB] Verifying against actual event origin: ${event.origin}`);
-                    const permissions = await getPermissions(event.origin);
-                    console.log(`[HUB] Permissions for ${event.origin}:`, permissions);
-
-                    permissionsCache.set(event.origin, permissions);
-                    connectedApps.set(origin, { port: sourcePort, redirectUri });
-
-                    // Listen for messages on the dedicated port
-                    sourcePort.onmessage = processMessage;
-
-                    if (user) {
-                        currentUser = user;
-                        await startSync(user);
-                        broadcastAuthStateChange();
-                    }
-
-                    sourcePort.postMessage({ action: "INIT_ACK" });
-                    console.log(`Successfully initialized connection for origin: ${origin}`);
-                } catch (error) {
-                    console.error(`Failed to initialize connection for origin: ${origin}`, error);
-                    sourcePort.postMessage({ action: "INIT_FAIL", error: "Initialization failed." });
-                }
+          };
+          if (msg.docs) {
+            const temp = msg.docs.map((d) => ({ _id: d._id, ref: d.ref }));
+            const expandedRef = await _expand(temp, ["ref"]);
+            let full = expandedRef.map((x) => x.ref).filter(Boolean);
+            if (query?.expand) full = await _expand(full, query.expand);
+            cache = full;
+            broadcast(cache);
+          } else if (msg.action === "update") {
+            const temp = [{ _id: msg.data.ref, ref: msg.data }];
+            const expanded = await _expand(temp, ["ref"]);
+            const full = expanded[0]?.ref;
+            if (full && !cache.some((d) => d._id === full._id)) {
+              cache.unshift(full);
+              broadcast(cache);
             }
+          }
+        };
+        return ws;
+      }
 
-            function handleGetUser(event) {
-                const app = connectedApps.get(event.origin);
-                if (app) {
-                    app.port.postMessage({ action: "GET_USER_ACK", success: true, data: currentUser });
-                }
-            }
-
-            function processMessage(event) {
-                const { action } = event.data;
-                if (action === "GET_USER") {
-                    handleGetUser(event);
-                } else if (action === "SET_USER") {
-                    handleSetUser(event);
-                } else if (action === "FORCE_REFRESH_PERMISSIONS") {
-                    handleForceRefreshPermissions(event);
-                } else if (action && action.startsWith("DB_")) {
-                    handleDataOperation(event);
-                }
-            }
-
-            async function updateUserSession(user, origin, forceUpdate = false) {
-                let releaseLock;
-                dbOperationLock = new Promise((resolve) => (releaseLock = resolve));
-
-                try {
-                    console.log(`[HUB] Updating user session for origin: ${origin}`);
-
-                    // 1. Stop any existing sync and clear local DB instance
-                    if (syncHandler) {
-                        syncHandler.cancel();
-                        syncHandler = null;
-                    }
-                    if (db) {
-                        await db.close();
-                        db = null;
-                    }
-                    currentUser = user;
-
-                    // 2. If no user, just update permissions and broadcast.
-                    if (!user) {
-                        console.log(`[HUB] User logged out. Clearing session for ${origin}`);
-                        const permissions = await getPermissions(origin);
-                        permissionsCache.set(origin, permissions);
-                        broadcastAuthStateChange();
-                        return;
-                    }
-
-                    // 3. Fetch new permissions and session info in parallel
-                    console.log(`[HUB] User set. Re-fetching permissions and session for ${origin}`);
-                    const [permissions, sessionInfo] = await Promise.all([getPermissions(origin), getDbSession()]);
-
-                    console.log(`[HUB] New permissions for ${origin}:`, permissions);
-                    permissionsCache.set(origin, permissions);
-
-                    // 4. Start the new sync with the fetched session info
-                    await startSync(sessionInfo);
-                    broadcastAuthStateChange();
-                } finally {
-                    releaseLock();
-                    console.log("[HUB] DB Operation lock released.");
-                }
-            }
-
-            async function handleSetUser(event) {
-                const { payload, nonce } = event.data;
-                const user = payload;
-                const origin = findOriginForPort(event.target);
-                const app = origin ? connectedApps.get(origin) : null;
-
-                if (!app) {
-                    console.error("Could not determine origin or app for SET_USER message.");
-                    return;
-                }
-
-                // The updateUserSession function now handles its own locking.
-                updateUserSession(user, origin)
-                    .then(() => {
-                        app.port.postMessage({ action: "SET_USER_ACK", success: true, nonce });
-                    })
-                    .catch((error) => {
-                        console.error(`[HUB] Error during SET_USER for ${origin}:`, error);
-                        app.port.postMessage({ action: "SET_USER_ACK", success: false, error: error.message, nonce });
-                    });
-            }
-
-            async function handleForceRefreshPermissions(event) {
-                const origin = findOriginForPort(event.target);
-                if (origin) {
-                    console.log(`[HUB] Force-refreshing permissions for origin: ${origin}.`);
-                    // We pass the current user to force a refresh of permissions and session.
-                    await updateUserSession(currentUser, origin, true);
-                }
-            }
-
-            async function handleDataOperation(event) {
-                await dbOperationLock; // Ensure DB is ready before any data ops
-                const { action, type, payload, nonce, subscriptionId } = event.data;
-                const origin = event.target.origin || findOriginForPort(event.target);
-
-                if (!origin) {
-                    console.error("Could not determine origin for incoming message.");
-                    return;
-                }
-
-                const app = connectedApps.get(origin);
-                if (!app) {
-                    console.error(`No active port found for origin: ${origin}. Ignoring message.`);
-                    return;
-                }
-                const sourcePort = app.port;
-
-                if (action === "DB_SUBSCRIBE") {
-                    const { query } = payload;
-                    const canonicalKey = `${type}|${JSON.stringify(query || {})}`;
-                    console.log(
-                        `[HUB] Subscription request for ${subscriptionId} from ${origin} with key ${canonicalKey}`
-                    );
-
-                    subscriptions.set(subscriptionId, {
-                        canonicalKey,
-                        port: app.port,
-                        query: query,
-                    });
-
-                    if (!sharedListeners.has(canonicalKey)) {
-                        console.log(`[HUB] Creating new shared listener for ${canonicalKey}`);
-                        const listener = createSharedListener(type, query || {});
-                        if (listener) {
-                            console.log(`[HUB] Shared listener created successfully for ${canonicalKey}`);
-                            sharedListeners.set(canonicalKey, {
-                                listener,
-                                subscribers: new Set([subscriptionId]),
-                            });
-                        } else {
-                            console.error(`[HUB] Failed to create shared listener for ${canonicalKey}`);
-                        }
-                    } else {
-                        console.log(`[HUB] Attaching to existing shared listener for ${canonicalKey}`);
-                        sharedListeners.get(canonicalKey).subscribers.add(subscriptionId);
-                    }
-                    return;
-                }
-
-                if (action === "DB_UNSUBSCRIBE") {
-                    const { subscriptionId } = payload;
-                    console.log(`[HUB] Unsubscribe request for ${subscriptionId} from ${origin}`);
-                    const sub = subscriptions.get(subscriptionId);
-                    if (sub) {
-                        subscriptions.delete(subscriptionId);
-                        const sharedListener = sharedListeners.get(sub.canonicalKey);
-                        if (sharedListener) {
-                            sharedListener.subscribers.delete(subscriptionId);
-                            if (sharedListener.subscribers.size === 0) {
-                                console.log(`[HUB] Stopping shared listener for ${sub.canonicalKey}`);
-                                sharedListener.listener.cancel();
-                                sharedListeners.delete(sub.canonicalKey);
-                            }
-                        }
-                    }
-                    return;
-                }
-
-                if (action === "DB_GLOBAL_QUERY") {
-                    console.log(`[HUB] Received DB_GLOBAL_QUERY for type: ${type}`, payload);
-                    performGlobalQuery(action, type, payload)
-                        .then((result) => {
-                            console.log(`[HUB] DB_GLOBAL_QUERY successful, returning ${result.length} docs.`);
-                            sourcePort.postMessage({
-                                action: "DB_GLOBAL_QUERY_ACK",
-                                success: true,
-                                data: result,
-                                nonce,
-                            });
-                        })
-                        .catch((dbError) => {
-                            console.error(`[HUB] DB_GLOBAL_QUERY failed:`, dbError);
-                            sourcePort.postMessage({
-                                action: "DB_GLOBAL_QUERY_ACK",
-                                success: false,
-                                error: dbError.message,
-                                nonce,
-                            });
-                        });
-                    return;
-                }
-
-                if (action === "DB_GLOBAL_SUBSCRIBE") {
-                    const { query } = payload;
-                    const canonicalKey = `global:${type}|${JSON.stringify(query || {})}`;
-                    console.log(
-                        `[HUB] Global subscription request for ${subscriptionId} from ${origin} with key ${canonicalKey}`
-                    );
-
-                    subscriptions.set(subscriptionId, {
-                        canonicalKey,
-                        port: app.port,
-                    });
-
-                    if (!sharedListeners.has(canonicalKey)) {
-                        console.log(`[HUB] Creating new shared global listener for ${canonicalKey}`);
-                        const listener = createSharedGlobalListener(type, query || {});
-                        sharedListeners.set(canonicalKey, {
-                            listener,
-                            subscribers: new Set([subscriptionId]),
-                        });
-                    } else {
-                        console.log(`[HUB] Attaching to existing shared global listener for ${canonicalKey}`);
-                        sharedListeners.get(canonicalKey).subscribers.add(subscriptionId);
-                    }
-                    return;
-                }
-
-                if (action === "DB_GLOBAL_UNSUBSCRIBE") {
-                    const { subscriptionId } = payload;
-                    console.log(`[HUB] Global unsubscribe request for ${subscriptionId} from ${origin}`);
-                    const sub = subscriptions.get(subscriptionId);
-                    if (sub) {
-                        subscriptions.delete(subscriptionId);
-                        const sharedListener = sharedListeners.get(sub.canonicalKey);
-                        if (sharedListener) {
-                            sharedListener.subscribers.delete(subscriptionId);
-                            if (sharedListener.subscribers.size === 0) {
-                                console.log(`[HUB] Stopping shared global listener for ${sub.canonicalKey}`);
-                                sharedListener.listener.close();
-                                sharedListeners.delete(sub.canonicalKey);
-                            }
-                        }
-                    }
-                    return;
-                }
-                const scope = getScopeForOperation(action);
-                const requiredPermission = `${scope}:${type}`;
-                const appPermissions = permissionsCache.get(origin);
-
-                console.log(`[HUB] Required permission for ${action} on ${type}: ${requiredPermission}`);
-
-                // Check for both the specific permission (e.g., "write:posts") and a wildcard (e.g., "write")
-                const hasPermission =
-                    appPermissions &&
-                    appPermissions.scopes &&
-                    (appPermissions.scopes.includes(requiredPermission) ||
-                        appPermissions.scopes.includes(scope) ||
-                        appPermissions.scopes.includes("upload:files")); // Special case for file uploads
-
-                if (hasPermission) {
-                    performPouchDbOperation(action, type, payload)
-                        .then((result) => {
-                            sourcePort.postMessage({ action: `${action}_ACK`, success: true, data: result, nonce });
-                        })
-                        .catch((dbError) => {
-                            sourcePort.postMessage({
-                                action: `${action}_ACK`,
-                                success: false,
-                                error: dbError.message,
-                                nonce,
-                            });
-                        });
+      async function _expand(docs, expand) {
+        const expanded = [];
+        for (const doc of docs) {
+          const newDoc = { ...doc };
+          for (const field of expand || []) {
+            const v = doc[field];
+            if (v && typeof v === "object" && v.ref && v.did) {
+              const res = await fetch(`/data/expand?did=${encodeURIComponent(v.did)}&ref=${encodeURIComponent(v.ref)}`);
+              if (res.ok) newDoc[field] = await res.json();
+            } else if (Array.isArray(v)) {
+              const arr = [];
+              for (const entry of v) {
+                if (entry && entry.ref && entry.did) {
+                  const res = await fetch(`/data/expand?did=${encodeURIComponent(entry.did)}&ref=${encodeURIComponent(entry.ref)}`);
+                  if (res.ok) arr.push(await res.json()); else arr.push(entry);
                 } else {
-                    console.warn(
-                        `Permission denied for origin ${origin} trying to perform ${action} on ${type}. Required: ${requiredPermission}`
-                    );
-                    sourcePort.postMessage({
-                        action: `${action}_ACK`,
-                        success: false,
-                        error: "Permission Denied.",
-                        nonce,
-                    });
+                  arr.push(entry);
                 }
+              }
+              newDoc[field] = arr;
             }
+          }
+          expanded.push(newDoc);
+        }
+        return expanded;
+      }
 
-            function broadcastAuthStateChange() {
-                const state = {
-                    isLoggedIn: !!currentUser,
-                    user: currentUser,
-                };
-                console.log("[HUB] Broadcasting auth state change:", state);
-                for (const app of connectedApps.values()) {
-                    app.port.postMessage({ action: "AUTH_STATE_CHANGE", data: state });
-                }
-            }
+      console.log("Hub ready");
+    </script>
+  </body>
+  </html>
 
-            // --- 4. Helper Functions ---
-            function findOriginForPort(port) {
-                for (const [origin, p] of connectedApps.entries()) {
-                    if (p.port === port) {
-                        return origin;
-                    }
-                }
-                return null;
-            }
-
-            function getScopeForOperation(action) {
-                if (action === "DB_WRITE" || action === "DB_REMOVE") return "write";
-                if (
-                    action === "DB_READ" ||
-                    action === "DB_QUERY" ||
-                    action === "DB_GLOBAL_QUERY" ||
-                    action === "DB_GLOBAL_SUBSCRIBE"
-                )
-                    return "read";
-                return null;
-            }
-
-            async function performPouchDbOperation(action, type, payload) {
-                await dbOperationLock; // Wait for any pending db re-initialization to complete
-                if (!db) {
-                    throw new Error("Database not initialized");
-                }
-                console.log(`Performing ${action} on type '${type}' with payload:`, payload);
-                switch (action) {
-                    case "DB_WRITE":
-                        // Any ACL makes a document globally accessible, so it must be written via the API.
-                        const isGloballyAcessible = payload.acl && Object.keys(payload.acl).length > 0;
-                        if (isGloballyAcessible) {
-                            // If ACL is set, write through the API to trigger global DB logic
-                            console.log("[HUB] Writing document with ACL through API.", payload);
-                            return await performApiWrite(type, payload);
-                        } else {
-                            // Otherwise, write locally for speed
-                            console.log("[HUB] Writing document without ACL locally.", payload);
-                            if (!payload._id) {
-                                payload._id = `${type}/${Date.now()}-${Math.random().toString(16).slice(2)}`;
-                            }
-                            return await db.put({ ...payload, type: type });
-                        }
-                    case "DB_READ":
-                        return await db.get(payload.id);
-                    case "DB_QUERY":
-                        const { expand, limit, sort, maxCacheAge, ...selector } = payload;
-
-                        // let query = { selector };
-                        // if (limit) {
-                        //     query.limit = limit;
-                        // }
-                        // if (sort) {
-                        //     query.sort = sort;
-                        // }
-
-                        const findResult = await db.find({
-                            selector: { ...selector, type: type },
-                            limit: limit || undefined,
-                            sort: sort || undefined,
-                        });
-
-                        if (expand && expand.length > 0) {
-                            return await _expand(findResult.docs, expand, maxCacheAge);
-                        }
-
-                        console.log(`[HUB] Query successful, received ${findResult.docs?.length || 0} Docs.`);
-
-                        return findResult.docs;
-                    case "DB_REMOVE":
-                        return await db.remove(payload);
-                    default:
-                        throw new Error(`Unsupported DB operation: ${action}`);
-                }
-            }
-
-            async function getPermissions(origin) {
-                const response = await fetch(`/hub/permissions?origin=${encodeURIComponent(origin)}`, {
-                    credentials: "include",
-                });
-                if (!response.ok) {
-                    console.error(`Failed to fetch permissions for origin: ${origin}`);
-                    return { scopes: [] };
-                }
-                return await response.json();
-            }
-
-            // The find plugin is automatically registered by its script.
-
-            async function getDbSession() {
-                const response = await fetch("/hub/session", { credentials: "include" });
-                if (!response.ok) {
-                    throw new Error("Failed to fetch DB session");
-                }
-                return await response.json();
-            }
-
-            async function startSync(sessionInfo) {
-                if (!sessionInfo || !sessionInfo.dbName) {
-                    console.log("[HUB] No session info provided, skipping sync.");
-                    return;
-                }
-                try {
-                    console.log(`[HUB] Creating DB: ${sessionInfo.dbName}`);
-                    db = new PouchDB(sessionInfo.dbName);
-                    await db.createIndex({
-                        index: { fields: ["type"] },
-                    });
-                    const remoteDbUrl = `__COUCHDB_URL__/${sessionInfo.dbName}`;
-                    remoteDb = new PouchDB(remoteDbUrl, {
-                        auth: {
-                            username: sessionInfo.username,
-                            password: sessionInfo.password,
-                        },
-                    });
-
-                    console.log(`[HUB] Starting sync with ${remoteDbUrl}`);
-
-                    syncHandler = db
-                        .sync(remoteDb, {
-                            live: true,
-                            retry: true,
-                        })
-                        .on("change", function (info) {
-                            // console.log("[HUB] Sync change:", info);
-                        })
-                        .on("paused", function (err) {
-                            console.log("[HUB] Sync paused:", err);
-                        })
-                        .on("active", function () {
-                            // console.log("[HUB] Sync active");
-                        })
-                        .on("denied", function (err) {
-                            console.error("[HUB] Sync denied:", err);
-                        })
-                        .on("complete", function (info) {
-                            console.log("[HUB] Sync complete:", info);
-                        })
-                        .on("error", function (err) {
-                            console.error("[HUB] Sync error:", err);
-                        });
-                    setupDbChangesListener();
-                } catch (error) {
-                    console.error("Failed to start sync:", error);
-                }
-            }
-
-            console.log("Hub is ready and listening.");
-
-            function setupDbChangesListener() {
-                // This function is now replaced by the dynamic creation of shared listeners.
-                // We can remove it or leave it empty. For now, I'll leave it empty.
-            }
-
-            function createSharedListener(type, query) {
-                if (!db) return null;
-
-                const changes = db
-                    .changes({
-                        since: "now",
-                        live: true,
-                        include_docs: true,
-                        selector: { type: type },
-                    })
-                    .on("change", async (change) => {
-                        console.log(`[HUB] Change detected for type ${type}:`, change.doc);
-                        // Find all subscriptions for this type and notify them.
-                        for (const [subId, sub] of subscriptions.entries()) {
-                            if (sub.canonicalKey.startsWith(type + "|")) {
-                                console.log(`[HUB] Change matches subscription ${subId}. Re-running query.`);
-                                const { expand, maxCacheAge, ...selector } = sub.query;
-                                const findResult = await db.find({
-                                    selector: { ...selector, type: type },
-                                });
-
-                                let docs = findResult.docs;
-                                if (expand && expand.length > 0) {
-                                    docs = await _expand(docs, expand, maxCacheAge);
-                                }
-
-                                sub.port.postMessage({
-                                    action: "DB_UPDATE",
-                                    subscriptionId: subId,
-                                    data: docs,
-                                });
-                            }
-                        }
-                    });
-                return changes;
-            }
-
-            async function performGlobalQuery(action, type, payload) {
-                console.log(`[HUB] Performing global query for type: ${type}`, payload);
-                try {
-                    const { expand, ...selector } = payload;
-                    const query = new URLSearchParams({
-                        global: "true",
-                    });
-                    if (expand) {
-                        query.set("expand", expand.join(","));
-                    }
-                    const token = await getAccessToken();
-                    const response = await fetch(`/data/types/${encodeURIComponent(type)}/query?${query.toString()}`, {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Bearer ${token}`,
-                        },
-                        body: JSON.stringify(selector),
-                    });
-
-                    if (!response.ok) {
-                        const errorText = await response.text();
-                        console.error(`[HUB] Global query API error: ${response.status}`, errorText);
-                        throw new Error(`API Error: ${response.status} - ${errorText}`);
-                    }
-
-                    const result = await response.json();
-                    console.log(`[HUB] Global query successful, received ${result.docs?.length || 0} DocRefs.`);
-
-                    if (result.docs.length === 0) {
-                        return [];
-                    }
-
-                    // The API now returns DocRefs, so the hub is responsible for expanding them.
-                    const tempDocsForExpansion = result.docs.map((doc) => ({ _id: doc._id, ref: doc.ref }));
-                    let fullDocs = (await _expand(tempDocsForExpansion, ["ref"])).map((doc) => doc.ref);
-
-                    // Perform the second, explicit expansion if requested
-                    if (expand) {
-                        fullDocs = await _expand(fullDocs, expand);
-                    }
-
-                    return fullDocs;
-                } catch (error) {
-                    console.error("[HUB] Error in performGlobalQuery:", error);
-                    throw error;
-                }
-            }
-
-            function createSharedGlobalListener(type, query) {
-                const VIBE_WS_URL = window.location.origin.replace(/^http/, "ws");
-                const ws = new WebSocket(`${VIBE_WS_URL}/data/global`);
-                let cachedDocs = []; // Cache for the documents of this subscription
-
-                ws.onopen = async () => {
-                    const token = await getAccessToken();
-                    const authMessage = {
-                        action: "auth",
-                        token: token,
-                        query: { ...query, type: type },
-                    };
-                    ws.send(JSON.stringify(authMessage));
-                };
-
-                ws.onmessage = (event) => {
-                    const messageData = JSON.parse(event.data);
-                    const canonicalKey = `global:${type}|${JSON.stringify(query)}`;
-                    const sharedListener = sharedListeners.get(canonicalKey);
-
-                    if (!sharedListener) return;
-
-                    const broadcastUpdate = (docs) => {
-                        sharedListener.subscribers.forEach((subId) => {
-                            const sub = subscriptions.get(subId);
-                            if (sub) {
-                                sub.port.postMessage({
-                                    action: "DB_UPDATE",
-                                    subscriptionId: subId,
-                                    data: docs,
-                                });
-                            }
-                        });
-                    };
-
-                    if (messageData.docs) {
-                        // Initial data load
-                        const docRefs = messageData.docs;
-                        const tempDocsForExpansion = docRefs.map((doc) => ({ _id: doc._id, ref: doc.ref }));
-                        _expand(tempDocsForExpansion, ["ref"])
-                            .then((expandedDocRefs) => {
-                                const fullDocs = expandedDocRefs.map((doc) => doc.ref).filter(Boolean);
-                                const { expand } = query;
-                                return expand ? _expand(fullDocs, expand) : fullDocs;
-                            })
-                            .then((finalDocs) => {
-                                cachedDocs = finalDocs;
-                                broadcastUpdate(cachedDocs);
-                            })
-                            .catch((err) => console.error("[HUB] Error expanding initial documents:", err));
-                    } else if (messageData.action === "update") {
-                        // Incremental update
-                        const newDocRef = messageData.data;
-                        const tempDocForExpansion = [{ _id: newDocRef.ref, ref: newDocRef }];
-                        _expand(tempDocForExpansion, ["ref"])
-                            .then((expandedDocs) => {
-                                const fullNewDoc = expandedDocs[0]?.ref;
-                                if (!fullNewDoc) return;
-                                const { expand } = query;
-                                return expand ? _expand([fullNewDoc], expand) : [fullNewDoc];
-                            })
-                            .then((finalNewDocs) => {
-                                if (!finalNewDocs || finalNewDocs.length === 0) return;
-                                const finalNewDoc = finalNewDocs[0];
-                                // Avoid duplicates and add to cache
-                                if (!cachedDocs.some((d) => d._id === finalNewDoc._id)) {
-                                    cachedDocs.unshift(finalNewDoc); // Add to the beginning
-                                    broadcastUpdate(cachedDocs);
-                                }
-                            })
-                            .catch((err) => console.error("[HUB] Error expanding incremental update:", err));
-                    }
-                };
-
-                return ws;
-            }
-
-            async function getAccessToken() {
-                const response = await fetch("/hub/api-token", { credentials: "include" });
-                if (!response.ok) {
-                    throw new Error("Failed to fetch API token");
-                }
-                const { token } = await response.json();
-                return token;
-            }
-
-            async function _expand(docs, expand, maxCacheAge) {
-                await dbOperationLock; // Wait for the db to be ready.
-
-                const expandOneRef = async (ref) => {
-                    if (!ref || !ref.did || !ref.ref) return undefined;
-
-                    // Local-first path
-                    if (db && currentUser && ref.did === currentUser.did) {
-                        try {
-                            return await db.get(ref.ref);
-                        } catch (error) {
-                            if (error.name !== "not_found") {
-                                console.error(`Error fetching local document from PouchDB: ${ref.ref}`, error);
-                            }
-                        }
-                    }
-
-                    // Remote with cache
-                    const cacheId = `cache/${ref.did}/${ref.ref}`;
-                    let existingCacheItem = null;
-                    if (db) {
-                        try {
-                            existingCacheItem = await db.get(cacheId);
-                        } catch (error) {
-                            // Ignore not_found errors
-                        }
-                    }
-
-                    const isCacheFresh = () => {
-                        if (!existingCacheItem) return false;
-                        if (maxCacheAge === 0) return false; // Force refresh
-                        if (maxCacheAge === undefined) return true; // Always fresh if no age specified
-                        const age = (Date.now() - existingCacheItem.cachedAt) / 1000;
-                        return age <= maxCacheAge;
-                    };
-
-                    if (isCacheFresh()) {
-                        return existingCacheItem.data;
-                    }
-
-                    try {
-                        const response = await fetch(`/data/expand?did=${ref.did}&ref=${ref.ref}`);
-                        if (response.ok) {
-                            const remoteDoc = await response.json();
-
-                            if (db) {
-                                const newCacheItem = {
-                                    _id: cacheId,
-                                    _rev: existingCacheItem?._rev,
-                                    type: "cache",
-                                    data: remoteDoc,
-                                    cachedAt: Date.now(),
-                                    originalDid: ref.did,
-                                    originalRef: ref.ref,
-                                };
-                                await db.put(newCacheItem);
-                            }
-                            return remoteDoc;
-                        }
-                    } catch (apiError) {
-                        console.error(`Failed to fetch expanded document for ${ref.ref}`, apiError);
-                    }
-                    return undefined;
-                };
-
-                const promises = docs.map(async (doc) => {
-                    const expandedDoc = { ...doc };
-                    for (const field of expand) {
-                        const value = doc[field];
-
-                        // Single DocRef
-                        if (value && typeof value === "object" && "ref" in value && "did" in value) {
-                            const expanded = await expandOneRef(value);
-                            if (expanded) expandedDoc[field] = expanded;
-                            continue;
-                        }
-
-                        // Array of DocRefs
-                        if (Array.isArray(value)) {
-                            const expandedArray = [];
-                            for (const entry of value) {
-                                if (entry && typeof entry === "object" && "ref" in entry && "did" in entry) {
-                                    const expanded = await expandOneRef(entry);
-                                    expandedArray.push(expanded || entry);
-                                } else {
-                                    expandedArray.push(entry);
-                                }
-                            }
-                            expandedDoc[field] = expandedArray;
-                        }
-                    }
-                    return expandedDoc;
-                });
-                return Promise.all(promises);
-            }
-
-            async function performApiWrite(type, doc) {
-                const token = await getAccessToken();
-                const response = await fetch(`/data/types/${encodeURIComponent(type)}`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify(doc),
-                });
-
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`API Write Error: ${response.status} - ${errorText}`);
-                }
-                const result = await response.json();
-                console.log("[HUB] API write successful:", result);
-
-                // Local DB will catch up via sync; no manual upsert necessary.
-                return result;
-            }
-        </script>
-        <script>
-            async function handleIssueCert(event) {
-                const { payload, nonce } = event.data;
-                const { targetDid, type, expires } = payload;
-                const origin = findOriginForPort(event.target);
-                const app = origin ? connectedApps.get(origin) : null;
-
-                if (!app) {
-                    console.error("Could not determine origin or app for ISSUE_CERT message.");
-                    return;
-                }
-
-                try {
-                    const token = await getAccessToken();
-                    const response = await fetch("/certs/issue", {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Bearer ${token}`,
-                        },
-                        body: JSON.stringify({ targetDid, type, expires }),
-                    });
-                    const result = await response.json();
-                    if (!response.ok) {
-                        throw new Error(result.error || "Failed to issue certificate");
-                    }
-                    if (db) {
-                        await db.replicate.from(remoteDb, {
-                            doc_ids: [result._id],
-                        });
-                    }
-                    app.port.postMessage({ action: "ISSUE_CERT_ACK", success: true, data: result, nonce });
-                } catch (error) {
-                    console.error(`[HUB] Error during ISSUE_CERT for ${origin}:`, error);
-                    app.port.postMessage({ action: "ISSUE_CERT_ACK", success: false, error: error.message, nonce });
-                }
-            }
-        </script>
-    </body>
-</html>
